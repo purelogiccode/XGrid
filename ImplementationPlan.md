@@ -391,6 +391,18 @@ TM3 (DONE 2026-10-24, decisions §254): the missing `SAHF`/`LAHF` one-byte opcod
   question in the fragment path, not geometry. Find it with the flip/fragment
   probes (the §211 method) on the 10B anchor + 2B run, fix it behind the existing
   rasterizer, and prove it on the row rather than by eye.
+  **Starting evidence (measured 2026-10-26, no code change).** Both frames are
+  8-bit RGBA, so this is *not* a 16-bit surface: our 720x480 frame has **433**
+  distinct `(R&7, G&7, B&7)` classes against xemu's **250**, and 6,801 distinct
+  colours against 790 on a 1-in-3 sample. The structure is the give-away: a flat
+  40x40 patch of xemu's sky concentrates on five values (88-92, 29 distinct in
+  the patch), while ours spreads over 86 distinct values with no dominant one -
+  ours is **noisy**, xemu's is a smooth gradient. Suspects, in order: the
+  fragment path's per-pixel arithmetic (a dither the reference does not do, or a
+  texture decode/rounding difference on the movie texture), the movie's YUV
+  texture decode, and the tent/nearest sampler default. The two captures are
+  different regions of the same scene, so a per-pixel differential needs a
+  matched crop first (`frame-compare.py --crop-top 0.25` is the tool).
 - [ ] Acceptance: the NGB row passes the screenshot policy end to end - colour
   count inside 1,013-1,689, `|dmean| <= 25` on every channel, black within 2
   points - with the four accurate 1B goldens and the ktest log byte-identical.
