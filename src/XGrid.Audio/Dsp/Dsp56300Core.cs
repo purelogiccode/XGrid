@@ -72,7 +72,7 @@ public sealed partial class Dsp56300Core
     /// <returns>The word value.</returns>
     public uint ReadMemory(int space, uint address)
     {
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, 0x01000000u, nameof(address));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, 0x01000000u);
 
         switch (space)
         {
@@ -109,7 +109,7 @@ public sealed partial class Dsp56300Core
     /// <param name="value">The word value.</param>
     public void WriteMemory(int space, uint address, uint value)
     {
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, 0x01000000u, nameof(address));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, 0x01000000u);
 
         switch (space)
         {
@@ -133,11 +133,11 @@ public sealed partial class Dsp56300Core
                     return;
                 }
 
-                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, (uint)Dsp56300State.XramSize, nameof(address));
+                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, (uint)Dsp56300State.XramSize);
                 State.Xram[address] = value;
                 return;
             case Dsp56300State.SpaceY:
-                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, (uint)Dsp56300State.YramSize, nameof(address));
+                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, (uint)Dsp56300State.YramSize);
                 State.Yram[address] = value;
                 return;
             case Dsp56300State.SpaceP:

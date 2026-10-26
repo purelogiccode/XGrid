@@ -328,7 +328,7 @@ internal static unsafe class RawBlockEmitter
                 // absolute RIP; a value outside this block's own code means the
                 // API contract changed, in which case the block simply is not
                 // published as a chain target (the safe degradation).
-                ulong chainRip = result.GetLabelRIP(in _chainIn, 0);
+                ulong chainRip = result.GetLabelRIP(in _chainIn);
                 if (chainRip >= (ulong)memory && chainRip < (ulong)memory + (ulong)writer.Position)
                 {
                     ChainEntry = (nint)chainRip;
@@ -1211,7 +1211,7 @@ internal static unsafe class RawBlockEmitter
                     break;
 
                 case JitKind.Leave:
-                    EmitLeave(plan, index);
+                    EmitLeave(index);
                     break;
 
                 case JitKind.MmxLoad:
@@ -2180,7 +2180,7 @@ internal static unsafe class RawBlockEmitter
         }
 
         /// <summary><c>Leave</c>: ESP = EBP + 4; EBP = [SS:EBP].</summary>
-        private void EmitLeave(in JitMemberPlan plan, int index)
+        private void EmitLeave(int index)
         {
             Assembler a = _a;
             EmitMaterializeFlags();

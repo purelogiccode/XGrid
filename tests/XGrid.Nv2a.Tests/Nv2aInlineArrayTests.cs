@@ -18,9 +18,7 @@ public sealed class Nv2aInlineArrayTests
     private const uint Base = Nv2AMmio.BaseAddress;
 
     private const int MacMov = 1;
-    private const int MacAdd = 3;
     private const int MuxV = 2;
-    private const int MuxC = 3;
 
     private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {

@@ -180,7 +180,7 @@ public sealed class Dsp56300DifferentialTests
             string expected = vector.State;
             if (!string.Equals(expected, state, StringComparison.Ordinal))
             {
-                Assert.Fail($"state mismatch for seed 0x{vector.Seed:X} words {Words(vector)}\nexpected: {expected}\nactual:   {state}");
+                Assert.Fail($"state mismatch for seed 0x{vector.Seed:X} words {FormatWords(vector)}\nexpected: {expected}\nactual:   {state}");
             }
 
             uint[] initial = SetupState(vector.Seed).Registers;
@@ -189,13 +189,13 @@ public sealed class Dsp56300DifferentialTests
                 uint want = vector.Registers.TryGetValue(i, out uint changed) ? changed : initial[i];
                 if (want != registers[i])
                 {
-                    Assert.Fail($"register 0x{i:X2} mismatch for seed 0x{vector.Seed:X} words {Words(vector)}: expected 0x{want:X6}, actual 0x{registers[i]:X6}");
+                    Assert.Fail($"register 0x{i:X2} mismatch for seed 0x{vector.Seed:X} words {FormatWords(vector)}: expected 0x{want:X6}, actual 0x{registers[i]:X6}");
                 }
             }
         }
     }
 
-    private static string Words(Vector vector) =>
+    private static string FormatWords(Vector vector) =>
         string.Join(',', vector.Words.Select(w => w.ToString("x6", CultureInfo.InvariantCulture)));
 
     private static (string State, uint[] Registers) Replay(Vector vector)

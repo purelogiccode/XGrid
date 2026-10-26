@@ -400,7 +400,7 @@ public sealed partial class Dsp56300Core
     /// <returns>The word.</returns>
     internal uint ReadMemoryP(uint address)
     {
-        if (address >= (uint)Dsp56300State.PramSize)
+        if (address >= Dsp56300State.PramSize)
         {
             return 0;
         }
@@ -413,7 +413,7 @@ public sealed partial class Dsp56300Core
     /// <param name="value">The word.</param>
     internal void WriteMemoryP(uint address, uint value)
     {
-        if (address >= (uint)Dsp56300State.PramSize)
+        if (address >= Dsp56300State.PramSize)
         {
             return;
         }
@@ -841,7 +841,7 @@ public sealed partial class Dsp56300Core
             }
         }
 
-        R[Dsp56300State.RegR0 + numreg] = (uint)(ushort)rReg & Mask16;
+        R[Dsp56300State.RegR0 + numreg] = (ushort)rReg & Mask16;
     }
 
     private void UpdateRn(uint numreg, short modifier)
@@ -851,7 +851,7 @@ public sealed partial class Dsp56300Core
         {
             short value = (short)R[Dsp56300State.RegR0 + numreg];
             value += modifier;
-            R[Dsp56300State.RegR0 + numreg] = (uint)(ushort)value & Mask16;
+            R[Dsp56300State.RegR0 + numreg] = (ushort)value & Mask16;
         }
         else if (mReg == 0)
         {

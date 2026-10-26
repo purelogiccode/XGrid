@@ -165,6 +165,7 @@ public sealed class McpxApuDsp
     public ApuDspSampleSink? SampleSink { get; set; }
 
     /// <summary>Gets or sets the diagnostic log sink.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public Action<string>? Log { get; set; }
 
     /// <summary>
@@ -248,7 +249,7 @@ public sealed class McpxApuDsp
     /// <returns>The word.</returns>
     public uint ReadWindow(uint offset)
     {
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(offset, WindowSize, nameof(offset));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(offset, WindowSize);
 
         uint word;
         if (IsGp)
@@ -291,7 +292,7 @@ public sealed class McpxApuDsp
     /// <param name="value">The word to write.</param>
     public void WriteWindow(uint offset, uint value)
     {
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(offset, WindowSize, nameof(offset));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(offset, WindowSize);
 
         if (IsGp)
         {
@@ -553,8 +554,6 @@ public sealed class McpxApuDsp
                 break;
             case DmaConfigurationAddress:
                 Dma.Write(DspDmaRegister.Configuration, value);
-                break;
-            default:
                 break;
         }
     }

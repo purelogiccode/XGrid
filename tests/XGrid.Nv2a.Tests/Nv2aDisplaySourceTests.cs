@@ -318,7 +318,7 @@ public sealed class Nv2aDisplaySourceTests
         nv2A.Write(Base + PcrtcStart, 4, first);
         Assert.Equal("memory-scanout", nv2A.DisplaySourceDebug);
 
-        nv2A.Write(Base + PcrtcStart, 4, first + ((uint)ringSize * 0x4000u));
+        nv2A.Write(Base + PcrtcStart, 4, first + (ringSize * 0x4000u));
         Assert.Equal("backend", nv2A.DisplaySourceDebug);
     }
 

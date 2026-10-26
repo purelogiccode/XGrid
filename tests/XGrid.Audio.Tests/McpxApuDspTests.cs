@@ -34,7 +34,6 @@ public sealed class McpxApuDspTests
     private const uint EpOutputFifoCurrent = 0x402C;
 
     // Peripheral-space addresses.
-    private const uint HaltAddress = 0xFFFFC4;
     private const uint DmaControlAddress = 0xFFFFD6;
 
     private const uint DmaControlWrite = (1u << 1) | (2u << 10);

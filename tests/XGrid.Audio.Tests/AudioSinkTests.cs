@@ -43,12 +43,12 @@ public sealed class AudioSinkTests
             Assert.Equal("WAVE", Encoding.ASCII.GetString(file, 8, 4));
             Assert.Equal("fmt ", Encoding.ASCII.GetString(file, 12, 4));
             Assert.Equal(16u, BitConverter.ToUInt32(file, 16));
-            Assert.Equal(1, (int)BitConverter.ToUInt16(file, 20));
-            Assert.Equal(2, (int)BitConverter.ToUInt16(file, 22));
+            Assert.Equal(1, BitConverter.ToUInt16(file, 20));
+            Assert.Equal(2, BitConverter.ToUInt16(file, 22));
             Assert.Equal(48000u, BitConverter.ToUInt32(file, 24));
             Assert.Equal(192000u, BitConverter.ToUInt32(file, 28));
-            Assert.Equal(4, (int)BitConverter.ToUInt16(file, 32));
-            Assert.Equal(16, (int)BitConverter.ToUInt16(file, 34));
+            Assert.Equal(4, BitConverter.ToUInt16(file, 32));
+            Assert.Equal(16, BitConverter.ToUInt16(file, 34));
             Assert.Equal("data", Encoding.ASCII.GetString(file, 36, 4));
             Assert.Equal(8u, BitConverter.ToUInt32(file, 40));
             Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], file[44..]);

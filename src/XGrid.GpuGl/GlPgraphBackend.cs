@@ -207,8 +207,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _unsupportedFlip;
     private long _fatalCount;
 
-    private string _lastProgramSource = string.Empty;
-
     // Which texture modes the declined draws asked for (0x00-0x1F, the
     // combiner's 5-bit tex-mode field). `unsup[modes=]` says how many draws were
     // declined; this says what to implement next (Track B3 method coverage needs
@@ -1783,7 +1781,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
 
         glProgram.TriLocation = glProgram.Location("uTri[0]");
-        _lastProgramSource = source;
 
         _gl.UseProgram(program);
         _currentProgram = program;
@@ -1797,7 +1794,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.Uniform1(glProgram.Location("uCube1"), 5);
         _gl.Uniform1(glProgram.Location("uCube2"), 6);
         _gl.Uniform1(glProgram.Location("uCube3"), 7);
-        _programUniformReport = string.Join(",", glProgram.Locations.Keys);
         _gl.UseProgram(0);
         _currentProgram = 0;
         _programs.Add(key, glProgram);
@@ -1938,7 +1934,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _texConvolution[slot] = texture.FilterConvolution;
             _texCubeW[slot] = texture.CubeWidth;
             _texCubeH[slot] = texture.CubeHeight;
-            ResolveGuestWordPool(in texture, in info, slot, combiner, clampStages);
+            ResolveGuestWordPool(in info, slot, combiner, clampStages);
             _dotMap[slot] = combiner is null ? 0 : combiner.DecodeDotMap(slot);
             Nv2AMmio.DecodeBorderColor(
                 texture.BorderColor,
@@ -2070,11 +2066,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly uint[] _guestWordValues = new uint[GuestWordPoolSize * 4];
     private int _guestWordCount;
     private bool _texPoolClamped;
-    private string _programUniformReport = string.Empty;
     private readonly uint[] _guestWordScratch = new uint[GuestWordPoolSize * 4];
     private readonly int[] _texPoolBase = new int[4];
-    private readonly uint[] _guestWordAddresses = new uint[GuestWordPoolSize];
-    private int _guestWordAddressCount;
 
     /// <summary>Gets the guest texel words the last applied draw resolved into the guest-word uniform pool. Diagnostics.</summary>
     public int GuestWordCount => _guestWordCount;
@@ -2099,25 +2092,24 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// therefore only ever holds a 16-bit HILO input word, which is raw bytes
     /// and has no decoded-colour form.
     /// </remarks>
-    private void ResolveGuestWordPool(in PgraphTextureSlot texture, in PgraphDrawInfo info, int slot,
+    private void ResolveGuestWordPool(in PgraphDrawInfo info, int slot,
         PshCombiner? combiner, bool clampStages)
     {
         if (slot == 0)
         {
             _guestWordCount = 0;
-            _guestWordAddressCount = 0;
             _texPoolClamped = false;
         }
 
         _texPoolBase[slot] = 0;
-        if (combiner is not PshCombiner live)
+        if (combiner is null)
         {
             return;
         }
 
         if (clampStages)
         {
-            int already = live.DecodeTexMode(slot);
+            int already = combiner.DecodeTexMode(slot);
             if (PshCombiner.IsModeValidForStage(already, slot) && IsHiloDotMode(already))
             {
                 // A later triangle of the same draw command sampled inside a
@@ -2129,7 +2121,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return;
         }
 
-        int mode = live.DecodeTexMode(slot);
+        int mode = combiner.DecodeTexMode(slot);
         if (!PshCombiner.IsModeValidForStage(mode, slot) || mode != PshCombiner.TexModeDotProduct)
         {
             return;
@@ -2141,7 +2133,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // colour map needs no guest word at all - requiring one declined every
         // eight-stage dot program of the corpus row and painted the frame in
         // software.
-        if (live.DecodeDotMap(slot) is < 4 or > 7)
+        if (combiner.DecodeDotMap(slot) is < 4 or > 7)
         {
             return;
         }
@@ -2152,7 +2144,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // declined only when the pool cannot hold them.
         PgraphGuestTexelSet carried = info.GuestTexels ?? default;
         int start = _guestWordCount;
-        if (!AppendDependentInputWords(in carried, slot, live))
+        if (!AppendDependentInputWords(in carried, slot, combiner))
         {
             _guestWordCount = start;
             _texPoolClamped = true;
@@ -2207,7 +2199,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                     return false;
                 }
 
-                PushGuestWord(address, word);
+                PushGuestWord(word);
             }
         }
 
@@ -2241,7 +2233,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         return false;
     }
 
-    private void PushGuestWord(uint address, uint word)
+    private void PushGuestWord(uint word)
     {
         int at = _guestWordCount * 4;
         _guestWordValues[at + 0] = word;
@@ -2249,30 +2241,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _guestWordValues[at + 2] = 0u;
         _guestWordValues[at + 3] = 0u;
         _guestWordCount++;
-        if (_guestWordAddressCount < _guestWordAddresses.Length)
-        {
-            _guestWordAddresses[_guestWordAddressCount++] = address;
-        }
-    }
-
-    /// <summary>
-    /// Finds a guest word added during this draw's own state application (the
-    /// cube faces and HILO inputs added before slot 0 re-created the pool).
-    /// The carried set is the authority for words the draw did not sample yet.
-    /// </summary>
-    private bool FindPooledWord(uint address, out uint word)
-    {
-        for (int i = 0; i < _guestWordAddressCount; i++)
-        {
-            if (_guestWordAddresses[i] == address)
-            {
-                word = _guestWordValues[i * 4];
-                return true;
-            }
-        }
-
-        word = 0u;
-        return false;
     }
 
     /// <summary>Binds a framebuffer through the binding shadow (the default framebuffer is 0 at context creation).</summary>

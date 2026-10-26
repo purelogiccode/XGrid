@@ -43,6 +43,9 @@ internal sealed class DspOpcode
     }
 
     /// <summary>Gets the reference mnemonic.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
+    // Kept with the ported table row: it is the reference's opcode name and the
+    // only documentation of what each template decodes to.
     public string Name { get; }
 
     /// <summary>Gets the handler, or null for an undefined instruction.</summary>

@@ -53,7 +53,7 @@ public sealed class EncoderSpikeTests(ITestOutputHelper output)
         return displacement == 0 ? operand : operand + displacement;
     }
 
-    private static AssemblerMemoryOperand Mem(Register baseRegister, int scale, long displacement)
+    private static AssemblerMemoryOperand Mem(Register baseRegister, long displacement)
     {
         AssemblerMemoryOperand operand = R64(baseRegister) + 0L;
         return displacement == 0 ? operand : operand + displacement;
@@ -79,7 +79,7 @@ public sealed class EncoderSpikeTests(ITestOutputHelper output)
         a.mov(R64(Register.RBX), R64(Register.RDX));
         a.jmp(body);
         a.Label(ref chainIn);
-        a.mov(R32(Register.EAX), Mem(Register.RSP, 1, 0x1C));
+        a.mov(R32(Register.EAX), Mem(Register.RSP, 0x1C));
         a.Label(ref body);
 
         for (int i = 0; i < 40; i++)
@@ -106,7 +106,7 @@ public sealed class EncoderSpikeTests(ITestOutputHelper output)
             a.mov(Mem(Register.RBP, Register.RDI, 1, 0x1C), R32(Register.EAX));
             a.mov(R32(Register.EAX), 0x20);
             a.add(R64(Register.RDI), R64(Register.RAX));
-            a.mov(R32(Register.EAX), Mem(Register.RSP, 1, 0x18));
+            a.mov(R32(Register.EAX), Mem(Register.RSP, 0x18));
             a.cmp(R64(Register.RDI), R64(Register.RAX));
             a.ja(exit);
         }
@@ -163,11 +163,10 @@ public sealed class EncoderSpikeTests(ITestOutputHelper output)
     /// <summary>The same encode with a discarding writer: isolates the encode cost from the byte writes.</summary>
     private static void EncodeSinglePassDiscarding(Instruction[] instructions, int repetitions, out long ticks)
     {
-        var writer = new NullCodeWriter();
         long start = Stopwatch.GetTimestamp();
         for (int i = 0; i < repetitions; i++)
         {
-            writer = new NullCodeWriter();
+            var writer = new NullCodeWriter();
             var encoder = Encoder.Create(64, writer);
             ulong ip = BaseIp;
             foreach (Instruction instruction in instructions)

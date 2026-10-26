@@ -196,6 +196,7 @@ public sealed class Dsp56300State
     }
 
     /// <summary>Gets a value indicating whether this is the GP DSP.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public bool IsGp { get; }
 
     /// <summary>Gets or sets a value indicating whether the DSP is idle.</summary>

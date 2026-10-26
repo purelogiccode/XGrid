@@ -1,3 +1,5 @@
+using XGrid.Core.Devices;
+
 namespace XGrid.Cpu;
 
 /// <summary>
@@ -11,7 +13,7 @@ namespace XGrid.Cpu;
 /// </summary>
 public sealed unsafe partial class XboxCpu
 {
-    private XGrid.Core.Devices.IInterruptSource? _pollSource;
+    private IInterruptSource? _pollSource;
     private uint* _pollPendingWord;
 
     /// <summary>
@@ -21,7 +23,7 @@ public sealed unsafe partial class XboxCpu
     /// </summary>
     private int PollInterrupt()
     {
-        XGrid.Core.Devices.IInterruptSource? source = InterruptSource;
+        IInterruptSource? source = InterruptSource;
         if (source is null)
         {
             return -1;

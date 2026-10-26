@@ -247,9 +247,6 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
         /// <summary>Gets the edge/level control register (a set bit selects level-triggered).</summary>
         public byte Elcr { get; private set; }
 
-        /// <summary>Gets whether ICW1 bit 3 (LTIM) selected level-triggered lines.</summary>
-        public bool LevelMode => _levelMode;
-
         public void SaveState(BinaryWriter writer)
         {
             writer.Write(Mask);

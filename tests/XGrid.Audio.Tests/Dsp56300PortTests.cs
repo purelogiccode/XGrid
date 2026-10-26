@@ -68,14 +68,14 @@ public sealed class Dsp56300PortTests
         core.AddInterrupt(Dsp56300State.InterReset);
         core.AddInterrupt(Dsp56300State.InterReset);
 
-        Assert.Equal(1, (int)core.State.InterruptIsPending[Dsp56300State.InterReset]);
-        Assert.Equal(1, (int)core.State.InterruptCounter);
+        Assert.Equal(1, core.State.InterruptIsPending[Dsp56300State.InterReset]);
+        Assert.Equal(1, core.State.InterruptCounter);
 
         core.State.InterruptIpl[Dsp56300State.InterTrap] = -1;
         core.AddInterrupt(Dsp56300State.InterTrap);
 
-        Assert.Equal(0, (int)core.State.InterruptIsPending[Dsp56300State.InterTrap]);
-        Assert.Equal(1, (int)core.State.InterruptCounter);
+        Assert.Equal(0, core.State.InterruptIsPending[Dsp56300State.InterTrap]);
+        Assert.Equal(1, core.State.InterruptCounter);
     }
 
     [Fact]

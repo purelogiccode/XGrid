@@ -101,7 +101,10 @@ public sealed class PshCombinerReachTests
             combiner.RgbInputs[0] = 0x0D0D0000u;
             combiner.RgbInputs[1] = 0x0D0D0000u;
             variant.Set(combiner);
-            Assert.Contains(variant.Expected, combiner.DescribeReach(), StringComparison.Ordinal);
+            string reach = combiner.DescribeReach();
+            Assert.True(
+                reach.Contains(variant.Expected, StringComparison.Ordinal),
+                $"{variant.Name}: expected '{variant.Expected}' in '{reach}'");
         }
     }
 

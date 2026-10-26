@@ -17,21 +17,10 @@ public sealed class VshProgramPlanTests
     private const int MacAdd = 3;
     private const int MacMad = 4;
     private const int MacDp3 = 5;
-    private const int MacDph = 6;
-    private const int MacDp4 = 7;
-    private const int MacDst = 8;
-    private const int MacMin = 9;
-    private const int MacMax = 10;
-    private const int MacSlt = 11;
-    private const int MacSge = 12;
     private const int MacArl = 13;
     private const int IluMov = 1;
     private const int IluRcp = 2;
-    private const int IluRcc = 3;
     private const int IluRsq = 4;
-    private const int IluExp = 5;
-    private const int IluLog = 6;
-    private const int IluLit = 7;
 
     private const int MuxR = 1;
     private const int MuxV = 2;

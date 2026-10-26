@@ -65,7 +65,7 @@ public sealed partial class Dsp56300Core
         uint value = (State.CurrentInstruction >> 8) & Mask(6);
         int retour = CalcEffectiveAddress(value, out uint xyAddr);
         uint memspace = (State.CurrentInstruction >> 14) & 1;
-        uint numreg1 = 0;
+        uint numreg1;
         uint numreg2;
 
         if (memspace != 0)

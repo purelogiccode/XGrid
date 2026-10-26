@@ -228,7 +228,7 @@ internal sealed class JitAttribution
 
         PrologueInstructions += statics.PrologueInstructions;
         ExitInstructions += statics.ExitInstructions * executions;
-        MemberInstructions += (long)statics.MemberInstructions * executions;
+        MemberInstructions += statics.MemberInstructions * executions;
         ChainEntryInstructions += (long)statics.ChainEntryInstructions * chainEdges;
     }
 
@@ -357,7 +357,7 @@ internal sealed class JitAttribution
             .Append(" hostInstrPerEdge=")
             .Append(Entries + edges == 0
                 ? "0"
-                : (totalInstructions / (double)(Entries + edges)).ToString("F1", CultureInfo.InvariantCulture));
+                : (totalInstructions / (Entries + edges)).ToString("F1", CultureInfo.InvariantCulture));
 
         builder.AppendLine();
         builder.Append("Jit attribution form attempts=").Append(FormAttempts)
@@ -423,7 +423,7 @@ internal sealed class JitAttribution
 /// block's regions plus the member-class composition of its plans. Built once
 /// at formation; the attribution multiplies it by the invocation/edge counts.
 /// </summary>
-public sealed unsafe partial class XboxCpu
+public sealed partial class XboxCpu
 {
     /// <summary>Builds a block's static profile from its plans and native emission.</summary>
     private static JitBlockStatics BuildStatics(ReadOnlySpan<JitMemberPlan> plans, in RawBuildStatics raw)

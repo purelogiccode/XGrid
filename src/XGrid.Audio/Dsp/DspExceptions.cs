@@ -27,12 +27,6 @@ public abstract class DspException : Exception
         : base(message, innerException)
     {
     }
-
-    /// <summary>Gets the program counter at the fault.</summary>
-    public uint Pc { get; protected init; }
-
-    /// <summary>Gets the instruction word at the fault.</summary>
-    public uint Instruction { get; protected init; }
 }
 
 /// <summary>Raised when the decoder has no entry for an instruction word.</summary>
@@ -64,8 +58,6 @@ public sealed class DspUndefinedInstructionException : DspException
     public DspUndefinedInstructionException(uint pc, uint instruction)
         : base($"DSP undefined instruction 0x{instruction:X6} at P:0x{pc:X4}")
     {
-        Pc = pc;
-        Instruction = instruction;
     }
 }
 
@@ -98,8 +90,6 @@ public sealed class DspIllegalInstructionException : DspException
     public DspIllegalInstructionException(uint pc, uint instruction)
         : base($"DSP illegal instruction 0x{instruction:X6} at P:0x{pc:X4}")
     {
-        Pc = pc;
-        Instruction = instruction;
     }
 }
 

@@ -326,7 +326,7 @@ public sealed class DspDma
                         for (int channel = 0; channel < channelCount; channel++)
                         {
                             uint value = MemRead(memorySpace, memoryAddress + (uint)(channel * blockCount + i));
-                            int offset = (i * itemSize * (int)channelCount) + (channel * itemSize);
+                            int offset = (i * itemSize * channelCount) + (channel * itemSize);
                             switch (itemSize)
                             {
                                 case 2:

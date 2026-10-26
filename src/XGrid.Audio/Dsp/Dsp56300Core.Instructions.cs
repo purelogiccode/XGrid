@@ -696,7 +696,7 @@ public sealed partial class Dsp56300Core
 
     private void Div()
     {
-        uint srcreg = (uint)((State.CurrentInstruction >> 4) & Mask(2)) switch
+        uint srcreg = ((State.CurrentInstruction >> 4) & Mask(2)) switch
         {
             0 => Dsp56300State.RegX0,
             1 => Dsp56300State.RegY0,
@@ -1058,7 +1058,7 @@ public sealed partial class Dsp56300Core
     {
         uint srcreg = (State.CurrentInstruction >> 8) & Mask(3);
         uint srcsave = R[Dsp56300State.RegR0 + srcreg];
-        _ = CalcEffectiveAddress((State.CurrentInstruction >> 8) & Mask(5), out uint value);
+        _ = CalcEffectiveAddress((State.CurrentInstruction >> 8) & Mask(5), out _);
         uint srcnew = R[Dsp56300State.RegR0 + srcreg];
         R[Dsp56300State.RegR0 + srcreg] = srcsave;
 

@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using XGrid.Host;
 using XGrid.Xbe;
 
 namespace XGrid.Frontend.Avalonia.Models;
@@ -117,7 +118,7 @@ public sealed class GameEntry
                 // Covers .xbe directly and every launchable image; a container
                 // the resolver cannot read (or a homebrew title with no
                 // certificate) leaves the id at 0 / the shared placeholder.
-                TitleId = XGrid.Host.DiscTitleId.TryRead(path, out uint titleId, out _) ? titleId : 0u,
+                TitleId = DiscTitleId.TryRead(path, out uint titleId, out _) ? titleId : 0u,
             };
         }
         catch (IOException)

@@ -32,6 +32,9 @@ public sealed class VshProgramPlan
 
     private enum MacOp : byte
     {
+        // Opcode 0 is the hardware's no-op; the rest are numbered to match the
+        // NV2A MAC opcode field, so the member cannot be removed.
+        // ReSharper disable once UnusedMember.Local
         None,
         Mov,
         Mul,

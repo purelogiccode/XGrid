@@ -297,7 +297,7 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
         try
         {
             var combiner = new PshCombiner();
-            _ = BuildCubeWords(memory, out PgraphTextureSlot cube);
+            _ = BuildCubeWords(memory, out _);
 
             // A 3D (volume) TEXFMT: dimensionality is bits 6-7 of the format
             // word, which is what the shader's uTexDim carries.

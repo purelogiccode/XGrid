@@ -470,8 +470,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     // DependentInputAddress only publishes a guest address while this record
     // still matches the live sampler plan and holds an in-range, non-border
     // texel, so it can never point at a different texel than the one decoded.
-    private readonly float[] _samplerLastU = new float[MaxTextureSlots];
-    private readonly float[] _samplerLastV = new float[MaxTextureSlots];
     private readonly int[] _samplerLastX = new int[MaxTextureSlots];
     private readonly int[] _samplerLastY = new int[MaxTextureSlots];
     private readonly SamplerPlan[] _samplerLastPlan = new SamplerPlan[MaxTextureSlots];
@@ -4563,8 +4561,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             && (offset & 3u) == 0
             && (pitch & 3u) == 0
             && _memoryFast is not null
-            && _memoryFast.TryGetRamBytes(out byte[]? ramBytes, out uint ramSize)
-            && (ulong)offset + ((ulong)ymax * pitch) + ((ulong)xmax * bytes) + bytes <= ramSize)
+            && _memoryFast.TryGetRamBytes(out byte[] ramBytes, out uint ramSize)
+            && offset + ((ulong)ymax * pitch) + ((ulong)xmax * bytes) + bytes <= ramSize)
         {
             FillSurfaceRows(ramBytes, offset, pitch, xmin, ymin, xmax, ymax, pixel);
             return;
@@ -5884,7 +5882,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         int x = WrapCoordinatePlanned(rawX, plan.Width, plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
         int y = WrapCoordinatePlanned(rawY, plan.Height, plan.WrapModeV, plan.WrapMaskV, plan.MirrorMaskV);
-        RecordSamplerTap(plan, u, v, rawX, rawY, x, y, wrapped: true);
+        RecordSamplerTap(plan, rawX, rawY, wrapped: true);
         TrackTextureCoords(x, y);
 
         if (TryDecodeSpecialTexel(in plan, x, y, out r, out g, out b, out a, out uint specialAddress,
@@ -5931,32 +5929,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return CountSample(address, texel, r, g, b);
     }
 
-    private void RecordSamplerTap(SamplerPlan plan, float u, float v, int rawX, int rawY, int x, int y,
-        bool wrapped)
+    private void RecordSamplerTap(SamplerPlan plan, int rawX, int rawY, bool wrapped)
     {
         int slot = plan.Slot;
-        _samplerLastU[slot] = u;
-        _samplerLastV[slot] = v;
         _samplerLastX[slot] = rawX;
         _samplerLastY[slot] = rawY;
         _samplerLastPlan[slot] = plan;
         _samplerLastValid[slot] = wrapped;
     }
 
-    private void RecordSamplerTapFloat(SamplerPlan plan, float u, float v)
+    private void RecordSamplerTapWithoutAddress(SamplerPlan plan)
     {
         int slot = plan.Slot;
-        _samplerLastU[slot] = u;
-        _samplerLastV[slot] = v;
         _samplerLastPlan[slot] = plan;
         _samplerLastValid[slot] = false;
     }
 
-    private void RecordSamplerTapRaw(SamplerPlan plan, float u, float v, int rawX, int rawY)
+    private void RecordSamplerTapRaw(SamplerPlan plan, int rawX, int rawY)
     {
         int slot = plan.Slot;
-        _samplerLastU[slot] = u;
-        _samplerLastV[slot] = v;
         _samplerLastX[slot] = rawX;
         _samplerLastY[slot] = rawY;
         _samplerLastPlan[slot] = plan;
@@ -5979,7 +5970,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         int rawY = (int)MathF.Floor(plan.Linear ? v : v * plan.Height);
         int x = WrapFast(rawX, plan.Width, plan.FastWrapU, plan.WrapMaskU, plan.MirrorMaskU);
         int y = WrapFast(rawY, plan.Height, plan.FastWrapV, plan.WrapMaskV, plan.MirrorMaskV);
-        RecordSamplerTap(plan, u, v, rawX, rawY, x, y, wrapped: true);
+        RecordSamplerTap(plan, rawX, rawY, wrapped: true);
         uint address;
         if (plan.Linear)
         {
@@ -6022,7 +6013,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float fy = (plan.Linear ? v : v * plan.Height) - 0.5f;
         int x0 = (int)MathF.Floor(fx);
         int y0 = (int)MathF.Floor(fy);
-        RecordSamplerTapRaw(plan, u, v, x0, y0);
+        RecordSamplerTapRaw(plan, x0, y0);
         float wx = fx - x0;
         float wy = fy - y0;
         if (!TryReadPlannedTexel(in plan, x0, y0, out float r00, out float g00, out float b00, out float a00,
@@ -6078,7 +6069,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             address = TexelAddress(in plan, x, y);
             byte index = ReadByte(address);
             uint paletteOffset = _texturePalette[plan.Slot] & 0xFFFFFFC0u;
-            uint entry = GpuMemory.ReadPhysical(paletteOffset + ((uint)index * 4u));
+            uint entry = GpuMemory.ReadPhysical(paletteOffset + (index * 4u));
             TextureFormats.DecodePaletteEntry(index, entry, out r, out g, out b, out a);
             texel = entry;
             return true;
@@ -8973,7 +8964,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private bool SampleInto(int stage, float u, float v, float[] texel)
     {
-        RecordSamplerTapFloat(_samplerPlans[stage], u, v);
+        RecordSamplerTapWithoutAddress(_samplerPlans[stage]);
         if (TrySampleTexture(stage, u, v, out float r, out float g, out float b, out float a))
         {
             texel[0] = r;
