@@ -140,10 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-24)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-25):** M-T / **TM8 - First targeted xemu port (default: APU VP mixer + AC97)** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM6 (2026-10-25): the second-tier five were probed at 10B each and the shared blocker was our own NV2A - NV097_INLINE_ARRAY was a screen-space shortcut (float-only attributes, the vertex program never run), so Ninja Gaiden Black's 28-byte D3D FVF vertices (F32x4 position + UB_D3D colour + F32x2 texcoord) were skipped: 1,073,213 skipped draws at 10B and a black display. The inline array is now laid out and decoded like the reference (BuildInlineArrayLayout, FetchInlineArrayAttribute through the shared DecodeVertexAttribute, VertexFetchMode.InlineArray) with the legacy path kept as the fallback, and the NV2A line gained skipReasons= (eight counters). Ninja Gaiden Black now renders its own animated stormy-sea intro - 720x480, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, LastFault vec=0, kernel idle 0x8001B02E between frames, a held A changes the scene - and at 1B the matrix row went 2,672 -> 12,800 draws / 41,995,882 -> 166,119,138 px at the same 6,475 frames. 50 Cent renders its own 3D scene (18,638 colours, 3,534 draws / 299,139,810 px, EIP 0x1455BA, PIC req=0x08); Tak renders its own scene and then a ~910-draw/frame one where the software rasterizer is the wall (300M steps = 362 s, 347 s in 3,228,625 fills, 1.27e9 z-clipped fragments); Bad Boys II is a documented wait (own-code resource-handle scan 0x1A3C80 -> 0x1A2250, handles 0x300C5+, no device traffic, black display); Destroy All Humans! renders its own Pandemic logo card and then spins in a kernel stall loop (KeStallExecutionProcessor 0x800153D0, 25% of samples, 6,819 draws / 86,802,891 px). The xemu oracle could not be captured this session (another agent owns the desktop: PrintWindow returns black, the screen copy catches the editor), so no xemu frame is claimed for TM6. TM5 (2026-10-25): Halo launches and renders its own main menu - 35B steps, 516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black (wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. The blocker was a per-title constant: McpxApuDevice absorbed the DirectSound mixer block at 007's fixed 0x03924810, so Halo's block at 0x02034810 was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B; the block is now discovered from the guest's own GP scratch (SGE) table (page + 0x810). Gameplay is a DOCUMENTED WAIT: a guest-side D3D resource retry loop (EIP 0x1810F0 from 0x6348B, D3DERR_NOTFOUND for handle 0, 99.99% of samples) after 100B clean steps; xemu 0.8.139 on the same ISO shows the same menu at 70 s and in-game gameplay at 150 s. The menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is not met. Audio is silent (--audio-out writes 0 PCM frames, gpFrames=0). 007 Agent Under Fire remains the playable title (TM4): 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu oracle on the same ISO reaches the same scene at 150 s (dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap; the queue is gone (APU snapshot v5). Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene. The 44-row 1B matrix is now 6 own-render / 38 dashboard / 0 fault / 0 timeout (was 2/42): the same fix advances Ninja Gaiden Black (35 -> 6,475 frames), Tak (1,068 frames / 3,701 draws), 50 Cent (98 frames / 100,987,370 px), Bad Boys II (42,303,082 px) and Destroy All Humans!, with the pre-fix build reproducing the old NGB row exactly. TM7 (2026-10-25): the seven-title table is published with one command per row (scripts/retail-game-probe.ps1) and a live xemu 0.8.139 oracle for six of them - 007 still passes (dmean 18.0/22.6/14.6), Halo's menu still fails on brightness (101.6/100.4/113.1), and Ninja Gaiden Black matches xemu's intro within 11/255 on the means while failing on colour count (12,913 vs 1,351) - the dither pattern is now the next named rendering defect; Bad Boys II's black display is quantified against xemu's own cutscene (100% vs 20.5% black). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area. TM7 (2026-10-25): the oracle is live again - six of the seven rows carry a real capture (007 150 s, Halo 70 s, Ninja Gaiden Black 52 s, 50 Cent 90 s, Tak 150 s, Bad Boys II 90 s, Destroy All Humans! 90 s). The script now retries PrintWindow five times and uses the screen-copy fallback ONLY when xemu is the foreground window, otherwise it throws 'capture contended' - TM7 caught a browser frame that way (PrintWindow answered black while the GL surface was starting, and the screen copy photographed Chrome). A blank capture (<=2 colours or >=99% black) is rejected by the harness. xemu still cannot be driven on this host (pad input is SDL-gamepad only), so it sits on title screens for Tak, Destroy All Humans! and Ninja Gaiden Black@70 s.
+**Current status (2026-10-25):** M-T / **TM9 - Ninja Gaiden Black colour depth: stop the fragment-path dither the TM7 row measured** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM8 (2026-10-26): the APU is AUDIBLE - the xemu VP mixer (vp.c) is ported and 007 writes real PCM. --apu-dsp --audio-out went from 877,568 bytes of all-zero PCM (TM4) to 377,856 bytes / 94,464 frames with 42.4% non-zero samples (peak 7,500, RMS 1,023) from boot at 2B steps, and 47.6% non-zero from the 26B anchor (wt-data/tm8/007-audio-boot-2b.wav, 007-audio-26b-2b.wav); the envelope, the stereo difference and a DFT (105.5/152.3/199.2/316.4/503.9 Hz) say it is audio, not noise. The port is vp.c's frame walk, both envelopes, PCM/ADPCM buffer+stream fetch through the SSL/SGE tables, resampling, the volume/headroom mix into the 32 mix bins and multipass, plus svf.h/hrtf.h/adpcm.h; the frame cadence was 8x slow and is fixed (one XGrid frame = eight 32-sample reference frames). APU snapshot v6; old .xgs still load and now bootstrap the DSP from the restored scratch window. TM6 (2026-10-25): the second-tier five were probed at 10B each and the shared blocker was our own NV2A - NV097_INLINE_ARRAY was a screen-space shortcut (float-only attributes, the vertex program never run), so Ninja Gaiden Black's 28-byte D3D FVF vertices (F32x4 position + UB_D3D colour + F32x2 texcoord) were skipped: 1,073,213 skipped draws at 10B and a black display. The inline array is now laid out and decoded like the reference (BuildInlineArrayLayout, FetchInlineArrayAttribute through the shared DecodeVertexAttribute, VertexFetchMode.InlineArray) with the legacy path kept as the fallback, and the NV2A line gained skipReasons= (eight counters). Ninja Gaiden Black now renders its own animated stormy-sea intro - 720x480, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, LastFault vec=0, kernel idle 0x8001B02E between frames, a held A changes the scene - and at 1B the matrix row went 2,672 -> 12,800 draws / 41,995,882 -> 166,119,138 px at the same 6,475 frames. 50 Cent renders its own 3D scene (18,638 colours, 3,534 draws / 299,139,810 px, EIP 0x1455BA, PIC req=0x08); Tak renders its own scene and then a ~910-draw/frame one where the software rasterizer is the wall (300M steps = 362 s, 347 s in 3,228,625 fills, 1.27e9 z-clipped fragments); Bad Boys II is a documented wait (own-code resource-handle scan 0x1A3C80 -> 0x1A2250, handles 0x300C5+, no device traffic, black display); Destroy All Humans! renders its own Pandemic logo card and then spins in a kernel stall loop (KeStallExecutionProcessor 0x800153D0, 25% of samples, 6,819 draws / 86,802,891 px). The xemu oracle could not be captured this session (another agent owns the desktop: PrintWindow returns black, the screen copy catches the editor), so no xemu frame is claimed for TM6. TM5 (2026-10-25): Halo launches and renders its own main menu - 35B steps, 516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black (wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. The blocker was a per-title constant: McpxApuDevice absorbed the DirectSound mixer block at 007's fixed 0x03924810, so Halo's block at 0x02034810 was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B; the block is now discovered from the guest's own GP scratch (SGE) table (page + 0x810). Gameplay is a DOCUMENTED WAIT: a guest-side D3D resource retry loop (EIP 0x1810F0 from 0x6348B, D3DERR_NOTFOUND for handle 0, 99.99% of samples) after 100B clean steps; xemu 0.8.139 on the same ISO shows the same menu at 70 s and in-game gameplay at 150 s. The menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is not met. Audio is silent (--audio-out writes 0 PCM frames, gpFrames=0). 007 Agent Under Fire remains the playable title (TM4): 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu oracle on the same ISO reaches the same scene at 150 s (dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap; the queue is gone (APU snapshot v5). Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene. The 44-row 1B matrix is now 6 own-render / 38 dashboard / 0 fault / 0 timeout (was 2/42): the same fix advances Ninja Gaiden Black (35 -> 6,475 frames), Tak (1,068 frames / 3,701 draws), 50 Cent (98 frames / 100,987,370 px), Bad Boys II (42,303,082 px) and Destroy All Humans!, with the pre-fix build reproducing the old NGB row exactly. TM7 (2026-10-25): the seven-title table is published with one command per row (scripts/retail-game-probe.ps1) and a live xemu 0.8.139 oracle for six of them - 007 still passes (dmean 18.0/22.6/14.6), Halo's menu still fails on brightness (101.6/100.4/113.1), and Ninja Gaiden Black matches xemu's intro within 11/255 on the means while failing on colour count (12,913 vs 1,351) - the dither pattern is now the next named rendering defect; Bad Boys II's black display is quantified against xemu's own cutscene (100% vs 20.5% black). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area. TM7 (2026-10-25): the oracle is live again - six of the seven rows carry a real capture (007 150 s, Halo 70 s, Ninja Gaiden Black 52 s, 50 Cent 90 s, Tak 150 s, Bad Boys II 90 s, Destroy All Humans! 90 s). The script now retries PrintWindow five times and uses the screen-copy fallback ONLY when xemu is the foreground window, otherwise it throws 'capture contended' - TM7 caught a browser frame that way (PrintWindow answered black while the GL surface was starting, and the screen copy photographed Chrome). A blank capture (<=2 colours or >=99% black) is rejected by the harness. xemu still cannot be driven on this host (pad input is SDL-gamepad only), so it sits on title screens for Tak, Destroy All Humans! and Ninja Gaiden Black@70 s.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.89% (93.09 of 118). **Next:** TM9 (Ninja Gaiden Black colour depth: stop the fragment-path dither the TM7 row measured).
+**Phase score:** 79.65% (93.99 of 118). **Next:** .
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
@@ -822,6 +822,91 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   holes are filed in `real-game-probes.md`.
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-26 (fifty-ninth; TM8 ported the xemu APU voice processor - the
+APU produces real audio, and the frame cadence was 8x slow - decisions 259).**
+
+- **The blocker, in one line.** `McpxApuDevice` ran the guest DSP microcode with
+  an **empty mix-bin frame**: the GP's 32x32 mix buffer was written as silence
+  every frame, so the voices the guest programmed were never mixed and
+  `--audio-out` wrote 877,568 bytes of **all-zero** PCM (TM4's measurement).
+  xemu's `se_frame` is `mcpx_apu_vp_frame` (fill the bins) then
+  `mcpx_apu_dsp_frame` (write them into the GP mix buffer, run the GP).
+- **The port (four files, all behind `ApuDspCore`).** `McpxApuDevice.Vp.cs` is
+  `vp.c`'s per-frame path: the 2D/3D/MP voice-list walk with the idle-voice trap,
+  both envelopes (`voice_step_envelope`: delay/attack/hold/decay/sustain/release/
+  force release, EA and EF), `voice_get_samples` (PCM and ADPCM, buffer and
+  stream, loop/LBO/EBO, the SSL segment list, the SGE page walk),
+  `voice_resample`, `voice_process` (bins, the eight volumes, submix and HRTF
+  headroom, the LPF gate, HRTF, multipass) and the mix-bin accumulation.
+  `Vp/ApuVpAdpcm.cs` is `adpcm_decode_block` (ADPCM-XQ, BSD-3),
+  `Vp/ApuVpFilters.cs` is `svf.h` + `hrtf.h`, `Vp/ApuVpFrame.cs` is the frame
+  geometry and `fpconv.h`. The front end gained the PIO methods the mix path
+  needs and the old code did not handle (`SET_CURRENT_HRTF_ENTRY`,
+  `SET_HRIR..SET_HRIR_X`, `SET_HRTF_SUBMIXES`, `SET_HRTF_HEADROOM`,
+  `SET_SUBMIX_HEADROOM`), `VOICE_ON` now stores the ENVA/ENVF start phase into
+  `PAR_STATE` and resets the voice filters, and the SSL segment window ends at
+  `0x803` (it stopped at `0x7FF`, losing the last entry).
+- **The cadence was 8x slow, and that is part of the port.** xemu's APU frame is
+  32 samples (`EP_FRAME_US`), so its GP runs 1500 times a second and its EP every
+  eighth frame. XGrid's APU frame is 256 samples, so the old
+  `McpxApuDspPair.Frame` ran the GP once per 256 samples - eight times too slow
+  in guest time - and the EP once per 2048. `AdvancePortedFrame` runs the voice
+  processor and the GP **eight times** per XGrid frame and the EP **once**. The
+  legacy bridge path keeps its old cadence, so nothing outside `ApuDspCore`
+  moved.
+- **Audio is no longer silent (007).** Before: 877,568 bytes of PCM, **0
+  non-zero samples**. Now, 2B steps from boot: 377,856 bytes / 94,464 frames,
+  **80,148 non-zero (42.4%)**, peak 7,500, RMS 1,023
+  (`wt-data/tm8/007-audio-boot-2b.wav`); from the 26B anchor + 2B: 381,952 bytes
+  / 95,488 frames, 90,925 non-zero (47.6%), peak 5,547, RMS 767
+  (`007-audio-26b-2b.wav`). `gpFrames=3200 epFrames=371 gpUndefined=0
+  gpLimitHits=0 LastFault vec=0` on both. It is audio, not noise: the RMS
+  envelope has quiet and loud sections (to 3,157 at 1.6 s), `mean|dL|/mean|L| =
+  0.126`, the channels differ, and a DFT of the gameplay leg peaks at
+  **105.5/152.3/199.2/316.4/503.9 Hz** (a bass note and its harmonics).
+- **The TM4/TM5/TM6 anchors needed a bootstrap path.** Those `.xgs` files were
+  captured **without** `--apu-dsp`, so their payload says "no DSP state" and the
+  engines come up with no program - and the guest wrote `GPRST`/`EPRST` before
+  the anchor and never writes them again, so a resumed run stayed silent (the
+  first attempt measured `gpFrames=0` and 0 PCM frames). `LoadState` now derives
+  the run state from the restored reset registers and bootstraps the GP/EP from
+  the restored scratch window on the next frame (RAM is not ready during the
+  load, so it is deferred); it writes the run bits through the DSP
+  sub-window so the core's own IsRunning is true too. APU snapshot **v6**
+  appends the mixer state
+  (headroom, HRTF submixes, 128 HRIR entries, per-voice SVF/HRTF history,
+  resampler position); v2-v5 still load, so no `.xgs` is invalidated.
+- **Tests.** `tests/XGrid.Audio.Tests/ApuVpMixerTests.cs` (12 cases) pins the
+  ADPCM vector (`0x1000` then 4103, 4104), the invalid step index, a buffer voice
+  landing in the GP mix buffer at exactly `0x400000`, zero volume, submix
+  headroom (2 bits = 1/4), the pitch path (one octave up consumes two source
+  frames per output frame plus two lookahead frames), the attack envelope (level
+  239 at counter 15, full scale and hold at 17), the HRTF submix redirect, a
+  stream voice walking its SSL segment and notifying, the SSL segment register
+  window, a paused voice and a mixer-state snapshot round trip.
+  `XGrid.Audio` gained `InternalsVisibleTo` for the test project. Suite 1996 ->
+  **2008**, build 0 warnings, format clean.
+- **Gates: not one anchor moved.** Accurate menu sw `4EF1FBF6` / gl `B6116DAE`
+  (counters 34,333/686/686, `diff=2602 violations=0 maxDelta=1`) and accurate
+  triangle sw `5B50373D` / gl `79142DE4` (2,707/69/34, `diff=27849
+  violations=0`) both PASS byte-identical; ktest parks at `EIP=0x0004E03A` after
+  **792,800,535** steps with `LastFault vec=0`. `gpu-slice2-triangle-golden.ps1`
+  still carried the pre-TM2 anchors (`A1740DE0`, 2706/68/34) and now records the
+  TM2 re-baseline; both gate scripts also need `-Bios/-Mcpx/-Eeprom data\xemu\...`
+  on H1 because their default `data\xemu-0.8.136-windows-x86_64` is absent. The
+  ktest **suite-log SHA could not be re-extracted** this session (the prepared
+  HDD's C: root has no `kernel_tests.log` and the image mtime is unchanged), so
+  that leg is reported unverified; the park EIP and step count are exact.
+- **Not an oracle on this host:** xemu's `-audiodev wav` never opens (its APU
+  monitor needs an SDL device: "SDL_OpenAudioDeviceStream failed: No default
+  audio device available") and the EP sink bypasses QEMU's audio subsystem, so
+  there is no xemu audio capture. `libsamplerate` is replaced by a linear
+  interpolator that is bit-exact at rate 1.0 (pitch 0, the common case), which
+  the reference itself says the hardware may well be.
+- **Score:** P12 APU 85 -> 95, P24 Retail 55 -> 60 = **79.65%** (93.99 of 118).
+- **Next: TM9** - the Ninja Gaiden Black colour count (12,913 against xemu's
+  1,351 with every channel mean within 11/255), i.e. the fragment-path dither.
 
 **Session 2026-10-25 (fifty-eighth; TM7 published the seven-title table with one
 command per row, and the xemu oracle came back - decisions 258).**

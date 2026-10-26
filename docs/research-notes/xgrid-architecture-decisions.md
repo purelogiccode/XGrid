@@ -17668,3 +17668,110 @@ so TM7 moved no anchor and needed no re-baseline. Suite count unchanged.
 plus the AC'97 codec, since audio is the one silent part of the seven-part
 definition. The NGB dither finding is the first candidate for a fidelity task
 after TM8.
+
+## 259 TM8: the VP mixer is ported - the APU produces real audio (2026-10-26, fifty-ninth session) - TM8
+
+**What this task is.** TM8 is the first targeted xemu port the matrix proved:
+`hw/xbox/mcpx/apu/vp/vp.c`, the voice processor that turns the guest's voice
+descriptors into the 32 mix bins the GP DSP microcode consumes. Audio was the one
+silent part of the seven-part playability definition (TM4 measured 877,568 bytes
+of PCM at 28B steps that were **all zero**), and the reference's own `se_frame`
+shows why: `mcpx_apu_vp_frame` fills the mix bins and `mcpx_apu_dsp_frame` writes
+them into the GP's mix buffer. XGrid ran the DSP core with an empty mix-bin frame,
+so the microcode had nothing to mix.
+
+**259a - the port (four files, all behind `ApuDspCore`).**
+
+- `src/XGrid.Audio/McpxApuDevice.Vp.cs` (partial of the device) is the reference's
+  per-frame path: the 2D/3D/MP voice-list walk with the idle-voice trap, both
+  envelopes (`voice_step_envelope`: delay/attack/hold/decay/sustain/release/force
+  release, EA and EF), `voice_get_samples` (PCM and ADPCM, buffer and stream,
+  loop/LBO/EBO, the SSL segment list, the SGE page walk), `voice_resample`,
+  `voice_process` (bins, the eight volumes, submix and HRTF headroom, the LPF
+  gate, HRTF, multipass) and the mix-bin accumulation.
+- `src/XGrid.Audio/Vp/ApuVpAdpcm.cs` is `adpcm_decode_block` (ADPCM-XQ, BSD-3).
+- `src/XGrid.Audio/Vp/ApuVpFilters.cs` is `svf.h` (the voice LPF) and `hrtf.h`
+  (31 taps, interaural delay, smoothed parameters).
+- `src/XGrid.Audio/Vp/ApuVpFrame.cs` is the frame geometry and `fpconv.h`.
+- The front end gained the PIO methods the mix path needs and the old code did
+  not handle: `SET_CURRENT_HRTF_ENTRY`, `SET_HRIR`..`SET_HRIR_X`,
+  `SET_HRTF_SUBMIXES`, `SET_HRTF_HEADROOM`, `SET_SUBMIX_HEADROOM`. `VOICE_ON` now
+  stores the ENVA/ENVF start phase into `PAR_STATE` and resets the voice filters,
+  which the reference does and XGrid did not.
+
+**259b - the frame cadence was 8x slow, and that is part of the port.** xemu's APU
+frame is `NUM_SAMPLES_PER_FRAME` = 32 samples (`EP_FRAME_US`), so its GP runs 1500
+times a second and its EP every eighth frame (256 samples). XGrid's APU frame is
+256 samples (one `FrameCycles` of the 733.33 MHz clock), so the old
+`McpxApuDspPair.Frame` ran the GP once per 256 samples - **eight times too slow in
+guest time** - and the EP once per 2048. TM4's 6914 GP frames at 28B steps were
+4.6 s of microcode time spread over 38 s of guest time; that is the signature.
+`AdvancePortedFrame` now runs the voice processor and the GP **eight times** per
+XGrid frame (8 x 32 samples) and the EP **once** (its reference condition
+`ep_frame_div % 8 == 0` over 32-sample frames is exactly one XGrid frame). The
+legacy bridge path keeps its old cadence, so nothing outside `ApuDspCore` moved.
+
+**259c - audio is no longer silent (007, the TM4 title).**
+
+| leg | PCM bytes | frames | non-zero samples | peak | RMS |
+|---|---:|---:|---:|---:|---:|
+| before (TM4, 28B from boot) | 877,568 | 219,392 | **0 (0%)** | 0 | 0 |
+| 2B from boot (`wt-data/tm8/007-audio-boot-2b.wav`) | 377,856 | 94,464 | **80,148 (42.4%)** | 7,500 | 1,023 |
+| 26B anchor + 2B (`wt-data/tm8/007-audio-26b-2b.wav`) | 381,952 | 95,488 | **90,925 (47.6%)** | 5,547 | 767 |
+
+The content is audio, not noise: the RMS envelope has quiet and loud sections
+(near-silence to 3,157 at 1.6 s of the boot leg), the sample-to-sample ratio
+`mean|dL| / mean|L|` is **0.126** (a smooth waveform; noise is ~1), the two
+channels differ, and a DFT of the gameplay leg peaks at **105.5 / 152.3 / 199.2 /
+316.4 / 503.9 Hz** - a bass note and its harmonics. `gpFrames=3200`,
+`epFrames=371`, `epSunk=377,856`, `gpUndefined=0`, `gpLimitHits=0`,
+`LastFault vec=0` on both legs.
+
+**259d - the anchors needed a bootstrap path.** The TM4/TM5/TM6 `.xgs` files were
+captured **without** `--apu-dsp`, so their APU payload says "no DSP state" and the
+engines come up with no program; the guest wrote `GPRST`/`EPRST` before the
+anchor and never writes them again, so a resumed run stayed silent (the first
+attempt measured `gpFrames=0` and 0 PCM frames from `007-26b.xgs`). `LoadState`
+now derives the run state from the restored reset registers and bootstraps the
+GP/EP from the restored scratch window on the next frame (guest RAM is not ready
+during the load, so it is deferred). That is what makes the 26B anchor produce
+audio, and it is the same rule the V2 APU path already used. The bootstrap
+writes the restored run bits through the DSP sub-window (ResetRegister), so the
+core's own IsRunning is true as well as the device flag - without that the GP
+stayed idle after a load even though the program had been fetched (Halo's 35B
+menu anchor: gpFrames=6136 and 195,840 frames of PCM, all silent because the
+guest is parked in its D3D retry loop with no active voices, which is the
+documented wait rather than a mixer gap).
+
+**259e - snapshot v6.** The mixer's own state (submix/HRTF headroom, HRTF
+submixes, the 128 HRIR entries, the per-voice SVF/HRTF history and the resampler
+position) is appended to the APU snapshot; v2-v5 still load with defaults, so no
+existing `.xgs` is invalidated. The 26B anchor round-trips byte-identically.
+
+**259f - tests.** `tests/XGrid.Audio.Tests/ApuVpMixerTests.cs` (11 cases) pins the
+ADPCM decoder against a hand-computed vector (`0x1000` header, then 4103, 4104),
+the invalid step index, a buffer voice landing in the GP mix buffer at exactly
+`0x400000` (0.5 x 8 x 0x100000), zero volume, submix headroom (2 bits = 1/4), the
+pitch path (one octave up consumes two source frames per output frame, plus the
+two lookahead frames), the attack envelope (level 239 at counter 15, full scale
+and hold at 17), the HRTF submix redirect, a stream voice walking its SSL segment
+and notifying, the SSL segment register window, a paused voice, and a mixer-state
+snapshot round trip. `XGrid.Audio` gained `InternalsVisibleTo("XGrid.Audio.Tests")`
+so the pure helpers are testable. Suite 1996 -> **2007**.
+
+**259g - what is still missing.** `libsamplerate` is replaced by a linear
+interpolator that is bit-exact at rate 1.0 (the common case, pitch 0) and
+documented as the reference's own "it could just be linear" note; HRTF runs by
+default (hardware-faithful) and the coefficients come from the guest's
+`SET_HRIR` writes. The AC'97 codec is still register-only (`McpxAciDevice`), but
+xemu's own host path bypasses it too - `ep_sink_samples` intercepts EP output FIFO
+0 - so the codec is not on the audible path. **xemu cannot provide an audio
+oracle on this host**: `-audiodev wav` never opens because xemu's APU monitor
+needs an SDL device and the machine has none ("SDL_OpenAudioDeviceStream failed:
+No default audio device available"), and xemu's EP sink does not go through
+QEMU's audio subsystem. The evidence is therefore XGrid-side structure (envelope,
+spectrum, channel difference) plus the byte-level unit differentials.
+
+**Next (TM9):** the Ninja Gaiden Black colour count - the fragment-path dither
+TM7 measured (12,913 colours against xemu's 1,351 with every channel mean within
+11/255).

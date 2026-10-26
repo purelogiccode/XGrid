@@ -879,14 +879,33 @@ public sealed class McpxApuDspPair
     /// <param name="mixBins">32 bins x 32 samples, or empty for silence.</param>
     public void Frame(uint epFrameDiv, ReadOnlySpan<float> mixBins)
     {
+        GpFrame(mixBins);
+
+        if (Ep.IsRunning && (epFrameDiv % McpxApuDsp.EpFrameDivisor) == 0)
+        {
+            EpFrame();
+        }
+    }
+
+    /// <summary>
+    /// Runs one GP DSP frame on a 32-sample mix-bin frame (xemu
+    /// <c>mcpx_apu_dsp_frame</c>'s mix-buffer write and GP run).
+    /// </summary>
+    /// <param name="mixBins">32 bins x 32 samples, or empty for silence.</param>
+    public void GpFrame(ReadOnlySpan<float> mixBins)
+    {
         Gp.WriteMixBuffer(mixBins);
 
         if (Gp.IsRunning)
         {
             Gp.RunFrame();
         }
+    }
 
-        if (Ep.IsRunning && (epFrameDiv % McpxApuDsp.EpFrameDivisor) == 0)
+    /// <summary>Runs one EP DSP frame if the engine is running.</summary>
+    public void EpFrame()
+    {
+        if (Ep.IsRunning)
         {
             Ep.RunFrame();
         }

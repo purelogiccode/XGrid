@@ -327,7 +327,7 @@ public sealed class DspBridgeTests
         using var output = new MemoryStream();
         using var writer = new BinaryWriter(output);
 
-        Assert.Equal(5, reader.ReadInt32());
+        Assert.Equal(6, reader.ReadInt32());
         writer.Write(2);
 
         const int regCount = 0x80000 / 4;

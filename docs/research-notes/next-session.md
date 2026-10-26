@@ -1,4 +1,59 @@
-# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM8)
+# Next session instructions (updated 2026-10-26: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM9)
+
+> **TM8 RESULT (2026-10-26, 59th session) - the APU is AUDIBLE: the xemu voice
+> processor (`vp.c`) is ported and 007 writes real PCM.**
+> **The blocker, in one line.** `McpxApuDevice` ran the guest DSP microcode with
+> an **empty mix-bin frame** - the GP's 32x32 mix buffer was written as silence
+> every frame - so the voices the guest programmed were never mixed and
+> `--audio-out` wrote 877,568 bytes of all-zero PCM (TM4's measurement). xemu's
+> `se_frame` is `mcpx_apu_vp_frame` (fill the bins) then `mcpx_apu_dsp_frame`
+> (write them into the GP mix buffer, run the GP).
+> **The port** (four files, all behind `ApuDspCore`): `McpxApuDevice.Vp.cs` is
+> the per-frame voice-list walk, both envelopes, `voice_get_samples` (PCM/ADPCM,
+> buffer/stream, SSL segments, SGE walk), `voice_resample`, `voice_process`
+> (bins, eight volumes, submix/HRTF headroom, LPF, HRTF, multipass) and the
+> mix-bin accumulation; `Vp/ApuVpAdpcm.cs` (`adpcm_decode_block`, BSD-3),
+> `Vp/ApuVpFilters.cs` (`svf.h` + `hrtf.h`), `Vp/ApuVpFrame.cs` (geometry +
+> `fpconv.h`). The front end gained the HRTF/submix PIO methods and `VOICE_ON`
+> now stores the ENVA/ENVF start phase.
+> **The cadence was 8x slow and is fixed:** one XGrid APU frame is 256 samples =
+> eight of the reference's 32-sample frames, so the VP and the GP run eight times
+> per XGrid frame and the EP once (its `ep_frame_div % 8 == 0`). The old path ran
+> the GP once per 256 samples.
+> **Audio evidence (007):** before, 0 non-zero samples. Now **2B from boot**:
+> 377,856 bytes / 94,464 frames, **80,148 non-zero (42.4%)**, peak 7,500, RMS
+> 1,023 (`wt-data/tm8/007-audio-boot-2b.wav`); **26B anchor + 2B**: 381,952 bytes
+> / 95,488 frames, 90,925 non-zero (47.6%), peak 5,547, RMS 767
+> (`007-audio-26b-2b.wav`). `gpFrames=3200 epFrames=371 gpUndefined=0
+> gpLimitHits=0 LastFault vec=0`. It is audio, not noise: RMS envelope sections
+> to 3,157, `mean|dL|/mean|L| = 0.126`, the channels differ, DFT peaks at
+> 105.5/152.3/199.2/316.4/503.9 Hz.
+> **Two traps.** The TM4/TM5/TM6 `.xgs` anchors were captured **without**
+> `--apu-dsp`, so their payload has no DSP state and the engines come up with no
+> program (the guest wrote `GPRST`/`EPRST` before the anchor and never again):
+> `LoadState` now derives the run state from the restored reset registers and
+> bootstraps the GP/EP from the restored scratch window on the next frame. APU
+> snapshot **v6** appends the mixer state (headroom, HRTF submixes, 128 HRIR
+> entries, per-voice filter history, resampler position); v2-v5 still load, so no
+> `.xgs` is invalidated. Also: the SSL segment PIO window ends at `0x803`, not
+> `0x7FF` (the old bound lost the last entry).
+> **Gates: not one anchor moved.** Accurate menu `4EF1FBF6`/`B6116DAE`
+> (34,333/686/686, diff=2602 violations=0), accurate triangle
+> `5B50373D`/`79142DE4` (2,707/69/34, diff=27849 violations=0), ktest parks at
+> `EIP=0x0004E03A` after **792,800,535** steps with `vec=0`. Suite 1996 ->
+> **2008** (12 new `ApuVpMixerTests`), build 0 warnings, format clean. Score
+> 78.89 -> **79.65%** (93.99 of 118: P12 85->95, P24 55->60). Decisions 259.
+> **Caveats to carry.** No xemu audio oracle on this host (`-audiodev wav` never
+> opens: no SDL audio device, and the EP sink bypasses QEMU audio).
+> `libsamplerate` is a linear interpolator, bit-exact at rate 1.0. The ktest
+> suite-log SHA could not be re-extracted (the prepared HDD's C: root has no
+> `kernel_tests.log`); the park EIP and step count are exact. Both gate scripts
+> need `-Bios/-Mcpx/-Eeprom data\xemu\...` on H1 (their default
+> `data\xemu-0.8.136-windows-x86_64` is absent), and
+> `gpu-slice2-triangle-golden.ps1` now records the TM2 anchors.
+> **Next: TM9** - the Ninja Gaiden Black colour count (12,913 vs xemu's 1,351
+> with every channel mean within 11/255): the fragment-path dither. Resume from
+> `wt-data/tm6/ngb-10b.xgs` and the TM7 row in `wt-data/tm7/`.
 
 > **TM7 RESULT (2026-10-25, 58th session) - one command per retail row, and the
 > xemu oracle is live again.**

@@ -4,8 +4,10 @@
 # §3.4 diff policy: flat regions byte-exact; differences only within a ±1 px
 # edge band of software-detected edges with per-channel tolerance ≤ 2.
 # Structural counters are checked for sw<->gl equality AND against the
-# recorded software anchors (draws=2706 frames=68 stalls=34, sw frame SHA
-# A1740DE0... — verified 2026-10-13, do not retune without a diagnosis).
+# recorded software anchors (draws=2707 frames=69 stalls=34, sw frame SHA
+# 5B50373D... - re-baselined by TM2 2026-10-24, decisions 253: the ELCR now
+# delivers the held PCI level interrupts, which adds one draw and one frame.
+# Do not retune without a diagnosis).
 # Requires private media copies in wt-data\ (not committed); the triangle
 # ISO is read-only shared media.
 #
@@ -22,9 +24,9 @@ param(
     [string]$Eeprom = "data\xemu-0.8.136-windows-x86_64\eeprom.bin",
     [string]$Hdd = "wt-data\xbox_hdd.qcow2",
     [string]$Dvd = "",
-    [string]$ExpectedSwSha = "A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C",
-    [int]$ExpectedDraws = 2706,
-    [int]$ExpectedFrames = 68,
+    [string]$ExpectedSwSha = "5B50373DAD9A82937A385BEF726E3A7C86C013317C4F0FAB78D051E243B6395E",
+    [int]$ExpectedDraws = 2707,
+    [int]$ExpectedFrames = 69,
     [int]$ExpectedStalls = 34
 )
 

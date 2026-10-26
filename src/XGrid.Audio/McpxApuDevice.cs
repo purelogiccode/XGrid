@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using XGrid.Audio.Dsp;
+using XGrid.Audio.Vp;
 using XGrid.Core.Devices;
 using XGrid.Core.Snapshots;
 using XGrid.Memory;
@@ -58,7 +59,7 @@ public interface IApuMemory
 /// windows copy through the guest's SGE tables, and the peripheral halt/interrupt/DMA
 /// registers are live. It is opt-in until the goldens are re-recorded.
 /// </summary>
-public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IApuDspRegisters
+public sealed partial class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IApuDspRegisters
 {
     /// <summary>APU MMIO window base (fixed by the MCPX, not BAR-programmed by the guest).</summary>
     public const uint BaseAddress = 0xFE800000;
@@ -126,6 +127,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     private const uint VoiceStatePaused = 1u << 18;
     private const uint VoiceStateNewVoice = 1u << 20;
     private const uint VoiceStateActiveVoice = 1u << 21;
+    private const uint VoiceStateEfCur = 0xFu << 24;
+    private const uint VoiceStateEaCur = 0xFu << 28;
 
     private const uint VoiceFmtPersist = 1u << 23;
     private const uint VoiceFmtDataType = 1u << 24;
@@ -167,7 +170,11 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     private const uint PioVoiceOff = 0x128;
     private const uint PioVoiceRelease = 0x12C;
     private const uint PioVoicePause = 0x140;
+    private const uint PioSetCurrentHrtfEntry = 0x160;
     private const uint PioSetCurrentSsl = 0x190;
+    private const uint PioSetSubmixHeadroom = 0x200;
+    private const uint PioSetHrtfHeadroom = 0x280;
+    private const uint PioSetHrtfSubmixes = 0x2C0;
     private const uint PioSetCurrentVoice = 0x2F8;
     private const uint PioVoiceLock = 0x2FC;
     private const uint PioSetVoiceCfgVbin = 0x300;
@@ -191,8 +198,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     private const uint PioSetVoiceCfgBufLbo = 0x3A4;
     private const uint PioSetVoiceBufCbo = 0x3D8;
     private const uint PioSetVoiceCfgBufEbo = 0x3DC;
+    private const uint PioSetHrir = 0x400;
+    private const uint PioSetHrirX = 0x43C;
     private const uint PioSetSslSegmentOffset = 0x600;
-    private const uint PioSetSslSegmentEnd = 0x7FF;
+    private const uint PioSetSslSegmentEnd = 0x803;
     private const uint PioSetCurrentInbufSge = 0x804;
     private const uint PioSetCurrentInbufSgeOffset = 0x808;
     private const uint PioSetOutbufBa = 0x1000;
@@ -231,6 +240,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     private ulong _frameRemainder;
     private uint _epFrameDiv;
     private uint _framesSinceWake;
+    private bool _dspBootstrapPending;
 
     /// <summary>Creates the APU in its power-on state.</summary>
     public McpxApuDevice(IApuMemory memory)
@@ -449,6 +459,9 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
         {
             writer.Write(false);
         }
+
+        // V6: the voice-processor mixer state (headroom, HRTF entries, filters).
+        SaveVpState(writer);
     }
 
     /// <summary>Restores the register file, voice-processor state, and counters.</summary>
@@ -459,7 +472,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     {
         ArgumentNullException.ThrowIfNull(reader);
         int version = reader.ReadInt32();
-        if (version != SnapshotVersion && version != SnapshotVersionV4
+        if (version != SnapshotVersion && version != SnapshotVersionV5 && version != SnapshotVersionV4
             && version != SnapshotVersionV3 && version != SnapshotVersionV2)
         {
             throw new InvalidDataException($"Unsupported APU snapshot version {version}.");
@@ -470,7 +483,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
             _regs[i] = reader.ReadUInt32();
         }
 
-        if (version < SnapshotVersion)
+        if (version < SnapshotVersionV5)
         {
             // V2-V4 carried the pending idle-voice queue, which the voice processor
             // now owns outright (xemu mcpx_apu_vp_frame is the only SE2FE_IDLE_VOICE
@@ -569,10 +582,25 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
                     _dsp.LoadState(dspReader);
                 }
             }
+            else if (_dsp is not null)
+            {
+                // The state was captured without the DSP core, so the engines
+                // carry no program. Derive their run state from the restored
+                // reset registers and bootstrap from the restored scratch
+                // window on the next frame (guest RAM is not ready yet here).
+                _dspBootstrapPending = (_regs[GpRst >> 2] & DspRunBits) == DspRunBits
+                    || (_regs[EpRst >> 2] & DspRunBits) == DspRunBits;
+            }
+        }
+
+        if (version >= SnapshotVersion)
+        {
+            LoadVpState(reader);
         }
     }
 
-    private const int SnapshotVersion = 5;
+    private const int SnapshotVersion = 6;
+    private const int SnapshotVersionV5 = 5;
     private const int SnapshotVersionV4 = 4;
     private const int SnapshotVersionV3 = 3;
     private const int SnapshotVersionV2 = 2;
@@ -589,8 +617,74 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
         while (_frameRemainder >= FrameCycles)
         {
             _frameRemainder -= FrameCycles;
-            ProcessFrame();
-            ProcessDspFrame();
+            if (_dsp is not null)
+            {
+                AdvancePortedFrame();
+            }
+            else
+            {
+                ProcessFrame();
+                ProcessDspFrame();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Advances one XGrid APU frame (256 guest samples) on the ported path. One
+    /// XGrid frame is eight of the reference's 32-sample APU frames
+    /// (xemu <c>apu.c</c> EP_FRAME_US), so the voice processor and the GP DSP run
+    /// per 32-sample frame and the EP runs once per 256 samples
+    /// (<c>gp_ep.c</c> runs it when <c>ep_frame_div % 8 == 0</c>).
+    /// </summary>
+    private void AdvancePortedFrame()
+    {
+        if (_dspBootstrapPending)
+        {
+            _dspBootstrapPending = false;
+            BootstrapDspFromRegisters();
+        }
+
+        _epFrameDiv++;
+
+        for (int i = 0; i < VpFramesPerDeviceFrame; i++)
+        {
+            ProcessVpFrame();
+            _dsp!.GpFrame(_mixBins);
+        }
+
+        // The reference's condition is ep_frame_div % 8 == 0 over 32-sample
+        // frames, i.e. once per 256 samples - exactly one XGrid frame.
+        _dsp!.EpFrame();
+    }
+
+    /// <summary>
+    /// Boots the GP/EP cores from the restored scratch windows after a snapshot
+    /// that carried no DSP state (the reset registers say the engines were
+    /// running, so the guest will never rewrite them).
+    /// </summary>
+    private void BootstrapDspFromRegisters()
+    {
+        if (_dsp is null)
+        {
+            return;
+        }
+
+        GpRunning = (_regs[GpRst >> 2] & DspRunBits) == DspRunBits;
+        EpRunning = (_regs[EpRst >> 2] & DspRunBits) == DspRunBits;
+
+        // Writing the restored run bits through the sub-window latches them in
+        // the DSP's own reset register (so IsRunning is true) and bootstraps the
+        // program from the restored scratch window.
+        if (GpRunning)
+        {
+            _dsp.Gp.WriteWindow(McpxApuDsp.ResetRegister, DspRunBits);
+            Log("GP DSP bootstrap from the restored scratch window");
+        }
+
+        if (EpRunning)
+        {
+            _dsp.Ep.WriteWindow(McpxApuDsp.ResetRegister, DspRunBits);
+            Log("EP DSP bootstrap from the restored scratch window");
         }
     }
 
@@ -1007,7 +1101,28 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
             case PioSetVoiceCfgMisc:
                 return WriteCurrentVoice(0x18, value);
             case PioSetVoiceTarHrtf:
-                SetVoiceMask(_regs[0x1110 >> 2], 0x1C, HandleMask16, value);
+                {
+                    uint voice = _regs[0x1110 >> 2];
+                    uint handle = value & HandleMask16;
+                    SetVoiceMask(voice, VoiceCfgHrtfTarget, HandleMask16, handle);
+                    if (voice < ApuVpFrame.Max3dVoices && handle != VoiceHrtfNullHandle)
+                    {
+                        ApplyHrtfTarget(voice, (int)handle);
+                    }
+
+                    return true;
+                }
+            case PioSetCurrentHrtfEntry:
+                _vpState.CurrentEntry = (int)(value & HandleMask16);
+                return true;
+            case PioSetHrtfSubmixes:
+                _vpState.HrtfSubmix[0] = (byte)((value >> 0) & 0x1F);
+                _vpState.HrtfSubmix[1] = (byte)((value >> 8) & 0x1F);
+                _vpState.HrtfSubmix[2] = (byte)((value >> 16) & 0x1F);
+                _vpState.HrtfSubmix[3] = (byte)((value >> 24) & 0x1F);
+                return true;
+            case PioSetHrtfHeadroom:
+                _vpState.HrtfHeadroom = (byte)(value & 0x7);
                 return true;
             case PioSetVoiceSslA:
                 SetSsl(_regs[0x1110 >> 2], 0, value);
@@ -1060,6 +1175,25 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
                 WriteSgeEntry(_outbufSgeHandle, value & 0xFFFFF000u);
                 return true;
             default:
+                if (method >= PioSetSubmixHeadroom && method < PioSetSubmixHeadroom + (4 * ApuVpFrame.MixBinCount))
+                {
+                    int slot = (int)(method - PioSetSubmixHeadroom) / 4;
+                    _vpState.SubmixHeadroom[slot] = (byte)(value & 0x7);
+                    return true;
+                }
+
+                if (method >= PioSetHrir && method < PioSetHrirX)
+                {
+                    WriteHrirCoefficients((int)(method - PioSetHrir) / 4, value);
+                    return true;
+                }
+
+                if (method == PioSetHrirX)
+                {
+                    WriteHrirTail(value);
+                    return true;
+                }
+
                 if (method >= PioSetSslSegmentOffset && method <= PioSetSslSegmentEnd)
                 {
                     uint address = _regs[VpSslAddr >> 2] + (_sslBasePage * 8) + (method - PioSetSslSegmentOffset);
@@ -1150,7 +1284,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
         uint enva = (value >> 28) & VoiceEnvelopeMask;
         SetEnvelopeCount(voice, enva, 0x08, VoiceCfgEnva, 0x0000FFFF);
         SetEnvelopeCount(voice, envf, 0x10, VoiceCfgEnvf, 0xFFFF0000);
+        SetVoiceMask(voice, VoiceParState, VoiceStateEaCur, enva);
+        SetVoiceMask(voice, VoiceParState, VoiceStateEfCur, envf);
 
+        ResetVoiceFilters(voice);
         SetVoiceMask(voice, VoiceParState, VoiceStateActiveVoice, 1);
 
         if (!locked)
