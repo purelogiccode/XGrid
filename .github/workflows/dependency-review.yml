@@ -1,15 +1,13 @@
 name: Dependency review
 
-# DISABLED (2026-10-22) with the rest of CI: Actions is unavailable on this
-# private repository's GitHub Free account and dependency review additionally
-# needs GitHub Advanced Security on a private repo. The action only makes sense
-# on a pull_request event - a manual run cannot diff a PR, so leave it unused
-# until the trigger below is restored. See docs/ci.md.
+# Manual only: dependency review requires GitHub Advanced Security on a private
+# repository and only makes sense on pull_request events. The main CI runs on
+# the self-hosted runners.
 on:
   # Manual only (and not useful manually): no pull_request trigger.
   workflow_dispatch:
 
-# --- Restore this block (and remove the placeholder above) to enable the check ---
+# --- Enable this block if GitHub Advanced Security becomes available ---
 # on:
 #   pull_request:
 #     branches: [master]
@@ -21,7 +19,7 @@ permissions:
 jobs:
   dependency-review:
     name: Review dependency changes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, repofleet-ci]
     timeout-minutes: 10
     steps:
       - name: Dependency review

@@ -1,14 +1,13 @@
 name: CodeQL
 
-# DISABLED (2026-10-22) with the rest of CI: Actions is unavailable on this
-# private repository's GitHub Free account (CodeQL also needs GitHub Advanced
-# Security on a private repo). Restore the commented trigger block to re-enable.
-# See docs/ci.md.
+# Manual only: code scanning on a private repository requires GitHub Advanced
+# Security, which this organization does not have. The main CI runs on the
+# self-hosted runners.
 on:
   # Manual only: no push, pull_request or schedule triggers.
   workflow_dispatch:
 
-# --- Restore this block (and remove the placeholder above) to enable CodeQL ---
+# --- Enable this block if GitHub Advanced Security becomes available ---
 # on:
 #   push:
 #     branches: [master]
@@ -36,7 +35,7 @@ env:
 jobs:
   analyze:
     name: Analyze C#
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, repofleet-ci]
     timeout-minutes: 60
     strategy:
       fail-fast: false
