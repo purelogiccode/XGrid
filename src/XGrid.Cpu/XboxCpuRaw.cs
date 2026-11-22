@@ -32,6 +32,8 @@ public sealed unsafe partial class XboxCpu
     private ulong* _rawPtBits;
     private ulong[]? _rawActiveSource;
     private ulong[]? _rawPtSource;
+    private uint* _rawWriteStamp;
+    private uint[]? _rawWriteStampSource;
 
     private const int ScratchEip = 0;
     private const int ScratchEflags = 1;
@@ -180,6 +182,19 @@ public sealed unsafe partial class XboxCpu
         state->PtBits = pt is null ? null : _rawPtBits;
         state->StoreGuardBail = active is null ? 1u : 0u;
         state->Cr0Wp = (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0 ? 1u : 0u;
+
+        // Guest-write generations (texture-content identity): the raw health
+        // is that a store to RAM bumps its page inline; the array is pinned
+        // once and the length drives the guard's bounds check.
+        uint[]? stamps = RawRamDevice?.WriteStampPages;
+        if (stamps is not null && !ReferenceEquals(stamps, _rawWriteStampSource))
+        {
+            _rawWriteStampSource = stamps;
+            _rawWriteStamp = PinArray(stamps);
+        }
+
+        state->WriteStamp = stamps is null ? null : _rawWriteStamp;
+        state->WriteStampPages = stamps is null ? 0u : (uint)stamps.Length;
 
         // Chaining: the interrupt-pending word can change between block
         // invocations of one call (the source tests it at its chain edge). A

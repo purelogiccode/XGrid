@@ -858,7 +858,7 @@ public sealed class XboxMachine : IIdleSkipHost
     /// bit in the common case. Doubles as the present-upload dirty watch
     /// handle for a backend attached to this machine (§132 (a*), §135).
     /// </summary>
-    private sealed class PhysicalGpuMemory(AddressSpace memory, XboxCpu cpu) : IGpuMemory, IGpuMemoryFast, IPresentDirtyWatch
+    private sealed class PhysicalGpuMemory(AddressSpace memory, XboxCpu cpu) : IGpuMemory, IGpuMemoryFast, IPresentDirtyWatch, IGuestWriteStamp
     {
         private bool _gpuBatch;
         private bool _pageMemoValid;
@@ -976,6 +976,16 @@ public sealed class XboxMachine : IIdleSkipHost
         public void ClearPresentDirty()
         {
             memory.Ram.ClearPresentDirty();
+        }
+
+        public ulong GetWriteStamp(uint address, uint length)
+        {
+            return memory.Ram.GetWriteStamp(address, length);
+        }
+
+        public void NoteDirectWrite(uint address, uint length)
+        {
+            memory.Ram.NoteDirectWrite(address, length);
         }
     }
 

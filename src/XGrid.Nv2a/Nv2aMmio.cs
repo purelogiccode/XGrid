@@ -3357,6 +3357,51 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             : InterleaveBits(x, _surfaceSwizzleMaskX) | InterleaveBits(y, _surfaceSwizzleMaskY);
     }
 
+    /// <summary>
+    /// Bumps the guest write stamp of the current color and zeta surfaces
+    /// (XFP4 texture-content identity). The software twin's pixel stores run
+    /// inside the present-watch suppression scope and the compiled fills'
+    /// direct RAM lane, both of which deliberately skip the per-write choke;
+    /// a content cache only needs to know that the surface changed, so one
+    /// bump per draw or clear covers it.
+    /// </summary>
+    private void NoteSurfaceWrite()
+    {
+        if (GpuMemory is not IGuestWriteStamp stamp)
+        {
+            return;
+        }
+
+        uint colorBytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
+        if (colorBytes != 0)
+        {
+            uint extent = _surfaceSwizzleTarget
+                ? _surfaceSwizzleWidth * _surfaceSwizzleHeight * colorBytes
+                : (_surfaceClipV >> 16) * (_surfacePitch & 0xFFFFu);
+            if (extent != 0)
+            {
+                stamp.NoteDirectWrite(SurfaceBase(_dmaColor) + PresentedColorOffset, extent);
+            }
+        }
+
+        uint zetaBytes = ((_surfaceFormat >> 4) & 0xFu) switch
+        {
+            ZetaFormatZ16 => 2u,
+            ZetaFormatZ24S8 => 4u,
+            _ => 0u,
+        };
+        if (zetaBytes != 0)
+        {
+            uint extent = _surfaceSwizzleTarget
+                ? _surfaceSwizzleWidth * _surfaceSwizzleHeight * zetaBytes
+                : (_surfaceClipV >> 16) * ((_surfacePitch >> 16) & 0xFFFFu);
+            if (extent != 0)
+            {
+                stamp.NoteDirectWrite(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, extent);
+            }
+        }
+    }
+
     private void RunPusher()
     {
         if (GpuMemory is null)
@@ -4494,6 +4539,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         LoadSurfaceGeometry();
+        NoteSurfaceWrite();
         bool clearColor = (parameter & 0xF0u) != 0;
         if (!clearColor && (parameter & 0x3u) == 0)
         {
@@ -8676,6 +8722,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         LoadSurfaceGeometry();
+        NoteSurfaceWrite();
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
         _colorSurfaceBase = SurfaceBase(_dmaColor);
@@ -10334,6 +10381,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         LoadSurfaceGeometry();
+        NoteSurfaceWrite();
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
         _colorSurfaceBase = SurfaceBase(_dmaColor);

@@ -23,6 +23,56 @@ public sealed class JitTests
     private const uint PageTable = 0x5000;
 
     [Fact]
+    public void CallMemory_MatchesInterpreterThroughTheStoreGuard()
+    {
+        // call dword [0x2000] -> stub at 0x1100 (mov ecx,0xABCD; ret);
+        // mov ebx,0x12345678; hlt
+        // call [mem] parks the call target in a frame slot across the return
+        // address push; the guest-write stamp guard now uses its own slot
+        // (F_STORE_SCRATCH) for that reason. The machine-level differential
+        // for the regression is the triangle 100M/1B boot probe, which faulted
+        // with CR2=0xA0A0A0A0 when the guard reused F_VALUE.
+        byte[] code =
+        [
+            0xFF, 0x15, 0x00, 0x20, 0x00, 0x00,
+            0xBB, 0x78, 0x56, 0x34, 0x12,
+            0xF4,
+        ];
+        byte[] stub = [0xB9, 0xCD, 0xAB, 0x00, 0x00, 0xC3];
+
+        XboxCpu plain = CreateJit(code);
+        plain.JitRawBlocks = false;
+        XboxCpu raw = CreateJit(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            Preset(cpu);
+            cpu.Ram().Write32(0x2000, 0x1100u);
+            for (int i = 0; i < stub.Length; i++)
+            {
+                cpu.Ram().Write8(0x1100u + (uint)i, stub[i]);
+            }
+        }
+
+        plain.Execute(200);
+        raw.Execute(200);
+        AssertSameState(plain, raw);
+        Assert.Equal(0xABCDu, raw.Context.Ecx);
+        Assert.Equal(0x12345678u, raw.Context.Ebx);
+        Assert.Equal(CpuHarness.StackAddress, raw.Context.Esp);
+
+        // Second pass: the blocks are formed, so the raw runner serves them.
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Context.Halted = false;
+            cpu.Context.Eip = CpuHarness.CodeAddress;
+        }
+
+        plain.Execute(200);
+        raw.Execute(200);
+        Assert.True(raw.JitRawServedMembers > 0, $"raw served {raw.JitRawServedMembers}");
+        AssertSameState(plain, raw);
+    }
+    [Fact]
     public void AluLoop_MatchesInterpreter_AndServesBlocks()
     {
         // mov ecx,5; mov eax,1; mov ebx,0x10

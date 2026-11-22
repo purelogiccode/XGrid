@@ -5,7 +5,7 @@ using XGrid.Core.Snapshots;
 namespace XGrid.Memory;
 
 /// <summary>Flat physical RAM. All accesses are little-endian and bounds-checked.</summary>
-public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
+public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWriteStamp
 {
     /// <summary>Default retail Xbox RAM size (64 MB).</summary>
     private const uint DefaultSize = 64u * 1024 * 1024;
@@ -26,6 +26,18 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
     private int _presentWatchNext;
     private int _gpuWriteSuppression;
 
+    // Guest-write stamp (XFP4 texture-content identity): one monotonic
+    // generation per 4 KB RAM page, bumped by every guest store (the IL
+    // choke below, devices, and the raw emitter's inline store guard) and by
+    // the host paths that write guest memory directly (a software draw's
+    // surface, a clear rectangle). A content cache that hashed a guest range
+    // compares the range's generation sum instead of rescanning the bytes.
+    // Host-side only, never serialized; the pages are re-bumped wholesale on
+    // a snapshot load's RAM replacement through NoteDirectWrite by the
+    // loader's backend reset.
+    private const int WriteStampPageShift = 12;
+    private readonly uint[] _writeStamp;
+
     /// <summary>Allocates RAM of the given size in bytes.</summary>
     public PhysicalMemory(uint size = DefaultSize)
     {
@@ -36,6 +48,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
 
         RawBytes = new byte[size];
         Size = size;
+        _writeStamp = new uint[(size >> WriteStampPageShift) + 1];
     }
 
     /// <summary>Gets the RAM size in bytes.</summary>
@@ -243,8 +256,71 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
         }
     }
 
+    /// <summary>
+    /// Gets a content stamp for a guest range: the sum of its page
+    /// generations. Two reads of an unchanged range return the same value;
+    /// any write that bumps one of its pages changes it.
+    /// </summary>
+    /// <param name="address">Guest-physical range start.</param>
+    /// <param name="length">Range length in bytes.</param>
+    /// <returns>The range's generation sum.</returns>
+    public ulong GetWriteStamp(uint address, uint length)
+    {
+        uint[] stamps = _writeStamp;
+        uint firstPage = address >> WriteStampPageShift;
+        uint lastPage = (address + (length == 0 ? 0u : length - 1u)) >> WriteStampPageShift;
+        if (lastPage >= (uint)stamps.Length)
+        {
+            lastPage = (uint)stamps.Length - 1u;
+        }
+
+        ulong sum = 0;
+        for (uint page = firstPage; page <= lastPage; page++)
+        {
+            sum += stamps[page];
+        }
+
+        return sum;
+    }
+
+    /// <summary>
+    /// Bumps the write generations covering a range written outside
+    /// <see cref="NoteGuestWrite"/> (the software twin's surface fills, which
+    /// the present watch intentionally suppresses). Content caches only need
+    /// one bump per guest write event, so callers may cover a whole draw's
+    /// surface in one call.
+    /// </summary>
+    /// <param name="address">Guest-physical range start.</param>
+    /// <param name="length">Range length in bytes.</param>
+    public void NoteDirectWrite(uint address, uint length)
+    {
+        BumpWriteStamp(address, length);
+    }
+
+    /// <summary>Gets the page-generation array (pinned by the CPU raw emitter for its inline bump).</summary>
+    public uint[] WriteStampPages => _writeStamp;
+
+    private void BumpWriteStamp(uint address, uint length)
+    {
+        uint[] stamps = _writeStamp;
+        uint lastPage = (address + (length == 0 ? 0u : length - 1u)) >> WriteStampPageShift;
+        if (lastPage >= (uint)stamps.Length)
+        {
+            return;
+        }
+
+        for (uint page = address >> WriteStampPageShift; page <= lastPage; page++)
+        {
+            stamps[page]++;
+        }
+    }
+
     private void NoteGuestWrite(uint address, int length)
     {
+        // Guest-write stamp first: the GPU-writer identity scope does not
+        // suppress it (a software surface write still changes the bytes a
+        // texture content cache may have hashed).
+        BumpWriteStamp(address, (uint)length);
         // Present-upload staleness choke (§132 (a*)): a write inside a
         // watched presented-surface span dirties the frame unless it came
         // from the suppressed NV2A-twin adapters. Disarmed (count == 0, the

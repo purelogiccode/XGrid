@@ -80,6 +80,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     // which keep the pre-§135 serve-whenever-FBO-non-empty contract.
     private readonly IPresentDirtyWatch? _dirtyWatch;
 
+    /// <summary>
+    /// Guest write stamp channel (XFP4 texture identity): the backend hashes a
+    /// texture's whole guest range only when the range's page-generation sum
+    /// moved since the last hash. Null on a bare seam fake, where every bind
+    /// hashes (still exact, just without the dirty short-circuit).
+    /// </summary>
+    private readonly IGuestWriteStamp? _writeStamp;
+
     private readonly uint _vertexShader;
     private readonly uint _vao;
     private readonly Dictionary<string, GlProgram> _programs = new(StringComparer.Ordinal);
@@ -121,7 +129,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly uint[] _boundCubeTexture = new uint[PshCombiner.TextureSlots];
     private int _activeTextureUnit = -1;
 
-    // Direct RAM word reads for texture fingerprints (IGpuMemoryRamView lane);
+    // Direct RAM word reads for the texture hash and the HILO guest-word pool
     // fall back to the adapter for non-RAM/out-of-range addresses.
     private readonly byte[]? _ramBytes;
     private readonly uint _ramSize;
@@ -293,10 +301,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    private sealed class GlTextureEntry(uint texture, uint fingerprint, int width, int height)
+    private sealed class GlTextureEntry(uint texture, int width, int height)
     {
         public uint Texture { get; set; } = texture;
-        public uint Fingerprint { get; set; } = fingerprint;
 
         /// <summary>
         /// The stage's six swizzled guest faces decoded into a GL 2D-array
@@ -304,10 +311,34 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         /// A cube face is not a 2D image row, so it cannot ride the linear
         /// upload; this one is decoded on the host through
         /// <see cref="Nv2AMmio.DecodeSwizzledTexelWord"/> - the software
-        /// sampler's own decoder - and re-decoded only when the fingerprint
-        /// says the guest content changed.
+        /// sampler's own decoder.
         /// </summary>
         public uint CubeTexture { get; set; }
+
+        /// <summary>
+        /// Whole-range content hash of the guest bytes the texture was last
+        /// produced from (FNV-1a over <c>[offset, offset + length)</c>), taken
+        /// at <see cref="DataStamp"/>.
+        /// </summary>
+        public uint DataHash { get; set; }
+
+        /// <summary>
+        /// Guest write stamp when <see cref="DataHash"/> was taken
+        /// (<see cref="IGuestWriteStamp"/>): an unchanged stamp means the bytes
+        /// cannot have moved, so the hash is not recomputed. This is the
+        /// reference's "only hash when possibly dirty" rule with a
+        /// page-generation sum instead of a page dirty bitmap.
+        /// </summary>
+        public ulong DataStamp { get; set; }
+
+        /// <summary>
+        /// Guest addresses of a 16-texel spread grid, resolved once per cache
+        /// key. The HILO dot stage carries the raw words at these addresses
+        /// into the shader's guest-word pool (no decoded texel carries the raw
+        /// 16-bit pair).
+        /// </summary>
+        public uint[] SampleAddresses { get; set; } = [];
+
         // ReSharper disable once UnusedAutoPropertyAccessor.Local
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
         // ReSharper disable once UnusedMember.Local
@@ -316,19 +347,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
         // ReSharper disable once UnusedMember.Local
         public int Height { get; } = height;
-
-        /// <summary>
-        /// Guest addresses of the 16 fingerprint sample texels, resolved once
-        /// per cache key (the address formula costs two integer divisions per
-        /// texel; the menu re-fingerprints on every one of its 2.76M draws).
-        /// </summary>
-        public uint[] SampleAddresses { get; set; } = [];
-
-        /// <summary>Word mask applied to a sampled texel (0xFFFF for 16-bit formats).</summary>
-        public uint SampleMask { get; set; } = uint.MaxValue;
-
-        /// <summary>Guest content stamp the cube decode was produced from.</summary>
-        public uint CubeFingerprint { get; set; }
     }
 
     /// <summary>
@@ -353,11 +371,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         private readonly int _pitch = pitch;
         private readonly int _linear = linear ? 1 : 0;
 
+        // The reference's TextureKey is the whole TextureShape; these are the
+        // shape fields that change what a binding contains but are not in the
+        // extent (mip count, volume dimensionality, the cube flag), so two
+        // textures sharing offset/format/dims cannot alias.
+        private readonly int _levels = (int)((slot.Format >> 16) & 0xFu);
+        private readonly int _dim = (int)((slot.Format & 0xC0u) >> 6);
+        private readonly int _cube = (slot.Format & 0x04u) != 0 ? 1 : 0;
+
         public bool Equals(TextureKey other)
         {
             return _offset == other._offset && _color == other._color &&
                    _width == other._width && _height == other._height &&
-                   _pitch == other._pitch && _linear == other._linear;
+                   _pitch == other._pitch && _linear == other._linear &&
+                   _levels == other._levels && _dim == other._dim && _cube == other._cube;
         }
 
         public override bool Equals(object? obj)
@@ -367,7 +394,17 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(_offset, _color, _width, _height, _pitch, _linear);
+            var hash = new HashCode();
+            hash.Add(_offset);
+            hash.Add(_color);
+            hash.Add(_width);
+            hash.Add(_height);
+            hash.Add(_pitch);
+            hash.Add(_linear);
+            hash.Add(_levels);
+            hash.Add(_dim);
+            hash.Add(_cube);
+            return hash.ToHashCode();
         }
     }
 
@@ -379,6 +416,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl = gl;
         _memory = memory;
         _dirtyWatch = memory as IPresentDirtyWatch;
+        _writeStamp = memory as IGuestWriteStamp;
         _windowRequested = windowEnabled;
         ReplaceMode = replaceSoftware;
         FlipReadbackEnabled = frameReadback;
@@ -1971,8 +2009,29 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 continue;
             }
 
+            // Content identity (XFP4): the reference hashes the whole texture
+            // range but only when the NV2A dirty bitmap says the range may have
+            // moved. The page-generation stamp is that dirty test: an unchanged
+            // stamp reuses the binding without touching the bytes; a moved stamp
+            // re-hashes the whole range and re-uploads only when it differs.
+            int levels = Math.Max(1, (int)((texture.Format >> 16) & 0xFu));
+            ulong chain = linear
+                ? (ulong)Math.Max(height * pitch, width * (int)Math.Max(bytes, 1u))
+                : (ulong)TextureFormats.ChainLength(color, width, height, levels);
+            uint textureLength = (uint)Math.Min(chain, uint.MaxValue);
+            if (_ramBytes is not null && texture.Offset < _ramSize)
+            {
+                textureLength = Math.Min(textureLength, _ramSize - texture.Offset);
+            }
+
+            if (textureLength == 0)
+            {
+                textureLength = 1;
+            }
+
             bool linearFlag = linear;
             var key = new TextureKey(in texture, color, width, height, pitch, linearFlag);
+            ulong stamp = _writeStamp is null ? 0UL : _writeStamp.GetWriteStamp(texture.Offset, textureLength);
             GlTextureEntry? entry;
             bool created = false;
             if (_lastTextureValid[slot] && _lastTextureKey[slot].Equals(key))
@@ -1981,32 +2040,34 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             }
             else if (!_textures.TryGetValue(key, out entry))
             {
-                entry = new GlTextureEntry(0, 0, width, height);
+                entry = new GlTextureEntry(0, width, height);
                 BuildSampleAddresses(entry, in texture, linear, bytes, width, height, pitch);
                 entry.Texture = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
+                entry.DataHash = HashTextureRange(texture.Offset, textureLength);
+                entry.DataStamp = stamp;
                 _textures.Add(key, entry);
                 created = true;
             }
 
-            // A freshly uploaded entry stores the fingerprint of what was just
-            // sent to GL, so the change check below does not upload it twice
-            // (it used to: entry.Fingerprint started at 0).
-            uint fingerprint = FingerprintEntry(entry);
-            if (entry.Fingerprint != fingerprint)
+            bool contentChanged = created;
+            if (!created && entry.DataStamp != stamp)
             {
-                if (!created)
+                // The range may have changed: hash it and re-upload into the
+                // SAME entry only when the bytes actually differ (the menu's
+                // atlas reuse), dropping the old id so later draws bind the
+                // fresh texture, not a leaked one.
+                uint hash = HashTextureRange(texture.Offset, textureLength);
+                if (hash != entry.DataHash)
                 {
-                    // Content change at the same guest address (the menu's
-                    // atlas reuse): re-upload into the SAME entry and drop the
-                    // old id so later draws bind the fresh texture, not a
-                    // leaked one.
                     uint oldId = entry.Texture;
                     entry.Texture = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
                     _gl.DeleteTextures(1, ref oldId);
                     InvalidateTextureBinding();
+                    entry.DataHash = hash;
+                    contentChanged = true;
                 }
 
-                entry.Fingerprint = fingerprint;
+                entry.DataStamp = stamp;
             }
 
             if (cubeOk)
@@ -2014,11 +2075,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 // Same change discipline as the 2D upload: decode the six
                 // swizzled faces once and re-decode only when the guest
                 // content moved.
-                if (entry.CubeTexture == 0 || entry.CubeFingerprint != fingerprint)
+                if (entry.CubeTexture == 0 || contentChanged)
                 {
                     uint oldCube = entry.CubeTexture;
                     entry.CubeTexture = UploadCubeTexture(in texture, color, bytes);
-                    entry.CubeFingerprint = fingerprint;
                     if (oldCube != 0)
                     {
                         _gl.DeleteTextures(1, ref oldCube);
@@ -2227,7 +2287,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// </summary>
     private bool TryReadDirectWord(uint address, out uint word)
     {
-        word = ReadFingerprintWord(address);
+        word = ReadGuestWord(address);
         return true;
     }
 
@@ -2276,8 +2336,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         Array.Clear(_lastTextureValid);
     }
 
-    /// <summary>Reads one 32-bit word for a texture fingerprint, using the direct RAM lane when the address is RAM (the adapter stays the authority for everything else).</summary>
-    private uint ReadFingerprintWord(uint address)
+    /// <summary>
+    /// Hashes a texture's whole guest range (FNV-1a), the reference's
+    /// <c>fast_hash(texture_data, length)</c>: the content identity behind a
+    /// cache entry, recomputed only when the range's write stamp moved. Uses
+    /// the direct RAM view when the range is RAM and the adapter otherwise
+    /// (the adapter stays the authority for non-RAM mappings).
+    /// </summary>
+    /// <summary>Reads one 32-bit guest word through the direct RAM lane when the address is RAM (the adapter stays the authority for everything else).</summary>
+    private uint ReadGuestWord(uint address)
     {
         byte[]? ram = _ramBytes;
         if (ram is not null && address <= _ramSize - 4u)
@@ -2295,9 +2362,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _probeFpAdapter;
 
     /// <summary>
-    /// Resolves the 16 fingerprint sample addresses once per texture cache
-    /// key: the sample grid depends only on (offset, layout, extents), so the
-    /// per-draw check becomes 16 word reads with no address arithmetic.
+    /// Resolves a 16-texel spread grid of guest addresses once per texture
+    /// cache key (the HILO dot word pool walks it; the grid depends only on
+    /// offset/layout/extents).
     /// </summary>
     private static void BuildSampleAddresses(GlTextureEntry entry, in PgraphTextureSlot slot,
         bool linear, uint bytes, int width, int height, int pitch)
@@ -2311,82 +2378,39 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
 
         entry.SampleAddresses = addresses;
-        entry.SampleMask = bytes == 2 ? 0xFFFFu : uint.MaxValue;
     }
 
     /// <summary>
-    /// Hashes the 16 pre-resolved sample words (same order/mask as the
-    /// original per-draw walk). All 16 loads are issued before hashing: the
-    /// FNV chain depends on each word, and on a 1 MB swizzled atlas the
-    /// sampled words are separate DRAM lines — a load-then-hash loop
-    /// serializes 16 memory latencies per draw (measured 7.4 us/draw on the
-    /// triangle; the triangle streams 3 textures per draw).
+    /// Hashes a texture's whole guest range (FNV-1a), the reference's
+    /// <c>fast_hash(texture_data, length)</c>: the content identity behind a
+    /// cache entry, recomputed only when the range's write stamp moved. Uses
+    /// the direct RAM view when the range is RAM and the adapter otherwise.
     /// </summary>
-    private uint FingerprintEntry(GlTextureEntry entry)
+    private uint HashTextureRange(uint offset, uint length)
     {
-        uint[] addresses = entry.SampleAddresses;
-        uint mask = entry.SampleMask;
-
-        // Prefetch the 16 sample lines: they are scattered over the swizzled
-        // atlas, so each is a cold line (the CPU engine streams enough RAM to
-        // evict them between draws). Issuing the fills up front overlaps the
-        // latencies instead of paying them one at a time behind the hash chain.
+        uint hash = 2166136261u;
         byte[]? ram = _ramBytes;
-        if (ram is not null && System.Runtime.Intrinsics.X86.Sse.IsSupported)
+        if (ram is not null && offset < _ramSize)
         {
-            ref byte ramBase = ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(ram);
-            for (int i = 0; i < 16; i++)
+            int count = (int)Math.Min(length, _ramSize - offset);
+            _probeFpRam += count / 4;
+            System.ReadOnlySpan<byte> span = ram.AsSpan((int)offset, count);
+            for (int i = 0; i < span.Length; i++)
             {
-                uint address = addresses[i];
-                if (address <= _ramSize - 4u)
-                {
-                    unsafe
-                    {
-                        System.Runtime.Intrinsics.X86.Sse.Prefetch0(
-                            System.Runtime.CompilerServices.Unsafe.AsPointer(
-                                ref System.Runtime.CompilerServices.Unsafe.Add(ref ramBase, (int)address)));
-                    }
-                }
+                hash = (hash ^ span[i]) * 16777619u;
             }
+
+            return hash;
         }
 
-        uint t0 = ReadFingerprintWord(addresses[0]) & mask;
-        uint t1 = ReadFingerprintWord(addresses[1]) & mask;
-        uint t2 = ReadFingerprintWord(addresses[2]) & mask;
-        uint t3 = ReadFingerprintWord(addresses[3]) & mask;
-        uint t4 = ReadFingerprintWord(addresses[4]) & mask;
-        uint t5 = ReadFingerprintWord(addresses[5]) & mask;
-        uint t6 = ReadFingerprintWord(addresses[6]) & mask;
-        uint t7 = ReadFingerprintWord(addresses[7]) & mask;
-        uint t8 = ReadFingerprintWord(addresses[8]) & mask;
-        uint t9 = ReadFingerprintWord(addresses[9]) & mask;
-        uint t10 = ReadFingerprintWord(addresses[10]) & mask;
-        uint t11 = ReadFingerprintWord(addresses[11]) & mask;
-        uint t12 = ReadFingerprintWord(addresses[12]) & mask;
-        uint t13 = ReadFingerprintWord(addresses[13]) & mask;
-        uint t14 = ReadFingerprintWord(addresses[14]) & mask;
-        uint t15 = ReadFingerprintWord(addresses[15]) & mask;
+        for (uint at = 0; at < length; at += 4)
+        {
+            hash = (hash ^ _memory.ReadPhysical(offset + at)) * 16777619u;
+            _probeFpAdapter++;
+        }
 
-        uint hash = 2166136261u;
-        hash = (hash ^ t0) * 16777619u;
-        hash = (hash ^ t1) * 16777619u;
-        hash = (hash ^ t2) * 16777619u;
-        hash = (hash ^ t3) * 16777619u;
-        hash = (hash ^ t4) * 16777619u;
-        hash = (hash ^ t5) * 16777619u;
-        hash = (hash ^ t6) * 16777619u;
-        hash = (hash ^ t7) * 16777619u;
-        hash = (hash ^ t8) * 16777619u;
-        hash = (hash ^ t9) * 16777619u;
-        hash = (hash ^ t10) * 16777619u;
-        hash = (hash ^ t11) * 16777619u;
-        hash = (hash ^ t12) * 16777619u;
-        hash = (hash ^ t13) * 16777619u;
-        hash = (hash ^ t14) * 16777619u;
-        hash = (hash ^ t15) * 16777619u;
         return hash;
     }
-
     private static uint TexelAddress(
         in PgraphTextureSlot slot, bool linear, uint bytes, int width, int height, int pitch, int x, int y)
     {

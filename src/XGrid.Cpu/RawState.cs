@@ -37,6 +37,16 @@ internal unsafe struct RawState
     /// </summary>
     public ulong* PtBits;
 
+    /// <summary>
+    /// Per-RAM-page guest write generations (pinned; null when no RAM device
+    /// is attached). The inline store guard bumps the page so content-identity
+    /// caches (the GL texture cache) can detect a change without rescanning.
+    /// </summary>
+    public uint* WriteStamp;
+
+    /// <summary>Number of entries in <see cref="WriteStamp"/>.</summary>
+    public uint WriteStampPages;
+
     /// <summary>1 when a bus write watch is armed: inline stores test the watch range.</summary>
     public uint WatchArmed;
 

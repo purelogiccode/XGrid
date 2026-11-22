@@ -83,6 +83,13 @@ internal static unsafe class RawBlockEmitter
     private const int F_VALUE64 = ShadowSpace + 0x48;
     private const int F_FPU = ShadowSpace + 0x50;
 
+    /// <summary>
+    /// Park slot for the inline store guard (guest-write stamp and the note
+    /// path): it must not share F_VALUE/F_VALUE64, which push [mem] and
+    /// movq [mem], mm hold the stored value in across the probe.
+    /// </summary>
+    private const int F_STORE_SCRATCH = ShadowSpace + 0x60;
+
     // 8 callee-saved pushes (64) + this size keeps rsp 16-byte aligned at a call.
     private const int FrameSize = ShadowSpace + 0x108;
 
@@ -102,6 +109,8 @@ internal static unsafe class RawBlockEmitter
     private static readonly int OffWatchEnd = (int)Marshal.OffsetOf<RawState>(nameof(RawState.WatchEnd));
     private static readonly int OffCr0Wp = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Cr0Wp));
     private static readonly int OffStoreGuardBail = (int)Marshal.OffsetOf<RawState>(nameof(RawState.StoreGuardBail));
+    private static readonly int OffWriteStamp = (int)Marshal.OffsetOf<RawState>(nameof(RawState.WriteStamp));
+    private static readonly int OffWriteStampPages = (int)Marshal.OffsetOf<RawState>(nameof(RawState.WriteStampPages));
     private static readonly int OffRam = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Ram));
     private static readonly int OffRamSize = (int)Marshal.OffsetOf<RawState>(nameof(RawState.RamSize));
     private static readonly int OffEip = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Eip));
@@ -2829,6 +2838,27 @@ internal static unsafe class RawBlockEmitter
             Assembler a = _a;
             int trackedPages = (int)(DecodeCache.MaxTrackedPhysical >> 12);
             Label noWatch = a.CreateLabel(string.Empty);
+
+            // Guest-write stamp (XFP4 texture-content identity): every inline
+            // RAM store bumps its page's generation so a content cache can
+            // tell whether a guest range changed without rescanning it. A
+            // slow-path store bumps through PhysicalMemory.Write*, never here,
+            // so one store never bumps twice. R8D/R10 are the guard's own
+            // scratch; ESI (the value scratch) is parked in F_VALUE across
+            // the bump because the store itself has not run yet; R9 (the
+            // linear address the slow path consumes) stays untouched.
+            Label noStamp = a.CreateLabel(string.Empty);
+            a.mov(Slot(F_STORE_SCRATCH), R32(Register.ESI));
+            a.mov(R32(Register.R8D), R32(Register.EDI));
+            a.shr(R32(Register.R8D), 12);
+            a.cmp(R32(Register.R8D), Field(Register.R11, OffWriteStampPages));
+            a.jae(noStamp);
+            a.mov(R64(Register.R10), Field(Register.R11, OffWriteStamp));
+            a.mov(R32(Register.ESI), MemOp(Register.R10, Register.R8, 4, 0));
+            a.add(R32(Register.ESI), 1);
+            a.mov(MemOp(Register.R10, Register.R8, 4, 0), R32(Register.ESI));
+            a.Label(ref noStamp);
+            a.mov(R32(Register.ESI), Slot(F_STORE_SCRATCH));
             Label armCheck = a.CreateLabel(string.Empty);
             Label needNote = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
@@ -2883,7 +2913,7 @@ internal static unsafe class RawBlockEmitter
             // nothing after the note consumes it (the watch divergence above
             // happens before the note).
             a.Label(ref needNote);
-            a.mov(Slot(F_VALUE), R32(Register.ESI));
+            a.mov(Slot(F_STORE_SCRATCH), R32(Register.ESI));
             a.mov(Slot(F_PHYS), R32(Register.EDI));
             a.mov(R32(Register.R8D), sizeBits);
             a.mov(R64(Register.R9), Slot(F_CPU));
@@ -2903,7 +2933,7 @@ internal static unsafe class RawBlockEmitter
             a.pop(R64(Register.RCX));
             a.pop(R64(Register.RAX));
             EmitFaultCheck();
-            a.mov(R32(Register.ESI), Slot(F_VALUE));
+            a.mov(R32(Register.ESI), Slot(F_STORE_SCRATCH));
             a.mov(R32(Register.EDI), Slot(F_PHYS));
             a.mov(R64(Register.RBP), Field(Register.R11, OffRam));
 
