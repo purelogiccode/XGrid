@@ -82,10 +82,13 @@ flags), and the i386 translator for 32-bit register/immediate MOV,
 ADD/SUB/AND/OR/XOR/CMP, INC/DEC (CF preserved), NOP, JMP and Jcc; 17
 differentials. Slice 2: the reference memory shape (`Lea` from `MemoryOperand`,
 1/2/4-byte `Load`/`Store`, segment bases), 8/16-bit register and memory forms,
-partial-register (AL..BH) reads/writes, and 16-bit addressing declined; **32
-differentials total** (registers, EFLAGS, EIP and guest memory). `XGrid.Cpu.Tests`
-**735/735**, format clean. Next: stack/string/FPU/SSE, the `tools/cpu-oracle`
-corpus and the measured fallback count.
+partial-register (AL..BH) reads/writes, and 16-bit addressing declined. Slice 3:
+shifts/rotates (SHL/SHR/SAR/ROL/ROR/RCL/RCR by imm and CL), SHLD/SHRD,
+NEG/NOT, MOVZX/MOVSX (8/16), LEA, XCHG (reg/reg and reg/mem) and SAHF/LAHF.
+**52 differentials total** (registers, EFLAGS, EIP and guest memory);
+`XGrid.Cpu.Tests` **755/755**, format clean. Next: MUL/IMUL/DIV/IDIV, PUSH/POP,
+BT/BTS/BTR/BTC, CMPXCHG/XADD, then MMX (170 corpus cases), x87 (59), SSE (37)
+and REP; the cpu-oracle gate needs those blocks.
 
 ### P1S4 - host code generation (6-10 sessions)
 

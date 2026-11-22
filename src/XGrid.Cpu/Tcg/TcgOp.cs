@@ -50,6 +50,57 @@ public enum TcgOpKind
     /// <summary>Decrements by one (CF preserved).</summary>
     Dec,
 
+    /// <summary>Logical shift left.</summary>
+    Shl,
+
+    /// <summary>Logical shift right.</summary>
+    Shr,
+
+    /// <summary>Arithmetic shift right.</summary>
+    Sar,
+
+    /// <summary>Rotate left.</summary>
+    Rol,
+
+    /// <summary>Rotate right.</summary>
+    Ror,
+
+    /// <summary>Rotate left through carry.</summary>
+    Rcl,
+
+    /// <summary>Rotate right through carry.</summary>
+    Rcr,
+
+    /// <summary>Double-precision shift left (SHLD).</summary>
+    Shld,
+
+    /// <summary>Double-precision shift right (SHRD).</summary>
+    Shrd,
+
+    /// <summary>Two's-complement negation.</summary>
+    Neg,
+
+    /// <summary>Bitwise complement (no flags).</summary>
+    Not,
+
+    /// <summary>Zero-extends a byte.</summary>
+    Movzx8,
+
+    /// <summary>Zero-extends a word.</summary>
+    Movzx16,
+
+    /// <summary>Sign-extends a byte.</summary>
+    Movsx8,
+
+    /// <summary>Sign-extends a word.</summary>
+    Movsx16,
+
+    /// <summary>Loads EFLAGS from AH (SAHF).</summary>
+    Sahf,
+
+    /// <summary>Stores AH from EFLAGS (LAHF).</summary>
+    Lahf,
+
     /// <summary>Computes a guest effective address from the memory operand shape.</summary>
     Lea,
 

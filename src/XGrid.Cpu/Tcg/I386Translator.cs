@@ -59,6 +59,33 @@ public static class I386Translator
             case Mnemonic.Inc:
             case Mnemonic.Dec:
                 return TryIncDec(instruction, size, builder, out reason);
+            case Mnemonic.Shl:
+            case Mnemonic.Shr:
+            case Mnemonic.Sar:
+            case Mnemonic.Rol:
+            case Mnemonic.Ror:
+            case Mnemonic.Rcl:
+            case Mnemonic.Rcr:
+                return TryShift(instruction, size, builder, out reason);
+            case Mnemonic.Shld:
+            case Mnemonic.Shrd:
+                return TryDoubleShift(instruction, size, builder, out reason);
+            case Mnemonic.Neg:
+            case Mnemonic.Not:
+                return TryUnary(instruction, size, builder, out reason);
+            case Mnemonic.Movzx:
+            case Mnemonic.Movsx:
+                return TryMovExtend(instruction, size, builder, out reason);
+            case Mnemonic.Lea:
+                return TryLea(instruction, size, builder, out reason);
+            case Mnemonic.Xchg:
+                return TryXchg(instruction, size, builder, out reason);
+            case Mnemonic.Sahf:
+                builder.Sahf();
+                return true;
+            case Mnemonic.Lahf:
+                builder.Lahf();
+                return true;
             case Mnemonic.Jmp:
                 if (instruction.Operand1.Kind != OperandKind.Immediate)
                 {
@@ -252,6 +279,315 @@ public static class I386Translator
         }
 
         reason = "inc/dec destination";
+        return false;
+    }
+
+    private static bool TryShift(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        int address = 0;
+        int value;
+        if (destination.Kind == OperandKind.Register)
+        {
+            value = builder.NewTemp();
+            builder.ReadRegister(value, destination.RegisterIndex, size);
+        }
+        else if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out address, out reason))
+            {
+                return false;
+            }
+
+            value = builder.NewTemp();
+            builder.Load(value, address, size);
+        }
+        else
+        {
+            reason = "shift destination";
+            return false;
+        }
+
+        if (!TryReadCount(instruction.Operand2, builder, out int count, out reason))
+        {
+            return false;
+        }
+
+        TcgOpKind kind = instruction.Mnemonic switch
+        {
+            Mnemonic.Shl => TcgOpKind.Shl,
+            Mnemonic.Shr => TcgOpKind.Shr,
+            Mnemonic.Sar => TcgOpKind.Sar,
+            Mnemonic.Rol => TcgOpKind.Rol,
+            Mnemonic.Ror => TcgOpKind.Ror,
+            Mnemonic.Rcl => TcgOpKind.Rcl,
+            _ => TcgOpKind.Rcr,
+        };
+
+        int result = builder.NewTemp();
+        builder.Shift(kind, result, value, count, size);
+        if (destination.Kind == OperandKind.Register)
+        {
+            builder.WriteRegister(destination.RegisterIndex, result, size);
+        }
+        else
+        {
+            builder.Store(address, result, size);
+        }
+
+        return true;
+    }
+
+    private static bool TryDoubleShift(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        if (instruction.Operand3.Kind != OperandKind.Immediate)
+        {
+            reason = "double-shift count";
+            return false;
+        }
+
+        Operand destination = instruction.Operand1;
+        int address = 0;
+        int value;
+        if (destination.Kind == OperandKind.Register)
+        {
+            value = builder.NewTemp();
+            builder.ReadRegister(value, destination.RegisterIndex, size);
+        }
+        else if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out address, out reason))
+            {
+                return false;
+            }
+
+            value = builder.NewTemp();
+            builder.Load(value, address, size);
+        }
+        else
+        {
+            reason = "double-shift destination";
+            return false;
+        }
+
+        if (!TryReadSource(instruction.Operand2, size, builder, out int source, out reason))
+        {
+            return false;
+        }
+
+        int result = builder.NewTemp();
+        builder.DoubleShift(
+            instruction.Mnemonic == Mnemonic.Shld ? TcgOpKind.Shld : TcgOpKind.Shrd,
+            result,
+            value,
+            source,
+            instruction.Operand3.Immediate,
+            size);
+
+        if (destination.Kind == OperandKind.Register)
+        {
+            builder.WriteRegister(destination.RegisterIndex, result, size);
+        }
+        else
+        {
+            builder.Store(address, result, size);
+        }
+
+        return true;
+    }
+
+    private static bool TryUnary(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        int address = 0;
+        int value;
+        if (destination.Kind == OperandKind.Register)
+        {
+            value = builder.NewTemp();
+            builder.ReadRegister(value, destination.RegisterIndex, size);
+        }
+        else if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out address, out reason))
+            {
+                return false;
+            }
+
+            value = builder.NewTemp();
+            builder.Load(value, address, size);
+        }
+        else
+        {
+            reason = "unary destination";
+            return false;
+        }
+
+        int result = builder.NewTemp();
+        if (instruction.Mnemonic == Mnemonic.Neg)
+        {
+            builder.Neg(result, value, size);
+        }
+        else
+        {
+            builder.Complement(result, value, size);
+        }
+
+        if (destination.Kind == OperandKind.Register)
+        {
+            builder.WriteRegister(destination.RegisterIndex, result, size);
+        }
+        else
+        {
+            builder.Store(address, result, size);
+        }
+
+        return true;
+    }
+
+    private static bool TryMovExtend(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        if (instruction.Operand1.Kind != OperandKind.Register)
+        {
+            reason = "movzx/movsx destination";
+            return false;
+        }
+
+        int sourceSize = instruction.Operand2.Size / 8;
+        if (sourceSize is not (1 or 2))
+        {
+            reason = "movzx/movsx source size";
+            return false;
+        }
+
+        if (!TryReadSource(instruction.Operand2, sourceSize, builder, out int value, out reason))
+        {
+            return false;
+        }
+
+        int result = builder.NewTemp();
+        builder.MovExtend(result, value, sourceSize, instruction.Mnemonic == Mnemonic.Movsx);
+        builder.WriteRegister(instruction.Operand1.RegisterIndex, result, size);
+        return true;
+    }
+
+    private static bool TryLea(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        if (instruction.Operand1.Kind != OperandKind.Register || instruction.Operand2.Kind != OperandKind.Memory)
+        {
+            reason = "lea operands";
+            return false;
+        }
+
+        if (!TryAddress(instruction.Operand2.Memory, builder, out int address, out reason))
+        {
+            return false;
+        }
+
+        builder.WriteRegister(instruction.Operand1.RegisterIndex, address, size);
+        return true;
+    }
+
+    private static bool TryXchg(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+
+        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Register)
+        {
+            int firstValue = builder.NewTemp();
+            builder.ReadRegister(firstValue, first.RegisterIndex, size);
+            int secondValue = builder.NewTemp();
+            builder.ReadRegister(secondValue, second.RegisterIndex, size);
+            builder.WriteRegister(first.RegisterIndex, secondValue, size);
+            builder.WriteRegister(second.RegisterIndex, firstValue, size);
+            return true;
+        }
+
+        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Memory)
+        {
+            int registerValue = builder.NewTemp();
+            builder.ReadRegister(registerValue, first.RegisterIndex, size);
+            if (!TryAddress(second.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            int memoryValue = builder.NewTemp();
+            builder.Load(memoryValue, address, size);
+            builder.Store(address, registerValue, size);
+            builder.WriteRegister(first.RegisterIndex, memoryValue, size);
+            return true;
+        }
+
+        if (first.Kind == OperandKind.Memory && second.Kind == OperandKind.Register)
+        {
+            int registerValue = builder.NewTemp();
+            builder.ReadRegister(registerValue, second.RegisterIndex, size);
+            if (!TryAddress(first.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            int memoryValue = builder.NewTemp();
+            builder.Load(memoryValue, address, size);
+            builder.Store(address, registerValue, size);
+            builder.WriteRegister(second.RegisterIndex, memoryValue, size);
+            return true;
+        }
+
+        reason = "xchg operands";
+        return false;
+    }
+
+    private static bool TryReadCount(Operand operand, TcgBuilder builder, out int temp, out string? reason)
+    {
+        temp = 0;
+        reason = null;
+        if (operand.Kind == OperandKind.Register && operand.Size == 8)
+        {
+            temp = builder.NewTemp();
+            builder.ReadRegister(temp, 1, 1);
+            return true;
+        }
+
+        if (operand.Kind == OperandKind.Immediate)
+        {
+            temp = builder.NewTemp();
+            builder.MovImmediate(temp, operand.Immediate, 4);
+            return true;
+        }
+
+        reason = "shift count";
         return false;
     }
 

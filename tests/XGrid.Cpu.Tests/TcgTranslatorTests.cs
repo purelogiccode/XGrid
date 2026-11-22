@@ -300,6 +300,132 @@ public sealed class TcgTranslatorTests
         Assert.NotNull(reason);
     }
 
+    [Fact]
+    public void ShlImmediate()
+    {
+        AssertMatches([0xC1, 0xE0, 0x01], cpu => Set(cpu, Gpr.Eax, 0x40000001));
+    }
+
+    [Fact]
+    public void ShrImmediate()
+    {
+        AssertMatches([0xC1, 0xE8, 0x01], cpu => Set(cpu, Gpr.Eax, 0x80000001));
+    }
+
+    [Fact]
+    public void SarImmediate()
+    {
+        AssertMatches([0xC1, 0xF8, 0x01], cpu => Set(cpu, Gpr.Eax, 0x80000001));
+    }
+
+    [Fact]
+    public void RolImmediate()
+    {
+        AssertMatches([0xC1, 0xC0, 0x01], cpu => Set(cpu, Gpr.Eax, 0x80000001));
+    }
+
+    [Fact]
+    public void RorImmediate()
+    {
+        AssertMatches([0xC1, 0xC8, 0x01], cpu => Set(cpu, Gpr.Eax, 0x80000001));
+    }
+
+    [Fact]
+    public void ShlByCl()
+    {
+        AssertMatches([0xD3, 0xE0], cpu => { Set(cpu, Gpr.Eax, 1); Set(cpu, Gpr.Ecx, 4); });
+    }
+
+    [Fact]
+    public void ShldImmediate()
+    {
+        AssertMatches([0x0F, 0xA4, 0xC8, 0x04], cpu => { Set(cpu, Gpr.Eax, 0x12345678); Set(cpu, Gpr.Ecx, 0x9ABCDEF0); });
+    }
+
+    [Fact]
+    public void ShrdImmediate()
+    {
+        AssertMatches([0x0F, 0xAC, 0xC8, 0x04], cpu => { Set(cpu, Gpr.Eax, 0x12345678); Set(cpu, Gpr.Ecx, 0x9ABCDEF0); });
+    }
+
+    [Fact]
+    public void NegRegister()
+    {
+        AssertMatches([0xF7, 0xD8], cpu => Set(cpu, Gpr.Eax, 0x80000000));
+    }
+
+    [Fact]
+    public void NotRegister()
+    {
+        AssertMatches([0xF7, 0xD0], cpu => Set(cpu, Gpr.Eax, 0x00FF00FF));
+    }
+
+    [Fact]
+    public void MovzxByte()
+    {
+        AssertMatches([0x0F, 0xB6, 0xC3], cpu => Set(cpu, Gpr.Ebx, 0xFFFFFF80));
+    }
+
+    [Fact]
+    public void MovsxByte()
+    {
+        AssertMatches([0x0F, 0xBE, 0xC3], cpu => Set(cpu, Gpr.Ebx, 0x00000080));
+    }
+
+    [Fact]
+    public void MovzxWord()
+    {
+        AssertMatches([0x0F, 0xB7, 0xC3], cpu => Set(cpu, Gpr.Ebx, 0xFFFF8000));
+    }
+
+    [Fact]
+    public void MovsxWord()
+    {
+        AssertMatches([0x0F, 0xBF, 0xC3], cpu => Set(cpu, Gpr.Ebx, 0x00008000));
+    }
+
+    [Fact]
+    public void LeaStackOffset()
+    {
+        AssertMatches([0x8D, 0x44, 0x24, 0x08], cpu => Set(cpu, Gpr.Esp, 0x8000));
+    }
+
+    [Fact]
+    public void XchgRegisters()
+    {
+        AssertMatches([0x87, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0x11223344); Set(cpu, Gpr.Ebx, 0x55667788); });
+    }
+
+    [Fact]
+    public void XchgMemory()
+    {
+        AssertMatches(
+            [0x87, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => { Set(cpu, Gpr.Eax, 0x11223344); Memory32(cpu, 0x2000, 0x55667788); },
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
+    }
+
+    [Fact]
+    public void SahfLoadsFlagsFromAh()
+    {
+        AssertMatches([0x9E], cpu => Set(cpu, Gpr.Eax, 0x0000D500));
+    }
+
+    [Fact]
+    public void LahfStoresFlagsInAh()
+    {
+        AssertMatches([0x9F], cpu => Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf | FlagBits.Zf));
+    }
+
+    [Fact]
+    public void NegMemory()
+    {
+        AssertMatches(
+            [0xF7, 0x1D, 0x00, 0x20, 0x00, 0x00],
+            cpu => Memory32(cpu, 0x2000, 0x00000001),
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
+    }
+
     private sealed class TestMemory(AddressSpace bus) : ITcgMemory
     {
         public byte Read8(uint address)

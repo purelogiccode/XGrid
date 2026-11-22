@@ -160,6 +160,69 @@ public static class TcgInterpreter
                     eflags = AluOps.Dec(temps[op.Left], op.Size * 8, eflags, out uint decremented);
                     temps[op.Dest] = decremented;
                     break;
+                case TcgOpKind.Shl:
+                    eflags = ShiftOps.Shl(temps[op.Left], (int)temps[op.Right], op.Size * 8, eflags, out uint shl);
+                    temps[op.Dest] = shl;
+                    break;
+                case TcgOpKind.Shr:
+                    eflags = ShiftOps.Shr(temps[op.Left], (int)temps[op.Right], op.Size * 8, eflags, out uint shr);
+                    temps[op.Dest] = shr;
+                    break;
+                case TcgOpKind.Sar:
+                    eflags = ShiftOps.Sar(temps[op.Left], (int)temps[op.Right], op.Size * 8, eflags, out uint sar);
+                    temps[op.Dest] = sar;
+                    break;
+                case TcgOpKind.Rol:
+                    eflags = ShiftOps.Rol(temps[op.Left], (int)temps[op.Right], op.Size * 8, eflags, out uint rol);
+                    temps[op.Dest] = rol;
+                    break;
+                case TcgOpKind.Ror:
+                    eflags = ShiftOps.Ror(temps[op.Left], (int)temps[op.Right], op.Size * 8, eflags, out uint ror);
+                    temps[op.Dest] = ror;
+                    break;
+                case TcgOpKind.Rcl:
+                    eflags = ShiftOps.Rcl(temps[op.Left], (int)temps[op.Right], op.Size * 8, eflags, out uint rcl);
+                    temps[op.Dest] = rcl;
+                    break;
+                case TcgOpKind.Rcr:
+                    eflags = ShiftOps.Rcr(temps[op.Left], (int)temps[op.Right], op.Size * 8, eflags, out uint rcr);
+                    temps[op.Dest] = rcr;
+                    break;
+                case TcgOpKind.Shld:
+                    eflags = ShiftOps.Shld(
+                        temps[op.Left], temps[op.Right], (int)op.Immediate, op.Size * 8, eflags, out uint shld);
+                    temps[op.Dest] = shld;
+                    break;
+                case TcgOpKind.Shrd:
+                    eflags = ShiftOps.Shrd(
+                        temps[op.Left], temps[op.Right], (int)op.Immediate, op.Size * 8, eflags, out uint shrd);
+                    temps[op.Dest] = shrd;
+                    break;
+                case TcgOpKind.Neg:
+                    eflags = AluOps.Neg(temps[op.Left], op.Size * 8, eflags, out uint negated);
+                    temps[op.Dest] = negated;
+                    break;
+                case TcgOpKind.Not:
+                    temps[op.Dest] = ~temps[op.Left] & AluOps.Mask(op.Size * 8);
+                    break;
+                case TcgOpKind.Movzx8:
+                    temps[op.Dest] = temps[op.Left] & 0xFFu;
+                    break;
+                case TcgOpKind.Movzx16:
+                    temps[op.Dest] = temps[op.Left] & 0xFFFFu;
+                    break;
+                case TcgOpKind.Movsx8:
+                    temps[op.Dest] = (uint)(int)(sbyte)temps[op.Left];
+                    break;
+                case TcgOpKind.Movsx16:
+                    temps[op.Dest] = (uint)(int)(short)temps[op.Left];
+                    break;
+                case TcgOpKind.Sahf:
+                    eflags = (eflags & ~FlagBits.ConditionMask) | ((gprs[0] >> 8) & FlagBits.ConditionMask);
+                    break;
+                case TcgOpKind.Lahf:
+                    WriteRegister8(gprs, 4, (byte)((eflags & FlagBits.ConditionMask) | FlagBits.Reserved1));
+                    break;
                 case TcgOpKind.Lea:
                     temps[op.Dest] = EffectiveAddress(op, gprs, segmentBases);
                     break;

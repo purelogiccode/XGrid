@@ -154,6 +154,84 @@ public sealed class TcgBuilder
         _ops.Add(new TcgOp { Kind = TcgOpKind.Dec, Dest = dest, Left = source, Size = size });
     }
 
+    /// <summary>Emits a single shift/rotate.</summary>
+    /// <param name="kind">The shift opcode.</param>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="value">Value temp.</param>
+    /// <param name="count">Count temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Shift(TcgOpKind kind, int dest, int value, int count, int size)
+    {
+        _ops.Add(new TcgOp { Kind = kind, Dest = dest, Left = value, Right = count, Size = size });
+    }
+
+    /// <summary>Emits a double-precision shift (SHLD/SHRD).</summary>
+    /// <param name="kind">Shld or Shrd.</param>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="value">Destination value temp.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="count">The immediate count.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void DoubleShift(TcgOpKind kind, int dest, int value, int source, uint count, int size)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = kind,
+            Dest = dest,
+            Left = value,
+            Right = source,
+            Immediate = count,
+            Size = size,
+        });
+    }
+
+    /// <summary>Emits a negation.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Neg(int dest, int source, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Neg, Dest = dest, Left = source, Size = size });
+    }
+
+    /// <summary>Emits a bitwise complement (no flags).</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Complement(int dest, int source, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Not, Dest = dest, Left = source, Size = size });
+    }
+
+    /// <summary>Emits a zero/sign extension.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="sourceSize">Source size in bytes (1 or 2).</param>
+    /// <param name="isSigned">True for MOVSX, false for MOVZX.</param>
+    public void MovExtend(int dest, int source, int sourceSize, bool isSigned)
+    {
+        TcgOpKind kind = (sourceSize, isSigned) switch
+        {
+            (1, false) => TcgOpKind.Movzx8,
+            (1, true) => TcgOpKind.Movsx8,
+            (_, false) => TcgOpKind.Movzx16,
+            _ => TcgOpKind.Movsx16,
+        };
+        _ops.Add(new TcgOp { Kind = kind, Dest = dest, Left = source, Size = sourceSize });
+    }
+
+    /// <summary>Emits SAHF (EFLAGS from AH).</summary>
+    public void Sahf()
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Sahf });
+    }
+
+    /// <summary>Emits LAHF (AH from EFLAGS).</summary>
+    public void Lahf()
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Lahf });
+    }
+
     /// <summary>Emits an effective-address computation (QEMU's address shape).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="memory">The decoded memory operand.</param>
