@@ -3,6 +3,46 @@ using System;
 namespace XGrid.Nv2a;
 
 /// <summary>
+/// The PGRAPH state type the NV097 methods latch (XFP1). It owns the texture
+/// register file, the transform program and constant contexts, and the register
+/// combiner; <see cref="Nv2AMmio"/> keeps the decode and reaches the same
+/// storage through delegating properties, so behavior and the snapshot field
+/// order are unchanged. Later sections add the viewport/clip and surface state.
+/// </summary>
+internal sealed class PgraphState
+{
+    /// <summary>Initializes the state with the reference's fixed row counts.</summary>
+    /// <param name="transformProgramLength">The transform-program row count.</param>
+    /// <param name="transformConstantCount">The transform-constant row count.</param>
+    public PgraphState(int transformProgramLength, int transformConstantCount)
+    {
+        TransformProgram = new uint[transformProgramLength][];
+        for (int i = 0; i < TransformProgram.Length; i++)
+        {
+            TransformProgram[i] = new uint[4];
+        }
+
+        TransformConstants = new uint[transformConstantCount][];
+        for (int i = 0; i < TransformConstants.Length; i++)
+        {
+            TransformConstants[i] = new uint[4];
+        }
+    }
+
+    /// <summary>Gets the four texture slots and the bump-environment state.</summary>
+    public PgraphTextureState Textures { get; } = new();
+
+    /// <summary>Gets the transform-program rows (four dwords each).</summary>
+    public uint[][] TransformProgram { get; }
+
+    /// <summary>Gets the transform-constant rows (four dwords each).</summary>
+    public uint[][] TransformConstants { get; }
+
+    /// <summary>Gets the fragment register combiner.</summary>
+    public PshCombiner Combiner { get; } = new();
+}
+
+/// <summary>
 /// The PGRAPH register file the NV097 methods latch (XFP1). This first section
 /// owns the four texture slots (xemu <c>pgraph.h</c>'s texture context) and the
 /// bump-environment matrices; it is the state type <see cref="Nv2AMmio"/> owns.

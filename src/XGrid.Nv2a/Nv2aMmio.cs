@@ -783,8 +783,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     // BuildInlineArrayLayout (xemu pgraph_gl_bind_inline_array's rule).
     private readonly int[] _inlineArrayOffset = new int[16];
     private int _inlineArrayStride;
-    private readonly uint[][] _transformProgram = new uint[MaxTransformProgramLength][];
-    private readonly uint[][] _transformConstants = new uint[MaxVertexShaderConstants][];
+    private uint[][] _transformProgram => _state.TransformProgram;
+    private uint[][] _transformConstants => _state.TransformConstants;
     private uint _transformProgramStart;
     private uint _transformExecutionMode;
     private uint _transformProgramCxtWriteEn;
@@ -803,7 +803,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly List<float> _inlineVertices = [];
     private readonly List<(int Start, int Count)> _drawArraysRanges = [];
     private readonly float[][] _inlineValues;
-    private readonly PgraphTextureState _textures = new();
+    private readonly PgraphState _state = new(MaxTransformProgramLength, MaxVertexShaderConstants);
+    private PgraphTextureState _textures => _state.Textures;
     private uint[] _textureOffset => _textures.Offset;
     private uint[] _textureFormat => _textures.Format;
     private uint[] _textureAddress => _textures.Address;
@@ -831,7 +832,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _fogGenMode;
     private readonly float[] _fogColor = new float[4];
     private readonly float[] _fogParams = new float[3];
-    private readonly PshCombiner _combiner = new();
+    private PshCombiner _combiner => _state.Combiner;
     private static readonly float[] CombinerFogConst = [0f, 0f, 0f, 1f];
     private bool _alphaTestEnable;
     private uint _alphaFunc;
@@ -900,16 +901,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Name = name;
         GpuMemory = memory;
         _memoryFast = memory as IGpuMemoryFast;
-        for (int i = 0; i < MaxTransformProgramLength; i++)
-        {
-            _transformProgram[i] = new uint[4];
-        }
-
-        for (int i = 0; i < MaxVertexShaderConstants; i++)
-        {
-            _transformConstants[i] = new uint[4];
-        }
-
         _inlineValues = new float[VertexAttributeCount][];
         for (int i = 0; i < VertexAttributeCount; i++)
         {
