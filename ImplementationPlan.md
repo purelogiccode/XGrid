@@ -805,15 +805,21 @@ program cache, buffer objects.
   Zeta download not needed for this row (the sampled faces are colour; the
   faces match exactly). The remaining replace-mode gap is the mixed-writer
   present path (slice 3).
-- [ ] Slice 3 - replace-mode mixed-writer composition. NGB's front surface is
-  written by a non-backend writer (video/DMA) while the backend owns the 3D
-  draws; the §135 dirty watch makes the flip upload the **whole** RAM front
-  surface, which overwrites the FBO's backend content (the 19% black).
-  Scope: compose per region (download the FBO's backend-owned region and keep
-  the RAM-written region, or upload only the RAM-dirty spans), keeping the
-  "one writer per pixel" rule. Acceptance: NGB replace display within the
-  screenshot policy / matching the mirror-mode image, `unsupported=0`, the
-  four accurate goldens and the ktest exact.
+- [x] Slice 3 attempt 1 - flip-time FBO to RAM download: **negative**
+  (2026-11-23). Implemented the reference's `surface_download` at flip
+  (download the FBO's presented region to guest RAM before the stale-FBO
+  upload; `flipDownloads=1431` on the NGB 2B leg) and measured a
+  **byte-identical** frame (same mean, colours, black). So the 19% black is in
+  the FBO's own pixels, not an upload/composition ordering loss; the upload is
+  not the cause. Reverted (no unvalidated readback cost). Mirror mode's match
+  against software is explained by the same upload serving the **software**
+  RAM (complete), not by the backend FBO. The remaining work is visible-scene
+  **GL shader parity**: the sampled cube faces are byte-identical in RAM, the
+  shader compiles and `unsupTex=0`, so the difference is in the cube
+  direction/decode or the fragment combine of the visible water draw.
+  Follow-up differential: compare the GL and software **per-pixel** images of
+  that draw at 10B+2B (the software frame as the oracle) and bisect the
+  shader stage (cube sample vs combine).
   NGB at the 10B anchor + 10M steps in `--gpu gl --gpu-replace`: the backend
   reports **`draws=0 programs=0 presentUploads=1`** while the software leg
   executes 3,040 draws, and the recorded stream sets `0x08080228` /
