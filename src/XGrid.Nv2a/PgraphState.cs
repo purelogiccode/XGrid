@@ -40,6 +40,24 @@ internal sealed class PgraphState
 
     /// <summary>Gets the fragment register combiner.</summary>
     public PshCombiner Combiner { get; } = new();
+
+    /// <summary>The surface format word (NV097_SET_SURFACE_FORMAT).</summary>
+    public uint SurfaceFormat;
+
+    /// <summary>The surface pitch word (NV097_SET_SURFACE_PITCH).</summary>
+    public uint SurfacePitch;
+
+    /// <summary>The surface clip horizontal word (x/y packed).</summary>
+    public uint SurfaceClipH;
+
+    /// <summary>The surface clip vertical word (y/height packed).</summary>
+    public uint SurfaceClipV;
+
+    /// <summary>The colour surface base offset latched from the DMA context.</summary>
+    public uint ColorSurfaceBase;
+
+    /// <summary>The zeta surface base offset latched from the DMA context.</summary>
+    public uint ZetaSurfaceBase;
 }
 
 /// <summary>

@@ -740,11 +740,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _pfifoPending;
     private uint _pfifoEnabled;
     private ulong _vsyncRemainder;
-    private uint _surfaceFormat;
-    private uint _surfacePitch;
+    private ref uint _surfaceFormat => ref _state.SurfaceFormat;
+    private ref uint _surfacePitch => ref _state.SurfacePitch;
     private uint _surfaceZetaOffset;
-    private uint _surfaceClipH;
-    private uint _surfaceClipV;
+    private ref uint _surfaceClipH => ref _state.SurfaceClipH;
+    private ref uint _surfaceClipV => ref _state.SurfaceClipV;
     private uint _zetaClearValue;
     private uint _colorClearValue;
     private uint _dmaSemaphore;
@@ -867,8 +867,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private bool _waitingForNop;
     private bool _pusherKickPending;
     private uint _surfaceChannel;
-    private uint _colorSurfaceBase;
-    private uint _zetaSurfaceBase;
+    private ref uint _colorSurfaceBase => ref _state.ColorSurfaceBase;
+    private ref uint _zetaSurfaceBase => ref _state.ZetaSurfaceBase;
     private uint _beginMode;
     private readonly Dictionary<uint, int> _methodCounts = [];
     private readonly Dictionary<uint, uint> _methodParams = [];
