@@ -543,7 +543,7 @@ Reference: `pgraph/vertex.c`, `pgraph/draw.c`, `pgraph_gl_bind_inline_array`,
   (raw), CMP (11/11/10 sign extension, `/1023`/`/1023`/`/511`), the `(0,0,0,1)`
   defaults, count 0/2, stride 0 (repeats the first vertex) and stride advance.
   10 differentials, 490 Nv2a tests.
-- [ ] Primitive assembly: the cull and rejection predicates are pinned -
+- [x] Primitive assembly: the cull and rejection predicates are pinned -
   `Nv2aCullFaceTests` covers culling off/back/front/both and the front-face
   convention, and now the degenerate (`area == 0`, no cull count) and
   clip-window (`x1 < x0 || y1 < y0`, no pixels) early returns that the gate
@@ -554,8 +554,9 @@ Reference: `pgraph/vertex.c`, `pgraph/draw.c`, `pgraph_gl_bind_inline_array`,
   commands; a cumulative `DrawArrayRangesSubmitted` counter makes the
   coalescing observable. 496 Nv2a tests, triangle 1B anchor `F9945E16`/
   `8836C7EB` unchanged.
-- [ ] Keep the existing software fill as the exact oracle until the draw path
-  is verified; one engine per run.
+- [x] The existing software fill stayed the exact oracle throughout (one engine
+  per run); XFP2 verifies its semantics rather than replacing it, so every gate
+  anchor is untouched.
 - [x] Differential: the draw/pixel counters reproduce the recorded rows - 007
   from `tm4/007-100b.xgs` +1M steps: **134,004 draws / 1,005,989,482 px /
   6,478 frames**, EIP `0x1FC9E`, CPU `17C548A3...`; NGB from `tm6/ngb-10b.xgs`
