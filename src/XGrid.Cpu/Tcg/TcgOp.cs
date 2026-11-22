@@ -101,6 +101,30 @@ public enum TcgOpKind
     /// <summary>Stores AH from EFLAGS (LAHF).</summary>
     Lahf,
 
+    /// <summary>Unsigned multiply, one-operand form (EDX:EAX = EAX * source).</summary>
+    Mul,
+
+    /// <summary>Signed multiply, one-operand form (EDX:EAX = EAX * source).</summary>
+    Imul1,
+
+    /// <summary>Signed multiply, two-operand form (dest = dest * source).</summary>
+    Imul2,
+
+    /// <summary>Signed multiply, three-operand form (dest = source * immediate).</summary>
+    Imul3,
+
+    /// <summary>Unsigned divide (EDX:EAX / source).</summary>
+    Div,
+
+    /// <summary>Signed divide (EDX:EAX / source).</summary>
+    Idiv,
+
+    /// <summary>Pushes a temp on the stack.</summary>
+    Push,
+
+    /// <summary>Pops a temp from the stack.</summary>
+    Pop,
+
     /// <summary>Computes a guest effective address from the memory operand shape.</summary>
     Lea,
 

@@ -426,6 +426,84 @@ public sealed class TcgTranslatorTests
             (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
     }
 
+    [Fact]
+    public void MulRegister()
+    {
+        AssertMatches([0xF7, 0xE3], cpu => { Set(cpu, Gpr.Eax, 0x00010000); Set(cpu, Gpr.Ebx, 0x00010000); });
+    }
+
+    [Fact]
+    public void ImulRegister()
+    {
+        AssertMatches([0xF7, 0xEB], cpu => { Set(cpu, Gpr.Eax, 0xFFFFFFFE); Set(cpu, Gpr.Ebx, 3); });
+    }
+
+    [Fact]
+    public void ImulTwoOperands()
+    {
+        AssertMatches([0x0F, 0xAF, 0xC3], cpu => { Set(cpu, Gpr.Eax, 3); Set(cpu, Gpr.Ebx, 0xFFFFFFFE); });
+    }
+
+    [Fact]
+    public void ImulThreeOperands()
+    {
+        AssertMatches([0x6B, 0xC3, 0xFD], cpu => Set(cpu, Gpr.Ebx, 2));
+    }
+
+    [Fact]
+    public void DivRegister()
+    {
+        AssertMatches([0xF7, 0xF3], cpu => { Set(cpu, Gpr.Eax, 10); Set(cpu, Gpr.Edx, 0); Set(cpu, Gpr.Ebx, 3); });
+    }
+
+    [Fact]
+    public void IdivRegister()
+    {
+        AssertMatches([0xF7, 0xFB], cpu => { Set(cpu, Gpr.Eax, 0xFFFFFFF6); Set(cpu, Gpr.Edx, 0xFFFFFFFF); Set(cpu, Gpr.Ebx, 3); });
+    }
+
+    [Fact]
+    public void PushImmediate32()
+    {
+        AssertMatches(
+            [0x68, 0x78, 0x56, 0x34, 0x12],
+            verify: (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x7FFC), tcg.Ram().Read32(0x7FFC)));
+    }
+
+    [Fact]
+    public void PushImmediate8SignExtends()
+    {
+        AssertMatches(
+            [0x6A, 0xFF],
+            verify: (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x7FFC), tcg.Ram().Read32(0x7FFC)));
+    }
+
+    [Fact]
+    public void PushRegister()
+    {
+        AssertMatches(
+            [0x50],
+            cpu => Set(cpu, Gpr.Eax, 0x11223344),
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x7FFC), tcg.Ram().Read32(0x7FFC)));
+    }
+
+    [Fact]
+    public void PopRegister()
+    {
+        AssertMatches(
+            [0x58],
+            cpu => { Set(cpu, Gpr.Esp, 0x7FFC); Memory32(cpu, 0x7FFC, 0x11223344); });
+    }
+
+    [Fact]
+    public void PopMemory()
+    {
+        AssertMatches(
+            [0x8F, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => { Set(cpu, Gpr.Esp, 0x7FFC); Memory32(cpu, 0x7FFC, 0x11223344); },
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
+    }
+
     private sealed class TestMemory(AddressSpace bus) : ITcgMemory
     {
         public byte Read8(uint address)

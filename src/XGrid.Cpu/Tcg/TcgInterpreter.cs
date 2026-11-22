@@ -223,6 +223,54 @@ public static class TcgInterpreter
                 case TcgOpKind.Lahf:
                     WriteRegister8(gprs, 4, (byte)((eflags & FlagBits.ConditionMask) | FlagBits.Reserved1));
                     break;
+                case TcgOpKind.Mul:
+                    eflags = MultiplyUnsigned(gprs, temps[op.Left], op.Size, eflags);
+                    break;
+                case TcgOpKind.Imul1:
+                    eflags = MultiplySigned(gprs, temps[op.Left], op.Size, eflags);
+                    break;
+                case TcgOpKind.Imul2:
+                    {
+                        long product = SignedValue(temps[op.Left], op.Size * 8)
+                                       * SignedValue(temps[op.Right], op.Size * 8);
+                        uint result = (uint)product & AluOps.Mask(op.Size * 8);
+                        eflags = SetMultiplyFlags(eflags, product != SignedValue(result, op.Size * 8));
+                        temps[op.Dest] = result;
+                        break;
+                    }
+
+                case TcgOpKind.Imul3:
+                    {
+                        long product = SignedValue(temps[op.Left], op.Size * 8)
+                                       * SignedValue(op.Immediate, op.Size * 8);
+                        uint result = (uint)product & AluOps.Mask(op.Size * 8);
+                        eflags = SetMultiplyFlags(eflags, product != SignedValue(result, op.Size * 8));
+                        temps[op.Dest] = result;
+                        break;
+                    }
+
+                case TcgOpKind.Div:
+                    DivideUnsigned(gprs, temps[op.Left], op.Size);
+                    break;
+                case TcgOpKind.Idiv:
+                    DivideSigned(gprs, temps[op.Left], op.Size);
+                    break;
+                case TcgOpKind.Push:
+                    {
+                        uint esp = gprs[4] - (uint)op.Size;
+                        gprs[4] = esp;
+                        Store(memory, SegmentBase(segmentBases, SegmentRegister.Ss) + esp, temps[op.Left], op.Size);
+                        break;
+                    }
+
+                case TcgOpKind.Pop:
+                    {
+                        uint esp = gprs[4];
+                        temps[op.Dest] = Load(
+                            memory, SegmentBase(segmentBases, SegmentRegister.Ss) + esp, op.Size);
+                        gprs[4] = esp + (uint)op.Size;
+                        break;
+                    }
                 case TcgOpKind.Lea:
                     temps[op.Dest] = EffectiveAddress(op, gprs, segmentBases);
                     break;
@@ -273,6 +321,244 @@ public static class TcgInterpreter
             2 => value & 0xFFFFu,
             _ => value,
         };
+    }
+
+    private static uint SegmentBase(ReadOnlySpan<uint> bases, SegmentRegister segment)
+    {
+        int index = (int)segment;
+        return index >= 0 && index < bases.Length ? bases[index] : 0;
+    }
+
+    private static long SignedValue(uint value, int bits)
+    {
+        return bits switch
+        {
+            8 => (sbyte)value,
+            16 => (short)value,
+            _ => (int)value,
+        };
+    }
+
+    private static uint SetMultiplyFlags(uint eflags, bool overflow)
+    {
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Of);
+        if (overflow)
+        {
+            flags |= FlagBits.Cf | FlagBits.Of;
+        }
+
+        return flags;
+    }
+
+    private static uint MultiplyUnsigned(uint[] gprs, uint source, int size, uint eflags)
+    {
+        bool overflow;
+        switch (size)
+        {
+            case 1:
+                {
+                    uint product = (byte)gprs[0] * (source & 0xFFu);
+                    gprs[0] = (gprs[0] & 0xFFFF0000u) | (product & 0xFFFFu);
+                    overflow = (product & 0xFF00u) != 0;
+                    break;
+                }
+
+            case 2:
+                {
+                    uint product = (ushort)gprs[0] * (source & 0xFFFFu);
+                    gprs[0] = (gprs[0] & 0xFFFF0000u) | (product & 0xFFFFu);
+                    gprs[2] = (gprs[2] & 0xFFFF0000u) | ((product >> 16) & 0xFFFFu);
+                    overflow = (product & 0xFFFF0000u) != 0;
+                    break;
+                }
+
+            default:
+                {
+                    ulong product = (ulong)gprs[0] * source;
+                    gprs[0] = (uint)product;
+                    gprs[2] = (uint)(product >> 32);
+                    overflow = (product >> 32) != 0;
+                    break;
+                }
+        }
+
+        return SetMultiplyFlags(eflags, overflow);
+    }
+
+    private static uint MultiplySigned(uint[] gprs, uint source, int size, uint eflags)
+    {
+        bool overflow;
+        switch (size)
+        {
+            case 1:
+                {
+                    int product = (sbyte)gprs[0] * (sbyte)source;
+                    gprs[0] = (gprs[0] & 0xFFFF0000u) | (uint)(product & 0xFFFF);
+                    overflow = product != (sbyte)product;
+                    break;
+                }
+
+            case 2:
+                {
+                    int product = (short)gprs[0] * (short)source;
+                    gprs[0] = (gprs[0] & 0xFFFF0000u) | (uint)(product & 0xFFFF);
+                    gprs[2] = (gprs[2] & 0xFFFF0000u) | ((uint)(product >> 16) & 0xFFFFu);
+                    overflow = product != (short)product;
+                    break;
+                }
+
+            default:
+                {
+                    long product = (long)(int)gprs[0] * (int)source;
+                    gprs[0] = (uint)product;
+                    gprs[2] = (uint)(product >> 32);
+                    overflow = product != (int)product;
+                    break;
+                }
+        }
+
+        return SetMultiplyFlags(eflags, overflow);
+    }
+
+    private static void DivideUnsigned(uint[] gprs, uint source, int size)
+    {
+        switch (size)
+        {
+            case 1:
+                {
+                    uint divisor = source & 0xFFu;
+                    if (divisor == 0)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    uint dividend = (ushort)gprs[0];
+                    uint quotient = dividend / divisor;
+                    if (quotient > 0xFFu)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    WriteRegister8(gprs, 0, (byte)quotient);
+                    WriteRegister8(gprs, 4, (byte)(dividend % divisor));
+                    break;
+                }
+
+            case 2:
+                {
+                    uint divisor = source & 0xFFFFu;
+                    if (divisor == 0)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    uint dividend = ((uint)(ushort)gprs[2] << 16) | (ushort)gprs[0];
+                    uint quotient = dividend / divisor;
+                    if (quotient > 0xFFFFu)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    gprs[0] = (gprs[0] & 0xFFFF0000u) | (quotient & 0xFFFFu);
+                    gprs[2] = (gprs[2] & 0xFFFF0000u) | ((dividend % divisor) & 0xFFFFu);
+                    break;
+                }
+
+            default:
+                {
+                    if (source == 0)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    ulong dividend = ((ulong)gprs[2] << 32) | gprs[0];
+                    ulong quotient = dividend / source;
+                    if (quotient > 0xFFFFFFFFu)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    gprs[0] = (uint)quotient;
+                    gprs[2] = (uint)(dividend % source);
+                    break;
+                }
+        }
+    }
+
+    private static void DivideSigned(uint[] gprs, uint source, int size)
+    {
+        switch (size)
+        {
+            case 1:
+                {
+                    int divisor = (sbyte)source;
+                    if (divisor == 0)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    int dividend = (short)gprs[0];
+                    int quotient = dividend / divisor;
+                    if (quotient is < sbyte.MinValue or > sbyte.MaxValue)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    WriteRegister8(gprs, 0, (byte)quotient);
+                    WriteRegister8(gprs, 4, (byte)(dividend % divisor));
+                    break;
+                }
+
+            case 2:
+                {
+                    int divisor = (short)source;
+                    if (divisor == 0)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    int dividend = (int)(((uint)(ushort)gprs[2] << 16) | (ushort)gprs[0]);
+                    if (dividend == int.MinValue && divisor == -1)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    int quotient = dividend / divisor;
+                    if (quotient is < short.MinValue or > short.MaxValue)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    gprs[0] = (gprs[0] & 0xFFFF0000u) | ((uint)quotient & 0xFFFFu);
+                    gprs[2] = (gprs[2] & 0xFFFF0000u) | ((uint)(dividend % divisor) & 0xFFFFu);
+                    break;
+                }
+
+            default:
+                {
+                    int divisor = (int)source;
+                    if (divisor == 0)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    long dividend = (long)(((ulong)gprs[2] << 32) | gprs[0]);
+                    if (dividend == long.MinValue && divisor == -1)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    long quotient = dividend / divisor;
+                    if (quotient is < int.MinValue or > int.MaxValue)
+                    {
+                        throw new TcgDivideErrorException();
+                    }
+
+                    gprs[0] = (uint)quotient;
+                    gprs[2] = (uint)(dividend % divisor);
+                    break;
+                }
+        }
     }
 
     private static uint EffectiveAddress(TcgOp op, uint[] gprs, ReadOnlySpan<uint> segmentBases)
@@ -330,6 +616,31 @@ public static class TcgInterpreter
                 memory.Write32(address, value);
                 break;
         }
+    }
+}
+
+/// <summary>The #DE divide-error condition raised by DIV/IDIV.</summary>
+public sealed class TcgDivideErrorException : Exception
+{
+    /// <summary>Initializes a new instance of the <see cref="TcgDivideErrorException"/> class.</summary>
+    public TcgDivideErrorException()
+        : this("divide error")
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="TcgDivideErrorException"/> class.</summary>
+    /// <param name="message">The message.</param>
+    public TcgDivideErrorException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="TcgDivideErrorException"/> class.</summary>
+    /// <param name="message">The message.</param>
+    /// <param name="innerException">The inner exception.</param>
+    public TcgDivideErrorException(string message, Exception innerException)
+        : base(message, innerException)
+    {
     }
 }
 

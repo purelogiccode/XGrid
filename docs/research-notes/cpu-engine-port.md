@@ -85,10 +85,12 @@ differentials. Slice 2: the reference memory shape (`Lea` from `MemoryOperand`,
 partial-register (AL..BH) reads/writes, and 16-bit addressing declined. Slice 3:
 shifts/rotates (SHL/SHR/SAR/ROL/ROR/RCL/RCR by imm and CL), SHLD/SHRD,
 NEG/NOT, MOVZX/MOVSX (8/16), LEA, XCHG (reg/reg and reg/mem) and SAHF/LAHF.
-**52 differentials total** (registers, EFLAGS, EIP and guest memory);
-`XGrid.Cpu.Tests` **755/755**, format clean. Next: MUL/IMUL/DIV/IDIV, PUSH/POP,
-BT/BTS/BTR/BTC, CMPXCHG/XADD, then MMX (170 corpus cases), x87 (59), SSE (37)
-and REP; the cpu-oracle gate needs those blocks.
+Slice 4: MUL/IMUL (1/2/3-operand)/DIV/IDIV with the reference EAX:EDX and flag
+semantics (a divide error raises `TcgDivideErrorException`), and PUSH/POP
+(register/immediate/memory, 16/32-bit) over the SS stack. **63 differentials
+total** (registers, EFLAGS, EIP and guest memory); `XGrid.Cpu.Tests` **766/766**,
+format clean. Next: BT/BTS/BTR/BTC, CMPXCHG/XADD, then MMX (170 corpus cases),
+x87 (59), SSE (37) and REP; the cpu-oracle gate needs those blocks.
 
 ### P1S4 - host code generation (6-10 sessions)
 

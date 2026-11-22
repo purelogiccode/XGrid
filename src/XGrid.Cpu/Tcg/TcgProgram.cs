@@ -232,6 +232,74 @@ public sealed class TcgBuilder
         _ops.Add(new TcgOp { Kind = TcgOpKind.Lahf });
     }
 
+    /// <summary>Emits an unsigned multiply of EAX by a temp (writes EDX:EAX).</summary>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Mul(int source, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Mul, Left = source, Size = size });
+    }
+
+    /// <summary>Emits a signed one-operand multiply of EAX by a temp.</summary>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Imul1(int source, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Imul1, Left = source, Size = size });
+    }
+
+    /// <summary>Emits a signed two-operand multiply.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="left">Left temp.</param>
+    /// <param name="right">Right temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Imul2(int dest, int left, int right, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Imul2, Dest = dest, Left = left, Right = right, Size = size });
+    }
+
+    /// <summary>Emits a signed three-operand multiply.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="left">Source temp.</param>
+    /// <param name="immediate">The immediate factor.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Imul3(int dest, int left, uint immediate, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Imul3, Dest = dest, Left = left, Immediate = immediate, Size = size });
+    }
+
+    /// <summary>Emits an unsigned divide of EDX:EAX by a temp.</summary>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Div(int source, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Div, Left = source, Size = size });
+    }
+
+    /// <summary>Emits a signed divide of EDX:EAX by a temp.</summary>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Idiv(int source, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Idiv, Left = source, Size = size });
+    }
+
+    /// <summary>Emits a stack push.</summary>
+    /// <param name="value">Value temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Push(int value, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Push, Left = value, Size = size });
+    }
+
+    /// <summary>Emits a stack pop.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Pop(int dest, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Pop, Dest = dest, Size = size });
+    }
+
     /// <summary>Emits an effective-address computation (QEMU's address shape).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="memory">The decoded memory operand.</param>

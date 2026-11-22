@@ -86,6 +86,14 @@ public static class I386Translator
             case Mnemonic.Lahf:
                 builder.Lahf();
                 return true;
+            case Mnemonic.Mul:
+            case Mnemonic.Imul:
+            case Mnemonic.Div:
+            case Mnemonic.Idiv:
+                return TryMulDiv(instruction, builder, out reason);
+            case Mnemonic.Push:
+            case Mnemonic.Pop:
+                return TryPushPop(instruction, builder, out reason);
             case Mnemonic.Jmp:
                 if (instruction.Operand1.Kind != OperandKind.Immediate)
                 {
@@ -566,6 +574,142 @@ public static class I386Translator
         }
 
         reason = "xchg operands";
+        return false;
+    }
+
+    private static bool TryMulDiv(
+        DecodedInstruction instruction,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        if (instruction.Mnemonic == Mnemonic.Imul)
+        {
+            if (instruction.Operand3.Kind != OperandKind.None)
+            {
+                if (instruction.Operand1.Kind != OperandKind.Register)
+                {
+                    reason = "imul3 destination";
+                    return false;
+                }
+
+                int destSize = instruction.Operand1.Size / 8;
+                int operandSize = instruction.Operand2.Size / 8;
+                if (!TryReadSource(instruction.Operand2, operandSize, builder, out int source, out reason))
+                {
+                    return false;
+                }
+
+                int result = builder.NewTemp();
+                builder.Imul3(result, source, instruction.Operand3.Immediate, destSize);
+                builder.WriteRegister(instruction.Operand1.RegisterIndex, result, destSize);
+                return true;
+            }
+
+            if (instruction.Operand2.Kind != OperandKind.None)
+            {
+                if (instruction.Operand1.Kind != OperandKind.Register)
+                {
+                    reason = "imul2 destination";
+                    return false;
+                }
+
+                int destSize = instruction.Operand1.Size / 8;
+                int left = builder.NewTemp();
+                builder.ReadRegister(left, instruction.Operand1.RegisterIndex, destSize);
+                if (!TryReadSource(instruction.Operand2, destSize, builder, out int right, out reason))
+                {
+                    return false;
+                }
+
+                int result = builder.NewTemp();
+                builder.Imul2(result, left, right, destSize);
+                builder.WriteRegister(instruction.Operand1.RegisterIndex, result, destSize);
+                return true;
+            }
+
+            int sourceSize = instruction.Operand1.Size / 8;
+            if (!TryReadSource(instruction.Operand1, sourceSize, builder, out int implicitSource, out reason))
+            {
+                return false;
+            }
+
+            builder.Imul1(implicitSource, sourceSize);
+            return true;
+        }
+
+        int size = instruction.Operand1.Size / 8;
+        if (!TryReadSource(instruction.Operand1, size, builder, out int sourceOperand, out reason))
+        {
+            return false;
+        }
+
+        switch (instruction.Mnemonic)
+        {
+            case Mnemonic.Mul:
+                builder.Mul(sourceOperand, size);
+                break;
+            case Mnemonic.Div:
+                builder.Div(sourceOperand, size);
+                break;
+            default:
+                builder.Idiv(sourceOperand, size);
+                break;
+        }
+
+        return true;
+    }
+
+    private static bool TryPushPop(
+        DecodedInstruction instruction,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        int size = instruction.OperandSize / 8;
+        if (size is not (2 or 4))
+        {
+            reason = "stack operand size";
+            return false;
+        }
+
+        if (instruction.Mnemonic == Mnemonic.Push)
+        {
+            int value;
+            if (instruction.Operand1.Kind == OperandKind.Immediate)
+            {
+                value = builder.NewTemp();
+                builder.MovImmediate(value, instruction.Operand1.Immediate, size);
+            }
+            else if (!TryReadSource(instruction.Operand1, size, builder, out value, out reason))
+            {
+                return false;
+            }
+
+            builder.Push(value, size);
+            return true;
+        }
+
+        int popped = builder.NewTemp();
+        builder.Pop(popped, size);
+        if (instruction.Operand1.Kind == OperandKind.Register)
+        {
+            builder.WriteRegister(instruction.Operand1.RegisterIndex, popped, size);
+            return true;
+        }
+
+        if (instruction.Operand1.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(instruction.Operand1.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.Store(address, popped, size);
+            return true;
+        }
+
+        reason = "pop destination";
         return false;
     }
 
