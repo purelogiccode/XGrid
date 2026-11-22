@@ -803,14 +803,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly List<float> _inlineVertices = [];
     private readonly List<(int Start, int Count)> _drawArraysRanges = [];
     private readonly float[][] _inlineValues;
-    private readonly uint[] _textureOffset = new uint[MaxTextureSlots];
-    private readonly uint[] _textureFormat = new uint[MaxTextureSlots];
-    private readonly uint[] _textureAddress = new uint[MaxTextureSlots];
-    private readonly uint[] _textureControl0 = new uint[MaxTextureSlots];
-    private readonly uint[] _textureControl1 = new uint[MaxTextureSlots];
-    private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
-    private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
-    private readonly uint[] _textureBorderColor = new uint[MaxTextureSlots];
+    private readonly PgraphTextureState _textures = new();
+    private uint[] _textureOffset => _textures.Offset;
+    private uint[] _textureFormat => _textures.Format;
+    private uint[] _textureAddress => _textures.Address;
+    private uint[] _textureControl0 => _textures.Control0;
+    private uint[] _textureControl1 => _textures.Control1;
+    private uint[] _textureFilter => _textures.Filter;
+    private uint[] _textureImageRect => _textures.ImageRect;
+    private uint[] _textureBorderColor => _textures.BorderColor;
 
     /// <summary>
     /// NV097_SET_TEXTURE_PALETTE per slot: DMA select (bit 0), length index
@@ -819,12 +820,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <c>index * 4</c> (xemu <c>pgraph_get_texture_palette_phys_addr_length</c>
     /// and <c>pgraph_convert_texture_data</c>).
     /// </summary>
-    private readonly uint[] _texturePalette = new uint[MaxTextureSlots];
+    private uint[] _texturePalette => _textures.Palette;
     private uint _shaderClipMode;
     private uint _shadowDepthFunc;
-    private readonly float[][] _bumpMatrices = new float[MaxTextureSlots - 1][];
-    private readonly float[] _bumpScales = new float[MaxTextureSlots - 1];
-    private readonly float[] _bumpOffsets = new float[MaxTextureSlots - 1];
+    private float[][] _bumpMatrices => _textures.BumpMatrices;
+    private float[] _bumpScales => _textures.BumpScales;
+    private float[] _bumpOffsets => _textures.BumpOffsets;
     private bool _fogEnable;
     private int _fogMode;
     private uint _fogGenMode;
@@ -1585,24 +1586,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _zetaSurfaceBase = 0;
         Array.Clear(_vertexFormat);
         Array.Clear(_vertexArrayOffset);
-        Array.Clear(_textureOffset);
-        Array.Clear(_textureFormat);
-        Array.Clear(_textureAddress);
-        Array.Clear(_textureControl0);
-        Array.Clear(_textureControl1);
-        Array.Clear(_textureFilter);
-        Array.Clear(_textureImageRect);
-        Array.Clear(_textureBorderColor);
-        Array.Clear(_texturePalette);
+        _textures.Clear();
         _shaderClipMode = 0;
         _shadowDepthFunc = ShadowDepthFuncNever;
-        foreach (float[] matrix in _bumpMatrices)
-        {
-            Array.Clear(matrix);
-        }
-
-        Array.Clear(_bumpScales);
-        Array.Clear(_bumpOffsets);
         _fogEnable = false;
         _fogMode = 0;
         _fogGenMode = 0;
