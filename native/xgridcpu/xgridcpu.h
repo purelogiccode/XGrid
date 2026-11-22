@@ -42,7 +42,16 @@ enum {
     XGC_ERR_STATE = -2,
     XGC_ERR_ARG = -3,
     XGC_ERR_HALTED = 1,
+    XGC_MMIO = 2,
 };
+
+typedef struct XgcMmioAccess {
+    uint32_t gpa;
+    uint32_t size;
+    uint32_t is_write;
+    uint32_t _pad;
+    uint64_t value;
+} XgcMmioAccess;
 
 XGC_API int xgc_init(void);
 XGC_API XgcCpu *xgc_create(void);
@@ -52,6 +61,14 @@ XGC_API int xgc_map_ram(XgcCpu *cpu, uint32_t gpa, uint32_t size, void *host);
 XGC_API int xgc_map_mmio(XgcCpu *cpu, uint32_t gpa, uint32_t size,
                          XgcMmioReadFn read, XgcMmioWriteFn write,
                          void *opaque);
+
+/* XCN1 MMIO ring: a native shadowed read window plus a write queue. The
+ * device model (C#) updates the shadow between run slices and drains the
+ * write queue; the softmmu callback never calls managed code. */
+XGC_API int xgc_map_mmio_ring(XgcCpu *cpu, uint32_t gpa, uint32_t size);
+XGC_API int xgc_mmio_take(XgcCpu *cpu, XgcMmioAccess *access);
+XGC_API void xgc_mmio_set_read(XgcCpu *cpu, uint32_t gpa, uint32_t size,
+                               uint64_t value);
 
 XGC_API int xgc_reset_real(XgcCpu *cpu, uint32_t eip, uint32_t esp);
 XGC_API int xgc_run(XgcCpu *cpu, uint32_t max_insns, uint64_t *executed);

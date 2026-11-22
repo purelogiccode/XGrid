@@ -123,6 +123,9 @@ no-op `create_vcpu_thread`/`handle_interrupt` -> `accel_init_machine()` ->
 
 - `native/xgridcpu/xgc_test.exe`: 100,000-step budget, RAM store, **real MMIO
   read/write callbacks** (0xCAFEBABE at 0xF0000004), EAX/ECX/EIP exact.
+- `native/xgridcpu/xgc_ring_test.exe`: the XCN1 shadow+ring path — reads from
+  a native shadow window, writes queued and drained by the host, 0xCAFEBABE at
+  0xF0000004, 100,000-step budget.
 - `tools/xcn0-probe` (C#): vCPU, RAM, registers and the 100,000-step budget
   from managed code; the 0xF0000000 window is RAM in this leg.
 
@@ -133,16 +136,16 @@ guest time on this trivial loop. That is 3.4x the current raw JIT
 (x87/SSE, TB churn and devices), and 0.5x is 365 Msteps/s. The next measurement
 is the 007 boot leg once the MMIO ring and the machine seam exist.
 
-**Deferred to XCN1 (the first slice): the managed MMIO callback.** A C#
-`UnmanagedCallersOnly`/delegate callback invoked synchronously from QEMU's
-softmmu during `cpu_exec` fails fast in this host/runtime (`0xC0000409`). The
-same callback called directly by a native test function
-(`xgc_test_callback`) returns 0xCAFEBABE, so the ABI is correct; the failure
-is the call context (TCG/softmmu stack or runtime transition). The native C
-callback path is proven. XCN1 must service MMIO through a **native ring** (or
-exit to the host) and dispatch to C# outside the TCG call stack, not via a
-reverse P/Invoke. The product link should also become a custom meson target
-instead of the filtered fat archives.
+**Deferred to XCN1 (the first slice): the .NET MMIO host boundary.** The
+native shadow+ring path passes in C (`ring_test.c`), and the native direct
+callback path passes in C (`test.c`). Under the **.NET-hosted DLL** the MMIO
+path fails: a managed callback fails at the callback, and the native shadow
+ring (no callback on the TCG stack) fails before the first ring read
+(`0xC0000409`), while the same ring code passes as a native executable. The
+C# vCPU/RAM/step path is proven. XCN1 must put the CPU in a native process or
+a native host boundary (or fix the DLL/TCG ABI) and expose the shadow+write
+ring to C#; the product link should also become a custom meson target instead
+of the filtered fat archives.
 
 **Next (XCN1):** the native MMIO ring + host-side dispatch, the custom meson
 target, then the machine seam (PIC/PIT/APU/NV2A) and the 007 boot.

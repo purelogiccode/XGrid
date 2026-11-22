@@ -46,6 +46,15 @@ typedef struct XgcMmio {
     void *opaque;
 } XgcMmio;
 
+#define XGC_RING_CAP 64
+
+typedef struct XgcRing {
+    struct XgcCpu *cpu;
+    uint32_t base;
+    uint32_t size;
+    uint8_t *shadow;
+} XgcRing;
+
 struct XgcCpu {
     CPUState *cpu;
     MemoryRegion *ram[4];
@@ -53,6 +62,12 @@ struct XgcCpu {
     MemoryRegion *mmio_mr[8];
     XgcMmio *mmio[8];
     int nmmio;
+    MemoryRegion *ring_mr[8];
+    XgcRing *rings[8];
+    int nrings;
+    XgcMmioAccess ring[XGC_RING_CAP];
+    int ring_head;
+    int ring_tail;
 };
 
 static bool g_initialized;
@@ -110,6 +125,58 @@ static void xgc_mmio_write(void *opaque, hwaddr addr, uint64_t value,
 static const MemoryRegionOps xgc_mmio_ops = {
     .read = xgc_mmio_read,
     .write = xgc_mmio_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 8,
+    .impl.min_access_size = 1,
+    .impl.max_access_size = 8,
+};
+
+static bool xgc_ring_push(XgcCpu *c, uint32_t gpa, uint32_t size,
+                          uint32_t is_write, uint64_t value)
+{
+    int next = (c->ring_tail + 1) % XGC_RING_CAP;
+
+    if (next == c->ring_head) {
+        return false;
+    }
+    c->ring[c->ring_tail].gpa = gpa;
+    c->ring[c->ring_tail].size = size;
+    c->ring[c->ring_tail].is_write = is_write;
+    c->ring[c->ring_tail]._pad = 0;
+    c->ring[c->ring_tail].value = value;
+    c->ring_tail = next;
+    return true;
+}
+
+static uint64_t xgc_ring_read(void *opaque, hwaddr addr, unsigned size)
+{
+    XgcRing *r = opaque;
+    uint32_t off = (uint32_t)addr;
+    uint64_t value = 0;
+
+    XGC_TRACE("ring read gpa=%x size=%u\n", r->base + off, size);
+    if (off + size > r->size) {
+        return 0;
+    }
+    memcpy(&value, r->shadow + off, size);
+    return value;
+}
+
+static void xgc_ring_write(void *opaque, hwaddr addr, uint64_t value,
+                           unsigned size)
+{
+    XgcRing *r = opaque;
+    XgcCpu *c = r->cpu;
+
+    XGC_TRACE("ring write gpa=%x size=%u value=%llx\n",
+              r->base + (uint32_t)addr, size, (unsigned long long)value);
+    xgc_ring_push(c, r->base + (uint32_t)addr, size, 1, value);
+}
+
+static const MemoryRegionOps xgc_ring_ops = {
+    .read = xgc_ring_read,
+    .write = xgc_ring_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
     .valid.min_access_size = 1,
     .valid.max_access_size = 8,
@@ -292,6 +359,12 @@ void xgc_destroy(XgcCpu *c)
         g_free(c->mmio_mr[i]);
         g_free(c->mmio[i]);
     }
+    for (i = 0; i < c->nrings; i++) {
+        memory_region_destroy(c->ring_mr[i]);
+        g_free(c->ring_mr[i]);
+        g_free(c->rings[i]->shadow);
+        g_free(c->rings[i]);
+    }
     if (c->cpu) {
         object_unref(OBJECT(c->cpu));
     }
@@ -337,6 +410,57 @@ int xgc_map_mmio(XgcCpu *c, uint32_t gpa, uint32_t size, XgcMmioReadFn read,
     c->nmmio++;
     xgc_flush_tb(c);
     return XGC_OK;
+}
+
+int xgc_map_mmio_ring(XgcCpu *c, uint32_t gpa, uint32_t size)
+{
+    MemoryRegion *mr;
+    XgcRing *r;
+
+    if (!c || size == 0 || c->nrings >= 8) {
+        return XGC_ERR_ARG;
+    }
+    r = g_new0(XgcRing, 1);
+    r->cpu = c;
+    r->base = gpa;
+    r->size = size;
+    r->shadow = g_malloc0(size);
+
+    mr = g_new0(MemoryRegion, 1);
+    memory_region_init_io(mr, NULL, &xgc_ring_ops, r, "xgrid-mmio-ring",
+                          size);
+    memory_region_add_subregion(get_system_memory(), gpa, mr);
+    c->ring_mr[c->nrings] = mr;
+    c->rings[c->nrings] = r;
+    c->nrings++;
+    xgc_flush_tb(c);
+    return XGC_OK;
+}
+
+int xgc_mmio_take(XgcCpu *c, XgcMmioAccess *access)
+{
+    if (!c || !access || c->ring_head == c->ring_tail) {
+        return 0;
+    }
+    *access = c->ring[c->ring_head];
+    c->ring_head = (c->ring_head + 1) % XGC_RING_CAP;
+    return 1;
+}
+
+void xgc_mmio_set_read(XgcCpu *c, uint32_t gpa, uint32_t size, uint64_t value)
+{
+    int i;
+
+    if (!c || size == 0 || size > 8) {
+        return;
+    }
+    for (i = 0; i < c->nrings; i++) {
+        XgcRing *r = c->rings[i];
+        if (gpa >= r->base && gpa + size <= r->base + r->size) {
+            memcpy(r->shadow + (gpa - r->base), &value, size);
+            return;
+        }
+    }
 }
 
 int xgc_reset_real(XgcCpu *c, uint32_t eip, uint32_t esp)

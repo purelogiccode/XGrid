@@ -70,18 +70,22 @@ The archives build and the XCN0 tests pass:
 cd native/xgridcpu && ./build.sh && ./xgc_test.exe
 # XCN0 C SPIKE PASS (100k steps, RAM, real MMIO callbacks, registers)
 
+./xgc_ring_test.exe
+# XCN1 MMIO SHADOW+RING C PASS (shadow reads, queued writes, 100k steps)
+
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:XGRIDCPU_DLL = (Resolve-Path native/xgridcpu/xgridcpu.dll).Path
 dotnet run --project tools/xcn0-probe -c Release
-# XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO ring is XCN1)
+# XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO host boundary is XCN1)
 ```
 
-The C# probe proves the vCPU, guest RAM, registers and the 100,000-step
-budget from managed code. A **managed** MMIO callback invoked synchronously
-from QEMU's softmmu during `cpu_exec` fails fast in this host/runtime
-(`0xC0000409`); the same callback called directly by a native test function
-works, so the ABI is correct. XCN1 must service MMIO through a native ring
-(or exit to the host) rather than a reverse P/Invoke on the TCG call stack.
+The native shadow+ring path passes in C: reads come from a native shadow
+window and writes are queued for the host. Under the **.NET-hosted DLL** the
+MMIO path fails before the first ring read (`0xC0000409`), and a managed
+callback fails at the callback, while the same code passes as a native
+executable. The C# vCPU/RAM/step path is proven. XCN1 must put the CPU in a
+native process/boundary (or fix the DLL/TCG ABI) and expose the shadow+write
+ring to C#.
 
 Measured on the 100M-step self-loop: **246.9 Msteps/s from C** (0.405 s) and
 **247.5 Msteps/s from C#** (0.404 s), 4.05 ns/step (~0.34x guest time on this

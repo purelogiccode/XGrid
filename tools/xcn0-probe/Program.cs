@@ -9,10 +9,10 @@ namespace XGrid.Xcn0Probe
     /// XCN0 acceptance probe: drives libxgridcpu from managed code.
     ///
     /// This probe covers the vCPU, guest RAM, the architectural registers and
-    /// the instruction budget. The MMIO callback path is covered by the native
-    /// C smoke test (native/xgridcpu/test.c): a managed callback invoked from
-    /// QEMU's softmmu during cpu_exec fails fast in this host/runtime and must
-    /// be replaced by the XCN1 native MMIO ring (see the research note).
+    /// the instruction budget. MMIO under the .NET-hosted DLL is deferred to
+    /// XCN1: a managed callback fails at the callback and the native shadow
+    /// ring fails before the first ring access (0xC0000409), while the same
+    /// ring code passes as a native executable (native/xgridcpu/ring_test.c).
     /// </summary>
     internal static unsafe class Program
     {
@@ -74,13 +74,13 @@ namespace XGrid.Xcn0Probe
 
             // Real-mode code at 0x1000:
             //   mov dword ptr [0x2000], 0x12345678
-            //   mov eax, [0xF0000000]
+            //   mov eax, [0xF0000000]      ; a RAM window in this leg
             //   mov [0xF0000004], eax
             //   mov ecx, 10
             // loop:
             //   dec ecx
             //   jnz loop
-            //   jmp $              ; the step budget stops the guest
+            //   jmp $                      ; the step budget stops the guest
             ReadOnlySpan<byte> code = new byte[]
             {
                 0x66, 0xC7, 0x06, 0x00, 0x20, 0x78, 0x56, 0x34, 0x12,
@@ -145,7 +145,7 @@ namespace XGrid.Xcn0Probe
                         return 1;
                     }
 
-                    Console.WriteLine("XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO ring is XCN1)");
+                    Console.WriteLine("XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO host boundary is XCN1)");
 
                     var sw = Stopwatch.StartNew();
                     int prc = xgc_run(cpu, 100_000_000, out ulong perfSteps);

@@ -61,4 +61,5 @@ LIBS=(
 )
 
 $CC "${COMMON[@]}" -o xgc_test.exe test.c xgridcpu.c stubs.c "${LIBS[@]}"
+$CC "${COMMON[@]}" -o xgc_ring_test.exe ring_test.c xgridcpu.c stubs.c "${LIBS[@]}"
 $CC "${COMMON[@]}" -shared -o xgridcpu.dll xgridcpu.c stubs.c "${LIBS[@]}"
