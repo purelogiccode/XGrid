@@ -76,14 +76,16 @@ Recorded as **N16**; the QemuTlb stays as the reference shape for the TCG port.
 - Keep the interpreter as the fallback; count every fallback.
 - **Gate:** `tools/cpu-oracle` exact on the IR interpreter before codegen.
 
-**First slice (2026-11-22).** The managed TCG IR (`TcgOp`, `TcgProgram`,
-`TcgBuilder`), the reference IR interpreter (`TcgInterpreter`, reusing the
-exact `AluOps` flag helpers), and the i386 translator for 32-bit
-register/immediate MOV, ADD/SUB/AND/OR/XOR/CMP, INC/DEC (CF preserved), NOP,
-JMP and Jcc are ported. **17 differential tests** compare registers, EFLAGS and
-EIP against the real interpreter. Memory operands, 8/16-bit forms, stack,
-FPU/SSE and the cpu-oracle corpus are the next slices; every unhandled shape
-returns false and keeps the interpreter.
+**Slices (2026-11-22).** Slice 1: the managed TCG IR (`TcgOp`, `TcgProgram`,
+`TcgBuilder`), the reference IR interpreter (`TcgInterpreter`, exact `AluOps`
+flags), and the i386 translator for 32-bit register/immediate MOV,
+ADD/SUB/AND/OR/XOR/CMP, INC/DEC (CF preserved), NOP, JMP and Jcc; 17
+differentials. Slice 2: the reference memory shape (`Lea` from `MemoryOperand`,
+1/2/4-byte `Load`/`Store`, segment bases), 8/16-bit register and memory forms,
+partial-register (AL..BH) reads/writes, and 16-bit addressing declined; **32
+differentials total** (registers, EFLAGS, EIP and guest memory). `XGrid.Cpu.Tests`
+**735/735**, format clean. Next: stack/string/FPU/SSE, the `tools/cpu-oracle`
+corpus and the measured fallback count.
 
 ### P1S4 - host code generation (6-10 sessions)
 

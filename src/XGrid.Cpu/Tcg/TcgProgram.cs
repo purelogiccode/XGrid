@@ -61,28 +61,59 @@ public sealed class TcgBuilder
         _byteLength += length;
     }
 
-    /// <summary>Emits a temp = immediate.</summary>
+    /// <summary>Emits a temp = immediate (masked by size).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="value">Immediate value.</param>
-    public void MovImmediate(int dest, uint value)
+    /// <param name="size">Operand size in bytes.</param>
+    public void MovImmediate(int dest, uint value, int size = 4)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.MovImmediate, Dest = dest, Immediate = value });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.MovImmediate, Dest = dest, Immediate = value, Size = size });
     }
 
-    /// <summary>Emits temp = guest register.</summary>
+    /// <summary>Emits temp = guest register (32-bit).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="register">Guest register.</param>
     public void ReadRegister(int dest, Gpr register)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.ReadRegister, Dest = dest, GuestRegister = (int)register });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.ReadRegister, Dest = dest, GuestRegister = (int)register, Size = 4 });
     }
 
-    /// <summary>Emits guest register = temp.</summary>
+    /// <summary>Emits temp = guest register for an 8/16/32-bit operand.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="registerIndex">Guest register index (0-7; 8-bit 4-7 are AH..BH).</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void ReadRegister(int dest, int registerIndex, int size)
+    {
+        TcgOpKind kind = size switch
+        {
+            1 => TcgOpKind.ReadRegister8,
+            2 => TcgOpKind.ReadRegister16,
+            _ => TcgOpKind.ReadRegister,
+        };
+        _ops.Add(new TcgOp { Kind = kind, Dest = dest, GuestRegister = registerIndex, Size = size });
+    }
+
+    /// <summary>Emits guest register = temp (32-bit).</summary>
     /// <param name="register">Guest register.</param>
     /// <param name="source">Source temp.</param>
     public void WriteRegister(Gpr register, int source)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.WriteRegister, GuestRegister = (int)register, Left = source });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.WriteRegister, GuestRegister = (int)register, Left = source, Size = 4 });
+    }
+
+    /// <summary>Emits guest register = temp for an 8/16/32-bit operand.</summary>
+    /// <param name="registerIndex">Guest register index (0-7; 8-bit 4-7 are AH..BH).</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void WriteRegister(int registerIndex, int source, int size)
+    {
+        TcgOpKind kind = size switch
+        {
+            1 => TcgOpKind.WriteRegister8,
+            2 => TcgOpKind.WriteRegister16,
+            _ => TcgOpKind.WriteRegister,
+        };
+        _ops.Add(new TcgOp { Kind = kind, GuestRegister = registerIndex, Left = source, Size = size });
     }
 
     /// <summary>Emits a binary ALU operation.</summary>
@@ -90,33 +121,76 @@ public sealed class TcgBuilder
     /// <param name="dest">Destination temp.</param>
     /// <param name="left">Left temp.</param>
     /// <param name="right">Right temp.</param>
-    public void Alu(TcgOpKind kind, int dest, int left, int right)
+    /// <param name="size">Operand size in bytes.</param>
+    public void Alu(TcgOpKind kind, int dest, int left, int right, int size = 4)
     {
-        _ops.Add(new TcgOp { Kind = kind, Dest = dest, Left = left, Right = right });
+        _ops.Add(new TcgOp { Kind = kind, Dest = dest, Left = left, Right = right, Size = size });
     }
 
     /// <summary>Emits a compare (subtract without storing).</summary>
     /// <param name="left">Left temp.</param>
     /// <param name="right">Right temp.</param>
-    public void Cmp(int left, int right)
+    /// <param name="size">Operand size in bytes.</param>
+    public void Cmp(int left, int right, int size = 4)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.Cmp, Left = left, Right = right });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Cmp, Left = left, Right = right, Size = size });
     }
 
     /// <summary>Emits an increment (CF preserved).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="source">Source temp.</param>
-    public void Inc(int dest, int source)
+    /// <param name="size">Operand size in bytes.</param>
+    public void Inc(int dest, int source, int size = 4)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.Inc, Dest = dest, Left = source });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Inc, Dest = dest, Left = source, Size = size });
     }
 
     /// <summary>Emits a decrement (CF preserved).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="source">Source temp.</param>
-    public void Dec(int dest, int source)
+    /// <param name="size">Operand size in bytes.</param>
+    public void Dec(int dest, int source, int size = 4)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.Dec, Dest = dest, Left = source });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Dec, Dest = dest, Left = source, Size = size });
+    }
+
+    /// <summary>Emits an effective-address computation (QEMU's address shape).</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="memory">The decoded memory operand.</param>
+    /// <param name="segment">The segment used for the base.</param>
+    public void Lea(int dest, in MemoryOperand memory, SegmentRegister segment)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Lea,
+            Dest = dest,
+            GuestRegister = memory.HasBase ? (int)memory.Base : -1,
+            GuestRegister2 = memory.HasIndex ? (int)memory.Index : -1,
+            Scale = memory.HasIndex ? memory.Scale : 1,
+            Immediate = memory.Displacement,
+            Segment = (int)segment,
+            HasBase = memory.HasBase,
+            HasIndex = memory.HasIndex,
+            Address16 = memory.Is16Bit,
+        });
+    }
+
+    /// <summary>Emits a load from a temp address.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="address">Address temp.</param>
+    /// <param name="size">Access size in bytes.</param>
+    public void Load(int dest, int address, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Load, Dest = dest, Left = address, Size = size });
+    }
+
+    /// <summary>Emits a store to a temp address.</summary>
+    /// <param name="address">Address temp.</param>
+    /// <param name="value">Value temp.</param>
+    /// <param name="size">Access size in bytes.</param>
+    public void Store(int address, int value, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Store, Left = address, Right = value, Size = size });
     }
 
     /// <summary>Emits an unconditional EIP set and ends the block.</summary>
