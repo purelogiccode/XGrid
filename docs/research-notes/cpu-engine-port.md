@@ -154,6 +154,30 @@ CLI/STI, IN/OUT, MOV CR, INVLPG/RDTSC/CPUID and indirect jumps.
 - **Gate:** the 1B anchors, the ktest log and the cpu-oracle exact; the member
   cost is below the current raw runner.
 
+**Price (2026-11-22, measured first).** `TcgCostProbeTests` runs a 16-op integer
+loop body (mov/add/load/store/cmp/jcc) through `TcgInterpreter.Execute`:
+**14.80 ns/member**, 2.3x the documented raw runner (**6.30 ns/member**, N5).
+Two consequences, both measured rather than assumed:
+
+1. **The IR interpreter is already ~18x faster than the spec path it would
+   replace.** The 007 wall's non-JIT share (20.1%, ~270 ns/member) becomes
+   ~15 ns/member, i.e. ~19% of the wall (0.100x -> ~0.123x) with no codegen at
+   all - the same order as the whole codegen's best case.
+2. **A code generator cannot beat the raw runner by construction of the
+   comparison.** The raw emitter already pins guest GPRs in host registers,
+   keeps flags in FLAGS, inlines the translate probe and chains blocks; an IR
+   codegen reaching that quality lands at 6.3 ns/member, ~1% of the 007 wall
+   better than the interpreter. P1S4's own switch gate ("member cost below the
+   current raw runner") is therefore a ~parity bar: do not expect a 5x engine
+   from it.
+
+So the P1S4 order changes: **integrate the IR engine as the interpreter's
+replacement first** (block runner, `ITcgMemory` over the CPU's own MMU/MMIO path,
+interrupt polling, the existing interpreter as the per-instruction fallback),
+measure the 1B/ktest legs, and only then decide whether the codegen buys the
+last ~1%. The full 0.5x P1 gate still needs xemu-class per-step cost (~1.2
+ns/step), which is the reference's TCG shape, not an IR-codegen increment.
+
 ### P1S5 - parity and switchover (4-6 sessions)
 
 - Four accurate 1B goldens, ktest, 22-row corpus, 30B/100B 007 legs exact.
