@@ -22,7 +22,7 @@ suite is self-contained.
 | `ci.yml` / **build-test** | push, PR, merge queue, nightly, manual | Release build with warnings-as-errors and the full test suite on **Windows, GNU/Linux and macOS** (1836 tests). GNU/Linux also collects coverage. |
 | `ci.yml` / **determinism** | same | Two clean builds produce byte-identical assemblies (deterministic build). |
 | `ci.yml` / **format** | same | `dotnet format --verify-no-changes`. |
-| `ci.yml` / **inspectcode** | same | ReSharper InspectCode at `WARNING` severity reports **zero** findings; SARIF goes to the Security tab. |
+| `ci.yml` / **inspectcode** | same | ReSharper InspectCode at `WARNING` severity is a **ratchet**: it fails on any finding not in `.github/scripts/inspectcode-baseline.json` (keyed by rule+file, so unrelated edits do not churn it) and reports accepted findings that no longer reproduce. SARIF goes to the Security tab. |
 | `ci.yml` / **coverage** | same | Merges all 14 Cobertura reports and enforces **60% line / 50% branch** floors. |
 | `ci.yml` / **security-audit** | same | `dotnet list package --vulnerable --include-transitive` finds no advisories. |
 | `ci.yml` / **package** | push to `master` | `scripts/package.ps1` (the same release tree as `release.yml`) for `win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`: self-contained CLI + frontend with the GPL-2.0 license set, checksums and the package manifest, verified by `scripts/package-verify.ps1`. Dormant while CI is disabled (its guard requires a push to `master`). |
@@ -170,6 +170,8 @@ dotnet list    XGrid.sln package --vulnerable --include-transitive
 dotnet tool install --global JetBrains.ReSharper.GlobalTools --version 2026.2.3.1
 jb inspectcode XGrid.sln --format=Sarif --output=inspectcode.sarif --severity=WARNING
 python3 .github/scripts/inspectcode_gate.py inspectcode.sarif
+# Accept the current report as the new baseline (review the diff):
+python3 .github/scripts/inspectcode_gate.py inspectcode.sarif --write
 ```
 
 ```bash

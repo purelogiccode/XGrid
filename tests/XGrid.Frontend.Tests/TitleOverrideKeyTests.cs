@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.ViewModels;
 using Xunit;
@@ -116,8 +117,12 @@ public sealed class TitleOverrideKeyTests
         var unnamed = new TitleOverrideItem(EmulatorSettings.TitleIdKey(HaloTitleId), new TitleOverride(), _ => { });
         Assert.Equal("Title 4D530002", unnamed.DisplayName);
 
-        var pathRow = new TitleOverrideItem(@"C:\games\a.iso", new TitleOverride(), _ => { });
+        // The row key is a host path: the display name is Path.GetFileName, which
+        // only recognises the running platform's separator, so a Windows literal
+        // would not split on Linux.
+        string pathRowKey = Path.Combine("games", "a.iso");
+        var pathRow = new TitleOverrideItem(pathRowKey, new TitleOverride(), _ => { });
         Assert.Equal("a.iso", pathRow.DisplayName);
-        Assert.Equal(@"C:\games\a.iso", pathRow.PathText);
+        Assert.Equal(pathRowKey, pathRow.PathText);
     }
 }

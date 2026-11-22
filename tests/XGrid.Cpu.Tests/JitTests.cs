@@ -22,7 +22,7 @@ public sealed class JitTests
     private const uint PageDirectory = 0x4000;
     private const uint PageTable = 0x5000;
 
-    [Fact]
+    [RawJitFact]
     public void CallMemory_MatchesInterpreterThroughTheStoreGuard()
     {
         // call dword [0x2000] -> stub at 0x1100 (mov ecx,0xABCD; ret);
@@ -875,7 +875,7 @@ public sealed class JitTests
         Assert.True(jit.JitServedTotal > 0);
     }
 
-    [Fact]
+    [RawJitFact]
     public void IrqFast_DeliveredFlags_MatchBetweenRunners()
     {
         // Delivery into a block whose *emission* ends with live host
@@ -944,7 +944,7 @@ public sealed class JitTests
         Assert.Equal(il.Ram().Read32(0x2020), raw.Ram().Read32(0x2020));
     }
 
-    [Fact]
+    [RawJitFact]
     public void StoreToPageTablePage_WithWatchArmed_MatchesInterpreter()
     {
         // A store whose physical target is a page-table page, with a bus write
@@ -1000,7 +1000,7 @@ public sealed class JitTests
         AssertSameState(plain, jit);
     }
 
-    [Fact]
+    [RawJitFact]
     public void StoreToWatchedRange_RaisesHitOnBothRunners()
     {
         // The precise watch range test: a store inside [WatchStart, WatchEnd)

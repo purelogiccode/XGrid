@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Text.Json;
 using XGrid.Frontend.Avalonia.Models;
 using Xunit;
@@ -90,14 +91,16 @@ public sealed class RendererSettingTests
     public void ATitleCanPickItsOwnRendererAndOtherwiseInherits()
     {
         var settings = new EmulatorSettings { Renderer = EmulatorSettings.RendererOpenGl };
-        settings.TitleOverrides[@"C:\games\software-only.iso"] = new TitleOverride
+        string pinnedImage = Path.Combine(Path.GetTempPath(), "xgrid-games", "software-only.iso");
+        string inheritsImage = Path.Combine(Path.GetTempPath(), "xgrid-games", "inherits.iso");
+        settings.TitleOverrides[pinnedImage] = new TitleOverride
         {
             Renderer = EmulatorSettings.RendererSoftware,
         };
-        settings.TitleOverrides[@"C:\games\inherits.iso"] = new TitleOverride { FixedFunctionVertex = true };
+        settings.TitleOverrides[inheritsImage] = new TitleOverride { FixedFunctionVertex = true };
 
-        EmulatorSettings pinned = settings.WithTitleOverride(@"C:\games\software-only.iso");
-        EmulatorSettings inherited = settings.WithTitleOverride(@"C:\games\inherits.iso");
+        EmulatorSettings pinned = settings.WithTitleOverride(pinnedImage);
+        EmulatorSettings inherited = settings.WithTitleOverride(inheritsImage);
 
         Assert.Equal("software", pinned.Renderer);
         Assert.False(pinned.UsesGpuBackend);

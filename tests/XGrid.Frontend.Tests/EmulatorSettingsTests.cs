@@ -106,9 +106,15 @@ public sealed class EmulatorSettingsTests
     public void WithTitleOverrideAppliesOnlyTheMembersTheRowSets()
     {
         var settings = new EmulatorSettings { FixedFunctionVertex = true, TextureFilter = "registers", RamMb = 64 };
-        settings.TitleOverrides[@"C:\games\spheremap.iso"] = new TitleOverride { FixedFunctionVertex = false };
 
-        EmulatorSettings effective = settings.WithTitleOverride(@"c:\GAMES\spheremap.iso");
+        // A path key must be rooted on the running host: the lookup normalizes it
+        // with Path.GetFullPath, and a Windows literal is a relative path on Linux.
+        string image = Path.Combine(Path.GetTempPath(), "xgrid-games", "spheremap.iso");
+        settings.TitleOverrides[image] = new TitleOverride { FixedFunctionVertex = false };
+
+        // The override dictionary is case-insensitive, so the launched path's
+        // casing does not have to match the stored key.
+        EmulatorSettings effective = settings.WithTitleOverride(image.ToUpperInvariant());
 
         // The row overrides FFP only; the filter and RAM inherit.
         Assert.False(effective.FixedFunctionVertex);
@@ -120,13 +126,14 @@ public sealed class EmulatorSettingsTests
     public void WithTitleOverrideAppliesTheFilterAndRamToo()
     {
         var settings = new EmulatorSettings();
-        settings.TitleOverrides[@"C:\games\debug-kit.chd"] = new TitleOverride
+        string image = Path.Combine(Path.GetTempPath(), "xgrid-games", "debug-kit.chd");
+        settings.TitleOverrides[image] = new TitleOverride
         {
             TextureFilter = "registers",
             RamMb = 128,
         };
 
-        EmulatorSettings effective = settings.WithTitleOverride(@"C:\games\debug-kit.chd");
+        EmulatorSettings effective = settings.WithTitleOverride(image);
 
         Assert.Equal("registers", effective.TextureFilter);
         Assert.Equal(128, effective.RamMb);

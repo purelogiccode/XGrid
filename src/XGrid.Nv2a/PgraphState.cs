@@ -41,6 +41,14 @@ internal sealed class PgraphState
     /// <summary>Gets the fragment register combiner.</summary>
     public PshCombiner Combiner { get; } = new();
 
+    // ReSharper disable UnassignedField.Compiler
+    // Nv2AMmio writes these six through ref-returning aliases
+    // (`private ref uint _surfaceFormat => ref _state.SurfaceFormat;`), which is
+    // how the ported register file keeps one storage location per NV097 method.
+    // The analyzer does not follow a write through a ref return, so it reports
+    // them as never assigned. They are assigned on the method path and read by
+    // the draw/clear decode.
+
     /// <summary>The surface format word (NV097_SET_SURFACE_FORMAT).</summary>
     public uint SurfaceFormat;
 
@@ -58,6 +66,8 @@ internal sealed class PgraphState
 
     /// <summary>The zeta surface base offset latched from the DMA context.</summary>
     public uint ZetaSurfaceBase;
+
+    // ReSharper restore UnassignedField.Compiler
 }
 
 /// <summary>

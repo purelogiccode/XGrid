@@ -57,7 +57,7 @@ public sealed class RawJitTests
         Assert.Equal(expected.Context.Halted, actual.Context.Halted);
     }
 
-    [Fact]
+    [RawJitFact]
     public void AluLoop_MatchesInterpreter()
     {
         // mov ecx,5; mov eax,1; mov ebx,0x10
@@ -99,7 +99,7 @@ public sealed class RawJitTests
     /// chain across a slow-path store and a Jcc; with mmioFast on it must
     /// still match the interpreter exactly.
     /// </summary>
-    [Fact]
+    [RawJitFact]
     public void MmioFast_FlagsAcrossSlowMemoryMember_MatchInterpreter()
     {
         // mov ecx,3
@@ -149,7 +149,7 @@ public sealed class RawJitTests
     /// read-only page, then stores to it, so the buggy path lands on physical
     /// 0x2000 while the interpreter writes the mapped 0x3000.
     /// </summary>
-    [Fact]
+    [RawJitFact]
     public void ReadOnlyPageStoreWithWriteProtectClear_WritesTheTranslatedPage()
     {
         // loop: mov eax,[0x2000]; mov [0x2000],ebx; dec ecx; jnz loop; hlt
@@ -200,7 +200,7 @@ public sealed class RawJitTests
         Assert.Equal(0, raw.RawSlowMemoryMembers);
     }
 
-    [Fact]
+    [RawJitFact]
     public void MemoryForms_MatchesInterpreter()
     {
         // mov eax,[0x2000]; add eax,[0x2004]; mov [0x2008],eax; inc dword [0x200C];
@@ -235,7 +235,7 @@ public sealed class RawJitTests
         Assert.Equal(plain.Ram().Read32(0x200C), raw.Ram().Read32(0x200C));
     }
 
-    [Fact]
+    [RawJitFact]
     public void StackPushPop_MatchesInterpreter()
     {
         // push eax; push ebx; pop ecx; pop edx; hlt
@@ -257,7 +257,7 @@ public sealed class RawJitTests
         AssertSame(plain, raw);
     }
 
-    [Fact]
+    [RawJitFact]
     public void CallRetPushImmPop_MatchesInterpreter()
     {
         // mov esi,2
@@ -294,7 +294,7 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
     }
 
-    [Fact]
+    [RawJitFact]
     public void RetNear_MatchesInterpreter()
     {
         // push 0x100B; ret; nop x5; hlt
@@ -317,7 +317,7 @@ public sealed class RawJitTests
         Assert.Equal(CpuHarness.StackAddress, raw.Context.Esp);
     }
 
-    [Fact]
+    [RawJitFact]
     public void MovzxMovsxMemory_MatchesInterpreter()
     {
         // movzx eax,byte [0x2000]; movsx ebx,byte [0x2001];
@@ -352,7 +352,7 @@ public sealed class RawJitTests
         Assert.Equal(0xFFFFFFF0u, raw.Context.Edx);
     }
 
-    [Fact]
+    [RawJitFact]
     public void Prefetch_IsANoop_MatchesInterpreter()
     {
         // prefetchnta [0x2000]; prefetch [0x2004]; hlt
@@ -373,7 +373,7 @@ public sealed class RawJitTests
         Assert.True(raw.Context.Halted);
     }
 
-    [Fact]
+    [RawJitFact]
     public void FpuMemoryArithmetic_MatchesInterpreter()
     {
         // loop 3x: fld [0x2000]; fadd [0x2004]; fmul [0x2008]; fsub [0x200C];
@@ -412,7 +412,7 @@ public sealed class RawJitTests
         Assert.Equal(BitConverter.SingleToUInt32Bits(9.5f), raw.Ram().Read32(0x2014));
     }
 
-    [Fact]
+    [RawJitFact]
     public void FpuRegisterArithmetic_MatchesInterpreter()
     {
         // fld [0x2000] (2.0); fld [0x2004] (3.0); fadd st0,st1; fmul st0,st1;
@@ -449,7 +449,7 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
     }
 
-    [Fact]
+    [RawJitFact]
     public void FpuIntegerLoadStore_MatchesInterpreter()
     {
         // fild dword [0x2000]; fistp dword [0x2004]; fild dword [0x2008];
@@ -484,7 +484,7 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
     }
 
-    [Fact]
+    [RawJitFact]
     public void ShiftsAndRotates_MatchesInterpreter()
     {
         // mov esi,2; mov ecx,5;
@@ -521,7 +521,7 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
     }
 
-    [Fact]
+    [RawJitFact]
     public void ShiftByCl_AndRotate_DoNotUseHelperMembers()
     {
         // mov esi,2; mov ecx,3; mov eax,0x80000001; rol eax,1; ror eax,2;
@@ -556,7 +556,7 @@ public sealed class RawJitTests
         Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Sar]);
     }
 
-    [Fact]
+    [RawJitFact]
     public void SseScalarForms_DoNotUseHelperMembers()
     {
         // mov esi,2; movss xmm0,[0x2000]; mulss xmm0,xmm1; addss xmm0,[0x2004];
@@ -603,7 +603,7 @@ public sealed class RawJitTests
         Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Cvttss2Si]);
     }
 
-    [Fact]
+    [RawJitFact]
     public void MmxMovqMovntq_MatchesInterpreter()
     {
         // mov esi,2; movq mm0,[0x2000]; movq [0x2008],mm0;
@@ -643,7 +643,7 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
     }
 
-    [Fact]
+    [RawJitFact]
     public void FlagsAcrossConditionals_MatchesInterpreter()
     {
         // mov eax,0x80000000; mov ebx,1; add eax,ebx; jno skip; mov ecx,1;
@@ -670,7 +670,7 @@ public sealed class RawJitTests
         AssertSame(plain, raw);
     }
 
-    [Fact]
+    [RawJitFact]
     public void MemoryImmediateForms_MatchesInterpreter()
     {
         // add dword [0x2010],3; and byte [0x2014],0x0F; dec byte [0x2015];
@@ -703,7 +703,7 @@ public sealed class RawJitTests
         Assert.Equal(plain.Ram().Read32(0x2018), raw.Ram().Read32(0x2018));
     }
 
-    [Fact]
+    [RawJitFact]
     public void CmpMemoryImmediate_MatchesInterpreter()
     {
         // mov ecx,4; cmp dword [0x200C],5; jne +1; nop; dec ecx; jne loop; hlt
@@ -729,7 +729,7 @@ public sealed class RawJitTests
         raw.Execute(10_000);
         AssertSame(plain, raw);
     }
-    [Fact]
+    [RawJitFact]
     public void BlockEndingInMemoryRmw_AdvancesEipOnce()
     {
         // A full 32-member block whose last member is a memory read-modify-write.
@@ -799,7 +799,7 @@ public sealed class RawJitTests
     // The post-helper TSC rebase was removed in S199f (the frame slot is
     // authoritative; helpers never tick TSC), so this loop is a full
     // differential including Context.Tsc.
-    [Fact]
+    [RawJitFact]
     public void CmpMemoryImmediateLoop_MatchesInterpreter()
     {
         // mov ecx,4; loop: cmp dword [0x200C],5; jne +1; nop; dec ecx; jne loop; hlt
@@ -827,7 +827,7 @@ public sealed class RawJitTests
         raw.Execute(10_000);
         AssertSame(plain, raw);
     }
-    [Fact]
+    [RawJitFact]
     public void HelperClobberedCallerSavedRegisters_AreReloaded()
     {
         // mov esi,2
@@ -864,7 +864,7 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
     }
 
-    [Fact]
+    [RawJitFact]
     public void ChainedBlocks_CarryFlagsAcrossTheChainEdge()
     {
         // The in-frame chain entry (decisions 233c) skips the target's
@@ -907,7 +907,7 @@ public sealed class RawJitTests
         Assert.True(raw.Context.Eax > 1, "the loop did not run");
     }
 
-    [Fact]
+    [RawJitFact]
     public void ChainedBlocks_MatchInterpreter_AndCountChains()
     {
         // 0x1000: jmp 0x1003 ; 0x1003: inc eax ; jmp 0x1000.
@@ -946,7 +946,7 @@ public sealed class RawJitTests
         AssertSame(plain, raw);
     }
 
-    [Fact]
+    [RawJitFact]
     public void Loop_LoadMember_MatchesInterpreter()
     {
         // 0x1000: jmp 0x1005 ; 0x1005: mov eax,[0x200C] ; 0x100A: jmp 0x1000
@@ -960,7 +960,7 @@ public sealed class RawJitTests
         RunLoop(code);
     }
 
-    [Fact]
+    [RawJitFact]
     public void Loop_CmpMember_MatchesInterpreter()
     {
         // 0x1000: jmp 0x1005 ; 0x1005: cmp dword [0x200C],5 ; 0x100C: jmp 0x1000
@@ -974,7 +974,7 @@ public sealed class RawJitTests
         RunLoop(code);
     }
 
-    [Fact]
+    [RawJitFact]
     public void Loop_StoreMember_MatchesInterpreter()
     {
         // 0x1000: jmp 0x1005 ; 0x1005: mov [0x200C],eax ; 0x100A: jmp 0x1000
@@ -987,7 +987,7 @@ public sealed class RawJitTests
         ];
         RunLoop(code);
     }
-    [Fact]
+    [RawJitFact]
     public void FallbackMembers_StillExact()
     {
         // mov ecx,2; fld dword [0x2000]; fmul dword [0x2004]; fstp dword [0x2008];
@@ -1018,7 +1018,7 @@ public sealed class RawJitTests
         Assert.Equal(plain.Context.Eip, raw.Context.Eip);
     }
 
-    [Fact]
+    [RawJitFact]
     public void FaultingMember_DeliveredFromRawHelper_MatchesInterpreter()
     {
         // Regression for the §199l crash: a managed exception must never unwind
