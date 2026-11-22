@@ -81,7 +81,7 @@ public static class TcgInterpreter
     /// <param name="program">The TCG program.</param>
     /// <param name="registers">The eight guest GPRs.</param>
     /// <param name="eflags">The initial EFLAGS.</param>
-    /// <param name="segmentBases">The six segment bases in <see cref="SegmentRegister"/> order.</param>
+    /// <param name="segments">The six segment bases in <see cref="SegmentRegister"/> order.</param>
     /// <param name="memory">The guest memory (null for register-only programs).</param>
     /// <param name="fpu">The x87/MMX register file (null unless the program uses MMX).</param>
     /// <param name="context">The machine context (required for SSE).</param>
@@ -90,7 +90,7 @@ public static class TcgInterpreter
         TcgProgram program,
         ReadOnlySpan<uint> registers,
         uint eflags,
-        ReadOnlySpan<uint> segmentBases,
+        ReadOnlySpan<uint> segments,
         ITcgMemory? memory,
         FpuState? fpu = null,
         XboxContext? context = null)
@@ -100,10 +100,42 @@ public static class TcgInterpreter
             throw new ArgumentException("the TCG interpreter needs all eight GPRs", nameof(registers));
         }
 
-        var gprs = new uint[8];
-        registers[..8].CopyTo(gprs);
-        var temps = new uint[program.TempCount];
-        var wide = new ulong[program.TempCount];
+        var state = new TcgExecutionState { Eflags = eflags };
+        registers[..8].CopyTo(state.Registers);
+        for (int i = 0; i < state.Segments.Length; i++)
+        {
+            state.Segments[i] = i < segments.Length ? segments[i] : 0;
+        }
+
+        Execute(program, state, memory, fpu, context);
+        return new TcgResult(state.Registers, state.Eflags, state.Eip, fpu);
+    }
+
+    /// <summary>Executes a program on a reusable state (no per-call allocation).</summary>
+    /// <param name="program">The TCG program.</param>
+    /// <param name="state">The execution state (registers seeded by the caller).</param>
+    /// <param name="memory">The guest memory (null for register-only programs).</param>
+    /// <param name="fpu">The x87/MMX register file (null unless the program uses it).</param>
+    /// <param name="context">The machine context (required for SSE).</param>
+    public static void Execute(
+        TcgProgram program,
+        TcgExecutionState state,
+        ITcgMemory? memory,
+        FpuState? fpu,
+        XboxContext? context)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        uint[] gprs = state.Registers;
+        uint[] segments = state.Segments;
+        uint[] temps = state.Temps;
+        ulong[] wide = state.Wide;
+        if (temps.Length < program.TempCount)
+        {
+            temps = state.Temps = new uint[program.TempCount];
+            wide = state.Wide = new ulong[program.TempCount];
+        }
+
+        uint eflags = state.Eflags;
         uint eip = program.StartEip;
 
         foreach (TcgOp op in program.Ops)
@@ -295,7 +327,7 @@ public static class TcgInterpreter
                     {
                         uint esp = (gprs[4] - (uint)op.Size) & (op.Address16 ? 0xFFFFu : 0xFFFFFFFFu);
                         gprs[4] = op.Address16 ? (gprs[4] & 0xFFFF0000u) | esp : esp;
-                        Store(memory, SegmentBase(segmentBases, SegmentRegister.Ss) + esp, temps[op.Left], op.Size);
+                        Store(memory, SegmentBase(segments, SegmentRegister.Ss) + esp, temps[op.Left], op.Size);
                         break;
                     }
 
@@ -303,7 +335,7 @@ public static class TcgInterpreter
                     {
                         uint esp = op.Address16 ? gprs[4] & 0xFFFFu : gprs[4];
                         temps[op.Dest] = Load(
-                            memory, SegmentBase(segmentBases, SegmentRegister.Ss) + esp, op.Size);
+                            memory, SegmentBase(segments, SegmentRegister.Ss) + esp, op.Size);
                         uint advanced = (esp + (uint)op.Size) & (op.Address16 ? 0xFFFFu : 0xFFFFFFFFu);
                         gprs[4] = op.Address16 ? (gprs[4] & 0xFFFF0000u) | advanced : advanced;
                         break;
@@ -415,7 +447,7 @@ public static class TcgInterpreter
                     }
 
                 case TcgOpKind.StringOp:
-                    eflags = ExecuteString(op, gprs, eflags, segmentBases, memory);
+                    eflags = ExecuteString(op, gprs, eflags, segments, memory);
                     break;
                 case TcgOpKind.Fpu:
                     eflags = TcgFpu.Execute(
@@ -423,7 +455,7 @@ public static class TcgInterpreter
                         fpu ?? throw new InvalidOperationException("an x87 operation needs an FpuState"),
                         gprs,
                         memory,
-                        segmentBases,
+                        segments,
                         eflags);
                     break;
                 case TcgOpKind.ReadFpuStatus:
@@ -435,14 +467,14 @@ public static class TcgInterpreter
                         context ?? throw new InvalidOperationException("an SSE operation needs an XboxContext"),
                         gprs,
                         memory,
-                        segmentBases,
+                        segments,
                         eflags);
                     break;
                 case TcgOpKind.Mmx:
-                    ExecuteMmx(op, temps, wide, fpu ?? throw new InvalidOperationException("an MMX operation needs an FpuState"), gprs, segmentBases, memory);
+                    ExecuteMmx(op, temps, wide, fpu ?? throw new InvalidOperationException("an MMX operation needs an FpuState"), gprs, segments, memory);
                     break;
                 case TcgOpKind.Lea:
-                    temps[op.Dest] = EffectiveAddress(op, gprs, segmentBases);
+                    temps[op.Dest] = EffectiveAddress(op, gprs, segments);
                     break;
                 case TcgOpKind.Load:
                     temps[op.Dest] = Load(memory, temps[op.Left], op.Size);
@@ -540,7 +572,7 @@ public static class TcgInterpreter
                 case TcgOpKind.Xlat:
                     {
                         uint baseIndex = op.Address16 ? gprs[3] & 0xFFFFu : gprs[3];
-                        uint address = SegmentBase(segmentBases, (SegmentRegister)op.Segment)
+                        uint address = SegmentBase(segments, (SegmentRegister)op.Segment)
                             + baseIndex
                             + (gprs[0] & 0xFFu);
                         gprs[0] = (gprs[0] & 0xFFFFFF00u) | Load(memory, address, 1);
@@ -594,18 +626,18 @@ public static class TcgInterpreter
                 case TcgOpKind.ConditionalSetEip:
                     if (TcgConditions.Met(op.Condition, eflags))
                     {
-                        return new TcgResult(gprs, eflags, op.Immediate, fpu);
+                        state.Eip = op.Immediate; state.Eflags = eflags; return;
                     }
 
                     break;
                 case TcgOpKind.Exit:
-                    return new TcgResult(gprs, eflags, eip, fpu);
+                    state.Eip = eip; state.Eflags = eflags; return;
                 default:
                     throw new InvalidOperationException($"unknown TCG op {op.Kind}");
             }
         }
 
-        return new TcgResult(gprs, eflags, eip, fpu);
+        state.Eip = eip; state.Eflags = eflags; return;
     }
 
     private static void WriteRegister8(uint[] gprs, int registerIndex, byte value)
@@ -668,7 +700,7 @@ public static class TcgInterpreter
         TcgOp op,
         uint[] gprs,
         uint eflags,
-        ReadOnlySpan<uint> segmentBases,
+        ReadOnlySpan<uint> segments,
         ITcgMemory? memory)
     {
         if (memory is null)
@@ -679,8 +711,8 @@ public static class TcgInterpreter
         bool address16 = op.Address16;
         bool decrement = (eflags & FlagBits.Df) != 0;
         int size = op.Size;
-        uint ds = SegmentBase(segmentBases, SegmentRegister.Ds);
-        uint es = SegmentBase(segmentBases, SegmentRegister.Es);
+        uint ds = SegmentBase(segments, SegmentRegister.Ds);
+        uint es = SegmentBase(segments, SegmentRegister.Es);
         int operation = (int)op.Immediate;
         int rep = op.GuestRegister;
         uint count = address16 ? gprs[1] & 0xFFFFu : gprs[1];
@@ -772,7 +804,7 @@ public static class TcgInterpreter
         ulong[] wide,
         FpuState fpu,
         uint[] gprs,
-        ReadOnlySpan<uint> segmentBases,
+        ReadOnlySpan<uint> segments,
         ITcgMemory? memory)
     {
         switch (op.MmxOp)
@@ -846,7 +878,7 @@ public static class TcgInterpreter
 
                     ulong data = fpu.GetMmxRegister(op.GuestRegister);
                     ulong mask = fpu.GetMmxRegister(op.Left);
-                    uint address = SegmentBase(segmentBases, SegmentRegister.Es) + gprs[7];
+                    uint address = SegmentBase(segments, SegmentRegister.Es) + gprs[7];
                     for (int i = 0; i < 8; i++)
                     {
                         if (((mask >> (8 * i)) & 0x80) != 0)
@@ -1435,7 +1467,7 @@ public static class TcgInterpreter
         }
     }
 
-    private static uint EffectiveAddress(TcgOp op, uint[] gprs, ReadOnlySpan<uint> segmentBases)
+    private static uint EffectiveAddress(TcgOp op, uint[] gprs, ReadOnlySpan<uint> segments)
     {
         uint address = op.Immediate;
         if (op.HasBase)
@@ -1454,9 +1486,9 @@ public static class TcgInterpreter
             address &= 0xFFFFu;
         }
 
-        if (op.Segment >= 0 && op.Segment < segmentBases.Length)
+        if (op.Segment >= 0 && op.Segment < segments.Length)
         {
-            address += segmentBases[op.Segment];
+            address += segments[op.Segment];
         }
 
         return address;

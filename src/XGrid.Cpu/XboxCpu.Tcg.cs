@@ -26,6 +26,7 @@ public sealed partial class XboxCpu : ITcgMemory
     /// <summary>Gets the instructions the IR engine handed to the interpreter.</summary>
     public long TcgFallbackInstructions { get; private set; }
 
+    private readonly TcgExecutionState _tcgState = new();
     private TcgBlockCache? _tcgBlocks;
 
     private TcgBlockCache TcgBlocks => _tcgBlocks ??= new TcgBlockCache();
@@ -80,11 +81,11 @@ public sealed partial class XboxCpu : ITcgMemory
 
             try
             {
-                Fetch(buffer);
                 int operandSize = Context.DefaultOperandSize;
                 int addressSize = Context.DefaultAddressSize;
-                if (!TcgBlocks.TryGet(eip, buffer, operandSize, addressSize, out TcgProgram? program, out _))
+                if (!TcgBlocks.TryGet(eip, operandSize, addressSize, out TcgProgram? program, out _))
                 {
+                    Fetch(buffer);
                     if (!TryBuildTcgBlock(eip, buffer, operandSize, addressSize, out program, out int length))
                     {
                         TcgFallbackInstructions++;
@@ -96,33 +97,25 @@ public sealed partial class XboxCpu : ITcgMemory
                     TcgBlocks.Put(eip, buffer, operandSize, addressSize, program!, length);
                 }
 
-                var gprs = new uint[8];
                 for (int i = 0; i < 8; i++)
                 {
-                    gprs[i] = Context.ReadRegister((Gpr)i);
+                    _tcgState.Registers[i] = Context.ReadRegister((Gpr)i);
                 }
 
-                var segments = new uint[6];
-                for (int i = 0; i < segments.Length; i++)
+                for (int i = 0; i < _tcgState.Segments.Length; i++)
                 {
-                    segments[i] = Context.GetSegmentBase((SegmentRegister)i);
+                    _tcgState.Segments[i] = Context.GetSegmentBase((SegmentRegister)i);
                 }
 
-                TcgResult result = TcgInterpreter.Execute(
-                    program!,
-                    gprs,
-                    Context.Eflags,
-                    segments,
-                    this,
-                    Context.Fpu,
-                    Context);
+                _tcgState.Eflags = Context.Eflags;
+                TcgInterpreter.Execute(program!, _tcgState, this, Context.Fpu, Context);
                 for (int i = 0; i < 8; i++)
                 {
-                    Context.WriteRegister((Gpr)i, result.Registers[i]);
+                    Context.WriteRegister((Gpr)i, _tcgState.Registers[i]);
                 }
 
-                Context.Eflags = result.Eflags;
-                Context.Eip = result.Eip;
+                Context.Eflags = _tcgState.Eflags;
+                Context.Eip = _tcgState.Eip;
                 TcgTranslatedInstructions++;
             }
             catch (PageFaultSignal fault)

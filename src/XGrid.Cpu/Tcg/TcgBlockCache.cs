@@ -27,7 +27,6 @@ internal sealed class TcgBlockCache
 
     /// <summary>Tries to find a block for the guest EIP.</summary>
     /// <param name="eip">The guest EIP.</param>
-    /// <param name="head">The first instruction's bytes.</param>
     /// <param name="operandSize">The default operand size.</param>
     /// <param name="addressSize">The default address size.</param>
     /// <param name="program">The cached program.</param>
@@ -35,7 +34,6 @@ internal sealed class TcgBlockCache
     /// <returns>True when the cache holds a valid block.</returns>
     public bool TryGet(
         uint eip,
-        ReadOnlySpan<byte> head,
         int operandSize,
         int addressSize,
         out TcgProgram? program,
@@ -45,8 +43,7 @@ internal sealed class TcgBlockCache
         if (entry is not null
             && entry.Eip == eip
             && entry.OperandSize == operandSize
-            && entry.AddressSize == addressSize
-            && head[..HeadBytes].SequenceEqual(entry.Head))
+            && entry.AddressSize == addressSize)
         {
             Hits++;
             program = entry.Program;
@@ -59,7 +56,7 @@ internal sealed class TcgBlockCache
         return false;
     }
 
-    /// <summary>Stores one block.</summary>
+    /// <summary>Stores one block (the head bytes are kept for diagnostics).</summary>
     /// <param name="eip">The guest EIP.</param>
     /// <param name="head">The first instruction's bytes.</param>
     /// <param name="operandSize">The default operand size.</param>

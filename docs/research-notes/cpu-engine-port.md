@@ -190,10 +190,22 @@ translated 9,979,686 / fallback 20,314 (99.8%), and 1.06 -> **5.24 Msteps/s**
 with the cache. Multi-instruction TBs are **not exact**: the accurate engine
 polls interrupts and counts TSC per instruction, so a block that spans a
 pending delivery shifts it; 16-member blocks diverged (RAM `35651C72`) and were
-capped to one instruction until the IR has a per-member poll contract. Next:
-per-instruction allocation reuse (the interpreter's `temps`/`wide` arrays and
-the engine's `gprs`/`segments` spans) and then the user-space multi-member block
-with an explicit poll hook.
+capped to one instruction until the IR has a per-member poll contract.
+
+**Slice 2 (2026-11-22): the reused state and the hit path.** `TcgExecutionState`
+holds the GPR/segment/temp arrays across calls (no per-instruction allocation)
+and the engine skips the 15-byte `Fetch` entirely on a TB hit (the cache is
+cleared on every mapping change and decoded-code store, so a hit is validated by
+construction). Still exact on the same leg at **7.59 Msteps/s** - 2.7x the
+uncached interpreter (2.80) but **0.65x the default cached interpreter**
+(11.70 at this cold boot window) and far from the 1B JIT. **The corrected
+price:** the hot-loop 14.8 ns/member is real, but at real scale the engine pays
+~132 ns per *instruction* (per-instruction state sync, interrupt poll, dispatch),
+so replacing the 007 non-JIT share with it saves ~10% of the wall (0.100x ->
+~0.111x), not the earlier projected 19%. The P1S4 switch gate therefore requires
+multi-member TBs plus the codegen: the next slice is the per-member poll contract
+(TSC++ and a pending-interrupt check between members, with the block abandoned
+and the interrupt delivered), then re-measure.
 
 ### P1S5 - parity and switchover (4-6 sessions)
 
