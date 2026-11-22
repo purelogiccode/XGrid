@@ -208,6 +208,12 @@ slice calls `Bus.Advance(executed)` so the PIT/RTC/APU/NV2A keep time. A
 halted CPU (`executed == 0`) advances device time by the slice so a timer can
 wake it.
 
+`xgc_run` has two rules that the boot depends on: it never clears
+`cpu->exception_index` between chunks (an exception at a chunk boundary must be
+delivered, not dropped), and a zero-instruction chunk is retried (QEMU's
+`cpu_exec` returns after delivering one exception; the handler runs on the next
+call) with a million-chunk stall guard.
+
 ## Measured seam costs (H1, 2026-11-22)`tools/xcn1-host-probe`, real-mode loops of 100,000 accesses:
 
 | Path | Cost |

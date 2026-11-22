@@ -485,12 +485,16 @@ void tcg_get_stats(void *accel, void *buf)
 
 bool replay_interrupt(void)
 {
-    return false;
+    /* No replay: QEMU delivers the pending interrupt/exception. */
+    return replay_mode == 0;
 }
 
 bool replay_exception(void)
 {
-    return false;
+    /* No replay: this is what lets cpu_handle_exception() call do_interrupt()
+     * (returning false made every exception an exit with zero instructions
+     * executed, so #PF/#NM handlers never ran). */
+    return replay_mode == 0;
 }
 
 bool replay_has_exception(void)

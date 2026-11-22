@@ -263,6 +263,24 @@ faulting instruction re-executed forever. The run surfaced it as an `fldz`
 for 200M steps at 0.5 Msteps/s. With the fix the machine runs at
 **160 Msteps/s** on the full boot workload.
 
+A second bug in the same loop: QEMU's `cpu_exec` returns after delivering
+**one** exception (the handler runs on the next call), so the harness's
+`n == 0` bailout turned every exception into a permanent stall at the faulting
+instruction. `xgc_run` now retries zero-instruction chunks and only gives up
+after a thousand consecutive ones.
+
+**The real cause of both was the link stubs:** `replay_exception()` returned
+false, and `cpu_handle_exception()` only calls `do_interrupt()` when it returns
+true. Every exception - `#PF`, `#NM`, `#UD` - was therefore converted into a
+zero-step "interrupt exit": guests never saw their own handlers. With
+`replay_exception`/`replay_interrupt` returning true when not replaying, the
+full machine runs the whole boot (HDD attached, 32 IDE bus-master starts,
+`EIP=0x800422B0`, 214k I/O reads, 711 interrupts) instead of stalling at the
+first `fldz`. The remaining blocker is the write ring: a burst drops writes
+(`dropped=7530`), so the device the kernel is polling never completes. The fix
+is a lossless ring (incremental publish + backpressure) rather than a bigger
+buffer.
+
 The full machine now reaches the kernel: 12 regions / 13 windows, the HDD
 attached, the SMC handshake and 19 SMBus transactions, PIT/PIC interrupts and
 IDE command traffic. It parks at `EIP=0x80052E1C` (`hlt` after masking the

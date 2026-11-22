@@ -67,6 +67,7 @@ namespace XGrid.Xcn3MachineProbe
         private static long s_serviceTicks;
         private static long s_advanceTicks;
         private static byte[] s_bios = [];
+        private static bool s_haltLogged;
 
         private static uint Read32(byte* p) => Volatile.Read(ref *(uint*)p);
 
@@ -194,6 +195,14 @@ namespace XGrid.Xcn3MachineProbe
                     // A halted CPU executes nothing; let device time pass so a
                     // timer interrupt can wake it (QEMU's main loop does the
                     // same with the next timer deadline).
+                    if (ran == 0 && !s_haltLogged)
+                    {
+                        s_haltLogged = true;
+                        byte* at = basePtr + (Read32(ctl + OffRegs + 32) & 0x0FFFFFFF);
+                        Console.WriteLine($"halt: eip=0x{Read32(ctl + OffRegs + 32):X8} " +
+                            $"bytes={at[0]:X2} {at[1]:X2} {at[2]:X2} {at[3]:X2} " +
+                            $"eflags=0x{Read32(ctl + OffRegs + 36):X8} rc={Read32(ctl + OffRc)}");
+                    }
                     long advanceStart = Stopwatch.GetTimestamp();
                     machine.Advance(ran != 0 ? ran : chunk);
                     s_advanceTicks += Stopwatch.GetTimestamp() - advanceStart;

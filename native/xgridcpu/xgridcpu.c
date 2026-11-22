@@ -683,6 +683,7 @@ int xgc_reset(XgcCpu *c)
 int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
 {
     uint64_t done = 0;
+    uint32_t stall = 0;
 
     if (executed) {
         *executed = 0;
@@ -770,7 +771,15 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
             return XGC_ERR_HALTED;
         }
         if (n == 0) {
-            break;
+            /* cpu_exec also returns after delivering ONE exception (the
+             * handler runs on the next call), so a zero-instruction chunk is
+             * normal and must be retried. Only a long run of them means the
+             * CPU really cannot make progress. */
+            if (++stall > 1000) {
+                break;
+            }
+        } else {
+            stall = 0;
         }
     }
 
