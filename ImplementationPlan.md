@@ -477,22 +477,21 @@ Reference: `tcg/i386/tcg-target.c.inc`; the existing `RawBlockEmitter` (Iced).
 
 #### XFP0 - Port ledger, module map and differential harness
 
-- [ ] Review every row of `docs/xemu-port-manifest.md` against
-  `References2/xemu-0.8.139`; add the per-file list for `hw/xbox/**` (149
-  files) and correct any status that is not backed by a test.
-- [ ] Write `scripts/port-manifest.ps1 -Check`: parse `src/**` for
-  `Ported from`/`Derived from`, cross-check `THIRD_PARTY_NOTICES.md`, require a
-  row and a status for every in-scope module, print
-  `verified|ported|in-progress|not-started|out-of-scope` coverage, and exit
-  non-zero on a gap or an orphan port header.
-- [ ] Record the differential class per module type in the manifest section 2:
-  reference vector table (DSP model), register/method pre-post table, or
-  title/corpus row.
-- [ ] Add `docs/open-source.md` to the docs index; confirm the licence and
-  publication status are stated there (this plan's port increases the notices
-  surface, not the licence).
-- [ ] `pwsh -File scripts/port-manifest.ps1 -Check` and
-  `pwsh -File scripts/status.ps1 -Check` green; no emulator source change.
+- [x] Review every row of `docs/xemu-port-manifest.md` against
+  `References2/xemu-0.8.139`; the per-file appendix now covers all **170**
+  files (111 in-scope), and the grouped rows agree with it.
+- [x] `scripts/port-manifest.ps1 -Check` parses the appendix, every
+  `Ported from`/`Derived from` header, the target files and
+  `THIRD_PARTY_NOTICES.md`; it prints the coverage and fails on a missing/stale
+  file row, a missing target, an orphan port header or an unnamed notice.
+- [x] Differential classes recorded in manifest section 2.1: reference vector
+  table (DSP, S3TC), register/method pre-post table, title/corpus row.
+- [x] `docs/open-source.md` is in the README Documentation index and states the
+  GPL-2.0 status and the publication checklist.
+- [x] `port-manifest.ps1 -Check` **PASS** (170 files, 111 in-scope, 27
+  verified = 24.3%, 9 ported, 53 in-progress, 22 not-started, 23 out-of-scope,
+  36 n/a) and `status.ps1 -Check` green; no emulator source change. The
+  notices gained the 13 companion headers the checker found unnamed.
 
 **Price:** 1 session. **Bar:** correctness.
 

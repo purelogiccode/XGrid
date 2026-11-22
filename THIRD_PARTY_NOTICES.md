@@ -49,27 +49,27 @@ distributed emulator binaries.  Their notices remain in the package sources.
 
 | XGrid module | Source | License | Status |
 |---|---|---|---|
-| `src/XGrid.Audio/Dsp/DspDma.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_dma.c` + `dsp_dma.h` | LGPL-2+ (xemu file header) | Ported. |
-| `src/XGrid.Audio/Dsp/Dsp56300State.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.h` + `dsp_cpu_regs.h` | GPL-2+ | Ported state/constants. |
+| `src/XGrid.Audio/Dsp/DspDma.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_dma.c` + `dsp_dma.h` + `dsp_dma_regs.h` | LGPL-2+ (xemu file header) | Ported. |
+| `src/XGrid.Audio/Dsp/Dsp56300State.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.h` + `dsp_cpu_regs.h` + `dsp.h` + `dsp_internal.h` | GPL-2+ | Ported state/constants. |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Core state, reset, memory, bootstrap. |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.Execution.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Instruction fetch/decode, PC, DO/REP, stack, interrupts, effective addresses. |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.Alu.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_emu.c.inc` | GPL-2+ | Accumulator ALU, MAC/MPY families, 24-bit read/limit. |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.Instructions.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_emu.c.inc` | GPL-2+ | Non-parallel instruction handlers. |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.ParallelMove.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_emu.c.inc` | GPL-2+ | Parallel-move handlers (`emu_pm_0`..`emu_pm_8`). |
-| `src/XGrid.Audio/Dsp/Dsp56300Opcodes.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` + `dsp_emu.c.inc` | GPL-2+ | Decode table (`nonparallel_opcodes`) and ALU dispatch table. |
+| `src/XGrid.Audio/Dsp/Dsp56300Opcodes.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` + `dsp_emu.c.inc` + `dsp_dis.c.inc` + `interp/debug.c` + `interp/debug.h` | GPL-2+ | Decode table (`nonparallel_opcodes`) and ALU dispatch table. |
 | `src/XGrid.Audio/Dsp/DspExceptions.cs` | XGrid | GPL-2+ | Fault types for the interpreter (no reference counterpart). |
 | `src/XGrid.Audio/Dsp/Dsp56300Arithmetic.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Ported 56-bit arithmetic helpers. |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.Snapshot.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_c.c` + `interp/dsp_cpu.h` | GPL-2+ | Complete core state save/restore (the sync-to/from-VM field set). |
-| `src/XGrid.Audio/Dsp/McpxApuDsp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/gp_ep.c` (LGPL-2+), `dsp.c` + `dsp_c.c` (GPL-2+), `apu/fpconv.h` (LGPL-2+) | GPL-2+ (combined work) | GP/EP sub-windows, `proc_rst_write`, scatter/gather scratch, FIFO rings, peripheral halt/interrupt/DMA, the frame loop, `float_to_24b`. |
-| `src/XGrid.Audio/McpxApuDevice.Vp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/vp/vp.c` | GPL-2+ (xemu file header) | The voice-processor mix path: the per-frame voice-list walk, both envelopes, PCM/ADPCM buffer and stream fetch through the SSL/SGE tables, resampling, the 8-tap volume/headroom mix into the 32 mix bins, multipass voices. |
+| `src/XGrid.Audio/Dsp/McpxApuDsp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/gp_ep.c` + `gp_ep.h` (LGPL-2+), `dsp.c` + `dsp_c.c` (GPL-2+), `apu/fpconv.h` (LGPL-2+) | GPL-2+ (combined work) | GP/EP sub-windows, `proc_rst_write`, scatter/gather scratch, FIFO rings, peripheral halt/interrupt/DMA, the frame loop, `float_to_24b`. |
+| `src/XGrid.Audio/McpxApuDevice.Vp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/vp/vp.c` + `vp.h` | GPL-2+ (xemu file header) | The voice-processor mix path: the per-frame voice-list walk, both envelopes, PCM/ADPCM buffer and stream fetch through the SSL/SGE tables, resampling, the 8-tap volume/headroom mix into the 32 mix bins, multipass voices. |
 | `src/XGrid.Audio/Vp/ApuVpAdpcm.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/vp/adpcm.h` (ADPCM-XQ, Copyright (c) David Bryant) | BSD-3-Clause | The 4-bit ADPCM block decoder (BSD-3-Clause, GPL-compatible; the notice is in the file header). |
 | `src/XGrid.Audio/Vp/ApuVpFilters.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/vp/svf.h` (SWH LADSPA plugins, Steve Harris / andy@vellocet, GPLv2) + `hrtf.h` (c) 2025 Matt Borgerson) | GPL-2+ | The state-variable low-pass filter and the 31-tap HRTF filter with interaural delay. |
-| `src/XGrid.Audio/Vp/ApuVpFrame.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/apu_regs.h`, `vp/vp.c`, `apu/fpconv.h` | GPL-2+ | Frame geometry constants and the reference's sample conversions. |
-| `src/XGrid.Nv2a/PshCombiner.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/glsl/psh.c` (GPL-2+; itself derived from Cxbx `PixelShader.cpp` and Xeon `XBD3DPixelShader.cpp`) | GPL-2+ | Register-combiner stage decode and evaluation. |
-| `src/XGrid.Nv2a/VshProgram.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/glsl/vsh-prog.c` + `vsh_regs.h` (GPL-2+; itself derived from Cxbx `VertexShader.cpp` and Dxbx `uPushBuffer.pas`) | GPL-2+ | Transform-program decode and execution. |
+| `src/XGrid.Audio/Vp/ApuVpFrame.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/apu_regs.h`, `apu_int.h`, `vp/vp.c`, `apu/fpconv.h` | GPL-2+ | Frame geometry constants and the reference's sample conversions. |
+| `src/XGrid.Nv2a/PshCombiner.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/glsl/psh.c`, `pgraph/psh_regs.h` (GPL-2+; itself derived from Cxbx `PixelShader.cpp` and Xeon `XBD3DPixelShader.cpp`) | GPL-2+ | Register-combiner stage decode and evaluation. |
+| `src/XGrid.Nv2a/VshProgram.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/glsl/vsh-prog.c` + `vsh-prog.h` + `vsh_regs.h` (GPL-2+; itself derived from Cxbx `VertexShader.cpp` and Dxbx `uPushBuffer.pas`) | GPL-2+ | Transform-program decode and execution. |
 | `src/XGrid.Nv2a/VshProgramPlan.cs` | XGrid `VshProgram.cs`, itself ported from xemu 0.8.139 `glsl/vsh-prog.c` | GPL-2+ | Predecoded, allocation-free form of the same program semantics. |
-| `src/XGrid.Nv2a/FixedFunctionVertex.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/glsl/vsh-ff.c` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Fixed-function transform, texgen, lighting and position epilogue. |
-| `src/XGrid.Nv2a/FixedFunctionVertexState.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/pgraph.c` + `glsl/vsh.c` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Latched fixed-function register state. |
+| `src/XGrid.Nv2a/FixedFunctionVertex.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/glsl/vsh-ff.c` + `vsh-ff.h` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Fixed-function transform, texgen, lighting and position epilogue. |
+| `src/XGrid.Nv2a/FixedFunctionVertexState.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/pgraph.c` + `glsl/vsh.c` + `glsl/vsh.h` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Latched fixed-function register state. |
 | `src/XGrid.Nv2a/SpecularPowerCurve.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/pgraph.c` `reconstruct_specular_power` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Fixed-function specular-exponent reconstruction and coefficient tables. |
 | `src/XGrid.Nv2a/S3tcDecoder.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/s3tc.c` + `s3tc.h` | MIT (xemu file header) | DXT1/DXT3/DXT5 block decompression. |
 | `src/XGrid.Nv2a/TextureFormats.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/texture.c`, `pgraph/gl/constants.h`, `pgraph/util.h` | LGPL-2+ (xemu file headers; included under GPL-2.0 via LGPL §3) | The color-format table, the Y8/AY8/A8/A8Y8/Y16/R6G5B5 word decoders, the YUV conversion, the palette entry and the mip-chain layout. |
