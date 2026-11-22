@@ -249,6 +249,23 @@ is the host code generator against the measured 6.3 ns/member bar; the engine's
 value today is the exact reference implementation and the interpreter
 replacement path.
 
+### P1S5 - parity and switchover (result, 2026-11-22)
+
+The parity bundle is complete with the ported engine: the four accurate 1B
+goldens (RAM/CPU and both frames), the byte-identical ktest log, the ktest 100M
+workload and the cpu-oracle all exact. The **switch does not happen**: the
+engine is 5-7x slower than the current runner, so the parity condition alone
+does not justify a product regression.
+
+**Ceiling (recorded, the phase stops here).** The product runs 007 at 0.100x
+(73 Msteps/s, 13.7 ns/step, P1S0). 0.5x needs ~365 Msteps/s (~2.7 ns/step).
+The ported engine reaches 11-15 Msteps/s (66-90 ns/step) - **0% of the required
+speedup** - and even a codegen at the raw runner's 6.3 ns/member would land at
+~1.0-1.7x the current engine, not 5x. The only shape that reaches the floor is
+xemu's own per-step cost (~1.2 ns), i.e. the reference TCG translation quality
+(register allocation over the whole TB, direct chaining, no per-instruction
+state sync), which is a different engine project from this IR integration.
+
 ### P1S5 - parity and switchover (4-6 sessions)
 
 - Four accurate 1B goldens, ktest, 22-row corpus, 30B/100B 007 legs exact.
