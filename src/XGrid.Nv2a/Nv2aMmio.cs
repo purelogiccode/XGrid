@@ -5702,6 +5702,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
+    /// <summary>Test seam (XFP2): latches one vertex array descriptor.</summary>
+    /// <param name="slot">The attribute slot.</param>
+    /// <param name="format">The array format word (type | count &lt;&lt; 4 | stride &lt;&lt; 8).</param>
+    /// <param name="offset">The array offset in guest memory.</param>
+    internal void SetVertexArrayForTest(int slot, uint format, uint offset)
+    {
+        _vertexFormat[slot] = format;
+        _vertexArrayOffset[slot] = offset;
+    }
+
+    /// <summary>Test seam (XFP2): fetches one array attribute with the real decode and defaults.</summary>
+    /// <param name="slot">The attribute slot.</param>
+    /// <param name="index">The vertex index.</param>
+    /// <param name="destination">The four-component destination.</param>
+    internal void FetchVertexAttributeForTest(int slot, int index, float[] destination)
+    {
+        FetchVertexAttribute(slot, index, destination);
+    }
+
     private void FetchVertexAttribute(int slot, int index, float[] destination)
     {
         float[] inline = _inlineValues[slot];
