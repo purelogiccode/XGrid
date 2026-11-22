@@ -125,6 +125,18 @@ public enum TcgOpKind
     /// <summary>Pops a temp from the stack.</summary>
     Pop,
 
+    /// <summary>Bit test (BT/BTS/BTR/BTC).</summary>
+    BitTest,
+
+    /// <summary>Compare and exchange (CMPXCHG).</summary>
+    Cmpxchg,
+
+    /// <summary>Compare and exchange eight bytes (CMPXCHG8B).</summary>
+    Cmpxchg8B,
+
+    /// <summary>Exchange and add (XADD).</summary>
+    Xadd,
+
     /// <summary>Computes a guest effective address from the memory operand shape.</summary>
     Lea,
 
@@ -186,6 +198,9 @@ public readonly struct TcgOp
 
     /// <summary>Gets whether the address is 16-bit (LEA).</summary>
     public bool Address16 { get; init; }
+
+    /// <summary>Gets whether the destination operand is memory.</summary>
+    public bool IsMemory { get; init; }
 
     /// <summary>Gets the condition (conditional branch).</summary>
     public ConditionCode Condition { get; init; }

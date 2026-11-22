@@ -271,6 +271,111 @@ public static class TcgInterpreter
                         gprs[4] = esp + (uint)op.Size;
                         break;
                     }
+
+                case TcgOpKind.BitTest:
+                    {
+                        int bitWidth = op.Size * 8;
+                        uint index = temps[op.Right];
+                        if (op.IsMemory)
+                        {
+                            uint address = temps[op.Left] + (index / (uint)bitWidth) * (uint)op.Size;
+                            uint value = Load(memory, address, op.Size);
+                            uint mask = 1u << (int)(index % (uint)bitWidth);
+                            eflags = (value & mask) != 0 ? eflags | FlagBits.Cf : eflags & ~FlagBits.Cf;
+                            value = op.Immediate switch
+                            {
+                                1 => value | mask,
+                                2 => value & ~mask,
+                                3 => value ^ mask,
+                                _ => value,
+                            };
+                            if (op.Immediate != 0)
+                            {
+                                Store(memory, address, value, op.Size);
+                            }
+                        }
+                        else
+                        {
+                            uint value = temps[op.Left];
+                            uint mask = 1u << (int)(index & (uint)(bitWidth - 1));
+                            eflags = (value & mask) != 0 ? eflags | FlagBits.Cf : eflags & ~FlagBits.Cf;
+                            temps[op.Dest] = op.Immediate switch
+                            {
+                                1 => value | mask,
+                                2 => value & ~mask,
+                                3 => value ^ mask,
+                                _ => value,
+                            };
+                        }
+
+                        break;
+                    }
+
+                case TcgOpKind.Cmpxchg:
+                    {
+                        uint destination = op.IsMemory
+                            ? Load(memory, temps[op.Left], op.Size)
+                            : gprs[op.GuestRegister];
+                        uint accumulator = ReadAccumulator(gprs, op.Size);
+                        eflags = AluOps.Sub(accumulator, destination, 0, op.Size * 8, eflags, out _);
+                        if (accumulator == destination)
+                        {
+                            uint source = temps[op.Right];
+                            if (op.IsMemory)
+                            {
+                                Store(memory, temps[op.Left], source, op.Size);
+                            }
+                            else
+                            {
+                                WriteRegister(gprs, op.GuestRegister, source, op.Size);
+                            }
+                        }
+                        else
+                        {
+                            WriteAccumulator(gprs, op.Size, destination);
+                        }
+
+                        break;
+                    }
+
+                case TcgOpKind.Cmpxchg8B:
+                    {
+                        uint address = temps[op.Left];
+                        uint low = Load(memory, address, 4);
+                        uint high = Load(memory, address + 4, 4);
+                        if (low == gprs[0] && high == gprs[2])
+                        {
+                            Store(memory, address, gprs[3], 4);
+                            Store(memory, address + 4, gprs[1], 4);
+                            eflags |= FlagBits.Zf;
+                        }
+                        else
+                        {
+                            gprs[0] = low;
+                            gprs[2] = high;
+                            eflags &= ~FlagBits.Zf;
+                        }
+
+                        break;
+                    }
+
+                case TcgOpKind.Xadd:
+                    {
+                        uint destination = op.IsMemory ? Load(memory, temps[op.Left], op.Size) : temps[op.Left];
+                        uint source = temps[op.Right];
+                        eflags = AluOps.Add(destination, source, 0, op.Size * 8, eflags, out uint result);
+                        if (op.IsMemory)
+                        {
+                            Store(memory, temps[op.Left], result, op.Size);
+                        }
+                        else
+                        {
+                            temps[op.Left] = result;
+                        }
+
+                        WriteRegister(gprs, op.GuestRegister, destination, op.Size);
+                        break;
+                    }
                 case TcgOpKind.Lea:
                     temps[op.Dest] = EffectiveAddress(op, gprs, segmentBases);
                     break;
@@ -311,6 +416,37 @@ public static class TcgInterpreter
             int register = registerIndex - 4;
             gprs[register] = (gprs[register] & 0xFFFF00FFu) | ((uint)value << 8);
         }
+    }
+
+    private static void WriteRegister(uint[] gprs, int registerIndex, uint value, int size)
+    {
+        switch (size)
+        {
+            case 1:
+                WriteRegister8(gprs, registerIndex, (byte)value);
+                break;
+            case 2:
+                gprs[registerIndex] = (gprs[registerIndex] & 0xFFFF0000u) | (value & 0xFFFFu);
+                break;
+            default:
+                gprs[registerIndex] = value;
+                break;
+        }
+    }
+
+    private static uint ReadAccumulator(uint[] gprs, int size)
+    {
+        return size switch
+        {
+            1 => gprs[0] & 0xFFu,
+            2 => gprs[0] & 0xFFFFu,
+            _ => gprs[0],
+        };
+    }
+
+    private static void WriteAccumulator(uint[] gprs, int size, uint value)
+    {
+        WriteRegister(gprs, 0, value, size);
     }
 
     private static uint Mask(uint value, int size)

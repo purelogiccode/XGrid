@@ -94,6 +94,17 @@ public static class I386Translator
             case Mnemonic.Push:
             case Mnemonic.Pop:
                 return TryPushPop(instruction, builder, out reason);
+            case Mnemonic.Bt:
+            case Mnemonic.Bts:
+            case Mnemonic.Btr:
+            case Mnemonic.Btc:
+                return TryBitTest(instruction, size, builder, out reason);
+            case Mnemonic.Cmpxchg:
+                return TryCmpxchg(instruction, size, builder, out reason);
+            case Mnemonic.Cmpxchg8B:
+                return TryCmpxchg8B(instruction, builder, out reason);
+            case Mnemonic.Xadd:
+                return TryXadd(instruction, size, builder, out reason);
             case Mnemonic.Jmp:
                 if (instruction.Operand1.Kind != OperandKind.Immediate)
                 {
@@ -574,6 +585,157 @@ public static class I386Translator
         }
 
         reason = "xchg operands";
+        return false;
+    }
+
+    private static bool TryBitTest(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        if (destination.Kind is not (OperandKind.Register or OperandKind.Memory))
+        {
+            reason = "bt destination";
+            return false;
+        }
+
+        int indexSize = instruction.Operand2.Size / 8;
+        if (indexSize is not (1 or 2 or 4))
+        {
+            indexSize = 4;
+        }
+
+        if (!TryReadSource(instruction.Operand2, indexSize, builder, out int bitIndex, out reason))
+        {
+            return false;
+        }
+
+        int operation = instruction.Mnemonic switch
+        {
+            Mnemonic.Bts => 1,
+            Mnemonic.Btr => 2,
+            Mnemonic.Btc => 3,
+            _ => 0,
+        };
+
+        if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.BitTest(0, address, bitIndex, operation, size, isMemory: true);
+            return true;
+        }
+
+        int value = builder.NewTemp();
+        builder.ReadRegister(value, destination.RegisterIndex, size);
+        int result = builder.NewTemp();
+        builder.BitTest(result, value, bitIndex, operation, size, isMemory: false);
+        builder.WriteRegister(destination.RegisterIndex, result, size);
+        return true;
+    }
+
+    private static bool TryCmpxchg(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        Operand source = instruction.Operand2;
+        if (source.Kind != OperandKind.Register || source.Size != size * 8)
+        {
+            reason = "cmpxchg source";
+            return false;
+        }
+
+        int sourceValue = builder.NewTemp();
+        builder.ReadRegister(sourceValue, source.RegisterIndex, size);
+
+        if (destination.Kind == OperandKind.Register)
+        {
+            builder.Cmpxchg(destination.RegisterIndex, sourceValue, size, isMemory: false);
+            return true;
+        }
+
+        if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.Cmpxchg(address, sourceValue, size, isMemory: true);
+            return true;
+        }
+
+        reason = "cmpxchg destination";
+        return false;
+    }
+
+    private static bool TryCmpxchg8B(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        if (instruction.Operand1.Kind != OperandKind.Memory)
+        {
+            reason = "cmpxchg8b destination";
+            return false;
+        }
+
+        if (!TryAddress(instruction.Operand1.Memory, builder, out int address, out reason))
+        {
+            return false;
+        }
+
+        builder.Cmpxchg8B(address);
+        return true;
+    }
+
+    private static bool TryXadd(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        Operand source = instruction.Operand2;
+        if (source.Kind != OperandKind.Register || source.Size != size * 8)
+        {
+            reason = "xadd source";
+            return false;
+        }
+
+        int sourceValue = builder.NewTemp();
+        builder.ReadRegister(sourceValue, source.RegisterIndex, size);
+
+        if (destination.Kind == OperandKind.Register)
+        {
+            int value = builder.NewTemp();
+            builder.ReadRegister(value, destination.RegisterIndex, size);
+            builder.Xadd(value, sourceValue, source.RegisterIndex, size, isMemory: false);
+            builder.WriteRegister(destination.RegisterIndex, value, size);
+            return true;
+        }
+
+        if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.Xadd(address, sourceValue, source.RegisterIndex, size, isMemory: true);
+            return true;
+        }
+
+        reason = "xadd destination";
         return false;
     }
 

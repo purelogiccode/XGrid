@@ -300,6 +300,71 @@ public sealed class TcgBuilder
         _ops.Add(new TcgOp { Kind = TcgOpKind.Pop, Dest = dest, Size = size });
     }
 
+    /// <summary>Emits a bit test/modify (BT/BTS/BTR/BTC).</summary>
+    /// <param name="result">Result temp (register form).</param>
+    /// <param name="valueOrAddress">Value temp or address temp.</param>
+    /// <param name="bitIndex">Bit index temp.</param>
+    /// <param name="operation">0=test, 1=set, 2=reset, 3=complement.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    /// <param name="isMemory">True for the memory (bit-string) form.</param>
+    public void BitTest(int result, int valueOrAddress, int bitIndex, int operation, int size, bool isMemory)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.BitTest,
+            Dest = result,
+            Left = valueOrAddress,
+            Right = bitIndex,
+            Immediate = (uint)operation,
+            Size = size,
+            IsMemory = isMemory,
+        });
+    }
+
+    /// <summary>Emits a compare-and-exchange.</summary>
+    /// <param name="destination">Destination register index, or address temp for memory.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    /// <param name="isMemory">True when the destination is memory.</param>
+    public void Cmpxchg(int destination, int source, int size, bool isMemory)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Cmpxchg,
+            Left = isMemory ? destination : 0,
+            GuestRegister = isMemory ? -1 : destination,
+            Right = source,
+            Size = size,
+            IsMemory = isMemory,
+        });
+    }
+
+    /// <summary>Emits a compare-and-exchange of eight bytes.</summary>
+    /// <param name="address">Address temp.</param>
+    public void Cmpxchg8B(int address)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Cmpxchg8B, Left = address, IsMemory = true });
+    }
+
+    /// <summary>Emits an exchange-and-add.</summary>
+    /// <param name="valueOrAddress">Destination value temp (register) or address temp.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="sourceRegister">Source register index (receives the old destination).</param>
+    /// <param name="size">Operand size in bytes.</param>
+    /// <param name="isMemory">True when the destination is memory.</param>
+    public void Xadd(int valueOrAddress, int source, int sourceRegister, int size, bool isMemory)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Xadd,
+            Left = valueOrAddress,
+            Right = source,
+            GuestRegister = sourceRegister,
+            Size = size,
+            IsMemory = isMemory,
+        });
+    }
+
     /// <summary>Emits an effective-address computation (QEMU's address shape).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="memory">The decoded memory operand.</param>

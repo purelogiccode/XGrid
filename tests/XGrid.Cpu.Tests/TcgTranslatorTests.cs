@@ -504,6 +504,120 @@ public sealed class TcgTranslatorTests
             (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
     }
 
+    [Fact]
+    public void BtRegister()
+    {
+        AssertMatches([0x0F, 0xA3, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0x10); Set(cpu, Gpr.Ebx, 4); });
+    }
+
+    [Fact]
+    public void BtsRegister()
+    {
+        AssertMatches([0x0F, 0xAB, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0); Set(cpu, Gpr.Ebx, 4); });
+    }
+
+    [Fact]
+    public void BtrRegister()
+    {
+        AssertMatches([0x0F, 0xB3, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0x10); Set(cpu, Gpr.Ebx, 4); });
+    }
+
+    [Fact]
+    public void BtcRegister()
+    {
+        AssertMatches([0x0F, 0xBB, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0x10); Set(cpu, Gpr.Ebx, 4); });
+    }
+
+    [Fact]
+    public void BtImmediate()
+    {
+        AssertMatches([0x0F, 0xBA, 0xE0, 0x04], cpu => Set(cpu, Gpr.Eax, 0x10));
+    }
+
+    [Fact]
+    public void BtsImmediate()
+    {
+        AssertMatches([0x0F, 0xBA, 0xE8, 0x04], cpu => Set(cpu, Gpr.Eax, 0));
+    }
+
+    [Fact]
+    public void BtMemory()
+    {
+        AssertMatches(
+            [0x0F, 0xA3, 0x18],
+            cpu => { Set(cpu, Gpr.Eax, 0x2000); Set(cpu, Gpr.Ebx, 4); Memory32(cpu, 0x2000, 0x10); });
+    }
+
+    [Fact]
+    public void BtMemoryBitString()
+    {
+        AssertMatches(
+            [0x0F, 0xA3, 0x18],
+            cpu => { Set(cpu, Gpr.Eax, 0x2000); Set(cpu, Gpr.Ebx, 36); Memory32(cpu, 0x2004, 0x02); });
+    }
+
+    [Fact]
+    public void CmpxchgEqual()
+    {
+        AssertMatches([0x0F, 0xB1, 0xCB], cpu => { Set(cpu, Gpr.Eax, 5); Set(cpu, Gpr.Ebx, 5); Set(cpu, Gpr.Ecx, 7); });
+    }
+
+    [Fact]
+    public void CmpxchgNotEqual()
+    {
+        AssertMatches([0x0F, 0xB1, 0xCB], cpu => { Set(cpu, Gpr.Eax, 5); Set(cpu, Gpr.Ebx, 6); Set(cpu, Gpr.Ecx, 7); });
+    }
+
+    [Fact]
+    public void Cmpxchg8bEqual()
+    {
+        AssertMatches(
+            [0x0F, 0xC7, 0x0D, 0x00, 0x20, 0x00, 0x00],
+            cpu =>
+            {
+                Set(cpu, Gpr.Eax, 0x11223344);
+                Set(cpu, Gpr.Edx, 0x55667788);
+                Set(cpu, Gpr.Ebx, 0x99AABBCC);
+                Set(cpu, Gpr.Ecx, 0xDDEEFF00);
+                Memory32(cpu, 0x2000, 0x11223344);
+                Memory32(cpu, 0x2004, 0x55667788);
+            },
+            (interpreter, tcg) =>
+            {
+                Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000));
+                Assert.Equal(interpreter.Ram().Read32(0x2004), tcg.Ram().Read32(0x2004));
+            });
+    }
+
+    [Fact]
+    public void Cmpxchg8bNotEqual()
+    {
+        AssertMatches(
+            [0x0F, 0xC7, 0x0D, 0x00, 0x20, 0x00, 0x00],
+            cpu =>
+            {
+                Set(cpu, Gpr.Eax, 0x11111111);
+                Set(cpu, Gpr.Edx, 0x22222222);
+                Memory32(cpu, 0x2000, 0x33333333);
+                Memory32(cpu, 0x2004, 0x44444444);
+            });
+    }
+
+    [Fact]
+    public void XaddRegister()
+    {
+        AssertMatches([0x0F, 0xC1, 0xD8], cpu => { Set(cpu, Gpr.Eax, 5); Set(cpu, Gpr.Ebx, 7); });
+    }
+
+    [Fact]
+    public void XaddMemory()
+    {
+        AssertMatches(
+            [0x0F, 0xC1, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => { Set(cpu, Gpr.Eax, 2); Memory32(cpu, 0x2000, 3); },
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
+    }
+
     private sealed class TestMemory(AddressSpace bus) : ITcgMemory
     {
         public byte Read8(uint address)
