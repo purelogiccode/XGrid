@@ -185,6 +185,27 @@ public sealed class TcgBuilder
         });
     }
 
+    /// <summary>Emits a double shift by a temp count (CL form).</summary>
+    /// <param name="kind">SHLD or SHRD.</param>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="value">Destination value temp.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="count">Count temp (the low byte is used).</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void DoubleShiftTemp(TcgOpKind kind, int dest, int value, int source, int count, int size)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = kind,
+            Dest = dest,
+            Left = value,
+            Right = source,
+            GuestRegister2 = count,
+            On = true,
+            Size = size,
+        });
+    }
+
     /// <summary>Emits a negation.</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="source">Source temp.</param>
@@ -559,6 +580,27 @@ public sealed class TcgBuilder
             Control = control,
             Size = 8,
         });
+    }
+
+    /// <summary>Emits an x87 instruction for the shared helper.</summary>
+    /// <param name="instruction">The decoded x87 instruction.</param>
+    public void Fpu(in DecodedInstruction instruction)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Fpu, Instruction = instruction });
+    }
+
+    /// <summary>Emits a read of the x87 status word into a temp.</summary>
+    /// <param name="dest">Destination temp.</param>
+    public void ReadFpuStatus(int dest)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.ReadFpuStatus, Dest = dest, Size = 2 });
+    }
+
+    /// <summary>Emits an SSE instruction for the shared helper.</summary>
+    /// <param name="instruction">The decoded SSE instruction.</param>
+    public void Sse(in DecodedInstruction instruction)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Sse, Instruction = instruction });
     }
 
     /// <summary>Emits EMMS (the x87/MMX tag word becomes empty).</summary>

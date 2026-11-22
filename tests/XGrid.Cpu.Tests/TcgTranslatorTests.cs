@@ -15,7 +15,8 @@ public sealed class TcgTranslatorTests
         byte[] code,
         Action<XboxCpu>? setup = null,
         Action<XboxCpu, XboxCpu>? verify = null,
-        bool mmx = false)
+        bool mmx = false,
+        bool sse = false)
     {
         XboxCpu interpreter = CpuHarness.Create(code);
         XboxCpu tcg = CpuHarness.Create(code);
@@ -55,7 +56,8 @@ public sealed class TcgTranslatorTests
             initialFlags,
             segments,
             new TcgTestMemory(tcg.Bus()),
-            fpuState);
+            fpuState,
+            tcg.Context);
 
         interpreter.Step();
         for (int i = 0; i < 8; i++)
@@ -67,12 +69,30 @@ public sealed class TcgTranslatorTests
         Assert.Equal(interpreter.Context.Eip, result.Eip);
         if (mmx)
         {
+            FpuState expected = interpreter.Context.Fpu;
+            FpuState actual = result.Fpu!;
+            Assert.Equal(expected.ControlWord, actual.ControlWord);
+            Assert.Equal(expected.StatusWord, actual.StatusWord);
+            Assert.Equal(expected.TagWord, actual.TagWord);
+            Assert.Equal(expected.Top, actual.Top);
             for (int i = 0; i < 8; i++)
             {
-                Assert.Equal(interpreter.Context.Fpu.GetMmxRegister(i), result.Fpu!.GetMmxRegister(i));
+                Assert.Equal(expected.GetPhysicalRegister(i).SignExponent, actual.GetPhysicalRegister(i).SignExponent);
+                Assert.Equal(expected.GetPhysicalRegister(i).Significand, actual.GetPhysicalRegister(i).Significand);
+            }
+        }
+
+        if (sse)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                Assert.Equal(interpreter.Context.ReadXmmElement(i, 0), tcg.Context.ReadXmmElement(i, 0));
+                Assert.Equal(interpreter.Context.ReadXmmElement(i, 1), tcg.Context.ReadXmmElement(i, 1));
+                Assert.Equal(interpreter.Context.ReadXmmElement(i, 2), tcg.Context.ReadXmmElement(i, 2));
+                Assert.Equal(interpreter.Context.ReadXmmElement(i, 3), tcg.Context.ReadXmmElement(i, 3));
             }
 
-            Assert.Equal(interpreter.Context.Fpu.TagWord, result.Fpu!.TagWord);
+            Assert.Equal(interpreter.Context.Mxcsr, tcg.Context.Mxcsr);
         }
 
         verify?.Invoke(interpreter, tcg);
@@ -1417,5 +1437,359 @@ public sealed class TcgTranslatorTests
     public void JecxzNotTaken()
     {
         AssertMatches([0xE3, 0xFE], cpu => Set(cpu, Gpr.Ecx, 1));
+    }
+
+    [Fact]
+    public void FldAndFstpRoundTrip()
+    {
+        AssertMatches(
+            [0xD9, 0x05, 0x00, 0x20, 0x00, 0x00, 0xD9, 0x1D, 0x10, 0x20, 0x00, 0x00],
+            cpu => Memory32(cpu, 0x2000, 0x40490FDB),
+            (interpreter, tcg) =>
+            {
+                Assert.Equal(interpreter.Ram().Read32(0x2010), tcg.Ram().Read32(0x2010));
+                Assert.Equal(interpreter.Ram().Read32(0x2014), tcg.Ram().Read32(0x2014));
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void FaddMemory()
+    {
+        AssertMatches(
+            [0xD8, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu =>
+            {
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(1.5));
+                Memory32(cpu, 0x2000, 0x40200000);
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void FsubMemory()
+    {
+        AssertMatches(
+            [0xD8, 0x25, 0x00, 0x20, 0x00, 0x00],
+            cpu =>
+            {
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(1.5));
+                Memory32(cpu, 0x2000, 0x40400000);
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void FdivZeroLatchesStatus()
+    {
+        AssertMatches(
+            [0xD8, 0x35, 0x00, 0x20, 0x00, 0x00],
+            cpu =>
+            {
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(1.0));
+                Memory32(cpu, 0x2000, 0);
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void FcomipSetsEflags()
+    {
+        AssertMatches(
+            [0xDF, 0xF1],
+            cpu =>
+            {
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(2.0));
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(1.0));
+                Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf | FlagBits.Zf | FlagBits.Pf);
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void FnstswAx()
+    {
+        AssertMatches(
+            [0xDF, 0xE0],
+            cpu =>
+            {
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(1.0));
+                Flags(cpu, FlagBits.Reserved1);
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Fsqrt()
+    {
+        AssertMatches(
+            [0xD9, 0xFA],
+            cpu => cpu.Context.Fpu.Push(Fpu80.FromDouble(2.0)),
+            mmx: true);
+    }
+
+    [Fact]
+    public void Fprem()
+    {
+        AssertMatches(
+            [0xD9, 0xF8],
+            cpu =>
+            {
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(10.0));
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(3.0));
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Fsincos()
+    {
+        AssertMatches(
+            [0xD9, 0xFB],
+            cpu => cpu.Context.Fpu.Push(Fpu80.FromDouble(0.5)),
+            mmx: true);
+    }
+
+    [Fact]
+    public void FcmovbMovesWhenCarry()
+    {
+        AssertMatches(
+            [0xDA, 0xC3],
+            cpu =>
+            {
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(1.0));
+                cpu.Context.Fpu.Push(Fpu80.FromDouble(2.0));
+                Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf);
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void FldcwChangesRounding()
+    {
+        AssertMatches(
+            [0xD9, 0x2D, 0x00, 0x20, 0x00, 0x00],
+            cpu => cpu.Ram().Write16(0x2000, 0x0F7F),
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read16(0x2000), tcg.Ram().Read16(0x2000)),
+            mmx: true);
+    }
+
+    [Fact]
+    public void FbldAndFbstp()
+    {
+        AssertMatches(
+            [0xDF, 0x2D, 0x00, 0x20, 0x00, 0x00, 0xDF, 0x3D, 0x10, 0x20, 0x00, 0x00],
+            cpu =>
+            {
+                for (uint i = 0; i < 9; i++)
+                {
+                    cpu.Ram().Write8(0x2000 + i, (byte)(i * 0x11));
+                }
+            },
+            (interpreter, tcg) =>
+            {
+                for (uint i = 0; i < 10; i++)
+                {
+                    Assert.Equal(interpreter.Ram().Read8(0x2010 + i), tcg.Ram().Read8(0x2010 + i));
+                }
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void MovssLoadsLowElement()
+    {
+        AssertMatches(
+            [0xF3, 0x0F, 0x10, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => Memory32(cpu, 0x2000, 0x40490FDB),
+            sse: true);
+    }
+
+    [Fact]
+    public void MovssStoresLowElement()
+    {
+        AssertMatches(
+            [0xF3, 0x0F, 0x11, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => cpu.Context.WriteXmm128(0, 0x1122334455667788, 0x99AABBCCDDEEFF00),
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)),
+            sse: true);
+    }
+
+    [Fact]
+    public void MovapsRegisterCopy()
+    {
+        AssertMatches(
+            [0x0F, 0x28, 0xC8],
+            cpu => cpu.Context.WriteXmm128(0, 0x1122334455667788, 0x99AABBCCDDEEFF00),
+            sse: true);
+    }
+
+    [Fact]
+    public void AddpsAddsLanes()
+    {
+        AssertMatches(
+            [0x0F, 0x58, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x3F8000003F800000, 0x4000000040000000);
+                cpu.Context.WriteXmm128(1, 0x4000000040000000, 0x4040000040400000);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void MulssScalar()
+    {
+        AssertMatches(
+            [0xF3, 0x0F, 0x59, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x40490FDB11223344, 0x5566778899AABBCC);
+                cpu.Context.WriteXmm128(1, 0x4000000000000000, 0);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void MinssKeepsSourceOnEqual()
+    {
+        AssertMatches(
+            [0xF3, 0x0F, 0x5D, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x0000000080000000, 0);
+                cpu.Context.WriteXmm128(1, 0x8000000000000000, 0);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void Sqrtss()
+    {
+        AssertMatches(
+            [0xF3, 0x0F, 0x51, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x1122334440000000, 0x5566778899AABBCC);
+                cpu.Context.WriteXmm128(1, 0x4080000000000000, 0);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void Xorps()
+    {
+        AssertMatches(
+            [0x0F, 0x57, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0xFFFFFFFF00000000, 0xFFFF0000FFFF0000);
+                cpu.Context.WriteXmm128(1, 0xFFFF0000FFFF0000, 0x0000FFFF0000FFFF);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void CmppsEqualPredicate()
+    {
+        AssertMatches(
+            [0x0F, 0xC2, 0xC1, 0x00],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x3F8000003F800000, 0x400000003F800000);
+                cpu.Context.WriteXmm128(1, 0x3F80000040000000, 0x3F8000003F800000);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void ComissSetsEflags()
+    {
+        AssertMatches(
+            [0x0F, 0x2F, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x40490FDB11223344, 0);
+                cpu.Context.WriteXmm128(1, 0x4000000000000000, 0);
+                Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf | FlagBits.Zf | FlagBits.Pf);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void UcomissUnordered()
+    {
+        AssertMatches(
+            [0x0F, 0x2E, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x7FC0000011223344, 0);
+                cpu.Context.WriteXmm128(1, 0x3F80000000000000, 0);
+                Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf | FlagBits.Zf | FlagBits.Pf);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void ShufpsReversesLanes()
+    {
+        AssertMatches(
+            [0x0F, 0xC6, 0xC1, 0x1B],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x1111111122222222, 0x3333333344444444);
+                cpu.Context.WriteXmm128(1, 0x5555555566666666, 0x7777777788888888);
+            },
+            sse: true);
+    }
+
+    [Fact]
+    public void Movmskps()
+    {
+        AssertMatches(
+            [0x0F, 0x50, 0xC1],
+            cpu => cpu.Context.WriteXmm128(1, 0x8000000080000000, 0x0000000080000000),
+            sse: true);
+    }
+
+    [Fact]
+    public void Cvtsi2Ss()
+    {
+        AssertMatches(
+            [0xF3, 0x0F, 0x2A, 0xC0],
+            cpu => Set(cpu, Gpr.Eax, unchecked((uint)-7)),
+            sse: true);
+    }
+
+    [Fact]
+    public void Cvttss2Si()
+    {
+        AssertMatches(
+            [0xF3, 0x0F, 0x2C, 0xC1],
+            cpu => cpu.Context.WriteXmm128(1, 0xC060000011223344, 0),
+            sse: true);
+    }
+
+    [Fact]
+    public void LdmxcsrAndStmxcsr()
+    {
+        AssertMatches(
+            [0x0F, 0xAE, 0x15, 0x00, 0x20, 0x00, 0x00, 0x0F, 0xAE, 0x1D, 0x10, 0x20, 0x00, 0x00],
+            cpu => cpu.Ram().Write32(0x2000, 0x00001F80),
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2010), tcg.Ram().Read32(0x2010)),
+            sse: true);
+    }
+
+    [Fact]
+    public void Unpcklps()
+    {
+        AssertMatches(
+            [0x0F, 0x14, 0xC1],
+            cpu =>
+            {
+                cpu.Context.WriteXmm128(0, 0x1111111122222222, 0x3333333344444444);
+                cpu.Context.WriteXmm128(1, 0x5555555566666666, 0x7777777788888888);
+            },
+            sse: true);
     }
 }

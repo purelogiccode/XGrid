@@ -216,6 +216,20 @@ public static class I386Translator
                     return true;
                 }
 
+            case Mnemonic.Fnstsw when instruction.Operand1.Kind == OperandKind.None:
+                {
+                    int status = builder.NewTemp();
+                    builder.ReadFpuStatus(status);
+                    builder.WriteRegister((int)Gpr.Eax, status, 2);
+                    return true;
+                }
+
+            case var sseMnemonic when TcgSse.IsSupported(sseMnemonic):
+                builder.Sse(instruction);
+                return true;
+            case var fpuMnemonic when TcgFpu.IsSupported(fpuMnemonic):
+                builder.Fpu(instruction);
+                return true;
             case var mmx when IsMmxMnemonic(mmx):
                 return TryMmx(instruction, builder, out reason);
             case Mnemonic.Jmp:
@@ -513,7 +527,8 @@ public static class I386Translator
         out string? reason)
     {
         reason = null;
-        if (instruction.Operand3.Kind != OperandKind.Immediate)
+        bool countFromRegister = instruction.Operand3.Kind == OperandKind.Register;
+        if (!countFromRegister && instruction.Operand3.Kind != OperandKind.Immediate)
         {
             reason = "double-shift count";
             return false;
@@ -549,13 +564,17 @@ public static class I386Translator
         }
 
         int result = builder.NewTemp();
-        builder.DoubleShift(
-            instruction.Mnemonic == Mnemonic.Shld ? TcgOpKind.Shld : TcgOpKind.Shrd,
-            result,
-            value,
-            source,
-            instruction.Operand3.Immediate,
-            size);
+        TcgOpKind shiftKind = instruction.Mnemonic == Mnemonic.Shld ? TcgOpKind.Shld : TcgOpKind.Shrd;
+        if (countFromRegister)
+        {
+            int count = builder.NewTemp();
+            builder.ReadRegister(count, instruction.Operand3.RegisterIndex, 1);
+            builder.DoubleShiftTemp(shiftKind, result, value, source, count, size);
+        }
+        else
+        {
+            builder.DoubleShift(shiftKind, result, value, source, instruction.Operand3.Immediate, size);
+        }
 
         if (destination.Kind == OperandKind.Register)
         {

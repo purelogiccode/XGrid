@@ -149,6 +149,15 @@ public enum TcgOpKind
     /// <summary>An MMX operation (packed integer, move, shift or mask).</summary>
     Mmx,
 
+    /// <summary>An x87 instruction (<see cref="TcgFpu"/> helper).</summary>
+    Fpu,
+
+    /// <summary>Reads the x87 status word into a temp (FNSTSW AX).</summary>
+    ReadFpuStatus,
+
+    /// <summary>An SSE instruction (<see cref="TcgSse"/> helper).</summary>
+    Sse,
+
     /// <summary>Writes the condition result (0/1) into a temp (SETcc).</summary>
     SetCondition,
 
@@ -301,4 +310,7 @@ public readonly struct TcgOp
 
     /// <summary>Gets whether a flag op sets (true) or clears (false) its bit.</summary>
     public bool On { get; init; }
+
+    /// <summary>Gets the decoded instruction an x87 helper op executes.</summary>
+    public DecodedInstruction Instruction { get; init; }
 }

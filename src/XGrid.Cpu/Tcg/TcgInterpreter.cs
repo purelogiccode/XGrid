@@ -74,7 +74,7 @@ public static class TcgInterpreter
     /// <returns>The final register state.</returns>
     public static TcgResult Execute(TcgProgram program, ReadOnlySpan<uint> registers, uint eflags)
     {
-        return Execute(program, registers, eflags, ReadOnlySpan<uint>.Empty, memory: null, fpu: null);
+        return Execute(program, registers, eflags, ReadOnlySpan<uint>.Empty, memory: null, fpu: null, context: null);
     }
 
     /// <summary>Executes a program with the guest memory and segment bases.</summary>
@@ -84,6 +84,7 @@ public static class TcgInterpreter
     /// <param name="segmentBases">The six segment bases in <see cref="SegmentRegister"/> order.</param>
     /// <param name="memory">The guest memory (null for register-only programs).</param>
     /// <param name="fpu">The x87/MMX register file (null unless the program uses MMX).</param>
+    /// <param name="context">The machine context (required for SSE).</param>
     /// <returns>The final register state.</returns>
     public static TcgResult Execute(
         TcgProgram program,
@@ -91,7 +92,8 @@ public static class TcgInterpreter
         uint eflags,
         ReadOnlySpan<uint> segmentBases,
         ITcgMemory? memory,
-        FpuState? fpu = null)
+        FpuState? fpu = null,
+        XboxContext? context = null)
     {
         if (registers.Length < 8)
         {
@@ -216,15 +218,22 @@ public static class TcgInterpreter
                     temps[op.Dest] = rcr;
                     break;
                 case TcgOpKind.Shld:
-                    eflags = ShiftOps.Shld(
-                        temps[op.Left], temps[op.Right], (int)op.Immediate, op.Size * 8, eflags, out uint shld);
-                    temps[op.Dest] = shld;
-                    break;
+                    {
+                        int count = op.On ? (int)(temps[op.GuestRegister2] & 0xFF) : (int)op.Immediate;
+                        eflags = ShiftOps.Shld(
+                            temps[op.Left], temps[op.Right], count, op.Size * 8, eflags, out uint shld);
+                        temps[op.Dest] = shld;
+                        break;
+                    }
+
                 case TcgOpKind.Shrd:
-                    eflags = ShiftOps.Shrd(
-                        temps[op.Left], temps[op.Right], (int)op.Immediate, op.Size * 8, eflags, out uint shrd);
-                    temps[op.Dest] = shrd;
-                    break;
+                    {
+                        int count = op.On ? (int)(temps[op.GuestRegister2] & 0xFF) : (int)op.Immediate;
+                        eflags = ShiftOps.Shrd(
+                            temps[op.Left], temps[op.Right], count, op.Size * 8, eflags, out uint shrd);
+                        temps[op.Dest] = shrd;
+                        break;
+                    }
                 case TcgOpKind.Neg:
                     eflags = AluOps.Neg(temps[op.Left], op.Size * 8, eflags, out uint negated);
                     temps[op.Dest] = negated;
@@ -407,6 +416,27 @@ public static class TcgInterpreter
 
                 case TcgOpKind.StringOp:
                     eflags = ExecuteString(op, gprs, eflags, segmentBases, memory);
+                    break;
+                case TcgOpKind.Fpu:
+                    eflags = TcgFpu.Execute(
+                        op.Instruction,
+                        fpu ?? throw new InvalidOperationException("an x87 operation needs an FpuState"),
+                        gprs,
+                        memory,
+                        segmentBases,
+                        eflags);
+                    break;
+                case TcgOpKind.ReadFpuStatus:
+                    temps[op.Dest] = (fpu ?? throw new InvalidOperationException("an x87 operation needs an FpuState")).StatusWord;
+                    break;
+                case TcgOpKind.Sse:
+                    eflags = TcgSse.Execute(
+                        op.Instruction,
+                        context ?? throw new InvalidOperationException("an SSE operation needs an XboxContext"),
+                        gprs,
+                        memory,
+                        segmentBases,
+                        eflags);
                     break;
                 case TcgOpKind.Mmx:
                     ExecuteMmx(op, temps, wide, fpu ?? throw new InvalidOperationException("an MMX operation needs an FpuState"), gprs, segmentBases, memory);

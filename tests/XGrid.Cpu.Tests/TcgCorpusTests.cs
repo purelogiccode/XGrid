@@ -145,7 +145,8 @@ public sealed class TcgCorpusTests(ITestOutputHelper output)
                 cpu.Context.Eflags,
                 segments,
                 new TcgTestMemory(bus),
-                cpu.Context.Fpu);
+                cpu.Context.Fpu,
+                cpu.Context);
             for (int i = 0; i < 8; i++)
             {
                 cpu.Context.WriteRegister((Gpr)i, result.Registers[i]);

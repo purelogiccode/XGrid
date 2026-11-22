@@ -118,7 +118,15 @@ reference zero-source rule), ARPL (register and memory), CBW/CWDE/CWD/CDQ, XLAT,
 CLD/STD/CLC/STC/CMC, PUSHF/POPF, PUSHA/POPA, LEAVE and LOOP/LOOPE/LOOPNE/JECXZ
 (16/32 address size), with 16-bit stack-pointer wrap on PUSH/POP. **159
 differentials total**, 863 CPU tests green, corpus fallback 2415 -> 2344. ENTER
-and the 16-bit LEAVE stay fallbacks (documented). Next: x87, then SSE.
+and the 16-bit LEAVE stay fallbacks (documented). Slice 11: x87 through the
+shared <c>TcgFpu</c> executor (every arithmetic/compare/unary/constant/stack and
+BCD shape over the same <c>FpuState</c>/<c>Fpu80</c>, with FNSTSW AX as an IR
+read) and slice 12: SSE through <c>TcgSse</c> (moves, packed/scalar arithmetic,
+unary, logical, compares, shuffles, unpack, conversions, MXCSR). The corpus now
+runs **4,202 translated / 643 fallback**, and the only body fallbacks left are
+ENTER (2, 16-bit); the other 641 are the harness epilogue's FXSAVE. **188
+differentials**, 892 CPU tests green, format clean; the harness compares the
+full FPU (control/status/tag/top and every 80-bit register) and XMM/MXCSR state.
 
 ### P1S4 - host code generation (6-10 sessions)
 
