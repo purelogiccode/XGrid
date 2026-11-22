@@ -99,6 +99,50 @@ public sealed class ComputedModeShaderLiveTests(ITestOutputHelper output)
         }
     }
 
+    [Theory]
+    // The combiner configurations the triangle 1B gate leg actually runs,
+    // recorded from the --gpu-time rows: (control, final0, final1).
+    [InlineData(0x00000001u, 0x00000004u, 0x00001400u)]
+    [InlineData(0x00011108u, 0x0C0B000Fu, 0x0C011180u)]
+    [InlineData(0x00000001u, 0x0000000Cu, 0x00001C80u)]
+    [InlineData(0x00011107u, 0x0C0B000Fu, 0x0C011180u)]
+    [InlineData(0x00011101u, 0x0000000Cu, 0x00001C80u)]
+    public void GateTitleCombinerConfigurations_CompileAndLink(uint control, uint final0, uint final1)
+    {
+        var memory = new ArrayMemory();
+        bool created = GlBackendFactory.TryCreate(
+            memory, windowEnabled: false, replaceSoftware: true, out IPgraphBackend? backend, out string why);
+        if (!created || backend is not GlPgraphBackend live)
+        {
+            output.WriteLine("no GL context (" + why + "); title-config compile row not exercised.");
+            return;
+        }
+
+        try
+        {
+            PshCombiner state = Combiner(0);
+            state.Control = control;
+            state.Final0 = final0;
+            state.Final1 = final1;
+            foreach (int capacity in new[] { 1, 8, 32 })
+            {
+                string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state, capacity);
+                string vertex = VertexSource.Replace(
+                    "%BUFFER%",
+                    (capacity * 25).ToString(CultureInfo.InvariantCulture),
+                    StringComparison.Ordinal);
+                string? error = live.BuildProgramForTest(vertex, source);
+                Assert.True(
+                    error is null,
+                    $"control=0x{control:X8} final=0x{final0:X8}/0x{final1:X8} capacity={capacity}: {error}");
+            }
+        }
+        finally
+        {
+            (backend as IDisposable)?.Dispose();
+        }
+    }
+
     /// <summary>
     /// Every mode the computed families use in the stages the reference table
     /// allows, the two-dot-stage pairs that collided, and the cubemap row's
