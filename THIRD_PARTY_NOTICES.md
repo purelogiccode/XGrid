@@ -31,6 +31,7 @@ XGrid build and is not redistributed with XGrid.
 | XISOSharp | MIT | XDVDFS reader (`XGrid.XboxFs`). |
 | CHDSharp | MIT | CHD image support (`XGrid.Storage`). |
 | Silk.NET.OpenGL | MIT | OpenGL backend (`XGrid.GpuGl`). |
+| NAudio | MIT | Live WASAPI audio sink (`XGrid.Audio`, Windows). |
 | Avalonia (Desktop/Fluent/Inter) | MIT | Desktop frontend. |
 | CommunityToolkit.Mvvm | MIT | Desktop frontend MVVM. |
 | Iced | MIT | x86 encoder used by the raw JIT. |

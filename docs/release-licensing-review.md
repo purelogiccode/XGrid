@@ -40,12 +40,12 @@ linked or bundled.
 
 Runtime (linked into the shipped binaries), all MIT: XISOSharp, CHDSharp,
 Silk.NET.OpenGL (a binding to the host's OpenGL driver, which is not shipped),
-Avalonia Desktop/Fluent/Inter and its native Skia/HarfBuzz assets,
-CommunityToolkit.Mvvm, Iced. Build- and test-only (not linked): xunit
-(Apache-2.0), Microsoft.NET.Test.Sdk (MIT), coverlet (MIT), Meziantou.Analyzer
-(MIT), Roslynator.Analyzers (Apache-2.0), BenchmarkDotNet (MIT). No GPL
-incompatible license is linked; the Apache-2.0 packages are tooling and are not
-part of the distributed binaries.
+NAudio (the Windows WASAPI live audio sink), Avalonia Desktop/Fluent/Inter and
+its native Skia/HarfBuzz assets, CommunityToolkit.Mvvm, Iced. Build- and
+test-only (not linked): xunit (Apache-2.0), Microsoft.NET.Test.Sdk (MIT),
+coverlet (MIT), Meziantou.Analyzer (MIT), Roslynator.Analyzers (Apache-2.0),
+BenchmarkDotNet (MIT). No GPL incompatible license is linked; the Apache-2.0
+packages are tooling and are not part of the distributed binaries.
 
 ## 4. Reference projects
 

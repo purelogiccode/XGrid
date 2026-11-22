@@ -6,8 +6,13 @@ Before implementing or debugging hardware behavior, **consult the reference proj
 to confirm layout, IDs, registers, and semantics. **XGrid is GPL-2.0**: extract facts and
 port code from GPL-compatible references where it speeds development, preserving every
 original copyright/license notice. The binding rules are `docs/porting-policy.md`; the
-provenance log is `THIRD_PARTY_NOTICES.md`. The project stays **full managed C#** — no
-QEMU/xemu native library, no C/C++ emulator code in the build.
+provenance log is `THIRD_PARTY_NOTICES.md`; the **full-port ledger** is
+`docs/xemu-port-manifest.md` and the open-source status is `docs/open-source.md`.
+The project stays **full managed C#** - no QEMU/xemu native library, no C/C++ emulator
+code in the build. **C# first:** P/Invoke is allowed only for host APIs or OS facilities
+(OpenGL, XInput, executable memory for the raw JIT, host audio) and every edge is
+inventoried in `docs/porting-policy.md` section 2. **The program is a full source port
+of xemu 0.8.139** (XFP: `ImplementationPlan.md` E1), playable titles first.
 
 - `References2/xemu-0.8.139` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A, APU/DSP). **Primary
   source, adopted 2026-10-23** (0.8.137 and 0.8.136 stay vendored as prior snapshots). Key paths:
@@ -137,62 +142,78 @@ task is closed with `-Negative -Task <id> -Evidence ... -Reopen ...`, and
 serializes one active task per repository. The full contract is
 `docs/repofleet-worker.md`.
 
-## Development direction (required; course-corrected 2026-10-24)
+## Development direction (required; course-corrected 2026-11-22 - full xemu port, playable first)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-25):** M-T / **TM9 - Ninja Gaiden Black colour depth: stop the fragment-path dither the TM7 row measured** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM8 (2026-10-26): the APU is AUDIBLE - the xemu VP mixer (vp.c) is ported and 007 writes real PCM. --apu-dsp --audio-out went from 877,568 bytes of all-zero PCM (TM4) to 377,856 bytes / 94,464 frames with 42.4% non-zero samples (peak 7,500, RMS 1,023) from boot at 2B steps, and 47.6% non-zero from the 26B anchor (wt-data/tm8/007-audio-boot-2b.wav, 007-audio-26b-2b.wav); the envelope, the stereo difference and a DFT (105.5/152.3/199.2/316.4/503.9 Hz) say it is audio, not noise. The port is vp.c's frame walk, both envelopes, PCM/ADPCM buffer+stream fetch through the SSL/SGE tables, resampling, the volume/headroom mix into the 32 mix bins and multipass, plus svf.h/hrtf.h/adpcm.h; the frame cadence was 8x slow and is fixed (one XGrid frame = eight 32-sample reference frames). APU snapshot v6; old .xgs still load and now bootstrap the DSP from the restored scratch window. TM6 (2026-10-25): the second-tier five were probed at 10B each and the shared blocker was our own NV2A - NV097_INLINE_ARRAY was a screen-space shortcut (float-only attributes, the vertex program never run), so Ninja Gaiden Black's 28-byte D3D FVF vertices (F32x4 position + UB_D3D colour + F32x2 texcoord) were skipped: 1,073,213 skipped draws at 10B and a black display. The inline array is now laid out and decoded like the reference (BuildInlineArrayLayout, FetchInlineArrayAttribute through the shared DecodeVertexAttribute, VertexFetchMode.InlineArray) with the legacy path kept as the fallback, and the NV2A line gained skipReasons= (eight counters). Ninja Gaiden Black now renders its own animated stormy-sea intro - 720x480, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, LastFault vec=0, kernel idle 0x8001B02E between frames, a held A changes the scene - and at 1B the matrix row went 2,672 -> 12,800 draws / 41,995,882 -> 166,119,138 px at the same 6,475 frames. 50 Cent renders its own 3D scene (18,638 colours, 3,534 draws / 299,139,810 px, EIP 0x1455BA, PIC req=0x08); Tak renders its own scene and then a ~910-draw/frame one where the software rasterizer is the wall (300M steps = 362 s, 347 s in 3,228,625 fills, 1.27e9 z-clipped fragments); Bad Boys II is a documented wait (own-code resource-handle scan 0x1A3C80 -> 0x1A2250, handles 0x300C5+, no device traffic, black display); Destroy All Humans! renders its own Pandemic logo card and then spins in a kernel stall loop (KeStallExecutionProcessor 0x800153D0, 25% of samples, 6,819 draws / 86,802,891 px). The xemu oracle could not be captured this session (another agent owns the desktop: PrintWindow returns black, the screen copy catches the editor), so no xemu frame is claimed for TM6. TM5 (2026-10-25): Halo launches and renders its own main menu - 35B steps, 516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black (wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. The blocker was a per-title constant: McpxApuDevice absorbed the DirectSound mixer block at 007's fixed 0x03924810, so Halo's block at 0x02034810 was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B; the block is now discovered from the guest's own GP scratch (SGE) table (page + 0x810). Gameplay is a DOCUMENTED WAIT: a guest-side D3D resource retry loop (EIP 0x1810F0 from 0x6348B, D3DERR_NOTFOUND for handle 0, 99.99% of samples) after 100B clean steps; xemu 0.8.139 on the same ISO shows the same menu at 70 s and in-game gameplay at 150 s. The menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is not met. Audio is silent (--audio-out writes 0 PCM frames, gpFrames=0). 007 Agent Under Fire remains the playable title (TM4): 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu oracle on the same ISO reaches the same scene at 150 s (dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap; the queue is gone (APU snapshot v5). Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene. The 44-row 1B matrix is now 6 own-render / 38 dashboard / 0 fault / 0 timeout (was 2/42): the same fix advances Ninja Gaiden Black (35 -> 6,475 frames), Tak (1,068 frames / 3,701 draws), 50 Cent (98 frames / 100,987,370 px), Bad Boys II (42,303,082 px) and Destroy All Humans!, with the pre-fix build reproducing the old NGB row exactly. TM7 (2026-10-25): the seven-title table is published with one command per row (scripts/retail-game-probe.ps1) and a live xemu 0.8.139 oracle for six of them - 007 still passes (dmean 18.0/22.6/14.6), Halo's menu still fails on brightness (101.6/100.4/113.1), and Ninja Gaiden Black matches xemu's intro within 11/255 on the means while failing on colour count (12,913 vs 1,351) - the dither pattern is now the next named rendering defect; Bad Boys II's black display is quantified against xemu's own cutscene (100% vs 20.5% black). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area. TM7 (2026-10-25): the oracle is live again - six of the seven rows carry a real capture (007 150 s, Halo 70 s, Ninja Gaiden Black 52 s, 50 Cent 90 s, Tak 150 s, Bad Boys II 90 s, Destroy All Humans! 90 s). The script now retries PrintWindow five times and uses the screen-copy fallback ONLY when xemu is the foreground window, otherwise it throws 'capture contended' - TM7 caught a browser frame that way (PrintWindow answered black while the GL surface was starting, and the screen copy photographed Chrome). A blank capture (<=2 colours or >=99% black) is rejected by the harness. xemu still cannot be driven on this host (pad input is SDL-gamepad only), so it sits on title screens for Tak, Destroy All Humans! and Ninja Gaiden Black@70 s.
+**Current status (2026-11-22):** P1 / **P1S3 - CPU engine port B: TCG IR and the i386 translator** (active, attempt 0).
+**Gameplay (P1):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - P1 sprint (2026-11-22): the objective is at least one game playable; no title is playable yet. P1S0 measured 007 at 0.100x (30B gameplay 413.254 s; runner 53.5%, non-JIT 20.1%, b4 35.7%, GL 0.42%; N15: shape fixes top out at ~0.20x). P1S1 is done: the live WASAPI sink plays the EP FIFO PCM (state=Playing; WAV SHA 813CB8DE... = TM8). The operator chose the full xemu/QEMU CPU engine port; P1S2 is done (QEMU CPUTLBEntry as QemuTlb, 9 exact differential tests; probe 0.84 vs 0.64 ns, so the TLB is not the lever - N16). P1S3 (TCG IR + i386 translator) is active, then P1S4 host codegen, P1S5 parity/switchover, P1S6 the P1 gate. The reference map is docs/research-notes/cpu-engine-port.md. The repository stays private until P1 (docs/open-source.md). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.65% (93.99 of 118). **Next:** .
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
+**Phase score:** 79.65% (93.99 of 118). **Next:** P1S4 (CPU engine port C: host code generation), P1S5 (CPU engine port D: parity and switchover), P1S6 (P1 gate: at least one game playable), XFP0 (Port ledger, module map and differential harness for the xemu full port).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 22.
 <!-- STATUS:END -->
 
-**Operator decision 2026-10-24 (second) - the order is M-T: playable titles.**
+**Operator decision 2026-11-22 - full xemu port, playable first.**
 
-1. **M-T: a playable emulator, not a wholesale port.** The title matrix
-   (`scripts/title-matrix.ps1`) runs every ISO at a fixed budget; the closest
-   titles are probed for one blocker each; the shared blocker is fixed in the
-   current engine; the matrix is re-run. A title is playable by the seven-part
-   definition in `ImplementationPlan.md` E1 (own render, scripted input, 10
-   minutes, save/load, xemu frame match, audible output, gates exact).
-2. **Port only what the matrix proves.** xemu 0.8.139 is the oracle and the
-   source for specific modules. Port a module only when the same xemu source
-   file blocks **>=3 titles or >=20% of the matrix**; keep the old path as the
-   fallback until the differential is exact. Never port `tcg/` or `softmmu/`
-   unless the matrix shows the CPU is the blocker - today it is not (ktest 2B
-   is bit-exact and faster than xemu). The likely first port is the APU VP
-   mixer + AC'97 codec; the NV2A PGRAPH behaviours follow the measured methods.
-3. **Media.** `H:\Tests\XBOXReady` has the two optimized ISOs (007 1.60 GB,
-   Halo 3.38 GB) and is oracle-grade. `H:\Tests\XBOXTest` has 37 full-disc
-   Redump ISOs that xemu cannot boot; they are XGrid-only compatibility media,
-   never oracle rows or gates. `data/test-samples/` stays gate currency.
+1. **The program is a P1 sprint first, then a full source port of xemu 0.8.139
+   to managed C#.** The sprint uses the existing engine and NuGet host packages
+   to reach one playable game; the port follows for breadth. It is not native
+   embedding: no QEMU/xemu library and no C/C++ emulator code in the build
+   (`docs/porting-policy.md`). The module ledger is
+   `docs/xemu-port-manifest.md`; the task plan is `ImplementationPlan.md` E1
+   (P1S0-P1S3, XFP0-XFP14).
+2. **The objective is at least one game playable (P1), and no title is playable
+   yet.** M1 (007's own render/input milestone) is met, but 007 runs at 0.11x
+   guest time (12.85 s per 1B steps) and its audio is an offline WAV. P1 is the
+   first title that meets all nine conditions in E1 section 1 (own render, live
+   input, >= 0.5x guest time, 10 minutes, save/load, xemu frame policy, **live
+   host audio**, product defaults, gates exact); P2/P3 are breadth after P1, P4
+   is seven of seven (XFP10), P5 is the ledger complete (XFP14). The repository
+   stays **private until at least one game is playable**.
+3. **The critical path is the P1 sprint** (measure 007, live NuGet audio, speed
+   to >= 0.5x, the nine-part gate). The full-port order below starts **after
+   P1**: NV2A PGRAPH + GL renderer (XFP1-XFP5), AC'97/APU (XFP6), IDE/block
+   (XFP7), SMBus/SMC/nvnet (XFP8), USB/OHCI/XID (XFP9), machine/chipset
+   (XFP10), CPU/memory (XFP11), host backends (XFP12), snapshots (XFP13), parity
+   close (XFP14). A full-port module is promoted into the sprint only when the
+   P1S0 measurement proves it is the fastest fix.
+4. **The CPU is in scope but sequenced last,** gated on "not slower" than the
+   current bit-exact raw engine on the 1B/ktest workloads. A slower port keeps
+   the raw engine and records the exception.
+5. **Media.** The acceptance set is `H:\Tests\XBOXReady` (seven optimized ISOs,
+   xemu-oracle-grade); `E:\Microsoft Xbox` (945 retail CHDs, 1.44 TB) is the
+   broad compatibility library for title triage and the CHD path, never an
+   oracle row or a gate; `H:\Tests\XBOXTest` (37 Redump ISOs) is XGrid-only
+   compatibility media; `data/test-samples/` stays gate currency.
 
 The live queue is `docs/status.json`; the task detail is
-`ImplementationPlan.md` E1 (TM0-TM8).
+`ImplementationPlan.md` E1. The ledger is `docs/xemu-port-manifest.md`; the
+open-source/publication status is `docs/open-source.md`.
 
-Canonical order: `docs/development-direction.md`; fast-mode charter:
-`docs/research-notes/jit-track-charter.md`; corpus plan:
+Canonical order: `docs/development-direction.md`; port ledger:
+`docs/xemu-port-manifest.md`; open-source status: `docs/open-source.md`;
+fast-mode charter: `docs/research-notes/jit-track-charter.md`; corpus plan:
 `docs/research-notes/compatibility-corpus.md`; sample matrix:
-`docs/compatibility.md`. **The long-run objective is xemu-class performance or
-better, after the playability gate** (operator decision 2026-10-24, second). Hard rules:
+`docs/compatibility.md`. **The long-run objective is a playable emulator
+(xemu-class performance later), reached through the full port.** Hard rules:
 
-1. **Playable titles lead.** The title matrix is the progress bar: every task
-   must move at least one title one stage (own render, gameplay, 10 minutes,
-   audible). Performance is reported, never claimed, until the playability gate
-   is met.
-2. **Fix the shared blocker first.** One blocker per task, chosen by the matrix
-   (how many titles it blocks), fixed in the current engine unless the matrix
-   proves an xemu module is broad (>=3 titles or >=20%).
-3. **Ports are surgical.** Differential first, old path as fallback, provenance
-   recorded. Never port `tcg/` or `softmmu/` unless the matrix shows the CPU is
-   the blocker.
-4. **The matrix is evidence, not a gate.** Retail rows never merge gates; the
-   four accurate goldens + ktest + package stay the gates.
-5. **No performance slices while M-T is open.** The 1B reference is reported in
-   the matrix context, not optimized. The old per-slice 10% bar does not apply.
-6. **Gates unchanged.** Accurate mode is currency: exact SHAs/counters, ktest
-   log byte-identical, `format --verify-no-changes` clean.
-7. **Direct development** — wave runner retired, no worktrees/detached servers.
+1. **Playable titles lead.** Every task must advance a ledger row and, where
+   applicable, a title row (own render, gameplay, 10 minutes, audible).
+   Performance is reported, never claimed, until P3.
+2. **Port the reference, don't reinvent it.** Translate xemu 0.8.139 state,
+   dispatch and behavior; a fresh design needs a recorded reason.
+3. **Differential first, old path as fallback.** No "ported" without a test that
+   fails before the port; keep the old implementation until the differential is
+   exact; one engine per run.
+4. **Provenance is part of the code.** SPDX + `Ported from` + notices + sources
+   in the same commit; `scripts/port-manifest.ps1 -Check` (XFP0) and
+   `scripts/package-verify.ps1` enforce it.
+5. **The gates are unchanged.** Four accurate 1B goldens + ktest log
+   byte-identical (or a measured re-baseline), `build`/`test`/`format` clean,
+   package gate on release changes. Retail rows are acceptance, never gates.
+6. **One status file.** `docs/status.json` is the only current status;
+   `scripts/status.ps1 -Check -Sync` regenerates the blocks. History is
+   append-only.
+7. **Direct development** - wave runner retired, no worktrees/detached servers.
 
 **Position (2026-10-22, 1B fast mode, H1) - history, not the current target:**
 triangle `gl+replace` 5.72-6.15 s / sw 10.21 s; menu `gl+replace` 15.6-17.5 s /
@@ -297,6 +318,11 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 (end-to-end smoke-tested: worktree → real session → verified commit → clean).
 
 ## Current state
+
+> Historical (2026-10-09 onwards). The current state is the generated block at
+> the top of this file and the XFP program in `ImplementationPlan.md` E1; the
+> bullets below record how the machine reached the dashboard and the first
+> playable title.
 
 - Real MCPX ROM -> 1BL -> 2BL -> kernel executes (LLE). Kernel cold-boot init,
   SMC handshake, PCI setup, RTC, NV2A driver all complete; timer IRQ0 + PIT flow.

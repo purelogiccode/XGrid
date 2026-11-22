@@ -92,6 +92,7 @@ internal static class Program
         string? raminPath = null;
         string? eepromOutPath = null;
         string? audioOutPath = null;
+        bool audioLive = false;
         string? saveStatePath = null;
         ulong saveAt = 0;
         bool hasSaveAt = false;
@@ -305,6 +306,10 @@ internal static class Program
                     audioOutPath = NextValue(args, ref i);
                     apuDspCore = true;
                     break;
+                case "--audio-live":
+                    audioLive = true;
+                    apuDspCore = true;
+                    break;
                 case "--tex-filter":
                     texFilter = NextValue(args, ref i);
                     if (texFilter is not ("legacy" or "registers"))
@@ -434,6 +439,7 @@ internal static class Program
 
         XboxMachine? machine = null;
         WaveAudioBackend? audioOut = null;
+        WasapiAudioBackend? audioLiveBackend = null;
         try
         {
             machine = new XboxMachine(ramMb * 1024 * 1024);
@@ -475,9 +481,34 @@ internal static class Program
             if (audioOutPath is not null)
             {
                 audioOut = new WaveAudioBackend(audioOutPath);
-                machine.Apu.AudioBackend = audioOut;
                 Console.WriteLine(
                     $"APU audio out={audioOutPath} (48000 Hz 16-bit stereo PCM; --audio-out implies --apu-dsp)");
+            }
+
+            if (audioLive)
+            {
+                try
+                {
+                    audioLiveBackend = new WasapiAudioBackend();
+                    Console.WriteLine(
+                        "APU audio live=wasapi shared (48000 Hz 16-bit stereo PCM; --audio-live implies --apu-dsp)");
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    Console.Error.WriteLine($"APU live audio unavailable: {exception.Message} (use --audio-out)");
+                }
+            }
+
+            IAudioBackend? audioBackend = (audioLiveBackend, audioOut) switch
+            {
+                (not null, not null) => new TeeAudioBackend(audioLiveBackend, audioOut),
+                (not null, null) => audioLiveBackend,
+                (null, not null) => audioOut,
+                _ => null,
+            };
+            if (audioBackend is not null)
+            {
+                machine.Apu.AudioBackend = audioBackend;
             }
 
             Console.WriteLine(
@@ -1218,6 +1249,13 @@ internal static class Program
 
         void CloseAudio()
         {
+            if (audioLiveBackend is not null)
+            {
+                Console.WriteLine(
+                    $"APU audio live bytes={audioLiveBackend.BytesSubmitted} frames={audioLiveBackend.Frames} state={audioLiveBackend.PlaybackState}");
+                audioLiveBackend.Dispose();
+            }
+
             if (audioOut is null)
             {
                 return;
@@ -2912,7 +2950,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--eeprom-out <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--apu-dsp] [--audio-out <path>] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--eeprom-out <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--apu-dsp] [--audio-out <path>] [--audio-live] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

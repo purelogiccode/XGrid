@@ -11,6 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="NAudio" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="XGrid.Audio.Tests" />
   </ItemGroup>
 

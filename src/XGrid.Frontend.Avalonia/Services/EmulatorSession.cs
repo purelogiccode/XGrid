@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using XGrid.Audio;
 using XGrid.Bus.Net;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Host;
@@ -53,6 +54,7 @@ public sealed class EmulatorSession : IDisposable
     private CancellationTokenSource? _cancellation;
     private Thread? _thread;
     private XboxMachine? _machine;
+    private WasapiAudioBackend? _audioBackend;
     private volatile bool _running;
     private volatile bool _paused;
     private volatile bool _disposed;
@@ -540,6 +542,8 @@ public sealed class EmulatorSession : IDisposable
             Volatile.Write(ref _machine, null);
             FailPendingRequests();
             DetachRenderer(machine, gpuBackend);
+            _audioBackend?.Dispose();
+            _audioBackend = null;
             PersistEeprom(machine); machine?.HddOverlay?.Dispose();
             machine?.Dvd?.Dispose();
             socketBackend?.Dispose();
@@ -631,6 +635,32 @@ public sealed class EmulatorSession : IDisposable
 
         machine.Net.SetLinkUp(settings.NetworkLinkUp);
         machine.SevenEosQuirkEnabled = settings.EosQuirk;
+
+        // Audio: the APU DSP/VP runs the guest microcode and mixer; the live
+        // WASAPI sink is the product output. A sink that cannot open (no
+        // device, non-Windows) logs and stays silent - audio is never a
+        // guest-visible fault.
+        machine.Apu.ApuDspCore = settings.ApuDsp;
+        if (settings.ApuDsp)
+        {
+            if (string.Equals(settings.AudioOutput, EmulatorSettings.AudioOutputLive, StringComparison.Ordinal))
+            {
+                try
+                {
+                    _audioBackend = new WasapiAudioBackend();
+                    machine.Apu.AudioBackend = _audioBackend;
+                    Log?.Invoke(this, "Audio: live WASAPI sink (48 kHz, 16-bit stereo).");
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    Log?.Invoke(this, "Audio: live sink unavailable - " + exception.Message);
+                }
+            }
+            else
+            {
+                Log?.Invoke(this, "Audio: APU DSP running with no host sink.");
+            }
+        }
 
         // NV2A fidelity switches (both opt-in at the CLI): the fixed-function
         // vertex stage replaces the resident program for mode-0 draws, and the

@@ -12,6 +12,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The CPU engine port (P1S2) is internal until its differential lands;
+         the unit suite drives the reference types directly. -->
+    <InternalsVisibleTo Include="XGrid.Cpu.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Iced" />
     <PackageReference Include="Meziantou.Analyzer">
       <PrivateAssets>all</PrivateAssets>

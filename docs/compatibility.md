@@ -1,5 +1,16 @@
 # XGrid compatibility matrix (Track E)
 
+Media: the **acceptance set** is the seven optimized ISOs in
+`H:\Tests\XBOXReady`; the **broad library** is `E:\Microsoft Xbox` (945 retail
+CHDs, 1.44 TB) for title triage and CHD-path coverage (verified: the 007 CHD
+resolves `TitleId=0x4541000D`, the same id as the ISO). Neither the CHD library
+nor `H:\Tests\XBOXTest` is an oracle row or a gate.
+
+The **retail rows** below are the acceptance set for the XFP playability gates
+P1-P4 (`ImplementationPlan.md` E1): a row that stops matching is a port
+regression, not a documentation issue. The homebrew/corpus rows stay the gate
+currency. The port ledger is `docs/xemu-port-manifest.md`.
+
 Status: **the retail rows were re-published 2026-10-25 by TM7** (seven rows, one
 command each, with a live xemu 0.8.139 oracle column - decisions §258), and the
 corpus rows were last re-verified **2026-10-24 in the G3 consolidated
@@ -111,7 +122,7 @@ each row's frame, JSON and report. **Retail rows are evidence, never gates.**
 
 | # | title | XGrid display (stage) | step anchor | XGrid frame | xemu 0.8.139 | policy |
 |---:|---|---|---|---|---|---|
-| 1 | `007 - Agent Under Fire` | **PLAYABLE** - first-level driving scene | `wt-data/tm4/007-100b.xgs` + 1M | 640x480, 48,208 colours, 6.8% black, mean (78.7, 65.5, 45.3), EIP `0x0001FC9E`, 134,004 draws / 1,005,989,482 px / 6,478 frames | 150 s, the same driving scene, 63,994 colours, 6.8% black, mean (96.8, 85.5, 58.8) | **PASS** `dmean=(18.0, 22.6, 14.6)` |
+| 1 | `007 - Agent Under Fire` | **M1 - own render + scripted input** (not playable: 0.11x guest time, offline audio) | `wt-data/tm4/007-100b.xgs` + 1M | 640x480, 48,208 colours, 6.8% black, mean (78.7, 65.5, 45.3), EIP `0x0001FC9E`, 134,004 draws / 1,005,989,482 px / 6,478 frames | 150 s, the same driving scene, 63,994 colours, 6.8% black, mean (96.8, 85.5, 58.8) | **PASS** `dmean=(18.0, 22.6, 14.6)` |
 | 2 | `Halo - Combat Evolved` | own main menu; gameplay is a **documented wait** (D3D resource loop `0x1810F0`) | `wt-data/tm5/halo-35b.xgs` + 1M | 640x480, 97,235 colours, 0% black, mean (153.5, 157.7, 176.0), EIP `0x00063487`, 3,247 draws / 191,496,512 px / 516 frames | 70 s, the same HALO menu, 72,650 colours, 0% black, mean (39.4, 44.0, 48.7) | **FAIL** `dmean=(101.6, 100.4, 113.1)` - the menu background is far brighter |
 | 3 | `Ninja Gaiden Black` | own animated **intro movie** (stormy sea), then kernel idle `0x8001B02E` | `wt-data/tm6/ngb-10b.xgs` + 2B | 720x480, 13,266 colours, 0.5% black, mean (86.6, 93.3, 89.1), EIP `0x8001B047`, 4,251 draws / 187,315,817 px / 238,137 frames | 52 s, the same stormy-sea intro movie, 1,356 colours, 0% black, mean (74.3, 78.6, 72.8) | **FAIL** on colour count (12,913 vs 1,351, x9.6) - the means agree within `dmean=(7.7, 8.5, 11.4)`; the surplus colours are the dither pattern over sky and water |
 | 4 | `50 Cent - Bulletproof` | own intro cinematic | `wt-data/tm6/50cent-10b.xgs` + 1B | 640x480, 18,638 colours, 0% black, mean (75.2, 72.9, 61.8), EIP `0x00132FEF`, 3,534 draws / 299,139,810 px / 721 frames | 90 s, the same cinematic sequence at a different shot, 7,439 colours, 21.3% black, mean (33.6, 37.1, 32.0) | **n/a** - different shot; numbers recorded as context, `dmean=(28.4, 20.7, 18.7)` |
@@ -159,14 +170,16 @@ Per-title detail (the blocker, the wait object and the device I/O) is in
 `docs/research-notes/real-game-probes.md` -> TM4/TM5/TM6/TM7 outcomes.
 
 **Answer for the compatibility question:** XGrid boots retail discs and, since
-TM4 (2026-10-25), **one retail title is playable**: 007 Agent Under Fire reaches
-gameplay, runs 100B steps with no fault, and matches the xemu 0.8.139 frame at
-the same scene within the mean/colour/coverage policy. **Halo (TM5)** launches
-and renders its own main menu after 35B steps (100B with no fault) and then
-waits on a guest-side D3D resource loop - a documented wait, not a playable row;
-its menu frame fails the policy on brightness. **Ninja Gaiden Black (TM6/TM7)**
-renders its own intro and matches xemu's mean within 11/255, failing only on
-colour count (the dither). **50 Cent, Tak and Destroy All Humans!** render their
+TM4 (2026-10-25), **one retail title reaches its own render and takes scripted
+input** (007 Agent Under Fire: 100B steps with no fault, the first-level scene,
+the xemu 0.8.139 frame match). **No title is playable by the strict bar yet**:
+007 runs at 0.11x guest time and its audio is an offline WAV, so the P1
+conditions in `ImplementationPlan.md` E1 section 1 are not met. **Halo (TM5)**
+launches and renders its own main menu after 35B steps (100B with no fault) and
+then waits on a guest-side D3D resource loop - a documented wait, not a playable
+row; its menu frame fails the policy on brightness. **Ninja Gaiden Black
+(TM6/TM7)** renders its own intro and matches xemu's mean within 11/255, failing
+only on colour count (the dither). **50 Cent, Tak and Destroy All Humans!** render their
 own content but cannot be compared at the same scene yet (xemu sits on a title
 screen or a different cinematic shot); **Bad Boys II** is a documented wait with
 a measured black frame. A real-game row is added only after a run reaches a
@@ -756,16 +769,17 @@ sequence (an operator-visible route), not more steps.
 - **Audio:** the APU voice processor and the ACI (AC'97) register block run, and
   the ported xemu 0.8.139 GP/EP DSP executes the guest's microcode with the EP
   output FIFO feeding a 48 kHz/16-bit stereo sink (`--apu-dsp --audio-out`,
-  opt-in). The VP mixer (`vp.c`) and the AC'97 codec path are missing, so the
-  measured boots are silent and no audio row is claimed: 007 at 28B steps writes
-  877,568 bytes / 219,392 frames of PCM that are **all zero** (TM4), because the
-  voices are never mixed into the EP's input. TM8 owns that gap.
-- **Retail:** 007 - Agent Under Fire is playable (TM4); Halo launches and
-  renders its own main menu (TM5), then waits on a guest D3D resource loop. Of
-  the seven optimized ISOs, **three** now take the display (007, Tak, and Halo
-  past 15B) and **four** still present the dashboard at 1B: Ninja Gaiden Black,
-  50 Cent and Bad Boys II while their own XBE code runs, Destroy All Humans!
-  while the kernel executes. The 37 XBOXTest rows are dashboard-only evidence.
+  opt-in). TM8 ported the VP mixer (`vp.c`), so the guest's voices are mixed and
+  the WAV carries real PCM (007: 42.4% non-zero samples from boot). The **live
+  host sink and the AC'97 codec** are still missing (XFP6), so no live-audio
+  playability row is claimed.
+- **Retail:** 007 - Agent Under Fire reaches M1 (own render + scripted input,
+  TM4); Halo launches and renders its own main menu (TM5), then waits on a guest
+  D3D resource loop. Of the seven optimized ISOs, **three** now take the display
+  (007, Tak, and Halo past 15B) and **four** still present the dashboard at 1B:
+  Ninja Gaiden Black, 50 Cent and Bad Boys II while their own XBE code runs,
+  Destroy All Humans! while the kernel executes. The 37 XBOXTest rows are
+  dashboard-only evidence. **No title is playable by the strict bar (P1).**
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.
 
 ## Sample wish list (cheapest first)

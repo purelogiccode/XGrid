@@ -31,6 +31,37 @@ and `THIRD_PARTY_NOTICES.md` are the binding records.
 - Existing native *APIs* (OpenGL through Silk.NET, XInput, host audio) are
   allowed; they are host APIs, not an embedded emulator.
 
+**C# first (2026-11-22).** Managed C# is the default for every emulator
+semantic. P/Invoke or unmanaged code is allowed only when a pure-C# path would
+be materially worse or does not exist (a host GPU API, the OS input stack,
+executable memory for the raw JIT), and every native edge is inventoried below
+with its reason. A new P/Invoke needs a row and a reason in the same commit.
+P/Invoke is **never** the way to embed QEMU/xemu or to call emulator code.
+
+| Native edge | Where | Why it is allowed |
+|---|---|---|
+| OpenGL + WGL | `XGrid.GpuGl` (`Silk.NET.OpenGL`, `WglContext`) | Host GPU API; there is no managed GPU API. The software rasterizer stays the exact oracle. |
+| XInput | `XGrid.Input/XInputGamepadReader` (`NativeLibrary` + function pointer) | Host gamepad API; the pure-managed keyboard pad and `XPadMapping` remain the fallback. |
+| Executable memory + unmanaged block entry | `XGrid.Cpu/RawState`, `RawHelpers`, `RawBlockEmitter` (`kernel32` VirtualAlloc/Free, `[UnmanagedCallersOnly]`, `delegate* unmanaged`) | The opt-in raw JIT emits and runs x86-64 blocks. The managed IL JIT (`--jit`) is the pure-C# engine and the fallback. |
+| UI rendering | Avalonia (managed API, native Skia/HarfBuzz inside the package) | UI framework choice, not emulator semantics; **kept by operator decision 2026-11-22**. The CLI has no UI dependency. |
+| Host audio | `WaveAudioBackend` (WAV file, managed); a live sink via a NuGet package (P1 sprint: **NAudio**, MIT/WASAPI) | The emulator side (`IAudioBackend`) is managed; the sink is a host facility. |
+
+### 2a. NuGet packages (2026-11-22)
+
+NuGet packages are **allowed and preferred** for a host facility (audio sink,
+input, GPU binding, UI) over inventing it. This is the fast path to a playable
+title. Rules:
+
+- Record the package in `Directory.Packages.props`, `THIRD_PARTY_NOTICES.md` and
+  the release licence review **in the same commit**.
+- The licence must be compatible (MIT/Apache-2.0/BSD, or GPL-compatible); the
+  package must **not** embed an emulator core or native emulator code.
+- A host API binding is allowed; any native dependency it brings must be listed
+  and shipped for every RID (the package gate covers it).
+- Current host packages: Silk.NET.OpenGL (MIT), Avalonia (MIT),
+  CommunityToolkit.Mvvm (MIT). P1 sprint candidate: **NAudio** (MIT, Windows
+  WASAPI); an OpenAL/SDL2 backend is the cross-platform follow-up.
+
 **There is no license wall.**  xemu is GPL-2.0 (per-file GPL-2+/LGPL-2+/MIT) and
 the QEMU base is GPL-2.0, i.e. the same license family as XGrid.  Any bounded
 module in `References2/` may be ported - CPU, devices, NV2A, APU, whatever the
@@ -92,28 +123,40 @@ Never copy firmware, BIOS, MCPX ROM, EEPROM or game data into the repository.
 
 ## 5. Priority order for ports
 
-1. **APU GP/EP DSP** (xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/`) - **landed**
-   (P1.2-P1.4, `McpxApuDsp` + `WaveAudioBackend`, opt-in `--apu-dsp`).
-2. **NV2A missing methods and shader semantics** (xemu 0.8.139 `pgraph/`) -
-   compatibility breadth; the draw path (`draw.c`, `surface.c`, the GL
-   renderer) is also the device-stage candidate for D6.
-3. **APU VP mixer** (xemu 0.8.139 `apu/vp/`) and the AC'97 codec path - the
-   output path that makes the DSP audible; the next audio port.
-4. **CPU engine** - xemu/QEMU `tcg/` is **allowed** and is one of D8's priced
-   options, not a default.  The measured reason it is not already the plan: the
-   raw emitter is bit-exact, faster than xemu on the CPU-bound ktest, and a C#
-   TCG port is a large program whose per-instruction cost is unproven in
-   managed code.  D8 must price it against the trace/edge/memory-probe options
-   before anyone starts it.
-5. **QEMU device/CPU algorithms** only where xemu delegates to QEMU and the
-   behavior is not already covered.
+The immediate program is the **P1 sprint** (`ImplementationPlan.md` E1
+P1S0-P1S3): one playable game fast, on the existing engine, with NuGet host
+packages allowed. After P1, the program is the **full xemu 0.8.139 port**
+(ledger `docs/xemu-port-manifest.md`), ordered by what unblocks a retail title:
 
-The CPU engine decision is a **measurement**, not a license question: the port
-is legal because both projects are GPL-2.0, and the plan chooses it only if the
-prototype beats the current engine on the gate workloads.
+1. **NV2A PGRAPH and the GL renderer** (`hw/xbox/nv2a/pgraph/**` plus the
+   `nv2a/*` blocks) - XFP1-XFP5. This is the largest fidelity gap and the
+   blocker for Halo, Ninja Gaiden Black and every visual row.
+2. **APU front end + AC'97 codec** (`hw/xbox/mcpx/apu/apu.c`,
+   `hw/xbox/mcpx/aci.c`, `hw/audio/ac97.c`) - XFP6. The VP mixer and the DSP
+   are already ported; this makes the output audible.
+3. **Storage/IDE, SMBus/SMC/EEPROM, nvnet, USB/OHCI/XID** - XFP7-XFP9. These
+   own the documented waits (Bad Boys II, Destroy All Humans!) and the pad and
+   save/load paths.
+4. **Machine and chipset assembly** (`hw/xbox/xbox.c`, `xbox_pci.c`,
+   `lpc47m157.c`, `acpi_xbox.c`, i8259/i8254/RTC) - XFP10.
+5. **CPU and memory core** (`softmmu/`, `system/memory.c`, `accel/tcg/`,
+   `tcg/`, `target/i386/tcg/`) - XFP11. In scope, sequenced last: the existing
+   interpreter/raw JIT is bit-exact and faster than xemu on the CPU-bound
+   ktest, so the port is gated on **not slower** than the current engine. If it
+   is slower, keep the raw engine behind the same seam and port only the memory
+   dispatch/decoder with the measured exception recorded in the ledger.
+6. **Host backends and snapshots** (`ui/`, `audio/`, `input/`, `migration/`) -
+   XFP12-XFP13.
+7. **Parity close** - XFP14: ledger 100%, seven titles playable, release.
 
-Do not start a full CPU TCG port **without D8's price**: it is legal (GPL-2.0),
-but it is a large program and XGrid's raw emitter is already bit-exact on both
-gates and faster than xemu on the CPU-bound ktest.  The gap is the
-boot/device/short-block shape, not the core interpreter; D8 decides whether a
-TCG-shaped design (or a cheaper edge/formation design) is the way to attack it.
+Vulkan (`nv2a/pgraph/vk/`) is a host-renderer choice and is out of scope for the
+port; the GL renderer is the target. Chihiro, QEMU user-mode and QEMU
+packaging/test infrastructure are out of scope with reasons in the ledger.
+
+A port is a **correctness task**: the bar is the module's differential and the
+title/corpus row, not wall clock. The performance bar applies only to XFP11's
+"not slower" acceptance and to any later optimization task.
+
+Do not start a port without its ledger row and its differential. The DSP port
+is the model: state/helpers first, dispatcher second, behavior third, a vector
+oracle that fails on the old code, then the gates.

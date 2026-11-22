@@ -42,6 +42,25 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets the JIT build threshold (visits before a block is compiled).</summary>
     public int JitThreshold { get; set; } = 8;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the APU DSP and voice processor
+    /// run (the guest microcode and mixer that produce PCM).
+    /// </summary>
+    public bool ApuDsp { get; init; } = true;
+
+    /// <summary>
+    /// Gets or sets the audio output: <see cref="AudioOutputLive"/> (the Windows
+    /// WASAPI shared-mode sink) or <see cref="AudioOutputOff"/>. A live sink that
+    /// cannot open falls back to silence for the session, never to a fault.
+    /// </summary>
+    public string AudioOutput { get; set; } = AudioOutputLive;
+
+    /// <summary>Audio output key: no host sink.</summary>
+    public const string AudioOutputOff = "off";
+
+    /// <summary>Audio output key: live WASAPI shared-mode sink (Windows).</summary>
+    public const string AudioOutputLive = "live";
+
     /// <summary>Gets or sets a value indicating whether the NV2A fixed-function vertex stage is used (<c>--ffp</c>).</summary>
     public bool FixedFunctionVertex { get; set; }
 

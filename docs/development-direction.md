@@ -1,10 +1,90 @@
-# XGrid — Development Direction (canonical, revised 2026-10-24)
+# XGrid — Development Direction (canonical, revised 2026-11-22)
 
 Direct development. The wave runner is retired (`tools/wave/` to be deleted).
 No BOSS protocol, no worktrees, no detached servers. `AGENTS.md` stays the
 day-to-day agent entry point; this file is the priority order every agent follows.
 
-## 0. Course correction (2026-10-24, second): a playable emulator, not a wholesale port
+## 0. Operator direction (2026-11-22): full xemu port, playable first
+
+<!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
+**Current status (2026-11-22):** P1 / **P1S3 - CPU engine port B: TCG IR and the i386 translator** (active, attempt 0).
+**Gameplay (P1):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - P1 sprint (2026-11-22): the objective is at least one game playable; no title is playable yet. P1S0 measured 007 at 0.100x (30B gameplay 413.254 s; runner 53.5%, non-JIT 20.1%, b4 35.7%, GL 0.42%; N15: shape fixes top out at ~0.20x). P1S1 is done: the live WASAPI sink plays the EP FIFO PCM (state=Playing; WAV SHA 813CB8DE... = TM8). The operator chose the full xemu/QEMU CPU engine port; P1S2 is done (QEMU CPUTLBEntry as QemuTlb, 9 exact differential tests; probe 0.84 vs 0.64 ns, so the TLB is not the lever - N16). P1S3 (TCG IR + i386 translator) is active, then P1S4 host codegen, P1S5 parity/switchover, P1S6 the P1 gate. The reference map is docs/research-notes/cpu-engine-port.md. The repository stays private until P1 (docs/open-source.md). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact.
+**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
+**Phase score:** 79.65% (93.99 of 118). **Next:** P1S4 (CPU engine port C: host code generation), P1S5 (CPU engine port D: parity and switchover), P1S6 (P1 gate: at least one game playable), XFP0 (Port ledger, module map and differential harness for the xemu full port).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 22.
+<!-- STATUS:END -->
+
+**Decision.** XGrid's engineering program is a **P1 sprint first, then a full
+source port of xemu 0.8.139 to managed C#**. The 2026-10-24 rule ("port a module
+only when the title matrix proves it blocks >=3 titles or >=20% of the matrix")
+is **superseded**: the port is the breadth program, the P1 sprint is the fast
+path, and the title matrix is the acceptance test. The previous decision is kept
+as history in section 0a.
+
+**Objective.** **At least one game playable** (P1), as fast as possible. A game
+is playable by the nine-part definition in `ImplementationPlan.md` E1 section 1:
+own render, live input, **>= 0.5x guest time**, 10 minutes, save/load, the xemu
+frame policy, **live host audio** (not an offline WAV), product defaults, and the
+gates exact. **No title is playable yet**: 007 reaches its own scene and takes
+scripted input but runs at 0.11x guest time (12.85 s per 1B steps) and its audio
+is an offline WAV. The gates are **M1** 007's own render/input milestone (met
+2026-10-25), **P1** the objective, **P2/P3** breadth after it, **P4** seven of
+seven (XFP10) and **P5** ledger complete (XFP14).
+
+**Means (2026-11-22, fast path).** First, a short **P1 sprint** on the existing
+engine: measure 007 (P1S0), add a live NuGet audio sink and the AC'97 codec
+(P1S1), fix the measured speed blockers to >= 0.5x (P1S2), and run the P1 gate
+(P1S3). That is the fastest path to at least one playable game; **NuGet host
+packages are allowed** (C# first, native edges inventoried in
+`docs/porting-policy.md`). After P1, the full xemu 0.8.139 port (XFP0-XFP14)
+continues for breadth: PGRAPH + the GL renderer (XFP1-XFP5), AC'97/APU (XFP6),
+IDE/block (XFP7), SMBus/SMC/nvnet (XFP8), USB/OHCI/XID (XFP9), machine/chipset
+(XFP10), the CPU/memory core (XFP11), host backends (XFP12), snapshots (XFP13)
+and parity close (XFP14). The order, the module ledger and the explicit
+out-of-scope list are `docs/xemu-port-manifest.md`.
+
+**Why the order.** The remaining blockers are device behavior the reference
+already implements: Halo's D3D resource wait, Ninja Gaiden Black's fragment
+dither, the missing AC'97 codec, Bad Boys II's resource scan. The P1 sprint fixes
+the first playable title with the existing GL backend and a live audio package;
+the full port follows for breadth. In the full port the CPU is sequenced last
+because the interpreter/raw JIT is bit-exact and faster than xemu on the
+CPU-bound ktest - but the P1 sprint promotes XFP11 if the measurement says the
+CPU is the wall to 0.5x.
+
+**What the port is not.** It is not native embedding: no QEMU/xemu library and
+no C/C++ emulator code in the build (`docs/porting-policy.md`). It is not a
+product rewrite: the CLI, **Avalonia frontend (kept by operator decision
+2026-11-22)**, `XGrid.Host`, the snapshot format, the test harness and the gates
+stay (`ImplementationPlan.md` E1 section 5). Vulkan, Chihiro and QEMU
+user-mode/packaging infrastructure stay out of scope with reasons.
+
+**Media.** `H:\Tests\XBOXReady` (seven optimized ISOs) is the acceptance set and
+xemu-oracle media. `E:\Microsoft Xbox` (945 retail CHDs, 1.44 TB) is the broad
+compatibility library for title triage and the CHD path - never an oracle row or
+a gate. `H:\Tests\XBOXTest` (37 Redump ISOs) is XGrid-only compatibility media.
+`data/test-samples/` stays gate currency.
+
+**Open source.** XGrid is GPL-2.0 (`COPYING`, `LICENSE`,
+`THIRD_PARTY_NOTICES.md`). It is **open source by licence**; the repository is
+**deliberately private because no game is playable yet** (operator decision
+2026-11-22). Publication is triggered by the first title meeting the strict bar
+and is a checklist in `docs/open-source.md`. The full port increases the notices
+surface, not the licence.
+
+**Exit.** P1 (at least one game playable) is the objective; P2/P3 are breadth
+and P4 (seven of seven) and P5 (ledger 100% verified/out-of-scope) close the
+program. Guest speed and presented fps are reported for every playability row; a
+step-budget run is not a playability claim. The plan follows the speed
+checkpoint: if the GPU/device stage is not the majority of the wall, XFP11 (CPU)
+is promoted.
+
+## 0a. Superseded (2026-10-24, second): a playable emulator, not a wholesale port
+
+> Superseded 2026-11-22 by section 0. The title-matrix loop, the seven-part
+> playability definition and the media policy remain valid and are carried into
+> E1; the "targeted port only" rule is what changed.
+
 
 **Operator decision.** The goal is a **playable Xbox emulator**: at least three
 retail titles reach gameplay with input, audio and save/load. The previous
@@ -38,15 +118,8 @@ gate currency.
 xemu frame match, audible output, gates exact). Speed is reported, never
 claimed, until then.
 
-## 0a. Previous correction (2026-10-22): xemu-class performance is the long-run objective
+## 0b. Superseded (2026-10-22): xemu-class performance is the long-run objective
 
-<!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-25):** M-T / **TM9 - Ninja Gaiden Black colour depth: stop the fragment-path dither the TM7 row measured** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM8 (2026-10-26): the APU is AUDIBLE - the xemu VP mixer (vp.c) is ported and 007 writes real PCM. --apu-dsp --audio-out went from 877,568 bytes of all-zero PCM (TM4) to 377,856 bytes / 94,464 frames with 42.4% non-zero samples (peak 7,500, RMS 1,023) from boot at 2B steps, and 47.6% non-zero from the 26B anchor (wt-data/tm8/007-audio-boot-2b.wav, 007-audio-26b-2b.wav); the envelope, the stereo difference and a DFT (105.5/152.3/199.2/316.4/503.9 Hz) say it is audio, not noise. The port is vp.c's frame walk, both envelopes, PCM/ADPCM buffer+stream fetch through the SSL/SGE tables, resampling, the volume/headroom mix into the 32 mix bins and multipass, plus svf.h/hrtf.h/adpcm.h; the frame cadence was 8x slow and is fixed (one XGrid frame = eight 32-sample reference frames). APU snapshot v6; old .xgs still load and now bootstrap the DSP from the restored scratch window. TM6 (2026-10-25): the second-tier five were probed at 10B each and the shared blocker was our own NV2A - NV097_INLINE_ARRAY was a screen-space shortcut (float-only attributes, the vertex program never run), so Ninja Gaiden Black's 28-byte D3D FVF vertices (F32x4 position + UB_D3D colour + F32x2 texcoord) were skipped: 1,073,213 skipped draws at 10B and a black display. The inline array is now laid out and decoded like the reference (BuildInlineArrayLayout, FetchInlineArrayAttribute through the shared DecodeVertexAttribute, VertexFetchMode.InlineArray) with the legacy path kept as the fallback, and the NV2A line gained skipReasons= (eight counters). Ninja Gaiden Black now renders its own animated stormy-sea intro - 720x480, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, LastFault vec=0, kernel idle 0x8001B02E between frames, a held A changes the scene - and at 1B the matrix row went 2,672 -> 12,800 draws / 41,995,882 -> 166,119,138 px at the same 6,475 frames. 50 Cent renders its own 3D scene (18,638 colours, 3,534 draws / 299,139,810 px, EIP 0x1455BA, PIC req=0x08); Tak renders its own scene and then a ~910-draw/frame one where the software rasterizer is the wall (300M steps = 362 s, 347 s in 3,228,625 fills, 1.27e9 z-clipped fragments); Bad Boys II is a documented wait (own-code resource-handle scan 0x1A3C80 -> 0x1A2250, handles 0x300C5+, no device traffic, black display); Destroy All Humans! renders its own Pandemic logo card and then spins in a kernel stall loop (KeStallExecutionProcessor 0x800153D0, 25% of samples, 6,819 draws / 86,802,891 px). The xemu oracle could not be captured this session (another agent owns the desktop: PrintWindow returns black, the screen copy catches the editor), so no xemu frame is claimed for TM6. TM5 (2026-10-25): Halo launches and renders its own main menu - 35B steps, 516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black (wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. The blocker was a per-title constant: McpxApuDevice absorbed the DirectSound mixer block at 007's fixed 0x03924810, so Halo's block at 0x02034810 was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B; the block is now discovered from the guest's own GP scratch (SGE) table (page + 0x810). Gameplay is a DOCUMENTED WAIT: a guest-side D3D resource retry loop (EIP 0x1810F0 from 0x6348B, D3DERR_NOTFOUND for handle 0, 99.99% of samples) after 100B clean steps; xemu 0.8.139 on the same ISO shows the same menu at 70 s and in-game gameplay at 150 s. The menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is not met. Audio is silent (--audio-out writes 0 PCM frames, gpFrames=0). 007 Agent Under Fire remains the playable title (TM4): 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu oracle on the same ISO reaches the same scene at 150 s (dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap; the queue is gone (APU snapshot v5). Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene. The 44-row 1B matrix is now 6 own-render / 38 dashboard / 0 fault / 0 timeout (was 2/42): the same fix advances Ninja Gaiden Black (35 -> 6,475 frames), Tak (1,068 frames / 3,701 draws), 50 Cent (98 frames / 100,987,370 px), Bad Boys II (42,303,082 px) and Destroy All Humans!, with the pre-fix build reproducing the old NGB row exactly. TM7 (2026-10-25): the seven-title table is published with one command per row (scripts/retail-game-probe.ps1) and a live xemu 0.8.139 oracle for six of them - 007 still passes (dmean 18.0/22.6/14.6), Halo's menu still fails on brightness (101.6/100.4/113.1), and Ninja Gaiden Black matches xemu's intro within 11/255 on the means while failing on colour count (12,913 vs 1,351) - the dither pattern is now the next named rendering defect; Bad Boys II's black display is quantified against xemu's own cutscene (100% vs 20.5% black). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area. TM7 (2026-10-25): the oracle is live again - six of the seven rows carry a real capture (007 150 s, Halo 70 s, Ninja Gaiden Black 52 s, 50 Cent 90 s, Tak 150 s, Bad Boys II 90 s, Destroy All Humans! 90 s). The script now retries PrintWindow five times and uses the screen-copy fallback ONLY when xemu is the foreground window, otherwise it throws 'capture contended' - TM7 caught a browser frame that way (PrintWindow answered black while the GL surface was starting, and the screen copy photographed Chrome). A blank capture (<=2 colours or >=99% black) is rejected by the harness. xemu still cannot be driven on this host (pad input is SDL-gamepad only), so it sits on title screens for Tak, Destroy All Humans! and Ninja Gaiden Black@70 s.
-**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.65% (93.99 of 118). **Next:** .
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
-<!-- STATUS:END -->
 
 > The generated block above is the current status; the narrative below is
 > history. The execution plan and the task queue are in `ImplementationPlan.md`
@@ -207,7 +280,7 @@ first-class option.
 and stays in flight only because leaving the GL renderer visibly wrong is
 worse than finishing it.
 
-## 0b. Previous correction (2026-10-20) — retained as history
+## 0c. Superseded (2026-10-20) — retained as history
 
 **Superseded by §0 (2026-10-22).** The 2026-10-20 rationale is kept because it
 explains why the product/corpus work happened first.
@@ -284,10 +357,11 @@ that serves none of B/E/P is rejected even if it is interesting.
 
 ## 1. Priority stack (in order)
 
-**Status 2026-10-24: the order is M-G -> M-P -> M-D (section 0).** The
-performance stack below is retained as the M-D reference and is not the current
-task order; the live queue is `docs/status.json` and the task detail is
-`ImplementationPlan.md` E1a/E1b/E1c.
+**Status 2026-11-22: the order is XFP (section 0).** The live queue is
+`docs/status.json`; the task detail is `ImplementationPlan.md` E1
+(XFP0-XFP14). The performance stack below is retained as history and as the
+M-D reference; it is not the current task order. A task that does not advance a
+ledger row in `docs/xemu-port-manifest.md` is not started.
 
 **Status 2026-10-22 late (§232): C4 measured NULL; the levers are now measured,
 not assumed.** The host-pointer translate probe was implemented and priced on an
@@ -478,24 +552,32 @@ baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
 
 ## 3. Milestone ladder
 
-- **M-T (playable titles) - the lead milestone as of 2026-10-24:** three retail
-  titles reach gameplay with input, audio and save/load. The loop is title
-  matrix -> blocker probe -> fix the shared blocker -> playability gate. The
-  seven-part definition is in `ImplementationPlan.md` E1; the first task is TM0
-  (title matrix). Retail ISOs are acceptance, never merge gates.
-  **Status 2026-10-25 (TM4, decisions §255): 1 of 3 titles playable.** 007 Agent
-  Under Fire runs 100B steps with `LastFault vec=0`, presents its own first-level
-  driving scene, takes scripted input, round-trips a save state through the
-  frontend session and matches the xemu 0.8.139 frame at the same scene within
-  the mean/colour/coverage policy; audio is a measured silence (the VP mixer and
-  the AC'97 codec are TM8). TM0-TM4 are done, TM5 (Halo) is active, TM6/TM7
-  (breadth + the published table) and TM8 (the first targeted port) follow.
-- **Port rule:** xemu 0.8.139 is the oracle and the source for the specific
-  modules the matrix proves are shared blockers (>=3 titles or >=20%). The CPU,
-  memory, chipset, storage and USB stay; the APU VP mixer + AC'97 and the NV2A
-  PGRAPH behaviours are the likely first ports. The software rasterizer and the
-  existing seams stay.
-- **M-A (Track B, present path):** menu fast+gl ≤ 24 s, triangle ≤ 6 s at 1B;
+- **XFP (2026-11-22) - the lead program.** Full xemu 0.8.139 port, playable
+  first. The gates are:
+  - **M1 - 007 own render/input milestone: MET 2026-10-25 (TM4).** 100B steps,
+    own first-level frame, scripted input, save/load round trip, xemu frame
+    policy. **Not playability:** 0.11x guest time and offline audio.
+  - **P1 - at least one game playable: THE OBJECTIVE** (all nine conditions).
+  - **P2 - a second title playable** (breadth, after P1).
+  - **P3 - three titles playable** (breadth).
+  - **P4 - seven of seven oracle titles playable** (XFP10).
+  - **P5 - ledger 100% verified/out-of-scope; release close** (XFP14).
+  Playability is the nine-part definition in `ImplementationPlan.md` E1 section
+  1 (own render, live input, **>= 0.5x guest time**, 10 minutes, save/load, xemu
+  frame policy, **live host audio**, product defaults, gates exact).
+- **Port rule (2026-11-22):** xemu 0.8.139 is the **port source**. Port every
+  in-scope module in the XFP order, with the old path as the fallback until the
+  differential is exact. The ledger (`docs/xemu-port-manifest.md`) is the
+  coverage record; `scripts/port-manifest.ps1 -Check` is the gate (XFP0).
+  Vulkan, Chihiro and QEMU user-mode/packaging infrastructure are out of scope
+  with reasons in the ledger.
+- **M-T (playable titles, 2026-10-24) - history; folded into XFP.** The loop
+  (title matrix -> blocker probe -> fix -> playability gate) is retained as the
+  acceptance method. TM0-TM8 are done; TM9 (NGB colour depth) is folded into
+  XFP3. **Status 2026-10-26 (TM8):** the APU is audible - the VP mixer is
+  ported and 007 writes real PCM; the AC'97 codec and the APU front end are
+  XFP6.
+- **M-A (Track B, present path, 2026-10-20) - history.** menu fast+gl ≤ 24 s, triangle ≤ 6 s at 1B;
   `BackendUnsupported=0`; SHAs/counters exact; the Avalonia display is driven
   by presents, not a per-frame readback. **Status 2026-10-20 (§204):** the GL
   overhead (~7.9 s) is removed and measured (menu `gl+replace` -20.5% 3/3,
@@ -545,7 +627,7 @@ baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
 
 - **M-C (Track P, playability):** audio output, physical pad, save/load in the
   frontend; no CLI required.
-- **Speed (after M-T):** xemu-class is the long-run objective, but it is
+- **Speed (after P3):** xemu-class is the later objective, but it is
   reported, never claimed, until the playability gate is met. The 1B reference
   stays (triangle ≤ 1.2 s, menu ≤ 1.36 s); ktest 2B already beats xemu (9-10 s
   vs 15 s). The old per-slice 10% bar is not the rule for M-T.
@@ -614,9 +696,12 @@ when isolated, documented, and not a substitute for the hardware behavior (the
   `docs/refs-manifest.json`. Never work around a missing reference; do not
   reintroduce an out-of-tree reference backup (`D:\xgrid-refs-restore\` is
   retired by operator decision 2026-10-20).
-- No new codegen **micro-slices** while the C4-C6 program is open; C4-C6 are
-  the authorized structural stages (section 0). Interpreter *correctness* fixes
-  (oracle-found) are not codegen slices.
+- No codegen work except the P1 sprint's measured speed fixes (P1S2) or XFP11.
+  C4-C6 micro-slices and the raw-emitter experiments remain closed without a new
+  measurement (the negatives are binding).
+- No port without a ledger row, a differential and a provenance line. "Ported"
+  without a test is not a status; the manifest's `verified` requires the
+  evidence.
 - No micro-optimization below a measured 2% ceiling.
 - No native QEMU/xemu embedding; port source to managed C# and record the
   provenance. New dependencies still follow the NuGet rule (precedent:
@@ -624,14 +709,16 @@ when isolated, documented, and not a substitute for the hardware behavior (the
 
 ## 6. Standing gates
 
-- **M-G (gameplay):** the four-part gameplay definition (`ImplementationPlan.md`
-  E1) with the xemu 0.8.139 frame at the same guest time, a scripted input edge,
-  no fault, and the four fast 1B anchors + four accurate goldens + ktest log
+- **P1 playability:** the nine-part definition (`ImplementationPlan.md` E1
+  section 1) with the xemu 0.8.139 frame at a comparable scene, live input,
+  >= 0.5x guest time, live host audio, and the four accurate goldens + ktest log
   byte-identical. Gameplay is acceptance, not a merge gate.
-- **M-P (port):** the module's differential is exact (RAM/CPU SHAs, fault and
-  watchpoint cases, or the row matrix), the software anchors stay exact, and
-  `scripts/package-verify.ps1` passes with the new notices rows. A module is not
-  "done" because it compiles.
+- **XFP port:** the module's differential is exact (a vector table, a
+  register/method pre-post table, or the row matrix), the old path stays until
+  it passes, the ledger row is updated, and `scripts/package-verify.ps1` passes
+  with the new notices rows. A module is not "done" because it compiles.
+- `pwsh -File scripts/port-manifest.ps1 -Check` green once XFP0 lands; an
+  in-scope module without a ledger row fails the gate.
 - `dotnet build XGrid.sln -c Release`, `dotnet test`, `dotnet format
   --verify-no-changes` clean; warnings are errors.
 - Release changes: `scripts/package.ps1` on every affected RID and

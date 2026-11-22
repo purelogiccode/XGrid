@@ -284,6 +284,34 @@
           <Border Classes="divider" />
 
           <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="APU audio (DSP + VP mixer)" Classes="label" />
+              <TextBlock Text="Runs the guest DSP microcode and voice mixer. Required for sound."
+                         Classes="hint" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding ApuDsp, Mode=TwoWay}"
+                          OnContent=""
+                          OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding ApuDsp}">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Live audio output" Classes="label" />
+              <TextBlock Text="Windows WASAPI shared mode. Off stays silent; the CLI --audio-out remains the capture path."
+                         Classes="hint" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding LiveAudio, Mode=TwoWay}"
+                          OnContent=""
+                          OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
+
+          <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Renderer" Classes="label" />
               <TextBlock Text="Software rasterizer is portable; the OpenGL backend needs a Windows host and is used at the next power-on."

@@ -1,4 +1,15 @@
-# Next session instructions (updated 2026-10-26: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM9)
+# Next session instructions (updated 2026-11-22: the program is XFP, the full xemu 0.8.139 port; the queue is XFP0-XFP14)
+
+> **START HERE (2026-11-22).** The program is the **full xemu 0.8.139 source
+> port** (`ImplementationPlan.md` E1, ledger `docs/xemu-port-manifest.md`). **The
+> objective is at least one game playable (P1).** M1 is met (007 own render +
+> scripted input) but 007 is not playable yet: 0.11x guest time and offline
+> audio. The critical path is XFP0-XFP6 plus the speed checkpoint (XFP11 if the
+> CPU is the wall); P2/P3 are breadth after P1, P4 is seven of seven, P5 is the
+> ledger complete. The active task is in `docs/status.json`; run
+> `pwsh -File scripts/status.ps1 -Check -Show`. The TM8 result below is the last
+> landed increment and remains history. **Do not start TM9** - it is folded into
+> XFP3 (the ported fragment path is the fix).
 
 > **TM8 RESULT (2026-10-26, 59th session) - the APU is AUDIBLE: the xemu voice
 > processor (`vp.c`) is ported and 007 writes real PCM.**

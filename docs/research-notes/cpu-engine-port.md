@@ -1,0 +1,105 @@
+# CPU engine port (xemu/QEMU to C#)
+
+Status: **2026-11-22, P1S2-P1S5.** The operator chose the full CPU engine port
+after P1S0/N15 (007 runs at 0.100x; CPU is 94% of the wall; shape fixes top out
+at ~0.20x). This note is the reference map and the phase contract. The ledger
+row is `docs/xemu-port-manifest.md` (`target/i386/tcg/**`, `accel/tcg/**`,
+`tcg/**`, `softmmu/**`).
+
+## 1. Why this engine
+
+The current engine already has: an accurate interpreter, a managed IL block
+JIT, a native raw emitter (`RawBlockEmitter` + Iced), a 256-entry direct-mapped
+`SoftTlb`, and a page-table walker (`Mmu`). It measures **73 Msteps/s** on 007
+(6-8 ns per served member). xemu's C TCG measures ~830 Msteps/s on the same
+workload (1.2 ns/step). The 5x gap is the **memory model + block shape**, not a
+missing instruction:
+
+- the raw emitter probes a 3-load translate cache per memory member;
+- every block re-publishes EIP/TSC/served and re-checks the budget at the edge;
+- the TLB stores a physical page + a writable bool, not the reference's
+  per-access tags + addend;
+- there is no TCG IR and no `tb_gen_code`-style single translation per guest
+  page.
+
+## 2. Reference map (xemu 0.8.139, QEMU 10.2 base)
+
+| Reference | Function | C# target |
+|---|---|---|
+| `include/exec/tlb-common.h` | `CPUTLBEntry` (`addr_read`, `addr_write`, `addr_code`, `addend`), `CPU_TLB_ENTRY_BITS` | `XGrid.Cpu/QemuTlb.cs` (Phase A) |
+| `accel/tcg/cputlb.c` | `tlb_fill`, `probe_read`/`probe_write`, `tlb_set_page`, `do_ld*_mmu`/`do_st*_mmu`, MMIO slow path | `Mmu` + `QemuTlb` + `AddressSpace` classification |
+| `softmmu/physmem.c` | `address_space_translate`, `flatview_*`, `address_space_rw` | `XGrid.Memory/AddressSpace.cs` (already the flat map; port the translate/slow-path split) |
+| `system/memory.c` + `include/exec/memory.h` | memory regions, `MemoryRegionOps`, MMIO dispatch | `IMmioDevice` / `IMemoryBus` (existing seam) |
+| `accel/tcg/translate-all.c` | `tb_gen_code`, `page_protect`, `tb_flush` | `TranslatedBlockCache` (new) + `RawBlockEmitter` reuse |
+| `accel/tcg/cpu-exec.c` | `cpu_exec`, TB lookup, `tb_add_jump` | `XboxCpu.Run` block loop (existing) |
+| `tcg/tcg.c` | `TCGOp`, temps, globals, labels, `tcg_gen_code` | `XGrid.Cpu/Tcg/TcgOp.cs`, `TcgBuilder.cs`, `TcgX86Emitter.cs` |
+| `tcg/tcg-op.c` | IR helpers (`tcg_gen_add_i32`, loads/stores, branches) | `TcgBuilder` helper methods |
+| `tcg/i386/tcg-target.c.inc` | host codegen, register allocation, prologue/epilogue | `TcgX86Emitter` (Iced) |
+| `target/i386/tcg/translate.c` | guest decoder/translator | `XGrid.Cpu/Tcg/I386Translator.cs` |
+| `target/i386/tcg/decode.h`, `emit.c.inc` | decode tables, per-op emission | `I386DecodeTable.cs` / translator cases |
+| `target/i386/tcg/helper.c` | exceptions, interrupts, `do_interrupt` | `XboxCpu` fault path (existing) |
+| `include/exec/cpu-common.h`, `memop.h` | `MemOp`, endianness, access sizes | `XGrid.Memory` access helpers |
+
+The current files that stay: `XboxContext`, `XboxCpu` state/registers, the
+interpreter (`Step`/spec handlers) as the exact fallback, `Mmu` page-table
+semantics, `AddressSpace`, the raw helpers, and the snapshot format.
+
+## 3. Phases and gates
+
+### P1S2 - softmmu/TLB and memory dispatch (4-6 sessions)
+
+- Port `CPUTLBEntry` as `QemuTlb`: per-access tags (`addr_read`/`addr_write`/
+  `addr_code`), the addend, per-entry slow flags, 4 KB pages, direct-mapped
+  index.
+- Port `tlb_fill`/`probe_read`/`probe_write` semantics: page-table walk on
+  miss, permission faults, cross-page accesses, MMIO classification,
+  invalidation on CR3/CR0/INVLPG/page-table stores.
+- Differential: the existing `MmuTests` + a TLB vector suite.
+- **Gate:** the differential is exact and the probe measures >=2x the current
+  per-member memory cost, or the measurement is a recorded negative.
+
+**Result (2026-11-22).** `QemuTlb` is ported (`src/XGrid.Cpu/QemuTlb.cs`) with
+the reference per-access tags (`addr_read`/`addr_write`/`addr_code`) and the
+addend; 9 differential tests cover read/write/code, a read-only write miss, a
+non-executable code miss, page offsets, flush page/all, collision and an
+`Mmu`-translate differential. Probe benchmark: **0.84 ns/lookup (QemuTlb) vs
+0.64 ns (current SoftTlb)**. The TLB shape is **not** the 2x lever (0.76x of the
+current probe); the current TLB is already the fast shape. The 5x is the
+block/translator shape, so **P1S3** (TCG IR + i386 translator) is the next lever.
+Recorded as **N16**; the QemuTlb stays as the reference shape for the TCG port.
+
+### P1S3 - TCG IR and the i386 translator (8-12 sessions)
+
+- Port the TCG IR (ops, temps, globals, labels, blocks) and the i386 translator
+  for the shapes the gates/titles use (start with the 641-case cpu-oracle and
+  the ktest shapes, extend by measured fallback gaps).
+- Keep the interpreter as the fallback; count every fallback.
+- **Gate:** `tools/cpu-oracle` exact on the IR interpreter before codegen.
+
+### P1S4 - host code generation (6-10 sessions)
+
+- Map the IR to the existing raw emitter (one native function per TB) or a new
+  IR executor; port the memory/FPU/SSE/string/CALL/RET helpers.
+- **Gate:** the 1B anchors, the ktest log and the cpu-oracle exact; the member
+  cost is below the current raw runner.
+
+### P1S5 - parity and switchover (4-6 sessions)
+
+- Four accurate 1B goldens, ktest, 22-row corpus, 30B/100B 007 legs exact.
+- Switch the product default only on parity; keep the raw engine as the
+  fallback and a documented flag.
+- **Gate:** the nine-part P1 gate is re-run; 0.5x measured or the ceiling
+  recorded (no third variation).
+
+## 4. Risks and stop rules
+
+- **A C# TCG may not beat the native raw emitter.** The raw emitter is already
+  native x86-64; the port must win on the memory model and block shape, not on
+  "TCG magic". P1S4's not-slower gate is binding; a slower port is not switched.
+- **The reference is a moving target.** Pin 0.8.139 (`aa54c34`); the QEMU 10.2
+  base is vendored in the same tree.
+- **No mixed engine.** A run uses either the interpreter, the IL/raw engine, or
+  the ported TCG engine; `--jit-exact` and the differential legs stay as they
+  are.
+- **Stop after two failures** per phase and record the negative; do not grind a
+  third variation.

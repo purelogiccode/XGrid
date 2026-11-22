@@ -176,6 +176,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private bool _fastMode = true;
 
     [ObservableProperty]
+    private bool _apuDsp = true;
+
+    [ObservableProperty]
+    private bool _liveAudio = true;
+
+    [ObservableProperty]
     private bool _rawBlocks = true;
 
     [ObservableProperty]
@@ -292,6 +298,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         DvdPath = settings.DvdPath;
         RamMb = settings.RamMb;
         FastMode = settings.FastMode;
+        ApuDsp = settings.ApuDsp;
+        LiveAudio = !string.Equals(settings.AudioOutput, EmulatorSettings.AudioOutputOff, StringComparison.Ordinal);
         RawBlocks = settings.RawBlocks;
         SpinSkip = settings.SpinSkip;
         DecodeCache = settings.DecodeCache;
@@ -350,6 +358,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             DvdPath = DvdPath.Trim(),
             RamMb = RamMb,
             FastMode = FastMode,
+            ApuDsp = ApuDsp,
+            AudioOutput = LiveAudio ? EmulatorSettings.AudioOutputLive : EmulatorSettings.AudioOutputOff,
             RawBlocks = RawBlocks,
             SpinSkip = SpinSkip,
             DecodeCache = DecodeCache,

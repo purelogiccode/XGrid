@@ -34,10 +34,23 @@ hashes), so the DSP port source is the same.  The material delta is NV2A:
 
 ## Porting priority
 
-1. APU GP/EP DSP (`hw/xbox/mcpx/apu/dsp/`) - active P1; unchanged from 0.8.137.
-2. NV2A missing methods/shaders - use the 0.8.139 delta above as the source.
-3. APU VP mixer/PCM sink - `hw/xbox/mcpx/apu/vp/vp.c` and `apu.c`.
+The program is the **full port** (`ImplementationPlan.md` E1, ledger
+`docs/xemu-port-manifest.md`), ordered by what unblocks a retail title:
 
-The CPU TCG is not a port target: XGrid's raw emitter is already bit-exact and
-faster than xemu on the CPU-bound ktest; the measured gap is the
-boot/device/GPU path.
+1. **NV2A PGRAPH + the GL renderer** (`nv2a/pgraph/**`, the `nv2a/*` blocks) -
+   XFP1-XFP5. Halo's D3D resource wait, Ninja Gaiden Black's fragment dither and
+   every visual row depend on it.
+2. **APU front end + AC'97 codec** (`mcpx/apu/apu.c`, `mcpx/aci.c`,
+   `hw/audio/ac97.c`) - XFP6. The VP mixer (`vp/vp.c`) and the DSP
+   (`apu/dsp/`) are already ported and verified; the AC'97 path makes the
+   output audible.
+3. **IDE/block, SMBus/SMC/EEPROM, nvnet, USB/OHCI/XID** - XFP7-XFP9.
+4. **Machine/chipset** - XFP10.
+5. **CPU/memory core** (`softmmu/`, `accel/tcg/`, `tcg/`, `target/i386/tcg/`) -
+   XFP11, in scope but sequenced last and gated on "not slower" than the
+   current bit-exact raw engine on the 1B/ktest workloads.
+6. **Host backends and snapshots** - XFP12-XFP13; **parity close** - XFP14.
+
+Vulkan (`nv2a/pgraph/vk/`) is a host-renderer choice and is out of scope; the GL
+renderer is the port target. Chihiro and QEMU user-mode/packaging
+infrastructure are out of scope with reasons in the ledger.
