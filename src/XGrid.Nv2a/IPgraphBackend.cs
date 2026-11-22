@@ -813,6 +813,16 @@ public readonly struct PgraphDrawInfo(
 /// <param name="colorBytes">Color bytes per pixel.</param>
 /// <param name="zetaBytes">Zeta bytes per pixel (2 for Z16, 4 for Z24S8).</param>
 /// <param name="zFormatFloat">Whether zeta values use the float format.</param>
+/// <param name="colorChannels">
+/// Color channels the clear writes (bit 0 R, 1 G, 2 B, 3 A, from
+/// <c>NV097_CLEAR_SURFACE_R/G/B/A</c>). A channel whose bit is clear keeps the
+/// surface's previous value.
+/// </param>
+/// <param name="zetaFields">
+/// Zeta fields the clear writes (bit 0 depth, bit 1 stencil, from
+/// <c>NV097_CLEAR_SURFACE_Z/STENCIL</c>). A field whose bit is clear keeps the
+/// surface's previous value.
+/// </param>
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphClearInfo(
     bool clearColor, bool clearZeta,
@@ -820,7 +830,8 @@ public readonly struct PgraphClearInfo(
     uint clipX, uint clipY, uint clipW, uint clipH,
     uint colorValue, uint zetaValue,
     uint colorBytes, uint zetaBytes,
-    bool zFormatFloat)
+    bool zFormatFloat,
+    uint colorChannels = 0xFu, uint zetaFields = 0x3u)
 {
 
     /// <summary>Gets whether the color surface was filled.</summary>
@@ -867,6 +878,18 @@ public readonly struct PgraphClearInfo(
 
     /// <summary>Gets whether zeta values use the float format.</summary>
     public bool ZFormatFloat { get; } = zFormatFloat;
+
+    /// <summary>
+    /// Gets the color channels the clear writes (bit 0 R, 1 G, 2 B, 3 A). A
+    /// clear channel is written; an unmasked channel keeps its previous value.
+    /// </summary>
+    public uint ColorChannels { get; } = colorChannels;
+
+    /// <summary>
+    /// Gets the zeta fields the clear writes (bit 0 depth, bit 1 stencil). A
+    /// cleared field is written; an unmasked field keeps its previous value.
+    /// </summary>
+    public uint ZetaFields { get; } = zetaFields;
 }
 
 /// <summary>

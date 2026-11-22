@@ -4443,17 +4443,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        bool backendClearColor = false;
-        bool backendClearZeta = false;
-
         if ((_surfaceFormat & 0xF00u) >> 8 != SurfaceTypePitch)
         {
             return;
         }
 
         bool clearColor = (parameter & 0xF0u) != 0;
-        bool clearZeta = (parameter & 0x3u) != 0;
-        if (!clearColor && !clearZeta)
+        if (!clearColor && (parameter & 0x3u) == 0)
         {
             return;
         }
@@ -4481,28 +4477,50 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
+        uint backendColorChannels = 0;
         if (clearColor)
         {
-            uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
+            uint colorFormat = _surfaceFormat & 0xFu;
+            uint bytes = ColorBytesPerPixel(colorFormat);
             if (bytes != 0)
             {
                 uint pitch = _surfacePitch & 0xFFFFu;
                 if (pitch != 0 && SurfaceFitsContext(_dmaColor, PresentedColorOffset, pitch, y1 - ymin + 1))
                 {
-                    uint pixel = _colorClearValue & (bytes switch
+                    // CLEAR_SURFACE_R/G/B/A mask the channels: a channel whose
+                    // bit is clear keeps the surface's previous value. The
+                    // clear word is normalized first (the X/Z and X/O formats
+                    // force the alpha lane, pgraph_get_clear_color + the GL
+                    // attachment), so a full-mask clear is still one fill.
+                    uint lanes = bytes switch
                     {
                         4 => 0xFFFFFFFFu,
                         2 => 0xFFFFu,
-                        _ => 0xFFu
-                    });
-                    FillSurface(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1, y1,
-                        pixel);
-                    backendClearColor = true;
+                        _ => 0xFFu,
+                    };
+                    uint pixel = NormalizeSurfaceClearColor(colorFormat, _colorClearValue) & lanes;
+                    uint channels = ClearColorChannels(parameter);
+                    uint mask = ClearColorChannelBits(colorFormat, channels) & lanes;
+                    if (mask == lanes)
+                    {
+                        FillSurface(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1,
+                            y1, pixel);
+                    }
+                    else if (mask != 0)
+                    {
+                        MergeSurface(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1,
+                            y1, pixel, mask);
+                    }
+
+                    if (mask != 0)
+                    {
+                        backendColorChannels = channels & SurfaceColorChannels(colorFormat);
+                    }
                 }
             }
         }
 
-        if (clearZeta)
+        uint backendZetaFields = 0;
         {
             uint zetaFormat = (_surfaceFormat >> 4) & 0xFu;
             uint bytes = zetaFormat switch
@@ -4511,19 +4529,48 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 2u => 4u,
                 _ => 0u
             };
-            if (bytes != 0)
+            uint fields = parameter & 0x3u;
+            if (bytes == 2u)
+            {
+                // Z16 has no stencil attachment: a stencil-only clear writes
+                // nothing (the reference clears a stencil attachment the
+                // surface does not have).
+                fields &= 0x1u;
+            }
+
+            if (bytes != 0 && fields != 0)
             {
                 uint pitch = (_surfacePitch >> 16) & 0xFFFFu;
                 if (pitch != 0 && SurfaceFitsContext(_dmaZeta, _surfaceZetaOffset, pitch, y1 - ymin + 1))
                 {
-                    uint pixel = _zetaClearValue & (bytes == 4 ? 0xFFFFFFFFu : 0xFFFFu);
-                    FillSurface(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
-                    backendClearZeta = true;
+                    // Z24S8: depth is the high 24 bits, stencil the low byte
+                    // (pgraph_get_clear_depth_stencil_value), and CLEAR_SURFACE_Z
+                    // / _STENCIL select the field independently.
+                    uint lanes = bytes == 4 ? 0xFFFFFFFFu : 0xFFFFu;
+                    uint pixel = _zetaClearValue & lanes;
+                    uint mask = (fields & 0x1u) != 0 ? (bytes == 4 ? 0xFFFFFF00u : 0xFFFFu) : 0u;
+                    if ((fields & 0x2u) != 0)
+                    {
+                        mask |= 0x000000FFu;
+                    }
+
+                    if (mask == lanes)
+                    {
+                        FillSurface(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1,
+                            pixel);
+                    }
+                    else
+                    {
+                        MergeSurface(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1,
+                            pixel, mask);
+                    }
+
+                    backendZetaFields = fields;
                 }
             }
         }
 
-        if (Backend is not null && (backendClearColor || backendClearZeta))
+        if (Backend is not null && (backendColorChannels != 0 || backendZetaFields != 0))
         {
             uint zetaBytesBackend = ((_surfaceFormat >> 4) & 0xFu) switch
             {
@@ -4532,13 +4579,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 _ => 0u,
             };
             Backend.Clear(new PgraphClearInfo(
-                backendClearColor, backendClearZeta,
+                backendColorChannels != 0, backendZetaFields != 0,
                 xmin, ymin, x1, y1,
                 _surfaceClipH & 0xFFFFu, _surfaceClipV & 0xFFFFu,
                 _surfaceClipH >> 16, _surfaceClipV >> 16,
-                _colorClearValue, _zetaClearValue,
+                NormalizeSurfaceClearColor(_surfaceFormat & 0xFu, _colorClearValue), _zetaClearValue,
                 ColorBytesPerPixel(_surfaceFormat & 0xFu), zetaBytesBackend,
-                _zFormatFloat));
+                _zFormatFloat, backendColorChannels, backendZetaFields));
         }
     }
 
@@ -4629,6 +4676,208 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             0x01u or 0x02u or 0x03u => 2u,
             0x04u or 0x05u or 0x06u or 0x07u or 0x08u => 4u,
             _ => 0u,
+        };
+    }
+
+    /// <summary>
+    /// Fills a clear rectangle where only <paramref name="mask"/>'s lanes are
+    /// written: each pixel is <c>(old &amp; ~mask) | (pixel &amp; mask)</c>,
+    /// the GL masked-clear rule. The full-mask case keeps the faster
+    /// <see cref="FillSurface"/> path; this is only reached when the guest
+    /// programs a partial <c>NV097_CLEAR_SURFACE_R/G/B/A</c> or a depth-only /
+    /// stencil-only zeta clear.
+    /// </summary>
+    private void MergeSurface(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax,
+        uint pixel, uint mask)
+    {
+        using GpuWriteBatch batch = new(_memoryFast);
+        if (GpuMemory is null || pitch == 0 || mask == 0 || bytes == 0)
+        {
+            return;
+        }
+
+        uint lanes = bytes switch
+        {
+            4 => 0xFFFFFFFFu,
+            2 => 0xFFFFu,
+            _ => 0xFFu,
+        };
+        mask &= lanes;
+        pixel &= lanes;
+
+        // 4-byte aligned 32-bit surfaces can merge in the RAM view directly.
+        if (bytes == 4
+            && (offset & 3u) == 0
+            && (pitch & 3u) == 0
+            && _memoryFast is not null
+            && _memoryFast.TryGetRamBytes(out byte[] ramBytes, out uint ramSize)
+            && offset + ((ulong)ymax * pitch) + ((ulong)xmax * bytes) + bytes <= ramSize)
+        {
+            Span<uint> ram = MemoryMarshal.Cast<byte, uint>(ramBytes.AsSpan());
+            int width = (int)(xmax - xmin + 1);
+            for (uint y = ymin; y <= ymax; y++)
+            {
+                int start = (int)((offset + (y * pitch)) >> 2) + (int)xmin;
+                Span<uint> row = ram.Slice(start, width);
+                for (int i = 0; i < row.Length; i++)
+                {
+                    row[i] = (row[i] & ~mask) | (pixel & mask);
+                }
+            }
+
+            return;
+        }
+
+        for (uint y = ymin; y <= ymax; y++)
+        {
+            uint row = offset + (y * pitch);
+            for (uint x = xmin; x <= xmax; x++)
+            {
+                uint address = row + (x * bytes);
+                if (address + bytes > RamSize)
+                {
+                    return;
+                }
+
+                if (bytes == 4)
+                {
+                    uint current = ReadGpu(address);
+                    WriteGpu(address, (current & ~mask) | (pixel & mask));
+                }
+                else
+                {
+                    uint aligned = address & ~3u;
+                    uint current = ReadGpu(aligned);
+                    uint shift = (address & 3u) * 8;
+                    uint writeMask = mask << (int)shift;
+                    WriteGpu(aligned,
+                        (current & ~writeMask) | ((pixel << (int)shift) & writeMask));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The 4-bit R/G/B/A channel coverage of a surface color format (bit 0 R,
+    /// 1 G, 2 B, 3 A), matching the lanes the reference's GL surface
+    /// attachment exposes: the X/O 32-bit formats still have an alpha lane
+    /// (forced by <see cref="NormalizeSurfaceClearColor"/>), R5G6B5 has none,
+    /// B8 is one lane and G8B8 two.
+    /// </summary>
+    private static uint SurfaceColorChannels(uint format)
+    {
+        return format switch
+        {
+            0x01u or 0x02u or 0x04u or 0x05u or 0x06u or 0x07u or 0x08u => 0xFu,
+            0x03u => 0x7u,
+            0x09u => 0x1u,
+            0x0Au => 0x3u,
+            _ => 0u,
+        };
+    }
+
+    /// <summary>Bit positions of each surface color lane in the pixel word.</summary>
+    private static void SurfaceColorLaneBits(uint format, out uint r, out uint g, out uint b, out uint a)
+    {
+        switch (format)
+        {
+            case 0x01u: // X1R5G5B5 (A1R5G5B5)
+            case 0x02u:
+                r = 0x7C00u;
+                g = 0x03E0u;
+                b = 0x001Fu;
+                a = 0x8000u;
+                break;
+            case 0x03u: // R5G6B5
+                r = 0xF800u;
+                g = 0x07E0u;
+                b = 0x001Fu;
+                a = 0u;
+                break;
+            case 0x04u: // X8R8G8B8 / X1A7R8G8B8 / A8R8G8B8
+            case 0x05u:
+            case 0x06u:
+            case 0x07u:
+            case 0x08u:
+                r = 0x00FF0000u;
+                g = 0x0000FF00u;
+                b = 0x000000FFu;
+                a = 0xFF000000u;
+                break;
+            case 0x09u: // B8: one lane (GL_R8)
+                r = 0x000000FFu;
+                g = 0u;
+                b = 0u;
+                a = 0u;
+                break;
+            case 0x0Au: // G8B8: two lanes (GL_RG8)
+                r = 0x000000FFu;
+                g = 0x0000FF00u;
+                b = 0u;
+                a = 0u;
+                break;
+            default:
+                r = g = b = a = 0u;
+                break;
+        }
+    }
+
+    /// <summary>The 4-bit channel mask encoded in bits 4-7 of a CLEAR_SURFACE parameter.</summary>
+    private static uint ClearColorChannels(uint parameter)
+    {
+        return (parameter >> 4) & 0xFu;
+    }
+
+    /// <summary>Pixel bits selected by the CLEAR_SURFACE channel mask.</summary>
+    private static uint ClearColorChannelBits(uint format, uint channels)
+    {
+        SurfaceColorLaneBits(format, out uint r, out uint g, out uint b, out uint a);
+        uint bits = 0;
+        if ((channels & 0x1u) != 0)
+        {
+            bits |= r;
+        }
+
+        if ((channels & 0x2u) != 0)
+        {
+            bits |= g;
+        }
+
+        if ((channels & 0x4u) != 0)
+        {
+            bits |= b;
+        }
+
+        if ((channels & 0x8u) != 0)
+        {
+            bits |= a;
+        }
+
+        return bits;
+    }
+
+    /// <summary>
+    /// Normalizes the color clear word the way the reference's
+    /// <c>pgraph_get_clear_color</c> plus the surface's GL attachment do: the
+    /// alpha lane is forced by the X (zero) / O (one) formats, the X1A7
+    /// variants keep their 7-bit alpha and force the top (X) bit, and the
+    /// channel bytes otherwise pass through unchanged.
+    /// </summary>
+    private static uint NormalizeSurfaceClearColor(uint format, uint word)
+    {
+        return format switch
+        {
+            0x01u => word & 0x7FFFu, // X1R5G5B5_Z1R5G5B5: alpha 0
+            0x02u => word | 0x8000u, // X1R5G5B5_O1R5G5B5: alpha 1
+            0x03u => word & 0xFFFFu, // R5G6B5
+            0x04u => word & 0x00FFFFFFu, // X8R8G8B8_Z8R8G8B8: alpha byte 0
+            0x05u => word | 0xFF000000u, // X8R8G8B8_O8R8G8B8: alpha byte 0xFF
+            0x06u => word & 0x7FFFFFFFu, // X1A7R8G8B8_Z1A7R8G8B8: X bit 0
+            0x07u => word | 0x80000000u, // X1A7R8G8B8_O1A7R8G8B8: X bit 1
+            0x08u => word, // A8R8G8B8
+            0x09u => word & 0xFFu, // B8
+            0x0Au => word & 0xFFFFu, // G8B8
+            _ => word,
         };
     }
 

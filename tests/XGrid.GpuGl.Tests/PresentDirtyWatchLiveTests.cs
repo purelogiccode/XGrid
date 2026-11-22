@@ -356,8 +356,10 @@ public sealed class PresentDirtyWatchLiveTests(ITestOutputHelper output)
 
             // The second twin fill wrote the new clear color into the
             // watched surface (suppressed -> stayed clean): the flip served
-            // the GL-rendered content, never uploaded.
-            byte[] secondExpected = [0x66, 0x33, 0x99, 0xFF];
+            // the GL-rendered content, never uploaded. The surface is
+            // X8R8G8B8_Z8R8G8B8, so the clear's alpha lane is forced 0
+            // (pgraph_get_clear_color), giving BGRA bytes B,G,R,0.
+            byte[] secondExpected = [0x66, 0x33, 0x99, 0x00];
             Assert.Equal(Repeat(secondExpected, second.Length / 4), second);
         }
         finally

@@ -82,11 +82,12 @@ public sealed class Nv2aZetaClearLayoutTests
     /// Surface: 16x16 A8R8G8B8 color at 0x3000, Z24S8 zeta at 0x5000 (both
     /// pitches 0x40). Returns the pushed state so a caller can append a draw.
     /// </summary>
-    private static System.Collections.Generic.List<(uint Method, uint Parameter)> SurfaceState()
+    private static System.Collections.Generic.List<(uint Method, uint Parameter)> SurfaceState(
+        uint surfaceFormat = 0x00000124u)
     {
         return
         [
-            (0x0208u, 0x00000124u), // pitch type, color 4-byte, zeta Z24S8
+            (0x0208u, surfaceFormat), // pitch type, color 4-byte, zeta Z24S8
             (0x020Cu, 0x00400040u), // color pitch 0x40, zeta pitch 0x40
             (0x0210u, ColorBase),
             (0x0214u, ZetaBase),
@@ -99,10 +100,29 @@ public sealed class Nv2aZetaClearLayoutTests
         System.Collections.Generic.List<(uint Method, uint Parameter)> pushes,
         uint clearWord)
     {
+        PushZetaFields(pushes, clearWord, 0x3u);
+    }
+
+    private static void PushZetaFields(
+        System.Collections.Generic.List<(uint Method, uint Parameter)> pushes,
+        uint clearWord,
+        uint fields)
+    {
         pushes.Add((0x1D8Cu, clearWord));
         pushes.Add((0x1D98u, 0x000F0000u));
         pushes.Add((0x1D9Cu, 0x000F0000u));
-        pushes.Add((0x1D94u, 0x00000003u)); // clear zeta
+        pushes.Add((0x1D94u, fields));
+    }
+
+    private static void PushColorClear(
+        System.Collections.Generic.List<(uint Method, uint Parameter)> pushes,
+        uint clearWord,
+        uint channels = 0xF0u)
+    {
+        pushes.Add((0x1D90u, clearWord));
+        pushes.Add((0x1D98u, 0x000F0000u));
+        pushes.Add((0x1D9Cu, 0x000F0000u));
+        pushes.Add((0x1D94u, channels));
     }
 
     /// <summary>Triangle (2,2)-(12,2)-(2,12) in screen space via a passthrough program.</summary>
@@ -165,6 +185,91 @@ public sealed class Nv2aZetaClearLayoutTests
 
         Assert.Equal(0x00711174u, ReadZeta(memory, 0, 0));
         Assert.Equal(0x00711174u, ReadZeta(memory, 15, 15));
+    }
+
+    [Fact]
+    public void ZetaClear_DepthOnlyKeepsTheStencil()
+    {
+        // CLEAR_SURFACE_Z clears the depth field only: the low stencil byte
+        // keeps the surface's previous value (the reference clears the depth
+        // and stencil attachments independently).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        memory.WritePhysical(ZetaBase, 0x12345678u);
+        var pushes = SurfaceState();
+        PushZetaFields(pushes, 0xFFFFFF00u, 0x1u);
+        PushMethods(nv2A, memory, [.. pushes]);
+
+        Assert.Equal(0xFFFFFF78u, ReadZeta(memory, 0, 0));
+    }
+
+    [Fact]
+    public void ZetaClear_StencilOnlyKeepsTheDepth()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        memory.WritePhysical(ZetaBase, 0x12345678u);
+        var pushes = SurfaceState();
+        PushZetaFields(pushes, 0xFF0000AAu, 0x2u);
+        PushMethods(nv2A, memory, [.. pushes]);
+
+        Assert.Equal(0x123456AAu, ReadZeta(memory, 0, 0));
+    }
+
+    [Fact]
+    public void ZetaClear_StencilOnlyWritesNothingOnZ16()
+    {
+        // A Z16 surface has no stencil attachment; a stencil-only clear must
+        // leave the depth words untouched (the reference clears nothing).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        memory.WritePhysical(ZetaBase, 0x12345678u);
+        var pushes = SurfaceState(0x00000114u); // color 4-byte, zeta Z16, pitch
+        PushZetaFields(pushes, 0xFFFFFFFFu, 0x2u);
+        PushMethods(nv2A, memory, [.. pushes]);
+
+        Assert.Equal(0x12345678u, ReadZeta(memory, 0, 0));
+    }
+
+    [Fact]
+    public void ColorClear_ChannelMaskKeepsUnmaskedChannels()
+    {
+        // A8R8G8B8 with only CLEAR_SURFACE_R: the red byte comes from the
+        // clear word, green/blue/alpha keep the previous pixel.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        memory.WritePhysical(ColorBase, 0x11223344u);
+        var pushes = SurfaceState(0x00000128u); // A8R8G8B8 + Z24S8, pitch
+        PushColorClear(pushes, 0xAA556677u, 0x10u);
+        PushMethods(nv2A, memory, [.. pushes]);
+
+        Assert.Equal(0x11553344u, ReadPixel(memory, 0, 0));
+    }
+
+    [Fact]
+    public void ColorClear_ForcesTheAlphaLaneOfTheZeroAndOneFormats()
+    {
+        // X8R8G8B8_Z8R8G8B8: the alpha lane is forced 0 (pgraph_get_clear_color).
+        (Nv2AMmio zero, ArrayMemory zeroMemory) = CreateChannel();
+        var zeroPushes = SurfaceState(0x00000124u);
+        PushColorClear(zeroPushes, 0xAABBCCDDu);
+        PushMethods(zero, zeroMemory, [.. zeroPushes]);
+        Assert.Equal(0x00BBCCDDu, ReadPixel(zeroMemory, 0, 0));
+
+        // X8R8G8B8_O8R8G8B8: forced 0xFF.
+        (Nv2AMmio one, ArrayMemory oneMemory) = CreateChannel();
+        var onePushes = SurfaceState(0x00000125u);
+        PushColorClear(onePushes, 0x11BBCCDDu);
+        PushMethods(one, oneMemory, [.. onePushes]);
+        Assert.Equal(0xFFBBCCDDu, ReadPixel(oneMemory, 0, 0));
+    }
+
+    [Fact]
+    public void ColorClear_AllChannelsStoresTheWordForA8R8G8B8()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var pushes = SurfaceState(0x00000128u); // A8R8G8B8 + Z24S8, pitch
+        PushColorClear(pushes, 0xAABBCCDDu);
+        PushMethods(nv2A, memory, [.. pushes]);
+
+        Assert.Equal(0xAABBCCDDu, ReadPixel(memory, 0, 0));
+        Assert.Equal(0xAABBCCDDu, ReadPixel(memory, 15, 15));
     }
 
     [Fact]
@@ -254,18 +359,19 @@ public sealed class Nv2aZetaClearLayoutTests
     [Fact]
     public void ColorClear_IgnoresTheColorWriteMask()
     {
-        // Same rule for the color surface: the clear writes every channel even
-        // with the color mask off (the mask only gates draw writes).
+        // Same rule for the color surface: the draw's color write mask does
+        // not gate the clear. The surface is X8R8G8B8_Z8R8G8B8, so the clear
+        // value's alpha lane is normalized to 0.
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         var pushes = SurfaceState();
-        pushes.Add((0x358u, 0u)); // color write mask: nothing
+        pushes.Add((0x358u, 0u)); // draw color write mask: nothing
         pushes.Add((0x1D90u, 0xFF3366AAu)); // color clear value
         pushes.Add((0x1D98u, 0x000F0000u));
         pushes.Add((0x1D9Cu, 0x000F0000u));
         pushes.Add((0x1D94u, 0x000000F0u)); // clear color
         PushMethods(nv2A, memory, [.. pushes]);
 
-        Assert.Equal(0xFF3366AAu, ReadPixel(memory, 0, 0));
-        Assert.Equal(0xFF3366AAu, ReadPixel(memory, 15, 15));
+        Assert.Equal(0x003366AAu, ReadPixel(memory, 0, 0));
+        Assert.Equal(0x003366AAu, ReadPixel(memory, 15, 15));
     }
 }

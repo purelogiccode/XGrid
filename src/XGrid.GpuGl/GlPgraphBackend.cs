@@ -1115,14 +1115,23 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         uint height = info.YMax - info.YMin + 1;
         _gl.Scissor(x, y, width, height);
 
-        // A clear is a raw surface fill: the write masks are draw state, not
-        // clear state (Nv2AMmio.FillSurface writes the value verbatim, and a
-        // masked-out stencil/color can still be cleared). GL's glClear DOES
-        // honor glColorMask / glDepthMask / glStencilMask, so lift them for
-        // the clear and force the next draw to re-upload the real masks.
-        _gl.ColorMask(true, true, true, true);
-        _gl.DepthMask(true);
-        _gl.StencilMask(0xFF);
+        // A clear follows the clear's OWN write masks (CLEAR_SURFACE_R/G/B/A
+        // and _Z/_STENCIL), not the draw's: a channel the clear does not
+        // select keeps the surface's previous value, and a masked-out
+        // stencil/color draw state must not suppress the clear. GL's glClear
+        // honors glColorMask / glDepthMask / glStencilMask, so program them
+        // from the clear selection and force the next draw to re-upload the
+        // draw state.
+        uint channels = info.ColorChannels & 0xFu;
+        _gl.ColorMask(
+            (channels & 0x1u) != 0,
+            (channels & 0x2u) != 0,
+            (channels & 0x4u) != 0,
+            (channels & 0x8u) != 0);
+        bool clearDepthField = (info.ZetaFields & 0x1u) != 0;
+        bool clearStencilField = info.ZetaBytes == 4 && (info.ZetaFields & 0x2u) != 0;
+        _gl.DepthMask(clearDepthField);
+        _gl.StencilMask(clearStencilField ? 0xFFu : 0x00u);
         _stateValid = false;
 
         if (info.ClearColor && info.ColorBytes == 4)
@@ -1132,19 +1141,24 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _gl.Clear(ClearBufferMask.ColorBufferBit);
         }
 
-        if (info.ClearZeta && info.ZetaBytes != 0 && !info.ZFormatFloat)
+        if (info.ClearZeta && info.ZetaBytes != 0 && !info.ZFormatFloat &&
+            (clearDepthField || clearStencilField))
         {
             GlStateMapper.MapZetaClear(info.ZetaValue, info.ZetaBytes, out double depth, out int stencil);
             _gl.ClearDepth(depth);
-            if (info.ZetaBytes == 4)
+            _gl.ClearStencil(stencil);
+            ClearBufferMask mask = ClearBufferMask.None;
+            if (clearDepthField)
             {
-                _gl.ClearStencil(stencil);
-                _gl.Clear(ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+                mask |= ClearBufferMask.DepthBufferBit;
             }
-            else
+
+            if (clearStencilField)
             {
-                _gl.Clear(ClearBufferMask.DepthBufferBit);
+                mask |= ClearBufferMask.StencilBufferBit;
             }
+
+            _gl.Clear(mask);
         }
 
         _gl.Disable(EnableCap.ScissorTest);
