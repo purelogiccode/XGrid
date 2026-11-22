@@ -91,12 +91,16 @@ function Find-Row([uint32]$offset) {
             }
         }
 
-        if ($row.Kind -like "case4*") {
-            # Four texture slots at a 0x40 stride; count/4 dwords per slot.
-            $words = [int]($row.Count / 4)
+        if ($row.Kind -eq "case4") {
             for ($slot = 0; $slot -lt 4; $slot++) {
-                $base = [uint32]($row.Offset + 0x40 * $slot)
-                if ($offset -ge $base -and $offset -lt ($base + 4 * $words) -and
+                if ($offset -eq ($row.Offset + [uint32]($row.Count * $slot))) { return $row }
+            }
+        }
+
+        if ($row.Kind -eq "case4x4") {
+            for ($slot = 0; $slot -lt 4; $slot++) {
+                $base = [uint32]($row.Offset + $row.Count * $slot)
+                if ($offset -ge $base -and $offset -lt ($base + 16) -and
                     (($offset - $base) % 4) -eq 0) {
                     return $row
                 }
@@ -119,11 +123,20 @@ foreach ($name in $defines.Keys) {
 $handled = @()
 $declined = @()
 foreach ($row in $rows) {
-    if ($row.Kind -like "case4*") {
-        $words = [int]($row.Count / 4)
+    if ($row.Kind -eq "case4") {
         for ($slot = 0; $slot -lt 4; $slot++) {
-            for ($word = 0; $word -lt $words; $word++) {
-                $offset = $row.Offset + [uint32](0x40 * $slot + 4 * $word)
+            $offset = $row.Offset + [uint32]($row.Count * $slot)
+            if ($row.Status -eq "handled") { $handled += $offset }
+            else { $declined += $offset }
+        }
+
+        continue
+    }
+
+    if ($row.Kind -eq "case4x4") {
+        for ($slot = 0; $slot -lt 4; $slot++) {
+            for ($word = 0; $word -lt 4; $word++) {
+                $offset = $row.Offset + [uint32]($row.Count * $slot + 4 * $word)
                 if ($row.Status -eq "handled") { $handled += $offset }
                 else { $declined += $offset }
             }
@@ -189,7 +202,9 @@ public static class Nv097MethodTable
     }
 }
 "@
-    Set-Content -Path $tablePath -Value $source -NoNewline
+    $source = $source -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText(
+        $tablePath, ($source.TrimEnd() + "`n"), [System.Text.UTF8Encoding]::new($false))
     Write-Host "generated $tablePath (handled=$($handled.Count) declined=$($declined.Count))"
 }
 

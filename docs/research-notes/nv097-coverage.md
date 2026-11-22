@@ -115,10 +115,10 @@ development-plan change.
 | 0x03B4 | `SET_MATERIAL_ALPHA` | method | 1 | handled | Fixed-function lighting (opt-in `--ffp`) |
 | 0x03B8 | `SET_SPECULAR_ENABLE` | method | 1 | handled | Fixed-function vertex stage (opt-in --ffp) |
 | 0x03BC | `SET_LIGHT_ENABLE_MASK` | method | 1 | handled | Fixed-function vertex stage (opt-in --ffp) |
-| 0x03C0 | `SET_TEXGEN_S` | case4 | 4 | handled | Texture / texgen |
-| 0x03C4 | `SET_TEXGEN_T` | case4 | 4 | handled | Texture / texgen |
-| 0x03C8 | `SET_TEXGEN_R` | case4 | 4 | handled | Texture / texgen |
-| 0x03CC | `SET_TEXGEN_Q` | case4 | 4 | handled | Texture / texgen |
+| 0x03C0 | `SET_TEXGEN_S` | case4 | 16 | handled | Texture / texgen |
+| 0x03C4 | `SET_TEXGEN_T` | case4 | 16 | handled | Texture / texgen |
+| 0x03C8 | `SET_TEXGEN_R` | case4 | 16 | handled | Texture / texgen |
+| 0x03CC | `SET_TEXGEN_Q` | case4 | 16 | handled | Texture / texgen |
 | 0x0420 | `SET_TEXTURE_MATRIX_ENABLE` | case4 | 4 | handled | Texture / texgen |
 | 0x043C | `SET_POINT_SIZE` | method | 1 | recorded | Raster modes / queries |
 | 0x0440 | `SET_PROJECTION_MATRIX` | range | 16 | handled | Other |
@@ -197,18 +197,18 @@ development-plan change.
 | 0x1940 | `SET_VERTEX_DATA4UB` | range | 16 | handled | Vertex submission |
 | 0x1980 | `SET_VERTEX_DATA4S_M` | range | 32 | handled | Vertex submission |
 | 0x1A00 | `SET_VERTEX_DATA4F_M` | range | 64 | handled | Vertex submission |
-| 0x1B00 | `SET_TEXTURE_OFFSET` | case4 | 4 | handled | Texture / texgen |
-| 0x1B04 | `SET_TEXTURE_FORMAT` | case4 | 4 | handled | Texture / texgen |
-| 0x1B08 | `SET_TEXTURE_ADDRESS` | case4 | 4 | handled | Texture / texgen |
-| 0x1B0C | `SET_TEXTURE_CONTROL0` | case4 | 4 | handled | Texture / texgen |
-| 0x1B10 | `SET_TEXTURE_CONTROL1` | case4 | 4 | handled | Texture / texgen |
-| 0x1B14 | `SET_TEXTURE_FILTER` | case4 | 4 | handled | Texture / texgen |
-| 0x1B1C | `SET_TEXTURE_IMAGE_RECT` | case4 | 4 | handled | Texture / texgen |
-| 0x1B20 | `SET_TEXTURE_PALETTE` | case4 | 4 | handled | Texture / texgen |
-| 0x1B24 | `SET_TEXTURE_BORDER_COLOR` | case4 | 4 | handled | Texture / texgen |
-| 0x1B28 | `SET_TEXTURE_SET_BUMP_ENV_MAT` | case4+case4off | 16 | handled | Texture / texgen |
-| 0x1B38 | `SET_TEXTURE_SET_BUMP_ENV_SCALE` | case4 | 4 | handled | Texture / texgen |
-| 0x1B3C | `SET_TEXTURE_SET_BUMP_ENV_OFFSET` | case4 | 4 | handled | Texture / texgen |
+| 0x1B00 | `SET_TEXTURE_OFFSET` | case4 | 64 | handled | Texture / texgen |
+| 0x1B04 | `SET_TEXTURE_FORMAT` | case4 | 64 | handled | Texture / texgen |
+| 0x1B08 | `SET_TEXTURE_ADDRESS` | case4 | 64 | handled | Texture / texgen |
+| 0x1B0C | `SET_TEXTURE_CONTROL0` | case4 | 64 | handled | Texture / texgen |
+| 0x1B10 | `SET_TEXTURE_CONTROL1` | case4 | 64 | handled | Texture / texgen |
+| 0x1B14 | `SET_TEXTURE_FILTER` | case4 | 64 | handled | Texture / texgen |
+| 0x1B1C | `SET_TEXTURE_IMAGE_RECT` | case4 | 64 | handled | Texture / texgen |
+| 0x1B20 | `SET_TEXTURE_PALETTE` | case4 | 64 | handled | Texture / texgen |
+| 0x1B24 | `SET_TEXTURE_BORDER_COLOR` | case4 | 64 | handled | Texture / texgen |
+| 0x1B28 | `SET_TEXTURE_SET_BUMP_ENV_MAT` | case4x4 | 64 | handled | Texture / texgen |
+| 0x1B38 | `SET_TEXTURE_SET_BUMP_ENV_SCALE` | case4 | 64 | handled | Texture / texgen |
+| 0x1B3C | `SET_TEXTURE_SET_BUMP_ENV_OFFSET` | case4 | 64 | handled | Texture / texgen |
 | 0x1D6C | `SET_SEMAPHORE_OFFSET` | method | 1 | handled | Surface / clear / present |
 | 0x1D70 | `BACK_END_WRITE_SEMAPHORE_RELEASE` | method | 1 | handled | Surface / clear / present |
 | 0x1D78 | `SET_ZMIN_MAX_CONTROL` | method | 1 | handled | Raster state |
@@ -471,27 +471,28 @@ complete.
 ## XFP1 unknown-method probe (2026-11-22)
 
 `Nv097MethodTable.cs` is generated from this note by
-`scripts/nv097-coverage.ps1 -GenerateTable` (ranges expand over their offsets;
-`case4` expands over the four texture slots at a 0x40 stride) and
-`Nv2aMmio.RecordMethod` counts any write outside it when
-`XGRID_NV2A_UNKNOWN=1`. `scripts/nv097-coverage.ps1 -Check` verifies this table
-against xemu 0.8.139 `nv2a_regs.h` (215 defines, 201 rows, 129 handled + 72
-recorded; expanded 1,031 handled + 280 declined offsets).
+`scripts/nv097-coverage.ps1 -GenerateTable` (a `range` expands over its dwords;
+`case4` over four cases at the reference's byte stride; `case4x4` over four
+dwords in each of four cases) and `Nv2aMmio.RecordMethod` counts any write
+outside it when `XGRID_NV2A_UNKNOWN=1`. `scripts/nv097-coverage.ps1 -Check`
+verifies the table against xemu 0.8.139 `nv2a_regs.h`: **215 defines, 201 rows
+(129 handled + 72 recorded), 1,042 handled + 280 declined offsets** after range
+expansion.
 
-Measured on the triangle 1B leg (`--jit --jit-raw --gpu sw`): **361 unknown
-writes out of 18,577,029 methods (0.002%)**, RAM `F9945E16` / CPU `8836C7EB`
-identical to the counter-off run. The residual offsets are alias groups this
-note's range kinds do not model yet:
+Measured on the triangle 1B leg (`--jit --jit-raw --gpu sw`, 18.6M methods):
+**226 writes outside the surface (0.0012%)**, all at seven offsets that are
+**not NV097 methods in the reference either** - they sit in the gaps between
+defined methods, so xemu has no handler for them and ignores them too. XGrid's
+ignore is therefore reference-faithful:
 
-| Offsets | Count at 1B | Reading |
+| Offset | Writes | Neighbouring defines |
 |---|---:|---|
-| `0x17C4` | 107 | texture-matrix alias next to `SET_TEXTURE_MATRIX` |
-| `0x1D84` | 73 | next to `SET_ZSTENCIL_CLEAR_VALUE` (`0x1D8C`) |
-| `0x1710` | 37 | vertex-array alias between `0x1700` and `0x1720` |
-| `0x424`, `0x428`, `0x42C` | 36 each | `SET_TEXTURE_MATRIX_ENABLE` group: four consecutive dwords, not a 0x40 slot stride |
-| `0x3D0`-`0x3F8` | 3 each | per-stage texgen `SET_TEXGEN_S/T/R/Q`: 0x10 stage stride, not the texture 0x40 stride |
-| `0x16BC`, `0x1D80`, `0x380`, `0x9F8` | 2-3 each | singles adjacent to named methods |
+| `0x17C4` | 107 | `SET_LOGIC_OP 0x17C0` / `CLEAR_REPORT_VALUE 0x17C8` |
+| `0x1D84` | 73 | `SET_ANTI_ALIASING_CONTROL 0x1D7C` / `SET_ZSTENCIL_CLEAR_VALUE 0x1D8C` |
+| `0x1710` | 37 | `SET_WEIGHT4F 0x16C0` / `SET_VERTEX_DATA_ARRAY_OFFSET 0x1720` |
+| `0x380` | 3 | `SET_SHADE_MODE 0x037C` / `SET_POLYGON_OFFSET_SCALE_FACTOR 0x0384` |
+| `0x16BC`, `0x1D80`, `0x9F8` | 2-3 each | adjacent gaps |
 
-These 18 offsets are the XFP1 method-surface work left: either add them to this
-table with a latch (the reference's alias semantics) or decline them with a
-reason. They do not move any gate anchor (the counter is opt-in and host-side).
+**Valid-surface coverage gap on this leg: zero.** The counter is the instrument
+for the XFP2+ method work; the anchors are identical
+(`F9945E16`/`8836C7EB`), and the counter is opt-in and host-side.
