@@ -213,7 +213,8 @@ namespace XGrid.Xcn3MachineProbe
                     if (!s_panicLogged)
                     {
                         uint nowEip = Read32(ctl + OffRegs + 32);
-                        if ((nowEip & 0xFFFFF000u) == 0x80015000u)
+                        if ((nowEip & 0xFFFFF000u) == 0x80015000u &&
+                            machine.Nv2A.FramesPresented >= 1)
                         {
                             s_panicLogged = true;
                             byte* code = basePtr + ((nowEip & 0x0FFFFFFFu) - 16);
@@ -231,6 +232,23 @@ namespace XGrid.Xcn3MachineProbe
                                 hx.Append(code[i].ToString("X2")).Append(' ');
                             }
                             Console.WriteLine($"panic: bytes[0x{(nowEip & 0x0FFFFFFFu) - 16:X}]={hx}");
+                            Console.WriteLine($"state: pic req=0x{machine.Bus.Pic.MasterRequest:X2} " +
+                                $"isr=0x{machine.Bus.Pic.MasterInService:X2} " +
+                                $"imr=0x{machine.Bus.Pic.MasterMask:X2} " +
+                                $"elcr=0x{machine.Bus.Pic.MasterElcr:X2} " +
+                                $"slave req=0x{machine.Bus.Pic.SlaveRequest:X2} " +
+                                $"isr=0x{machine.Bus.Pic.SlaveInService:X2} " +
+                                $"imr=0x{machine.Bus.Pic.SlaveMask:X2}");
+                            Console.WriteLine($"state: nv2a pmc=0x{machine.Nv2A.PmcEnabledDebug:X8} " +
+                                $"pgraph=0x{machine.Nv2A.PgraphEnabledDebug:X8}/" +
+                                $"0x{machine.Nv2A.PgraphPendingDebug:X8} " +
+                                $"notify={machine.Nv2A.NotificationsRaised} " +
+                                $"flips={machine.Nv2A.FlipReadDebug}/{machine.Nv2A.FlipWriteDebug} " +
+                                $"stalls={machine.Nv2A.FlipStalls} frames={machine.Nv2A.FramesPresented}");
+                            Console.WriteLine($"state: ide lastcmd=0x{machine.Ide.LastCommand:X2} " +
+                                $"bm=0x{machine.Ide.BusMasterStatus:X8} " +
+                                $"dma={machine.Ide.PrimaryMaster.DmaPending} " +
+                                $"ide={machine.Ide.AccessCount}");
                         }
                     }
                     // A halted CPU executes nothing; let device time pass so a

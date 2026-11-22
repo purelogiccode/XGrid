@@ -294,9 +294,14 @@ panic and not an illegal instruction (the earlier `0x800151EF` reading was the
 caller). The attribution is `drain 3719 ms`, `service 285 ms`, `advance 9 ms`,
 `spin 44072 ms` of 159 s; the remaining ~111 s is the vCPU itself running the
 delay loop. Attaching a DVD (`args[6]`) does not change the outcome, so the
-wait is not the ATAPI probe. The next step is to identify the device: read the
-NV2A/PIC pending state while the guest is in the stall (the first flip
-completed, so a flip/vblank completion or a device IRQ is the likely pair).
+wait is not the ATAPI probe. The captured stall state is precise: `PIC
+req=0x20` (IRQ5, the APU), `imr=0xD2` (IRQ5 unmasked), **`isr=0x00`** - the line
+is latched and deliverable but was never acknowledged - while the NV2A reports
+`notify=8`, `stalls=1`, `frames=1` and the IDE's last command is `0xC8` (READ
+DMA) with no DMA pending. So the next step is the IRQ5 delivery path itself:
+count `Pic.Pending`/`xgc_set_irq` at the stall and check whether the APU line
+is re-raised faster than the handler can EOI it (a level-line storm), or
+whether the probe's `Pending` latch misses it.
 
 The full machine now reaches the kernel: 12 regions / 13 windows, the HDD
 attached, the SMC handshake and 19 SMBus transactions, PIT/PIC interrupts and
