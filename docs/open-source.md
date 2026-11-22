@@ -15,6 +15,11 @@ project, and what must be true for the full xemu port to keep it that way?*
   LGPL-2+/MIT/GPL-2+) and QEMU is GPL-2.0, the same licence family. A port
   keeps each file's original notice and adds `SPDX-License-Identifier` plus
   `Ported from <project> <version> <path>` (`docs/porting-policy.md`).
+- The **native CPU core** (the vendored xemu/QEMU TCG i386 core behind
+  `libxgridcpu`, XCN0-XCN3) is GPL-2.0 as well. The release ships its
+  corresponding source or a written offer, `native/qemu-patches/` and the
+  notices; `THIRD_PARTY_NOTICES.md` records the component
+  (`docs/porting-policy.md` §2b). There is no relicense.
 - `THIRD_PARTY_NOTICES.md` records every reference project, every ported module
   and every redistributed package; `docs/research-notes/sources.md` is the
   development-side inventory.

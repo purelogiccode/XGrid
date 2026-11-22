@@ -21,9 +21,11 @@ and `THIRD_PARTY_NOTICES.md` are the binding records.
 
 ## 2. Full C#
 
-- The emulator, devices, CPU, GPU and audio stay **managed C#**.
-- Do not add QEMU, xemu, Cxbx, xqemu or any C/C++ source to the build.
-- Do not P/Invoke into QEMU/xemu or ship a native emulator library.
+- The emulator, devices, GPU and audio stay **managed C#**.
+- The **CPU core is the single native exception** (§2b): the vendored
+  xemu/QEMU TCG i386 core behind `libxgridcpu`. No QEMU machine, device,
+  block layer or UI is added to the build.
+- Do not embed a second emulator or ship any other native emulator library.
 - Port the algorithm to C# and keep the existing interfaces (`IGpuMemory`,
   `AddressSpace`, `IMmioDevice`, `IAudioBackend`, ...).  A line-by-line C
   translation is usually slower to integrate than a port that fits the existing
@@ -46,6 +48,27 @@ P/Invoke is **never** the way to embed QEMU/xemu or to call emulator code.
 | UI rendering | Avalonia (managed API, native Skia/HarfBuzz inside the package) | UI framework choice, not emulator semantics; **kept by operator decision 2026-11-22**. The CLI has no UI dependency. |
 | Host audio | `WaveAudioBackend` (WAV file, managed); a live sink via a NuGet package (P1 sprint: **NAudio**, MIT/WASAPI) | The emulator side (`IAudioBackend`) is managed; the sink is a host facility. |
 
+### 2b. The native CPU core (XCN0-XCN3, 2026-11-22)
+
+The operator decision of 2026-11-22 makes the vendored xemu 0.8.139 / QEMU
+10.2.0 TCG i386 core the product CPU. It is the **one** exception to the
+managed-C# rule, and it is bounded:
+
+- Build from the pinned `References2/xemu-0.8.139` tree with the recorded
+  `native/qemu-patches/`; a release build never fetches QEMU from the network.
+- Ship only the CPU, softmmu/TLB, TB cache and the memory-dispatch subset behind
+  `libxgridcpu`; never a QEMU machine, device model, block layer, UI, audio or
+  network backend.
+- The C# side owns guest RAM (zero copy), MMIO/PIO dispatch, interrupts,
+  snapshots and every device model.
+- `--cpu managed` stays selectable and remains the gate engine; `--cpu native`
+  is the product engine. One CPU core per run.
+- The GPL-2.0 source offer, the patches and the notices are part of every
+  release. The build is inventoried in `THIRD_PARTY_NOTICES.md`; a new native
+  edge needs a row and a reason in the same commit.
+- The licence stays GPL-2.0; QEMU and xemu are the same licence family, so no
+  relicense is needed (and a permissive relicense is not possible).
+
 ### 2a. NuGet packages (2026-11-22)
 
 NuGet packages are **allowed and preferred** for a host facility (audio sink,
@@ -64,9 +87,9 @@ title. Rules:
 
 **There is no license wall.**  xemu is GPL-2.0 (per-file GPL-2+/LGPL-2+/MIT) and
 the QEMU base is GPL-2.0, i.e. the same license family as XGrid.  Any bounded
-module in `References2/` may be ported - CPU, devices, NV2A, APU, whatever the
-task needs - subject only to the provenance rules (§1, §4) and the **full
-managed C#** rule above.  The former "facts only / clean-room" framing is
+module in `References2/` may be ported - devices, NV2A, APU, whatever the
+task needs - subject only to the provenance rules (§1, §4), the managed-C#
+rule above and the single CPU exception in §2b.  The former "facts only / clean-room" framing is
 superseded; it must not be cited as a reason to avoid a port.
 
 **Port before rewrite.**  When a GPL-compatible reference implements the module,
@@ -76,8 +99,9 @@ port is the model: the reference's decoder and handler bodies were taken
 verbatim in semantics, and the differential vectors prove it.
 
 **Price a port like any other slice.**  A port is not free: it is read, adapted,
-tested and kept in sync with the reference.  Large ports (the CPU TCG, the NV2A
-PGRAPH draw path) need a priced prototype or a measured per-stage target before
+tested and kept in sync with the reference.  Large ports (the NV2A PGRAPH
+draw path, a full device family) need a priced prototype or a measured
+per-stage target before
 the full port, exactly like a performance slice.  The license makes the port
 *legal*; the plan still has to make it *worth doing*.
 

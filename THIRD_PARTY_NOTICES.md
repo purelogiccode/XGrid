@@ -15,7 +15,7 @@ XGrid build and is not redistributed with XGrid.
 | xemu | **0.8.139 (primary)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and ported source. The APU DSP port is derived from `hw/xbox/mcpx/apu/dsp/` (GPL-2+). |
 | xemu | 0.8.137 (prior) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks. |
 | xemu | 0.8.136 (prior) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks. |
-| QEMU (xemu base) | 10.2.0 (via xemu 0.8.139) | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | Facts and ported source where a module is taken from the QEMU base. QEMU is not embedded as a native dependency. |
+| QEMU (xemu base) | 10.2.0 (via xemu 0.8.139) | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | Facts and ported source where a module is taken from the QEMU base. **The TCG i386 CPU core is embedded natively** behind `libxgridcpu` (XCN0-XCN3); the rest of QEMU is not embedded. |
 | xemu-Playtest-v2 | local snapshot, QEMU 10.2.0 base | no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks only. |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | Facts and, where useful, ported source. |
 | xqemu | master | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | Facts and, where useful, ported source. |
@@ -23,6 +23,17 @@ XGrid build and is not redistributed with XGrid.
 | nv2a-trace | master | https://github.com/XboxDev/nv2a-trace | MIT | Facts, pushbuffer decoder, texture-format tables. |
 | XboxDevWiki | offline dump 2026-10-12 | https://xboxdevwiki.net | No license declared | Facts only. |
 | Copetti, "Xbox Architecture" | local snapshot | https://www.copetti.org/writings/consoles/xbox/ | CC BY 4.0 (attribution required) | Documentation orientation only. |
+
+## Native CPU core (`libxgridcpu`)
+
+The product CPU is the TCG i386 core from the pinned xemu 0.8.139 tree
+(QEMU 10.2.0 base), GPL-2.0. It is the single native emulator component in the
+XGrid build (`docs/porting-policy.md` §2b). The vendored source is not
+committed; the build reproduces it from `References2/xemu-0.8.139` plus
+`native/qemu-patches/` (configure/venv and subproject extraction fixes only),
+and the release ships the corresponding source or a written offer together with
+the patches. No QEMU machine, device model, block layer, UI, audio or network
+backend is shipped.
 
 ## Runtime and build dependencies
 

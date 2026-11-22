@@ -1,0 +1,12 @@
+--- a/ui/meson.build
++++ b/ui/meson.build
+@@ -55,7 +55,8 @@
+   xemu_ss.add(files('xemu-os-utils-macos.m'))
+ endif
+ xemu_ss.add(imgui, implot, stb_image, sdl, opengl, fa, fpng, json, fatx, tomlplusplus, genconfig)
+-system_ss.add_all(xemu_ss)
++# XGRID SPIKE PATCH: the C# frontend owns the UI; do not build xemu's UI.
++# system_ss.add_all(xemu_ss)
+ 
+ system_ss.add(when: pixman, if_true: files('console-vc.c'), if_false: files('console-vc-stubs.c'))
+ if dbus_display

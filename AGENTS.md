@@ -8,10 +8,13 @@ port code from GPL-compatible references where it speeds development, preserving
 original copyright/license notice. The binding rules are `docs/porting-policy.md`; the
 provenance log is `THIRD_PARTY_NOTICES.md`; the **full-port ledger** is
 `docs/xemu-port-manifest.md` and the open-source status is `docs/open-source.md`.
-The project stays **full managed C#** - no QEMU/xemu native library, no C/C++ emulator
-code in the build. **C# first:** P/Invoke is allowed only for host APIs or OS facilities
-(OpenGL, XInput, executable memory for the raw JIT, host audio) and every edge is
-inventoried in `docs/porting-policy.md` section 2. **The program is a full source port
+The project stays managed C# **except the CPU core**: the vendored xemu/QEMU TCG
+i386 core is the single native exception (program XCN0-XCN3, `libxgridcpu`);
+no QEMU machine, device, block layer or UI is embedded, and every other
+emulator module is managed C#. **C# first:** P/Invoke is allowed only for host
+APIs or OS facilities (OpenGL, XInput, executable memory for the raw JIT, host
+audio, the native CPU core) and every edge is inventoried in
+`docs/porting-policy.md` section 2. **The program is a full source port
 of xemu 0.8.139** (XFP: `ImplementationPlan.md` E1), playable titles first.
 
 - `References2/xemu-0.8.139` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A, APU/DSP). **Primary
@@ -68,15 +71,19 @@ of xemu 0.8.139** (XFP: `ImplementationPlan.md` E1), playable titles first.
   console architecture essay (notes: `docs/research-notes/copetti.md`). Orientation /
   onboarding / design cross-check only — never a register-level oracle.
 
-**Porting policy (2026-10-23).** XGrid is GPL-2.0 and may port code from xemu,
-QEMU, Cxbx, xqemu, envytools and nv2a-trace. The project stays **full managed
-C#**: port algorithms, do not embed QEMU/xemu or add C/C++ emulator code. A
-ported file keeps its original copyright/license notice, gets an SPDX line and a
-`Ported from <project> <version> <path>` line, and is recorded in
-`THIRD_PARTY_NOTICES.md` + `docs/research-notes/sources.md`. The full workflow
-is `docs/porting-policy.md`. **There is no license wall**: xemu and QEMU are
-GPL-2.0, the same license family as XGrid, so any bounded module may be ported
-as full managed C# with the provenance rules. The DSP port is the model; a CPU
+**Porting policy (2026-10-23; amended 2026-11-22).** XGrid is GPL-2.0 and may
+port code from xemu, QEMU, Cxbx, xqemu, envytools and nv2a-trace. The project
+stays managed C# **except the CPU core**: the vendored xemu 0.8.139 / QEMU
+10.2.0 TCG i386 core is the single native exception (`libxgridcpu`, XCN0-XCN3);
+no QEMU machine, device, block layer or UI is embedded, and every other
+emulator module is managed C#. Port algorithms; do not embed a second
+emulator. A ported file keeps its original copyright/license notice, gets an
+SPDX line and a `Ported from <project> <version> <path>` line, and is recorded
+in `THIRD_PARTY_NOTICES.md` + `docs/research-notes/sources.md`. The full
+workflow is `docs/porting-policy.md`. **There is no license wall**: xemu and
+QEMU are GPL-2.0, the same license family as XGrid, so any bounded module may
+be ported as full managed C# with the provenance rules. The DSP port is the
+model; a CPU
 TCG port is *allowed* but is a sized option (D8), not a default - the raw emitter
 is already bit-exact and faster than xemu on the CPU-bound ktest.
 
@@ -108,6 +115,28 @@ remote-origin deletions of `References/`); both names stay git-ignored.
 
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
+
+## Native CPU core (operator decision 2026-11-22; required reading)
+
+The product CPU is the **vendored xemu 0.8.139 / QEMU 10.2.0 TCG i386 core**
+behind `libxgridcpu` (program **XCN0-XCN3** in `ImplementationPlan.md` E0N).
+Every device, the NV2A, the APU, the host layer and the frontend stay managed
+C#. The managed C# CPU (`--cpu managed`) is the reference-only engine; it is no
+longer the product default. One CPU core per run; the native engine is not gate
+currency for the four accurate 1B goldens or the ktest byte-identical log (those
+stay `--cpu managed`). The native engine's acceptance is xemu parity (007 frame
+policy, boot-to-gameplay, audio, input, save/load) plus the device/GPU corpus.
+
+- Build tree: `native/qemu/` (a copy of `References2/xemu-0.8.139`, **git-ignored**;
+  never modify `References2/`). Shim: `native/xgridcpu/`. C# seam:
+  `src/XGrid.Cpu.Native/`. Build: `scripts/build-native-cpu.ps1`.
+- Toolchain (H1): MSYS2 **MINGW64** at `C:\msys64\mingw64` (gcc 16, meson,
+  ninja, glib, pixman, zlib); `C:\mingw64`, `C:\ninja`, `C:\cmake` and `C:\Qt`
+  are standalone fallbacks. Build inside a `MSYSTEM=MINGW64` shell.
+- Licence: GPL-2.0 stays; the release ships the QEMU source (or a written offer)
+  plus `native/qemu-patches/` and the notices. There is no permissive relicense.
+- Target: xemu-class ~1.2 ns/step (~1x on 007), **not** native 5-10x. A
+  WHP/KVM backend is out of scope.
 
 ## How to work (required; 2026-10-22 routine)
 
@@ -145,20 +174,33 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-11-22 - full xemu port, playable first)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-11-22):** P1 / **XFP5 - Ported GL renderer (pgraph/gl) behind IPgraphBackend** (active, attempt 0).
+**Current status (2026-11-22):** P1 / **XCN0 - Native CPU extraction spike: QEMU TCG core behind libxgridcpu** (active, attempt 0).
 **Gameplay (P1):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - P1 sprint (2026-11-22): the objective is at least one game playable; no title is playable yet. P1S0 measured 007 at 0.100x (30B gameplay 413.254 s; runner 53.5%, non-JIT 20.1%, b4 35.7%, GL 0.42%; N15: shape fixes top out at ~0.20x). P1S1 is done: the live WASAPI sink plays the EP FIFO PCM (state=Playing; WAV SHA 813CB8DE... = TM8). The operator chose the full xemu/QEMU CPU engine port; P1S2 is done (QEMU CPUTLBEntry as QemuTlb, 9 exact differential tests; probe 0.84 vs 0.64 ns, so the TLB is not the lever - N16). P1S3 (TCG IR + i386 translator) is done: slices 1-5 landed (managed TCG IR + IR interpreter + 77 exact translator differentials: MOV/ALU/INC/DEC/NOP/JMP/Jcc, the reference memory shape Lea/Load/Store with 1/2/4-byte accesses and segment bases, 8/16-bit and partial registers, shifts/rotates, SHLD/SHRD, NEG/NOT, MOVZX/MOVSX, LEA, XCHG, SAHF/LAHF, MUL/IMUL/DIV/IDIV, PUSH/POP, BT/BTS/BTR/BTC, CMPXCHG/CMPXCHG8B, XADD, 16-bit addressing, REP string ops (MOVS/CMPS/STOS/LODS/SCAS), the MMX register file and the packed integer family (padd/psub saturation, pmul*, pcmp/pack/unpck, shifts, moves, maskmovq, pinsrw/pextrw/pmovmskb/pshufw, EMMS); 828 CPU tests green; the MMX file is the real FpuState and the 641-case cpu-oracle corpus runs through the IR engine with counted fallback - exact against the independent oracle, translated=2501/fallback=2344 after the integer batch: ADC/SBB, TEST, SETcc, CMOVcc, BSWAP, BSF/BSR, ARPL, sign-extends, XLAT, flag ops, PUSHF/POPF, PUSHA/POPA, LEAVE, LOOP/JECXZ), x87 (TcgFpu: full arithmetic/compare/unary/BCD/stack set over the shared FpuState/Fpu80) and SSE (TcgSse: moves, packed/scalar arithmetic, logical, compares, shuffles, conversions, MXCSR) - corpus 4202 translated / 643 fallback (641 harness FXSAVE + 2 ENTER), 892 CPU tests); P1S3 (TCG IR + i386 translator) is done; the IR interpreter measures 14.80 ns/member vs the raw runner 6.30 (2.3x) on a hot loop, and at real scale it pays ~132 ns/instruction, so the engine is integrated first (block runner, ITcgMemory over the CPU MMU, interrupt poll, fallback); P1S4 slice 1 lands the engine seam and TB cache: XboxCpu implements ITcgMemory over its own MMU/MMIO path, RunTcg polls interrupts and TSC per instruction with the exact interpreter as fallback, and TcgBlockCache caches one translated instruction per EIP (15-byte head check, clears on MMU flush and decoded-code stores) - exact on the triangle leg's first 10M steps (RAM 97CA74AA, CPU FA4E4131) at 5.24 vs 11.70 Msteps/s (1.06 without cache); slice 2 adds TcgExecutionState (no per-instruction allocations) and skips Fetch on TB hits -> still exact at 7.59 Msteps/s (2.7x the uncached interpreter, 0.65x the default cached one); the corrected real-scale cost is ~132 ns/instruction, so replacing the non-JIT share saves ~10% wall, and the switch gate now needs multi-member TBs with a per-member poll contract plus the codegen; slice 3 adds the per-member poll contract (TcgOpKind.Poll advances TSC and checks the PIC between members; a pending interrupt publishes the live state, delivers with the next member EIP and abandons the block) and the member limit that makes the step budget exact - multi-member TBs (up to 16) are now exact at 100k/1M/10M and at both 1B accurate anchors (triangle E58AE5D7/C43D5B49, menu 5C0CF968/E2B4D327) at 15.51 msps (10M) / 11.06 (triangle 1B) / 10.34 (menu 1B); the engine is not switched because it is not yet faster than the fast raw engine, 895 CPU tests). P1S4 is done and P1S5 (parity and switchover) is done: the parity bundle is exact with the ported engine (four accurate 1B goldens incl. both frames, ktest log CA5D3867 byte-identical, ktest 100M workload, cpu-oracle), the product is NOT switched because the engine is 5-7x slower, and the speed ceiling is recorded - the product is at 0.100x (13.7 ns/step), 0.5x needs ~2.7 ns/step, and the ported engine reaches 66-90 ns/step, so the phase stops with 0% of the required speedup from this port. The 0.5x P1 gate still needs xemu-class ~1.2 ns/step. XFP2 is active: the attribute-decode differential pins all six array formats (UB_D3D/UB_OGL/S1/F/S32K/CMP), the (0,0,0,1) defaults, count 0/2 and stride 0/advance through the real fetch path (10 differentials, 490 Nv2a tests); the cull/degenerate/clip-window rejection predicates are pinned too (8 cull tests), and primitive assembly is pinned (DRAW_ARRAYS packed start/count, range coalescing vs separation, one draw command per BEGIN/END; 496 Nv2a tests), triangle 1B anchor unchanged; the recorded title rows reproduce - 007 134,004 draws/1,005,989,482 px/6,478 frames and NGB 4,251/187,315,817/238,137 with EIP 0x8001B047, and the fast engine's one-frame sensitivity to the host flag set is documented. XFP3 is active: the NGB colour-count differential was withdrawn after measurement - the stored XGrid/xemu pair differs in 89.1% of its luminance distribution (different storm moments; mean delta 12.3/14.7/16.2), both surfaces are A8R8G8B8+Z24S8 (0x08080228 swizzle / 0x08080128 pitch), and xemu cannot be driven to the same guest step - so XFP3 rests on the exact VshProgramPlan/corpus differentials and the live compile gate, which now also compiles the five unique gate-title combiner configurations at capacities 1/8/32 (the menu leg's four are a subset), 109 GpuGl tests. XFP4 is active and the texture-format surface is done: all 43 reference ids are classified and backed, and the five depth ids now run the reference shadow-map compare (TryDecodeDepthTexel/CompareShadowDepth for the six depth functions, sampled through the stage wrap/border/linear/swizzle state) instead of resolving only NEVER/ALWAYS; the clear rules now carry the reference per-channel and per-field masks (CLEAR_SURFACE_R/G/B/A and _Z/_STENCIL, format-forced alpha lanes, the GL backend programming the clear masks), swizzled render targets now follow the reference Morton layout in the clear and the software fill (color and zeta, 5 device differentials; the compiled fills and GL backend decline them and the pitch-walk word stays untouched), with AA surface scaling recorded as the remaining geometry gap, the texture-cache content identity is now the reference key (mip count/dimensionality/cube flag) plus a whole-range hash gated by a per-page guest-write stamp (raw store hook priced at +4.9%/+4.2% 1B fast wall, SHAs exact; a dedicated store-scratch slot fixed a push/call [mem] boot fault), so the remaining XFP4 acceptance is the 22-row corpus differential sweep. P1S6 is closed negative: 7 of the nine parts pass (own render, live input, save/load, xemu frame policy, live audio, product defaults, gates) and the speed floor fails (0.100x, and 10 minutes derives from it), so the repository stays private; reopen with an engine at <=2.7 ns/step or an operator re-scope. The full-port program continues at XFP0 (done) and XFP1: the NV097 method surface is now machine-verified (215 defines / 201 rows; generated 1031 handled + 280 declined offsets) and an opt-in unknown-method counter measures 361 unknown writes in 18.6M methods on the triangle 1B leg with identical anchors; the reference-surface expansion is exact (1042 handled + 280 declined offsets; case4 strides fixed), and the residual 226 writes are seven offsets outside the reference NV097 surface (0x17C4, 0x1D84, 0x1710, 0x380, 0x16BC, 0x1D80, 0x9F8) that xemu also ignores - valid-surface coverage gap zero; the pgraph state-type switch has its first section (PgraphTextureState owns the four texture slots and bump state; behavior and snapshot order unchanged, triangle F9945E16/8836C7EB and menu 5C0CF968/E2B4D327 exact, 480 Nv2a tests); PgraphState now also owns the transform-program rows, transform-constant contexts and the PshCombiner (same anchors/tests); the six surface/clip scalars now also live on the state (ref properties, zero call-site churn; same anchors/tests), so the state type is the storage and no --pgraph-port toggle is needed - the differential is the gate; the seven-title method differential and XFP2 are next. The reference map is docs/research-notes/cpu-engine-port.md. The repository stays private until P1 (docs/open-source.md). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.65% (93.99 of 118). **Next:** XFP6 (AC'97 codec and APU front end (full)), XFP7 (IDE/ATAPI and block-layer port), XFP8 (SMBus/SMC/EEPROM and nvnet port), XFP9 (USB OHCI, hub and XID port).
+**Phase score:** 79.65% (93.99 of 118). **Next:** XCN1 (Native CPU host seam: zero-copy RAM, MMIO dispatch, IRQ and step budget), XCN2 (P1 on the native CPU: 007 playable), XCN3 (Native CPU release: four RIDs, GPL source offer, package gate).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 23.
 <!-- STATUS:END -->
 
-**Operator decision 2026-11-22 - full xemu port, playable first.**
+**Operator decision 2026-11-22 (native CPU core; supersedes the managed-CPU
+plan below).** The product CPU is the vendored xemu 0.8.139 / QEMU 10.2.0 TCG
+i386 core behind `libxgridcpu`; every device, the GPU, the APU, the host and
+the frontend stay managed C#. The managed C# CPU (`--cpu managed`) is the
+reference-only engine. The program is XCN0 (extraction spike) -> XCN1 (host
+seam) -> XCN2 (007 P1) -> XCN3 (release), then the parked XFP breadth rows.
+The native engine's gates are xemu parity + the device/GPU corpus; the four
+accurate 1B goldens and the ktest log remain the `--cpu managed` gates. The
+licence stays GPL-2.0; the release ships the QEMU source offer and the build
+patches. Target: xemu-class ~1.2 ns/step, not native 5-10x.
+
+**Operator decision 2026-11-22 - full xemu port, playable first (superseded
+for the CPU by the native-core decision above; kept as history).**
 
 1. **The program is a P1 sprint first, then a full source port of xemu 0.8.139
    to managed C#.** The sprint uses the existing engine and NuGet host packages
    to reach one playable game; the port follows for breadth. It is not native
    embedding: no QEMU/xemu library and no C/C++ emulator code in the build
-   (`docs/porting-policy.md`). The module ledger is
+   (superseded 2026-11-22: the CPU core is the single native exception;
+   `docs/porting-policy.md`). The module ledger is
    `docs/xemu-port-manifest.md`; the task plan is `ImplementationPlan.md` E1
    (P1S0-P1S3, XFP0-XFP14).
 2. **The objective is at least one game playable (P1), and no title is playable

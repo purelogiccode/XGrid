@@ -1,17 +1,17 @@
 {
   "schema": 1,
   "updated": "2026-11-22",
-  "objective": "At least one game playable: the P1 sprint now ports the xemu/QEMU CPU engine to C# (softmmu/TLB, TCG IR + i386 translator, host codegen, parity) because the measured 0.100x wall is 94% CPU and shape fixes top out at ~0.20x (N15). Live WASAPI audio is landed (P1S1). C# first, NuGet host packages allowed and inventoried; GPL-2.0; Avalonia kept; the repository stays private until P1",
+  "objective": "At least one game playable and xemu-class speed: the product CPU is the vendored xemu 0.8.139 / QEMU 10.2.0 TCG i386 core behind a narrow C API (libxgridcpu); all devices, GPU, audio, host and frontend remain managed C#; the managed C# CPU (--cpu managed) is the reference-only engine. GPL-2.0; the C# GPU/APU/UI are kept; the repository stays private until P1",
   "current": {
     "milestone": "P1",
-    "id": "XFP5",
-    "title": "Ported GL renderer (pgraph/gl) behind IPgraphBackend",
-    "plan": "E1",
+    "id": "XCN0",
+    "title": "Native CPU extraction spike: QEMU TCG core behind libxgridcpu",
+    "plan": "E0N",
     "status": "active",
     "started": "2026-11-22",
     "attempts": 0,
-    "acceptance": "The ported renderer runs under --gpu gl with no software composition on supported corpus rows, BackendUnsupported=0, the documented GL-vs-software policy, three titles render their own frames, and the speed checkpoint is measured.",
-    "price": "6-10 sessions; correctness bar.",
+    "acceptance": "From C#: create a vCPU, map 64 MB at GPA 0 and a 4 KB MMIO region with callbacks, run a real-mode stub (RAM write, MMIO read/write), enter protected mode, run a loop, inject an IRQ, and return on a step budget; measure steps/s and callback cost and project the 007 leg; stop if the CPU cannot be driven standalone or the projection cannot reach 2.7 ns/step.",
+    "price": "1-2 sessions (build + shim + test).",
     "bar": "correctness"
   },
   "position": {
@@ -257,9 +257,55 @@
   ],
   "queue": [
     {
+      "id": "XCN0",
+      "title": "Native CPU extraction spike: QEMU TCG core behind libxgridcpu",
+      "status": "active",
+      "depends": [],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "From C#: create a vCPU, map 64 MB at GPA 0 and a 4 KB MMIO region with callbacks, run a real-mode stub (RAM write, MMIO read/write), enter protected mode, run a loop, inject an IRQ, and return on a step budget; measure steps/s and callback cost and project the 007 leg; stop if the CPU cannot be driven standalone or the projection cannot reach 2.7 ns/step.",
+      "price": "1-2 sessions (build + shim + test)."
+    },
+    {
+      "id": "XCN1",
+      "title": "Native CPU host seam: zero-copy RAM, MMIO dispatch, IRQ and step budget",
+      "status": "queued",
+      "depends": [
+        "XCN0"
+      ],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "The dashboard and triangle boot on --cpu native; --cpu managed still produces the four accurate 1B goldens; the native re-baseline is recorded with measured reasons.",
+      "price": "2-4 sessions."
+    },
+    {
+      "id": "XCN2",
+      "title": "P1 on the native CPU: 007 playable",
+      "status": "queued",
+      "depends": [
+        "XCN1"
+      ],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "007 meets the nine P1 conditions on --cpu native (own render, live input, >=0.5x, 10 minutes, save/load, xemu frame policy, live audio, product defaults); the exact gates stay green on --cpu managed.",
+      "price": "2-4 sessions."
+    },
+    {
+      "id": "XCN3",
+      "title": "Native CPU release: four RIDs, GPL source offer, package gate",
+      "status": "queued",
+      "depends": [
+        "XCN2"
+      ],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "package-verify passes with the native core; the QEMU source offer and notices are present; win-x64/linux-x64/osx-x64/osx-arm64 archives build.",
+      "price": "1-2 sessions."
+    },
+    {
       "id": "XFP5",
       "title": "Ported GL renderer (pgraph/gl) behind IPgraphBackend",
-      "status": "active",
+      "status": "parked",
       "depends": [
         "XFP4"
       ],
@@ -271,7 +317,7 @@
     {
       "id": "XFP6",
       "title": "AC'97 codec and APU front end (full)",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP0"
       ],
@@ -283,7 +329,7 @@
     {
       "id": "XFP7",
       "title": "IDE/ATAPI and block-layer port",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP0"
       ],
@@ -295,7 +341,7 @@
     {
       "id": "XFP8",
       "title": "SMBus/SMC/EEPROM and nvnet port",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP7"
       ],
@@ -307,7 +353,7 @@
     {
       "id": "XFP9",
       "title": "USB OHCI, hub and XID port",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP7"
       ],
@@ -319,7 +365,7 @@
     {
       "id": "XFP10",
       "title": "Machine and chipset assembly (xbox.c, PCI, MCPX, i8259/PIT/RTC/LPC)",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP5",
         "XFP6",
@@ -334,7 +380,7 @@
     {
       "id": "XFP11",
       "title": "CPU core port: softmmu, TCG and target/i386",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP10"
       ],
@@ -346,7 +392,7 @@
     {
       "id": "XFP12",
       "title": "Host integration port (ui, audio, input backends)",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP10"
       ],
@@ -358,7 +404,7 @@
     {
       "id": "XFP13",
       "title": "Snapshot/migration parity",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP12"
       ],
@@ -370,7 +416,7 @@
     {
       "id": "XFP14",
       "title": "Parity close: ledger, seven titles, release",
-      "status": "queued",
+      "status": "parked",
       "depends": [
         "XFP11",
         "XFP13"
@@ -819,6 +865,8 @@
     "stop_after_two_failed_iterations": true,
     "perf_bar": "applies to performance tasks only; XFP port tasks are correctness tasks priced by the module differential and the session budget, and XFP11 is gated on not-slower than the current engine",
     "port_rule": "port the reference in scope: every hw/xbox module plus the QEMU modules the machine uses, with a differential and the old path as fallback; the CPU is in scope but sequenced last and gated on not-slower; docs/xemu-port-manifest.md is the ledger and scripts/port-manifest.ps1 -Check enforces it",
-    "operator_order_2026_11_22": "P1 sprint: measure (P1S0, done) -> live audio (P1S1, done) -> port the xemu/QEMU CPU engine in four phases (P1S2 softmmu/TLB, P1S3 TCG IR + i386 translator, P1S4 host codegen, P1S5 parity/switchover) -> P1 gate (P1S6). P1 = at least one game playable (own render, live input, >= 0.5x guest time, 10 minutes, save/load, xemu frame policy, live host audio, product defaults, gates exact). Then the full xemu 0.8.139 port (XFP0-XFP14) for breadth"
+    "operator_order_2026_11_22": "P1 sprint: measure (P1S0, done) -> live audio (P1S1, done) -> port the xemu/QEMU CPU engine in four phases (P1S2 softmmu/TLB, P1S3 TCG IR + i386 translator, P1S4 host codegen, P1S5 parity/switchover) -> P1 gate (P1S6). P1 = at least one game playable (own render, live input, >= 0.5x guest time, 10 minutes, save/load, xemu frame policy, live host audio, product defaults, gates exact). Then the full xemu 0.8.139 port (XFP0-XFP14) for breadth",
+    "operator_order_2026_11_22_native": "P1 + performance: the product CPU is the vendored xemu/QEMU TCG core behind libxgridcpu; all other emulator code stays managed C#; the managed C# CPU is reference-only; XCN0 (extraction spike) -> XCN1 (host seam) -> XCN2 (007 P1) -> XCN3 (release); the XFP program is parked for breadth after P1",
+    "native_cpu_rule": "The QEMU TCG i386 CPU core is the single native exception. It is vendored from the pinned xemu 0.8.139 tree, built with the recorded patches, and linked behind libxgridcpu; no QEMU machine, device, block layer or UI is shipped. The GPL-2.0 source offer is part of every release."
   }
 }
