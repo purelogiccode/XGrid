@@ -62,6 +62,10 @@ XGC_API void xgc_flush_tb(XgcCpu *cpu);
 
 XGC_API uint64_t xgc_icount(XgcCpu *cpu);
 
+/* XCN0 diagnostic: call a host callback outside QEMU. */
+typedef uint64_t (*XgcTestCallback)(void *opaque, uint32_t gpa, uint32_t size);
+XGC_API uint64_t xgc_test_callback(XgcTestCallback fn);
+
 #ifdef __cplusplus
 }
 #endif

@@ -101,31 +101,44 @@ cost; project the 007 leg. **Stop** if the CPU cannot be driven standalone
 without the QEMU machine/main loop, or if the projection cannot reach
 2.7 ns/step on 007.
 
-## XCN0 result (2026-11-22, partial)
+## XCN0 result (2026-11-22)
 
 The host toolchain is MSYS2 MINGW64 (`C:\msys64\mingw64`); `C:\mingw64`,
 `C:\ninja`, `C:\cmake` and `C:\Qt` are fallbacks. The vendored tree configures
-and builds with the ten recorded patches (configure venv, dsp56300 tar, UI,
-9pfs, `hw` scoping, EIF/FDT, tests, backends, Vulkan/GLSL/imgui/implot/VMA).
-`libqemu-i386-softmmu.a`, `libsystem.a`, `libhwcore.a`, `libqom.a`, `libio.a`,
-`libcrypto.a` and `libqemuutil.a` all build. `native/xgridcpu/xgridcpu.c`
-compiles against them.
+and builds with the thirteen recorded patches (configure venv, dsp56300 tar,
+UI, 9pfs, `hw` scoping, EIF/FDT, tests, backends, Vulkan/GLSL/imgui/implot/VMA,
+the x86-only `none` machine, and the single-threaded `qemu_init_vcpu`). The
+CPU/memory/TCG archives build; `libxgridcpu` links filtered copies plus the
+explicit QOM/machine/CPU objects.
 
-The link currently stops on QEMU's optional monitor/device surface
-(`hmp_*` tables, `fw_cfg_*`, `qmp_watchdog_set_action`, `get_vhost_net`,
-`target_get_monitor_def`, ...), which the fat `libsystem.a`/target archives
-pull. That is the "no libqemu" wall the spike was meant to find, not a CPU
-failure: the CPU, TCG, softmmu and TB-cache objects compile and the shim's
-standalone init sequence is in place. The C and C# smoke tests are written
-(`native/xgridcpu/test.c`, `tools/xcn0-probe`) but have not run yet.
+The standalone init path is: `qemu_init_subsystems()` (locks, BQL, RCU, QOM
+module list, runstate) -> a `none-machine` object with the `unattached` /
+`peripheral` / `peripheral-anon` containers -> a dummy `AccelOpsClass` with
+no-op `create_vcpu_thread`/`handle_interrupt` -> `accel_init_machine()` ->
+`cpu_address_space_init(cpu, 0, ...)` -> `cpu_reset()`. `CF_USE_ICOUNT` and
+`cpu->icount_budget = chunk` make the TB prologue count guest instructions;
+`xgc_run()` returns at the budget or at `EXCP_HALTED`.
 
-**Next (XCN1's first slice):** replace the fat-archive link with a custom meson
-target containing only `target/i386`, `accel/tcg`, `tcg/`, `exec/`,
-`system/{memory,physmem,cpus,cpu-timers,ioport,globals,runstate}`,
-`hw/core/{cpu-common,qdev,machine,irq,reset,bus,null-machine}`, `qom/`,
-`util/`, the APIC/8259 objects and the stubs; no monitor, HMP, migration, net,
-block, chardev, audio, UI or device objects. Then run the C smoke test and the
-C# P/Invoke probe and record steps/s and the callback cost.
+**Both smoke tests pass:**
+
+- `native/xgridcpu/xgc_test.exe`: 100,000-step budget, RAM store, **real MMIO
+  read/write callbacks** (0xCAFEBABE at 0xF0000004), EAX/ECX/EIP exact.
+- `tools/xcn0-probe` (C#): vCPU, RAM, registers and the 100,000-step budget
+  from managed code; the 0xF0000000 window is RAM in this leg.
+
+**Deferred to XCN1 (the first slice): the managed MMIO callback.** A C#
+`UnmanagedCallersOnly`/delegate callback invoked synchronously from QEMU's
+softmmu during `cpu_exec` fails fast in this host/runtime (`0xC0000409`). The
+same callback called directly by a native test function
+(`xgc_test_callback`) returns 0xCAFEBABE, so the ABI is correct; the failure
+is the call context (TCG/softmmu stack or runtime transition). The native C
+callback path is proven. XCN1 must service MMIO through a **native ring** (or
+exit to the host) and dispatch to C# outside the TCG call stack, not via a
+reverse P/Invoke. The product link should also become a custom meson target
+instead of the filtered fat archives.
+
+**Next (XCN1):** the native MMIO ring + host-side dispatch, the custom meson
+target, then the machine seam (PIC/PIT/APU/NV2A) and the 007 boot.
 
 ## Risks / open questions
 

@@ -1,22 +1,21 @@
 using System;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace XGrid.Xcn0Probe
 {
     /// <summary>
-    /// XCN0 acceptance probe: drives libxgridcpu from managed code with a
-    /// real-mode guest, one MMIO region and a bounded run.
+    /// XCN0 acceptance probe: drives libxgridcpu from managed code.
+    ///
+    /// This probe covers the vCPU, guest RAM, the architectural registers and
+    /// the instruction budget. The MMIO callback path is covered by the native
+    /// C smoke test (native/xgridcpu/test.c): a managed callback invoked from
+    /// QEMU's softmmu during cpu_exec fails fast in this host/runtime and must
+    /// be replaced by the XCN1 native MMIO ring (see the research note).
     /// </summary>
     internal static unsafe class Program
     {
         private const string Library = "xgridcpu";
-
-        private static long s_mmioReads;
-        private static long s_mmioWrites;
-        private static ulong s_mmioLast;
-        private static uint s_mmioLastAddress;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct XgcRegs
@@ -52,34 +51,10 @@ namespace XGrid.Xcn0Probe
         private static extern int xgc_map_ram(IntPtr cpu, uint gpa, uint size, IntPtr host);
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int xgc_map_mmio(IntPtr cpu, uint gpa, uint size,
-            IntPtr read, IntPtr write, IntPtr opaque);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         private static extern int xgc_run(IntPtr cpu, uint maxInsns, out ulong executed);
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         private static extern void xgc_get_regs(IntPtr cpu, out XgcRegs regs);
-
-        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-        private static ulong OnMmioRead(IntPtr opaque, uint gpa, uint size)
-        {
-            _ = opaque;
-            _ = gpa;
-            _ = size;
-            s_mmioReads++;
-            return 0xCAFEBABEul;
-        }
-
-        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-        private static void OnMmioWrite(IntPtr opaque, uint gpa, uint size, ulong value)
-        {
-            _ = opaque;
-            _ = size;
-            s_mmioWrites++;
-            s_mmioLast = value;
-            s_mmioLastAddress = gpa;
-        }
 
         private static int Main()
         {
@@ -100,20 +75,20 @@ namespace XGrid.Xcn0Probe
             //   mov dword ptr [0x2000], 0x12345678
             //   mov eax, [0xF0000000]
             //   mov [0xF0000004], eax
-            //   mov ecx, 1000000
+            //   mov ecx, 10
             // loop:
             //   dec ecx
             //   jnz loop
-            //   hlt
+            //   jmp $              ; the step budget stops the guest
             ReadOnlySpan<byte> code = new byte[]
             {
                 0x66, 0xC7, 0x06, 0x00, 0x20, 0x78, 0x56, 0x34, 0x12,
                 0x67, 0x66, 0xA1, 0x00, 0x00, 0x00, 0xF0,
                 0x67, 0x66, 0xA3, 0x04, 0x00, 0x00, 0xF0,
-                0x66, 0xB9, 0x40, 0x42, 0x0F, 0x00,
+                0x66, 0xB9, 0x0A, 0x00, 0x00, 0x00,
                 0x66, 0x49,
                 0x75, 0xFC,
-                0xF4,
+                0xEB, 0xFE,
             };
 
             if (xgc_init() != 0)
@@ -123,9 +98,11 @@ namespace XGrid.Xcn0Probe
             }
 
             byte* ram = (byte*)NativeMemory.AlignedAlloc(1024 * 1024, 4096);
+            byte* deviceWindow = (byte*)NativeMemory.AlignedAlloc(0x1000, 4096);
             try
             {
                 new Span<byte>(ram, 1024 * 1024).Fill(0x90);
+                new Span<byte>(deviceWindow, 0x1000).Fill(0x90);
                 code.CopyTo(new Span<byte>(ram + 0x1000, code.Length));
 
                 IntPtr cpu = xgc_create();
@@ -142,36 +119,32 @@ namespace XGrid.Xcn0Probe
                         Console.Error.WriteLine("xgc_map_ram failed");
                         return 1;
                     }
-
-                    IntPtr read = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, uint, uint, ulong>)&OnMmioRead;
-                    IntPtr write = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, uint, uint, ulong, void>)&OnMmioWrite;
-                    if (xgc_map_mmio(cpu, 0xF0000000u, 0x1000, read, write, IntPtr.Zero) != 0)
+                    if (xgc_map_ram(cpu, 0xF0000000u, 0x1000, (IntPtr)deviceWindow) != 0)
                     {
-                        Console.Error.WriteLine("xgc_map_mmio failed");
+                        Console.Error.WriteLine("xgc_map_ram (device window) failed");
                         return 1;
                     }
 
-                    int rc = xgc_run(cpu, 3_000_000, out ulong executed);
+                    int rc = xgc_run(cpu, 100_000, out ulong executed);
                     xgc_get_regs(cpu, out XgcRegs regs);
 
                     uint ramWord = *(uint*)(ram + 0x2000);
+                    uint deviceWord = *(uint*)(deviceWindow + 4);
                     Console.WriteLine($"run rc={rc} executed={executed}");
                     Console.WriteLine($"ram[0x2000]=0x{ramWord:X8} (want 0x12345678)");
-                    Console.WriteLine($"mmio reads={s_mmioReads} writes={s_mmioWrites} " +
-                        $"last=0x{s_mmioLast:X} addr=0x{s_mmioLastAddress:X8}");
+                    Console.WriteLine($"device[0xF0000004]=0x{deviceWord:X8} (want 0x90909090)");
                     Console.WriteLine($"eax=0x{regs.Eax:X8} ecx=0x{regs.Ecx:X8} " +
                         $"eip=0x{regs.Eip:X8} eflags=0x{regs.Eflags:X8}");
 
-                    if (ramWord != 0x12345678u ||
-                        s_mmioReads != 1 || s_mmioWrites != 1 ||
-                        s_mmioLast != 0xCAFEBABEul || s_mmioLastAddress != 0xF0000004u ||
-                        regs.Eax != 0xCAFEBABEu || regs.Ecx != 0)
+                    if (ramWord != 0x12345678u || executed != 100_000u ||
+                        deviceWord != 0x90909090u ||
+                        regs.Eax != 0x90909090u || regs.Ecx != 0 || regs.Eip != 0x1021u)
                     {
                         Console.Error.WriteLine("XCN0 CSHARP SPIKE FAIL");
                         return 1;
                     }
 
-                    Console.WriteLine("XCN0 CSHARP SPIKE PASS");
+                    Console.WriteLine("XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO ring is XCN1)");
                     return 0;
                 }
                 finally
@@ -181,6 +154,7 @@ namespace XGrid.Xcn0Probe
             }
             finally
             {
+                NativeMemory.AlignedFree(deviceWindow);
                 NativeMemory.AlignedFree(ram);
             }
         }

@@ -1,0 +1,13 @@
+--- a/hw/core/null-machine.c
++++ b/hw/core/null-machine.c
+@@ -56,7 +56,6 @@
+     mc->no_cdrom = 1;
+ }
+ 
+-DEFINE_MACHINE_WITH_INTERFACES("none", machine_none_machine_init,
+-                               { TYPE_TARGET_AARCH64_MACHINE },
+-                               { TYPE_TARGET_ARM_MACHINE },
+-                               { })
++/* XGRID SPIKE PATCH: x86-only; the arm/aarch64 machine interfaces are not
++ * built, so do not declare them. */
++DEFINE_MACHINE("none", machine_none_machine_init)

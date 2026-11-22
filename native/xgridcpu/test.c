@@ -68,20 +68,20 @@ int main(void)
      *   mov dword ptr [0x2000], 0x12345678
      *   mov eax, [0xF0000000]
      *   mov [0xF0000004], eax
-     *   mov ecx, 1000000
+     *   mov ecx, 10
      * loop:
      *   dec ecx
      *   jnz loop
-     *   hlt
+     *   jmp $              ; the step budget stops the guest
      */
     static const uint8_t code[] = {
         0x66, 0xC7, 0x06, 0x00, 0x20, 0x78, 0x56, 0x34, 0x12,
         0x67, 0x66, 0xA1, 0x00, 0x00, 0x00, 0xF0,
         0x67, 0x66, 0xA3, 0x04, 0x00, 0x00, 0xF0,
-        0x66, 0xB9, 0x40, 0x42, 0x0F, 0x00,
+        0x66, 0xB9, 0x0A, 0x00, 0x00, 0x00,
         0x66, 0x49,
         0x75, 0xFC,
-        0xF4
+        0xEB, 0xFE
     };
     uint8_t *ram;
     XgcCpu *cpu;
@@ -118,7 +118,7 @@ int main(void)
         return 1;
     }
 
-    rc = xgc_run(cpu, 3000000, &executed);
+    rc = xgc_run(cpu, 100000, &executed);
     xgc_get_regs(cpu, &regs);
 
     ram_word = *(uint32_t *)(ram + 0x2000);
@@ -139,12 +139,17 @@ int main(void)
         fprintf(stderr, "FAIL: guest store\n");
         return 1;
     }
+    if (executed != 100000u) {
+        fprintf(stderr, "FAIL: step budget\n");
+        return 1;
+    }
     if (g_mmio_reads != 1 || g_mmio_writes != 1 ||
         g_mmio_last != 0xCAFEBABEu || g_mmio_last_addr != 0xF0000004u) {
         fprintf(stderr, "FAIL: mmio\n");
         return 1;
     }
-    if (regs.eax != 0xCAFEBABEu || regs.ecx != 0) {
+    if (regs.eax != 0xCAFEBABEu || regs.ecx != 0 ||
+        regs.eip != 0x1021u) {
         fprintf(stderr, "FAIL: registers\n");
         return 1;
     }

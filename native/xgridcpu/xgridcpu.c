@@ -12,13 +12,18 @@
 #include "qemu/module.h"
 #include "qemu/cacheinfo.h"
 #include "qemu/seqlock.h"
+#include "qemu/accel.h"
+#include "accel/accel-ops.h"
+#include "accel/accel-cpu-ops.h"
 #include "qapi/error.h"
 #include "qom/object.h"
 #include "hw/boards.h"
 #include "hw/core/cpu.h"
+#include "hw/qdev-core.h"
 #include "system/address-spaces.h"
 #include "system/memory.h"
 #include "system/tcg.h"
+#include "system/system.h"
 #include "system/cpu-timers-internal.h"
 #include "exec/cpu-common.h"
 #include "exec/icount.h"
@@ -30,8 +35,8 @@
 #include "xgridcpu.h"
 
 /* Not exported by a public QEMU header; implemented in
- * accel/tcg/translate-all.c. */
-void tb_flush(CPUState *cpu);
+ * accel/tcg/tb-maint.c. */
+void tb_flush__exclusive_or_serial(void);
 
 typedef struct XgcMmio {
     uint32_t gpa;
@@ -52,6 +57,37 @@ struct XgcCpu {
 
 static bool g_initialized;
 
+/* XCN0: the host drives cpu_exec() itself; the accel ops only need the
+ * mandatory create_vcpu_thread/handle_interrupt entries so the CPU reset
+ * path sees a valid table. */
+static void xgc_vcpu_thread(CPUState *cpu)
+{
+    qemu_sem_init(&cpu->sem, 0);
+    cpu->created = true;
+}
+
+static void xgc_handle_interrupt(CPUState *cpu, int mask)
+{
+    (void)cpu;
+    (void)mask;
+}
+
+static const AccelOpsClass xgc_accel_ops = {
+    .create_vcpu_thread = xgc_vcpu_thread,
+    .handle_interrupt = xgc_handle_interrupt,
+};
+
+void cpus_register_accel(const AccelOpsClass *ops);
+
+#define XGC_TRACE(...) \
+    do { \
+        if (getenv("XGRID_CPU_TRACE")) { \
+            fprintf(stderr, __VA_ARGS__); \
+            fflush(stderr); \
+        } \
+    } while (0)
+
+__attribute__((force_align_arg_pointer))
 static uint64_t xgc_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
     XgcMmio *m = opaque;
@@ -61,6 +97,7 @@ static uint64_t xgc_mmio_read(void *opaque, hwaddr addr, unsigned size)
     return m->read(m->opaque, m->gpa + (uint32_t)addr, size);
 }
 
+__attribute__((force_align_arg_pointer))
 static void xgc_mmio_write(void *opaque, hwaddr addr, uint64_t value,
                            unsigned size)
 {
@@ -88,10 +125,27 @@ int xgc_init(void)
         return XGC_OK;
     }
 
-    /* QOM types (CPU models, the "none" machine) are registered by
-     * type_init() constructors; run them without qemu_init(). */
-    qemu_init_cpu_list();
-    module_call_init(MODULE_INIT_QOM);
+    XGC_TRACE("xgc_init: enter\n");
+
+    /* QEMU's normal init order: locks, RCU, BQL, the trace/QOM/migration
+     * module lists and the runstate. qemu_init() itself is not called. */
+    XGC_TRACE("xgc_init: qemu_init_subsystems\n");
+    qemu_init_subsystems();
+    cpus_register_accel(&xgc_accel_ops);
+    XGC_TRACE("xgc_init: object_new(none-machine)\n");
+    XGC_TRACE("  root=%p\n", (void *)object_get_root());
+    {
+        ObjectClass *oc_none = object_class_by_name("none-machine");
+        XGC_TRACE("  class none-machine=%p\n", (void *)oc_none);
+        {
+            ObjectClass *oc_machine = object_class_by_name(TYPE_MACHINE);
+            XGC_TRACE("  class machine=%p\n", (void *)oc_machine);
+        }
+        {
+            ObjectClass *oc_cpu = object_class_by_name("i386-cpu");
+            XGC_TRACE("  class i386-cpu=%p\n", (void *)oc_cpu);
+        }
+    }
 
     /* cpu_create() -> cpu_common_realizefn() -> qdev_get_machine(), which
      * asserts unless a machine object is present. The "none" machine has no
@@ -100,23 +154,34 @@ int xgc_init(void)
     if (!machine) {
         return XGC_ERR_INIT;
     }
+    XGC_TRACE("xgc_init: add machine child\n");
     object_property_add_child(object_get_root(), "machine", OBJECT(machine));
     current_machine = machine;
+    /* qemu_create_machine_containers(): the memory core expects these. */
+    object_property_add_new_container(OBJECT(machine), "unattached");
+    object_property_add_new_container(OBJECT(machine), "peripheral");
+    object_property_add_new_container(OBJECT(machine), "peripheral-anon");
 
     /* system_memory/system_io + the target page size. */
+    XGC_TRACE("xgc_init: cpu_exec_init_all\n");
     cpu_exec_init_all();
 
-    /* The TCG accelerator normally does this from tcg_init_machine(). */
-    tcg_allowed = true;
-    /* qemu_init_cpu_loop()/flush_info_init() normally probe these. */
+    /* The TCG accelerator normally does this from machine_run_board_init()
+     * -> accel_init_machine(); it installs page_init/tb_htable_init/tcg_init
+     * and the prologue, and publishes the accelerator for cpu realize. */
+    machine->smp.max_cpus = 1;
+    machine->smp.cpus = 1;
     qemu_icache_linesize = 64;
     qemu_icache_linesize_log = 6;
     qemu_dcache_linesize = 64;
     qemu_dcache_linesize_log = 6;
-    page_init();
-    tb_htable_init();
-    tcg_init(32 * 1024 * 1024, 0, 1);
-    tcg_prologue_init();
+    XGC_TRACE("xgc_init: accel init\n");
+    {
+        AccelState *accel = ACCEL(object_new("tcg-accel"));
+        if (accel_init_machine(accel, machine) < 0) {
+            return XGC_ERR_INIT;
+        }
+    }
 
     /* Deterministic instruction accounting: one nanosecond per instruction
      * (the product patch will map the Xbox 733 MHz TSC explicitly). */
@@ -173,19 +238,41 @@ XgcCpu *xgc_create(void)
     if (!oc) {
         return NULL;
     }
+    XGC_TRACE("xgc_create: cpu_create\n");
     type = object_class_get_name(oc);
     if (!type) {
         return NULL;
     }
 
     c = g_new0(XgcCpu, 1);
-    c->cpu = cpu_create(type);
+    {
+        Error *err = NULL;
+        CPUState *cpu = CPU(object_new(type));
+        if (!object_property_set_int(OBJECT(cpu), "apic-id", 0, &err)) {
+            error_report_err(err);
+            object_unref(OBJECT(cpu));
+            g_free(c);
+            return NULL;
+        }
+        if (!qdev_realize(DEVICE(cpu), NULL, &err)) {
+            error_report_err(err);
+            object_unref(OBJECT(cpu));
+            g_free(c);
+            return NULL;
+        }
+        c->cpu = cpu;
+    }
     if (!c->cpu) {
         g_free(c);
         return NULL;
     }
-    c->cpu->as = &address_space_memory;
+    XGC_TRACE("xgc_create: reset real mode\n");
+    xgc_vcpu_thread(c->cpu);
+    c->cpu->tcg_cflags |= CF_USE_ICOUNT;
+    c->cpu->num_ases = 1;
+    cpu_address_space_init(c->cpu, 0, "cpu-memory", get_system_memory());
     xgc_set_real_mode(c, 0x1000, 0x8000);
+    XGC_TRACE("xgc_create: done\n");
     return c;
 }
 
@@ -274,8 +361,8 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
 
     while (done < max_insns) {
         uint32_t chunk = max_insns - done;
-        int64_t before, after;
         int ret;
+        int64_t before, after;
         uint64_t n;
 
         if (chunk > 0x7FFF) {
@@ -283,24 +370,37 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
         }
 
         before = icount_get_raw();
+        c->cpu->exit_request = false;
+        c->cpu->stop = false;
+        c->cpu->halted = false;
         c->cpu->neg.icount_decr.u32 = chunk;
         c->cpu->icount_extra = 0;
-        c->cpu->icount_budget = 0;
+        c->cpu->icount_budget = chunk;
         c->cpu->exception_index = -1;
 
         ret = cpu_exec(c->cpu);
         icount_update(c->cpu);
         after = icount_get_raw();
 
-        n = (uint64_t)(after - before);
-        if (n == 0) {
-            /* The TB prologue decremented the local budget; recover the
-             * executed count from the remaining 16-bit counter. */
-            int32_t remaining = (int16_t)c->cpu->neg.icount_decr.u16.low +
-                                (int32_t)c->cpu->icount_extra;
-            if (remaining >= 0 && (uint32_t)remaining <= chunk) {
-                n = chunk - (uint32_t)remaining;
+        {
+            static int dbg;
+            if (getenv("XGRID_CPU_TRACE") &&
+                (dbg < 3 || ret == EXCP_HALTED)) {
+                CPUX86State *env = cpu_env(c->cpu);
+                XGC_TRACE("chunk before=%lld after=%lld low=%u extra=%d "
+                          "budget=%lld ret=%d eip=%x ecx=%x\n",
+                          (long long)before, (long long)after,
+                          c->cpu->neg.icount_decr.u16.low,
+                          (int)c->cpu->icount_extra,
+                          (long long)c->cpu->icount_budget, ret,
+                          env->eip, env->regs[R_ECX]);
+                dbg++;
             }
+        }
+
+        n = (after > before) ? (uint64_t)(after - before) : 0;
+        if (n > chunk) {
+            n = chunk;
         }
         done += n;
 
@@ -377,7 +477,7 @@ void xgc_set_regs(XgcCpu *c, const XgcRegs *r)
 void xgc_flush_tb(XgcCpu *c)
 {
     if (c && c->cpu) {
-        tb_flush(c->cpu);
+        tb_flush__exclusive_or_serial();
     }
 }
 
@@ -385,4 +485,9 @@ uint64_t xgc_icount(XgcCpu *c)
 {
     (void)c;
     return (uint64_t)icount_get_raw();
+}
+
+uint64_t xgc_test_callback(XgcTestCallback fn)
+{
+    return fn(NULL, 0x1234, 4);
 }

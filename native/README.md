@@ -60,11 +60,28 @@ which the C# frontend replaces. The archives above are the CPU/memory subset.
 9. `0009-backends-meson.patch` - no IOMMUFD/SGX.
 10. `0010-meson-vulkan-imgui.patch` - no Vulkan/GLSL/volk/SPIRV/imgui/implot.
 11. `0011-thirdparty-vma.patch` - no VulkanMemoryAllocator.
+12. `0012-hw-core-null-machine.patch` - x86-only `none` machine (no ARM
+    interfaces).
+13. `0013-system-cpus.patch` - no TCG vCPU thread; the host calls `cpu_exec`.
 
-The archives build (see the spike result in
-`docs/research-notes/native-cpu-core.md`). The link still pulls QEMU's optional
-monitor/device surface; XCN1 replaces the fat-archive link with a custom meson
-target before the C and C# smoke tests run.
+The archives build and the XCN0 tests pass:
+
+```bash
+cd native/xgridcpu && ./build.sh && ./xgc_test.exe
+# XCN0 C SPIKE PASS (100k steps, RAM, real MMIO callbacks, registers)
+
+$env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
+$env:XGRIDCPU_DLL = (Resolve-Path native/xgridcpu/xgridcpu.dll).Path
+dotnet run --project tools/xcn0-probe -c Release
+# XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO ring is XCN1)
+```
+
+The C# probe proves the vCPU, guest RAM, registers and the 100,000-step
+budget from managed code. A **managed** MMIO callback invoked synchronously
+from QEMU's softmmu during `cpu_exec` fails fast in this host/runtime
+(`0xC0000409`); the same callback called directly by a native test function
+works, so the ABI is correct. XCN1 must service MMIO through a native ring
+(or exit to the host) rather than a reverse P/Invoke on the TCG call stack.
 
 None of these changes guest behaviour. A release ships the patches and the
 corresponding QEMU source (or a written offer).
