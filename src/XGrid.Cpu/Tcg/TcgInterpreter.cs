@@ -376,6 +376,10 @@ public static class TcgInterpreter
                         WriteRegister(gprs, op.GuestRegister, destination, op.Size);
                         break;
                     }
+
+                case TcgOpKind.StringOp:
+                    eflags = ExecuteString(op, gprs, eflags, segmentBases, memory);
+                    break;
                 case TcgOpKind.Lea:
                     temps[op.Dest] = EffectiveAddress(op, gprs, segmentBases);
                     break;
@@ -447,6 +451,108 @@ public static class TcgInterpreter
     private static void WriteAccumulator(uint[] gprs, int size, uint value)
     {
         WriteRegister(gprs, 0, value, size);
+    }
+
+    private static uint ExecuteString(
+        TcgOp op,
+        uint[] gprs,
+        uint eflags,
+        ReadOnlySpan<uint> segmentBases,
+        ITcgMemory? memory)
+    {
+        if (memory is null)
+        {
+            throw new InvalidOperationException("a string operation needs an ITcgMemory");
+        }
+
+        bool address16 = op.Address16;
+        bool decrement = (eflags & FlagBits.Df) != 0;
+        int size = op.Size;
+        uint ds = SegmentBase(segmentBases, SegmentRegister.Ds);
+        uint es = SegmentBase(segmentBases, SegmentRegister.Es);
+        int operation = (int)op.Immediate;
+        int rep = op.GuestRegister;
+        uint count = address16 ? gprs[1] & 0xFFFFu : gprs[1];
+
+        uint Iteration(uint flags)
+        {
+            uint source = ds + ReadIndex(gprs, Gpr.Esi, address16);
+            uint destination = es + ReadIndex(gprs, Gpr.Edi, address16);
+            switch (operation)
+            {
+                case 0:
+                    Store(memory, destination, Load(memory, source, size), size);
+                    AdvanceIndex(gprs, Gpr.Esi, decrement, size, address16);
+                    AdvanceIndex(gprs, Gpr.Edi, decrement, size, address16);
+                    break;
+                case 1:
+                    flags = AluOps.Sub(
+                        Load(memory, source, size), Load(memory, destination, size), 0, size * 8, flags, out _);
+                    AdvanceIndex(gprs, Gpr.Esi, decrement, size, address16);
+                    AdvanceIndex(gprs, Gpr.Edi, decrement, size, address16);
+                    break;
+                case 2:
+                    Store(memory, destination, ReadAccumulator(gprs, size), size);
+                    AdvanceIndex(gprs, Gpr.Edi, decrement, size, address16);
+                    break;
+                case 3:
+                    WriteAccumulator(gprs, size, Load(memory, source, size));
+                    AdvanceIndex(gprs, Gpr.Esi, decrement, size, address16);
+                    break;
+                default:
+                    flags = AluOps.Sub(
+                        ReadAccumulator(gprs, size), Load(memory, destination, size), 0, size * 8, flags, out _);
+                    AdvanceIndex(gprs, Gpr.Edi, decrement, size, address16);
+                    break;
+            }
+
+            return flags;
+        }
+
+        if (rep == 0)
+        {
+            return Iteration(eflags);
+        }
+
+        while (count != 0)
+        {
+            eflags = Iteration(eflags);
+            count--;
+            WriteCounter(gprs, count, address16);
+            if (operation is 1 or 4)
+            {
+                bool zero = (eflags & FlagBits.Zf) != 0;
+                if (rep == 1 && !zero)
+                {
+                    break;
+                }
+
+                if (rep == 2 && zero)
+                {
+                    break;
+                }
+            }
+        }
+
+        return eflags;
+    }
+
+    private static uint ReadIndex(uint[] gprs, Gpr register, bool address16)
+    {
+        return address16 ? gprs[(int)register] & 0xFFFFu : gprs[(int)register];
+    }
+
+    private static void AdvanceIndex(uint[] gprs, Gpr register, bool decrement, int delta, bool address16)
+    {
+        int index = (int)register;
+        uint value = address16 ? gprs[index] & 0xFFFFu : gprs[index];
+        value = decrement ? value - (uint)delta : value + (uint)delta;
+        gprs[index] = address16 ? (gprs[index] & 0xFFFF0000u) | (value & 0xFFFFu) : value;
+    }
+
+    private static void WriteCounter(uint[] gprs, uint value, bool address16)
+    {
+        gprs[1] = address16 ? (gprs[1] & 0xFFFF0000u) | (value & 0xFFFFu) : value;
     }
 
     private static uint Mask(uint value, int size)

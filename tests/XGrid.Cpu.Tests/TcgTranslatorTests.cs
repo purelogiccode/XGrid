@@ -298,8 +298,8 @@ public sealed class TcgTranslatorTests
     [Fact]
     public void UnsupportedMemoryForm_ReturnsFalse()
     {
-        // MOVSB: a string instruction the first slice does not translate.
-        DecodedInstruction decoded = Decoder.Decode([0xA4]);
+        // INSB: a port string instruction the first slice does not translate.
+        DecodedInstruction decoded = Decoder.Decode([0x6C]);
         var builder = new TcgBuilder(0x1000);
         Assert.False(I386Translator.TryTranslate(decoded, 0x1000, builder, out _, out string? reason));
         Assert.NotNull(reason);
@@ -621,6 +621,156 @@ public sealed class TcgTranslatorTests
             [0x0F, 0xC1, 0x05, 0x00, 0x20, 0x00, 0x00],
             cpu => { Set(cpu, Gpr.Eax, 2); Memory32(cpu, 0x2000, 3); },
             (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
+    }
+
+    [Fact]
+    public void RepMovsb()
+    {
+        AssertMatches(
+            [0xF3, 0xA4],
+            cpu =>
+            {
+                Set(cpu, Gpr.Ecx, 4);
+                Set(cpu, Gpr.Esi, 0x2000);
+                Set(cpu, Gpr.Edi, 0x3000);
+                cpu.Ram().Write8(0x2000, 0x11);
+                cpu.Ram().Write8(0x2001, 0x22);
+                cpu.Ram().Write8(0x2002, 0x33);
+                cpu.Ram().Write8(0x2003, 0x44);
+            },
+            (interpreter, tcg) =>
+            {
+                for (uint i = 0; i < 4; i++)
+                {
+                    Assert.Equal(interpreter.Ram().Read8(0x3000 + i), tcg.Ram().Read8(0x3000 + i));
+                }
+            });
+    }
+
+    [Fact]
+    public void RepStosd()
+    {
+        AssertMatches(
+            [0xF3, 0xAB],
+            cpu => { Set(cpu, Gpr.Ecx, 4); Set(cpu, Gpr.Edi, 0x3000); Set(cpu, Gpr.Eax, 0x11223344); },
+            (interpreter, tcg) =>
+            {
+                for (uint i = 0; i < 4; i++)
+                {
+                    Assert.Equal(interpreter.Ram().Read32(0x3000 + (i * 4)), tcg.Ram().Read32(0x3000 + (i * 4)));
+                }
+            });
+    }
+
+    [Fact]
+    public void RepLodsb()
+    {
+        AssertMatches(
+            [0xF3, 0xAC],
+            cpu =>
+            {
+                Set(cpu, Gpr.Ecx, 4);
+                Set(cpu, Gpr.Esi, 0x2000);
+                Set(cpu, Gpr.Eax, 0xAAAAAAAA);
+                cpu.Ram().Write8(0x2000, 1);
+                cpu.Ram().Write8(0x2001, 2);
+                cpu.Ram().Write8(0x2002, 3);
+                cpu.Ram().Write8(0x2003, 4);
+            });
+    }
+
+    [Fact]
+    public void RepeCmpsbEqual()
+    {
+        AssertMatches(
+            [0xF3, 0xA6],
+            cpu =>
+            {
+                Set(cpu, Gpr.Ecx, 4);
+                Set(cpu, Gpr.Esi, 0x2000);
+                Set(cpu, Gpr.Edi, 0x3000);
+                for (uint i = 0; i < 4; i++)
+                {
+                    cpu.Ram().Write8(0x2000 + i, 0x55);
+                    cpu.Ram().Write8(0x3000 + i, 0x55);
+                }
+            });
+    }
+
+    [Fact]
+    public void RepneScasbStopsOnMatch()
+    {
+        AssertMatches(
+            [0xF2, 0xAE],
+            cpu =>
+            {
+                Set(cpu, Gpr.Ecx, 8);
+                Set(cpu, Gpr.Edi, 0x3000);
+                Set(cpu, Gpr.Eax, 0x42);
+                cpu.Ram().Write8(0x3000, 1);
+                cpu.Ram().Write8(0x3001, 2);
+                cpu.Ram().Write8(0x3002, 3);
+                cpu.Ram().Write8(0x3003, 0x42);
+            });
+    }
+
+    [Fact]
+    public void MovsbWithoutRep()
+    {
+        AssertMatches(
+            [0xA4],
+            cpu =>
+            {
+                Set(cpu, Gpr.Esi, 0x2000);
+                Set(cpu, Gpr.Edi, 0x3000);
+                cpu.Ram().Write8(0x2000, 0x77);
+            },
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read8(0x3000), tcg.Ram().Read8(0x3000)));
+    }
+
+    [Fact]
+    public void RepMovsbReverse()
+    {
+        AssertMatches(
+            [0xF3, 0xA4],
+            cpu =>
+            {
+                Set(cpu, Gpr.Ecx, 4);
+                Set(cpu, Gpr.Esi, 0x2003);
+                Set(cpu, Gpr.Edi, 0x3003);
+                Flags(cpu, FlagBits.Reserved1 | FlagBits.Df);
+                for (uint i = 0; i < 4; i++)
+                {
+                    cpu.Ram().Write8(0x2000 + i, (byte)(0x10 + i));
+                }
+            },
+            (interpreter, tcg) =>
+            {
+                for (uint i = 0; i < 4; i++)
+                {
+                    Assert.Equal(interpreter.Ram().Read8(0x3000 + i), tcg.Ram().Read8(0x3000 + i));
+                }
+            });
+    }
+
+    [Fact]
+    public void RepMovsb16BitAddress()
+    {
+        AssertMatches(
+            [0x67, 0xF3, 0xA4],
+            cpu =>
+            {
+                Set(cpu, Gpr.Ecx, 2);
+                Set(cpu, Gpr.Esi, 0xABCD2000);
+                Set(cpu, Gpr.Edi, 0x12343000);
+                cpu.Ram().Write8(0x2000, 0x9A);
+                cpu.Ram().Write8(0x2001, 0xBC);
+            },
+            (interpreter, tcg) =>
+            {
+                Assert.Equal(interpreter.Ram().Read8(0x3000), tcg.Ram().Read8(0x3000));
+                Assert.Equal(interpreter.Ram().Read8(0x3001), tcg.Ram().Read8(0x3001));
+            });
     }
 
     private sealed class TestMemory(AddressSpace bus) : ITcgMemory

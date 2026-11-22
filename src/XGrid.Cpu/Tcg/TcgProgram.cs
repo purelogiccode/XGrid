@@ -365,6 +365,23 @@ public sealed class TcgBuilder
         });
     }
 
+    /// <summary>Emits a string operation with optional REP.</summary>
+    /// <param name="operation">0=MOVS, 1=CMPS, 2=STOS, 3=LODS, 4=SCAS.</param>
+    /// <param name="size">Element size in bytes.</param>
+    /// <param name="rep">0=none, 1=REP, 2=REPNE.</param>
+    /// <param name="address16">True for a 16-bit address size.</param>
+    public void StringOp(int operation, int size, int rep, bool address16)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.StringOp,
+            Immediate = (uint)operation,
+            Size = size,
+            GuestRegister = rep,
+            Address16 = address16,
+        });
+    }
+
     /// <summary>Emits an effective-address computation (QEMU's address shape).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="memory">The decoded memory operand.</param>

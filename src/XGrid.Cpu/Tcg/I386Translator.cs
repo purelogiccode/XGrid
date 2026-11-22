@@ -105,6 +105,12 @@ public static class I386Translator
                 return TryCmpxchg8B(instruction, builder, out reason);
             case Mnemonic.Xadd:
                 return TryXadd(instruction, size, builder, out reason);
+            case Mnemonic.Movs:
+            case Mnemonic.Cmps:
+            case Mnemonic.Stos:
+            case Mnemonic.Lods:
+            case Mnemonic.Scas:
+                return TryString(instruction, builder, out reason);
             case Mnemonic.Jmp:
                 if (instruction.Operand1.Kind != OperandKind.Immediate)
                 {
@@ -737,6 +743,35 @@ public static class I386Translator
 
         reason = "xadd destination";
         return false;
+    }
+
+    private static bool TryString(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        int size = instruction.OperandSize / 8;
+        if (size is not (1 or 2 or 4))
+        {
+            reason = "string operand size";
+            return false;
+        }
+
+        int operation = instruction.Mnemonic switch
+        {
+            Mnemonic.Movs => 0,
+            Mnemonic.Cmps => 1,
+            Mnemonic.Stos => 2,
+            Mnemonic.Lods => 3,
+            _ => 4,
+        };
+        int rep = instruction.Rep switch
+        {
+            RepPrefix.Rep => 1,
+            RepPrefix.Repne => 2,
+            _ => 0,
+        };
+
+        builder.StringOp(operation, size, rep, instruction.AddressSize == 16);
+        return true;
     }
 
     private static bool TryMulDiv(

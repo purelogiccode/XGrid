@@ -137,6 +137,9 @@ public enum TcgOpKind
     /// <summary>Exchange and add (XADD).</summary>
     Xadd,
 
+    /// <summary>String operation with optional REP (MOVS/CMPS/STOS/LODS/SCAS).</summary>
+    StringOp,
+
     /// <summary>Computes a guest effective address from the memory operand shape.</summary>
     Lea,
 

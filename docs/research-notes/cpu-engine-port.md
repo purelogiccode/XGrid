@@ -90,10 +90,12 @@ semantics (a divide error raises `TcgDivideErrorException`), and PUSH/POP
 (register/immediate/memory, 16/32-bit) over the SS stack. Slice 5: BT/BTS/BTR/BTC
 (register and bit-string memory forms), CMPXCHG, CMPXCHG8B and XADD. Slice 6:
 16-bit addressing (BX/BP/SI/DI forms, 16-bit wrap before the segment base, the
-BP-based SS default). **78 differentials total** (registers, EFLAGS, EIP and
-guest memory); `XGrid.Cpu.Tests` **781/781**, format clean. Next: MMX (170
-corpus cases), x87 (59), SSE (37) and REP; the cpu-oracle gate needs those
-blocks.
+BP-based SS default). Slice 7: REP string ops (MOVS/CMPS/STOS/LODS/SCAS,
+REP/REPNE termination, DF direction, 16/32-bit address size, 1/2/4-byte
+elements). **86 differentials total** (registers, EFLAGS, EIP and guest
+memory); `XGrid.Cpu.Tests` **789/789**, format clean. Next: the vector/FPU
+blocks - MMX (170 corpus cases), x87 (59) and SSE (37); the cpu-oracle gate
+needs those.
 
 ### P1S4 - host code generation (6-10 sessions)
 
