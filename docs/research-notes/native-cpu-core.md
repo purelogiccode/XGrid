@@ -298,10 +298,16 @@ wait is not the ATAPI probe. The captured stall state is precise: `PIC
 req=0x20` (IRQ5, the APU), `imr=0xD2` (IRQ5 unmasked), **`isr=0x00`** - the line
 is latched and deliverable but was never acknowledged - while the NV2A reports
 `notify=8`, `stalls=1`, `frames=1` and the IDE's last command is `0xC8` (READ
-DMA) with no DMA pending. So the next step is the IRQ5 delivery path itself:
-count `Pic.Pending`/`xgc_set_irq` at the stall and check whether the APU line
-is re-raised faster than the handler can EOI it (a level-line storm), or
-whether the probe's `Pending` latch misses it.
+DMA) with no DMA pending. The probe now counts both sides: **1259 injections, 499 acknowledged**. So the
+request is raised at nearly every slice boundary (the raw
+`MasterRequest & ~MasterMask` check) but 60% of the injections are consumed
+without an ack - `Pic.Acknowledge()` returns -1, or the CPU takes the request
+and finds no vector. Because a slice is up to 200k instructions, a device that
+pulses its line is gone by the time the CPU acks; the PIC's latched `req=0x20`
+at the dump says the request survives, so the next differential is `Acknowledge()`
+right after an injection vs the request word before it (a level-line pulse
+timing question, or `HighestPending` returning -1 because of the in-service
+register).
 
 The full machine now reaches the kernel: 12 regions / 13 windows, the HDD
 attached, the SMC handshake and 19 SMBus transactions, PIT/PIC interrupts and

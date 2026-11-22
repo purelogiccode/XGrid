@@ -65,6 +65,7 @@ namespace XGrid.Xcn3MachineProbe
         private static long s_reads;
         private static long s_writes;
         private static long s_irqs;
+        private static long s_irqSets;
         private static long s_serviceTicks;
         private static long s_advanceTicks;
         private static long s_drainTicks;
@@ -265,9 +266,11 @@ namespace XGrid.Xcn3MachineProbe
                     long advanceStart = Stopwatch.GetTimestamp();
                     machine.Advance(ran != 0 ? ran : chunk);
                     s_advanceTicks += Stopwatch.GetTimestamp() - advanceStart;
-                    if (machine.Bus.Pic.Pending)
+                    if (machine.Bus.Pic.Pending ||
+                        (byte)(machine.Bus.Pic.MasterRequest & ~machine.Bus.Pic.MasterMask) != 0)
                     {
                         Write32(ctl + OffIrqPending, 1);
+                        s_irqSets++;
                     }
                     long dropped = (long)Read64(ctl + OffDropped);
                     if ((slices % 10) == 0 || left == 0)
@@ -276,7 +279,7 @@ namespace XGrid.Xcn3MachineProbe
                         Console.WriteLine($"slice {slices}: t={sw.Elapsed.TotalSeconds:F1}s " +
                             $"executed={Read64(ctl + OffExecuted)} " +
                             $"eip=0x{Read32(ctl + OffRegs + 32):X8} " +
-                            $"io={s_reads}/{s_writes} irqs={s_irqs} dropped={dropped} " +
+                            $"io={s_reads}/{s_writes} irqs={s_irqs}/{s_irqSets} dropped={dropped} " +
                             $"nv2a draws={machine.Nv2A.DrawsExecuted} frames={machine.Nv2A.FramesPresented} " +
                             $"ide={machine.Ide.AccessCount} " +
                             $"drain={s_drainTicks * 1e3 / Stopwatch.Frequency:F0}ms " +
