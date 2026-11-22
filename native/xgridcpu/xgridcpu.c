@@ -77,6 +77,8 @@ struct XgcCpu {
     int ring_head;
     int ring_tail;
     uint64_t ring_dropped;
+    XgcMmioSinkFn sink;
+    void *sink_opaque;
 };
 
 static bool g_initialized;
@@ -186,11 +188,30 @@ static void xgc_ring_write(void *opaque, hwaddr addr, uint64_t value,
 {
     XgcRing *r = opaque;
     XgcCpu *c = r->cpu;
+    XgcMmioAccess access;
 
     XGC_TRACE("ring write gpa=%x size=%u value=%llx\n",
               r->base + (uint32_t)addr, size, (unsigned long long)value);
+    if (c->sink) {
+        access.gpa = r->base + (uint32_t)addr;
+        access.size = size;
+        access.is_write = 1;
+        access.flags = r->is_io ? 1u : 0u;
+        access.value = value;
+        c->sink(c->sink_opaque, &access);
+        return;
+    }
     xgc_ring_push(c, r->base + (uint32_t)addr, size, 1, r->is_io ? 1u : 0u,
                   value);
+}
+
+void xgc_set_mmio_sink(XgcCpu *c, XgcMmioSinkFn sink, void *opaque)
+{
+    if (!c) {
+        return;
+    }
+    c->sink = sink;
+    c->sink_opaque = opaque;
 }
 
 static const MemoryRegionOps xgc_ring_ops = {
@@ -740,7 +761,8 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
                           irq_before, c->cpu->interrupt_request, xgc_irq_vector,
                           env->eflags, env->hflags, env->hflags2,
                           c->cpu->exception_index, env->cr[0]);
-                if (c->cpu->exception_index == 7) {
+                if (c->cpu->exception_index == 7 ||
+                    c->cpu->exception_index == 6) {
                     uint8_t code[16];
                     if (cpu_memory_rw_debug(c->cpu, env->eip, code,
                                             sizeof(code), false) == 0) {

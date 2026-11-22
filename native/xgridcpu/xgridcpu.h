@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #ifdef _WIN32
 #define XGC_API __declspec(dllexport)
@@ -102,6 +103,13 @@ XGC_API int xgc_map_ram_alias(XgcCpu *cpu, uint32_t gpa, uint32_t size,
 /* Writes the queue dropped because the slice produced more than the shared
  * ring can hold (diagnostic; a non-zero value means the slice is too big). */
 XGC_API uint64_t xgc_mmio_dropped(XgcCpu *cpu);
+
+/* Optional synchronous write sink. When installed, every device write is
+ * handed to the sink instead of the internal ring, so the host can publish it
+ * into a shared ring immediately and apply backpressure (spin while the
+ * consumer is behind). Returns false to drop the access (shutdown). */
+typedef bool (*XgcMmioSinkFn)(void *opaque, const XgcMmioAccess *access);
+XGC_API void xgc_set_mmio_sink(XgcCpu *cpu, XgcMmioSinkFn sink, void *opaque);
 
 /* Inject one hardware interrupt vector (0-255); the x86 CPU takes it at the
  * next instruction boundary when IF=1. */

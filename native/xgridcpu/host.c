@@ -74,7 +74,7 @@ typedef struct XgcHostControl {
     uint32_t ram_size;
     uint32_t shadow_size;
     uint32_t ring_capacity;
-    uint32_t reserved2;
+    volatile uint32_t ring_tail;
     uint64_t dropped;
 } XgcHostControl;
 
@@ -98,6 +98,7 @@ XGC_ASSERT_OFF(io_icount, 560);
 XGC_ASSERT_OFF(ram_size, 568);
 XGC_ASSERT_OFF(shadow_size, 572);
 XGC_ASSERT_OFF(ring_capacity, 576);
+XGC_ASSERT_OFF(ring_tail, 580);
 XGC_ASSERT_OFF(dropped, 584);
 _Static_assert(sizeof(XgcHostWindow) == 20, "window size");
 _Static_assert(offsetof(XgcHostControl, windows) + 24 * 20 <= 536,
@@ -119,16 +120,26 @@ typedef struct XgcHostWindowCtx {
     uint32_t flags;
 } XgcHostWindowCtx;
 
-/* Move every queued write into the section so C# sees it before a live read
- * (and at slice end). */
-static void host_publish_ring(XgcHost *h)
+/* SPSC ring into the section: publish each write immediately and spin while
+ * the consumer is behind, so no device write is ever dropped. C# drains the
+ * ring continuously while it waits for the slice to end. */
+static bool host_ring_push(void *opaque, const XgcMmioAccess *access)
 {
-    XgcMmioAccess access;
+    XgcHost *h = opaque;
+    XgcHostControl *ctl = h->ctl;
+    uint32_t cap = h->ring_capacity;
+    uint32_t tail = ctl->ring_tail;
+    uint32_t next = (tail + 1) % cap;
 
-    while (h->ctl->ring_count < h->ring_capacity &&
-           xgc_mmio_take(h->cpu, &access) != 0) {
-        h->ring[h->ctl->ring_count++] = access;
+    while (__atomic_load_n(&ctl->ring_count, __ATOMIC_ACQUIRE) == next) {
+        if (ctl->quit) {
+            return false;
+        }
+        YieldProcessor();
     }
+    h->ring[tail] = *access;
+    __atomic_store_n(&ctl->ring_tail, next, __ATOMIC_RELEASE);
+    return true;
 }
 
 static uint64_t host_io_read(void *opaque, uint32_t addr, unsigned size)
@@ -137,8 +148,6 @@ static uint64_t host_io_read(void *opaque, uint32_t addr, unsigned size)
     XgcHost *h = ctx->host;
     XgcHostControl *ctl = h->ctl;
     ULONGLONG deadline;
-
-    host_publish_ring(h);
 
     ctl->io_flags = (ctx->flags & XGC_WIN_IO) ? 1u : 0u;
     ctl->io_addr = addr;
@@ -165,8 +174,6 @@ static uint32_t host_irq_ack(void *opaque)
     XgcHost *h = opaque;
     XgcHostControl *ctl = h->ctl;
     ULONGLONG deadline;
-
-    host_publish_ring(h);
 
     ctl->io_flags = XGC_IO_IRQ_ACK;
     ctl->io_addr = 0;
@@ -312,6 +319,7 @@ int main(int argc, char **argv)
         return 4;
     }
     xgc_set_irq_callback(host.cpu, host_irq_ack, &host);
+    xgc_set_mmio_sink(host.cpu, host_ring_push, &host);
     if (ctl->ram_size == 0 ||
         xgc_map_ram(host.cpu, 0, ctl->ram_size, base) != XGC_OK ||
         host_map_windows(&host) != 0) {
@@ -350,7 +358,6 @@ int main(int argc, char **argv)
 
             ctl->executed = executed;
             ctl->rc = rc;
-            host_publish_ring(&host);
             ctl->dropped = xgc_mmio_dropped(host.cpu);
             xgc_get_regs(host.cpu, host.regs);
             ctl->status = 2;

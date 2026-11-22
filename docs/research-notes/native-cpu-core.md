@@ -276,10 +276,19 @@ zero-step "interrupt exit": guests never saw their own handlers. With
 `replay_exception`/`replay_interrupt` returning true when not replaying, the
 full machine runs the whole boot (HDD attached, 32 IDE bus-master starts,
 `EIP=0x800422B0`, 214k I/O reads, 711 interrupts) instead of stalling at the
-first `fldz`. The remaining blocker is the write ring: a burst drops writes
-(`dropped=7530`), so the device the kernel is polling never completes. The fix
-is a lossless ring (incremental publish + backpressure) rather than a bigger
-buffer.
+first `fldz`.
+
+**The write ring is now lossless.** `xgc_set_mmio_sink()` hands every device
+write to the host synchronously; the host publishes it into a shared SPSC ring
+(`ring_count` = consumer head, `ring_tail` = producer tail) and spins while the
+consumer is behind, and C# drains the ring continuously in its poll loop. A
+saturated ring therefore slows the vCPU instead of losing commands. Result on
+the full machine: **`dropped=0`**, the IDE completes (32 bus-master starts) and
+the **NV2A comes alive: 2599 draws, 158,966 methods, 8 clears, 1 frame** - the
+native CPU is driving the C# GPU. Two new items follow: the guest then panics
+at `EIP=0x800151EF` (the kernel's illegal-instruction path), and the wall is
+2.2 Msteps/s while the GPU work runs, because the host blocks on device writes
+instead of overlapping them with C# processing.
 
 The full machine now reaches the kernel: 12 regions / 13 windows, the HDD
 attached, the SMC handshake and 19 SMBus transactions, PIT/PIC interrupts and

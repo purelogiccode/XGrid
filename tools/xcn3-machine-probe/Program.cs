@@ -42,6 +42,7 @@ namespace XGrid.Xcn3MachineProbe
         private const int OffExecuted = 24;
         private const int OffRc = 32;
         private const int OffRingCount = 36;
+        private const int OffRingTail = 580;
         private const int OffIrqPending = 40;
         private const int OffIrqVector = 44;
         private const int OffReset = 48;
@@ -180,6 +181,11 @@ namespace XGrid.Xcn3MachineProbe
                         {
                             DrainRing(ctl, machine);
                             break;
+                        }
+                        if (Read32(ctl + OffRingCount) != Read32(ctl + OffRingTail))
+                        {
+                            DrainRing(ctl, machine);
+                            continue;
                         }
                         if (process.HasExited || DateTime.UtcNow > deadline)
                         {
@@ -367,10 +373,11 @@ namespace XGrid.Xcn3MachineProbe
 
         private static void DrainRing(byte* ctl, XboxMachine machine)
         {
-            uint count = Read32(ctl + OffRingCount);
-            for (uint i = 0; i < count && i < RingCapacity; i++)
+            uint head = Read32(ctl + OffRingCount);
+            uint tail = Read32(ctl + OffRingTail);
+            while (head != tail)
             {
-                byte* e = ctl + OffRing + (int)(i * 24);
+                byte* e = ctl + OffRing + (int)(head * 24);
                 uint address = Read32(e);
                 uint size = Read32(e + 4);
                 uint flags = Read32(e + 12);
@@ -410,10 +417,8 @@ namespace XGrid.Xcn3MachineProbe
                     }
                 }
                 s_writes++;
-            }
-            if (count > 0)
-            {
-                Write32(ctl + OffRingCount, 0);
+                head = (head + 1) % (uint)RingCapacity;
+                Write32(ctl + OffRingCount, head);
             }
         }
 

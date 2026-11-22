@@ -33,6 +33,7 @@ namespace XGrid.Xcn1HostProbe
         private const int OffExecuted = 24;
         private const int OffRc = 32;
         private const int OffRingCount = 36;
+        private const int OffRingTail = 580;
         private const int OffIrqPending = 40;
         private const int OffIrqVector = 44;
         private const int OffReset = 48;
@@ -400,7 +401,6 @@ namespace XGrid.Xcn1HostProbe
 
         private static void RunSlice(byte* ctl, Process process)
         {
-            Write32(ctl + OffRingCount, 0);
             Write32(ctl + OffStatus, 1);
             DateTime deadline = DateTime.UtcNow.AddSeconds(60);
             int spins = 0;
@@ -420,6 +420,11 @@ namespace XGrid.Xcn1HostProbe
                     DrainRing(ctl);
                     break;
                 }
+                if (Read32(ctl + OffRingCount) != Read32(ctl + OffRingTail))
+                {
+                    DrainRing(ctl);
+                    continue;
+                }
                 if (process.HasExited)
                 {
                     throw new InvalidOperationException(
@@ -435,17 +440,19 @@ namespace XGrid.Xcn1HostProbe
 
         private static void DrainRing(byte* ctl)
         {
-            uint count = Read32(ctl + OffRingCount);
-            for (uint i = 0; i < count && i < RingCapacity; i++)
+            uint head = Read32(ctl + OffRingCount);
+            uint tail = Read32(ctl + OffRingTail);
+            while (head != tail)
             {
-                byte* e = ctl + OffRing + (int)(i * 24);
+                byte* e = ctl + OffRing + (int)(head * 24);
                 uint address = Read32(e);
                 uint size = Read32(e + 4);
                 uint flags = Read32(e + 12);
                 ulong value = Read64(e + 16);
                 Writes.Add(new Write(address, size, flags, value));
+                head = (head + 1) % (uint)RingCapacity;
+                Write32(ctl + OffRingCount, head);
             }
-            Write32(ctl + OffRingCount, 0);
         }
 
         private static void AnswerRead(byte* ctl)
