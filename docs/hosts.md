@@ -35,7 +35,7 @@ Captured 2026-10-20 by `scripts/host-doctor.ps1`.
 | CPU | AMD Ryzen 9 7900, 12 cores / 24 logical |
 | RAM | 31 GB |
 | PowerShell | 7.6.6 |
-| .NET SDK | 10.0.301 |
+| .NET SDK | 11.0.100 |
 | Free disk | C: 81.2 GB · D: 435.6 GB · H: 4.48 TB |
 | Toolchain | git, gcc (mingw64) on PATH; **nxdk toolchain present inside MSYS2** at `C:\msys64` (clang, lld, llvm-dlltool, make, bison, flex, cmake) - not on PATH (2026-10-22) |
 | `References2` | 9 sets, 43,153 files — manifest PASS |

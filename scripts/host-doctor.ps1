@@ -57,7 +57,7 @@ $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if ($dotnet) {
     $sdk = (& dotnet --version) 2>$null
     Write-Host ("  dotnet       {0}" -f $sdk)
-    if ($sdk -notmatch '^10\.') { $warnings.Add("dotnet SDK $sdk is not 10.x (plan expects 10.0.301 on H1)") }
+    if ($sdk -notmatch '^11\.') { $warnings.Add("dotnet SDK $sdk is not 11.x (plan expects 11.0.100 on H1)") }
 }
 else { $problems.Add('dotnet not on PATH'); Write-Host '  dotnet       MISSING' -ForegroundColor Red }
 
@@ -152,7 +152,7 @@ else { Write-Host ("  {0}  absent on this machine" -f $isos) -ForegroundColor Da
 Write-Section 'SIBLING REPO (XISOSharp, ktest smoke gate)'
 $sibling = Join-Path (Split-Path $repo -Parent) 'CSharp_XISOSharp\XISOSharp.Cli\bin\Release'
 $xiso = $null
-foreach ($tfm in 'net10.0', 'net9.0', 'net8.0') {
+foreach ($tfm in 'net11.0', 'net10.0', 'net9.0', 'net8.0') {
     $candidate = Join-Path $sibling "$tfm\XISOSharp.exe"
     if (Test-Path -LiteralPath $candidate) { $xiso = $candidate; break }
 }

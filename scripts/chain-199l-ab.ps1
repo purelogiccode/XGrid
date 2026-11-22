@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Workloads = @($Workloads | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $root = Split-Path -Parent $PSScriptRoot
-$cli = Join-Path $root "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
+$cli = Join-Path $root "src\XGrid.Cli\bin\Release\net11.0\XGrid.Cli.dll"
 $media = Join-Path $root "data\xemu-0.8.136-windows-x86_64"
 $hdd = Join-Path $root "wt-data\chain-199l\hdd.qcow2"
 $tri = Join-Path $root "wt-data\xemu-tri\triangle.iso"

@@ -27,7 +27,7 @@ if ($Compare) {
     Write-Host 'PASS: entire logs identical except decode announcements/stats and frame filename.'
     exit 0
 }
-$cli = 'src/XGrid.Cli/bin/Release/net10.0/XGrid.Cli.dll'
+$cli = 'src/XGrid.Cli/bin/Release/net11.0/XGrid.Cli.dll'
 $cliArgs = @($cli, 'boot', '--bios', "$Media/Complex_4627.bin", '--mcpx', "$Media/mcpx_1.0.bin", '--eeprom', "$Media/eeprom.bin", '--hdd', "$Media/xbox_hdd.qcow2", '--steps', '1000000000', '--gpu', 'sw')
 if ($Title -eq 'triangle') { $cliArgs += @('--dvd', "$Media/triangle.iso") }
 else { $cliArgs += @('--pad-script', 'down@950000000+hold,none@962000000,a@970000000+hold,none@976000000') }

@@ -34,7 +34,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-if (-not $Cli) { $Cli = Join-Path $root "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll" }
+if (-not $Cli) { $Cli = Join-Path $root "src\XGrid.Cli\bin\Release\net11.0\XGrid.Cli.dll" }
 if (-not (Test-Path $Cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $padScript = "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"

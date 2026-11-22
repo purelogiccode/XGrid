@@ -46,7 +46,7 @@ Set-Location $Root
 # machine's profile path and a stale TFM.)
 if ($XisoSharp -eq "") {
     $sibling = Join-Path (Split-Path $Root -Parent) "CSharp_XISOSharp\XISOSharp.Cli\bin\Release"
-    foreach ($tfm in "net10.0", "net9.0", "net8.0") {
+    foreach ($tfm in "net11.0", "net10.0", "net9.0", "net8.0") {
         $candidate = Join-Path $sibling "$tfm\XISOSharp.exe"
         if (Test-Path $candidate) { $XisoSharp = $candidate; break }
     }
@@ -57,7 +57,7 @@ if ($XisoSharp -eq "") {
     }
 }
 
-$cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
+$cli = "src\XGrid.Cli\bin\Release\net11.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 if (-not (Test-Path $FirmwareDir)) { Write-Error "Missing firmware dir: $FirmwareDir"; exit 2 }
 if (-not (Test-Path $SuiteXbe)) { Write-Error "Missing suite XBE: $SuiteXbe"; exit 2 }

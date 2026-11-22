@@ -46,7 +46,7 @@ $ErrorActionPreference = "Stop"
 [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-if (-not $Cli) { $Cli = Join-Path $root "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll" }
+if (-not $Cli) { $Cli = Join-Path $root "src\XGrid.Cli\bin\Release\net11.0\XGrid.Cli.dll" }
 if (-not (Test-Path $Cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 if (-not (Test-Path $FirmwareDir)) { Write-Error "Missing firmware dir: $FirmwareDir"; exit 2 }
 if (-not (Test-Path $Hdd)) { Write-Error "Missing HDD image: $Hdd"; exit 2 }

@@ -31,7 +31,7 @@ public sealed class CpuOracleCase
     public string Code { get; init; } = string.Empty;
 
     /// <summary>Gets the initial general-purpose registers.</summary>
-    public Dictionary<string, string> Registers { get; init; } = [];
+    public Dictionary<string, string> Registers { get; init; } = [with(global::System.StringComparer.Ordinal)];
 
     /// <summary>Gets the initial EFLAGS value.</summary>
     public string Eflags { get; init; } = "0x00000000";
@@ -50,7 +50,7 @@ public sealed class CpuOracleCase
 public sealed class CpuOracleExpectation
 {
     /// <summary>Gets the expected general-purpose registers.</summary>
-    public Dictionary<string, string> Registers { get; init; } = [];
+    public Dictionary<string, string> Registers { get; init; } = [with(global::System.StringComparer.Ordinal)];
 
     /// <summary>Gets the expected EFLAGS value.</summary>
     public string Eflags { get; init; } = "0x00000000";

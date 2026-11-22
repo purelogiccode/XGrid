@@ -1697,7 +1697,7 @@ public sealed class PshCombiner : ISnapshotable
         WriteVec(regs, muxDest, muxx, muxy, muxz, blueToAlpha: false);
     }
 
-    private float ReadPlanned(int slot, int component, Span<float> regs, float[] fog, float[][] consts)
+    private float ReadPlanned(int slot, int component, ReadOnlySpan<float> regs, float[] fog, float[][] consts)
     {
         switch (_planKind[slot])
         {
@@ -1712,8 +1712,8 @@ public sealed class PshCombiner : ISnapshotable
         }
     }
 
-    private void ReadPlannedVec(int slot, Span<float> regs, float[] fog, float[][] consts, out float x, out float y,
-        out float z)
+    private void ReadPlannedVec(int slot, ReadOnlySpan<float> regs, float[] fog, float[][] consts, out float x,
+        out float y, out float z)
     {
         if (_planChan[slot] != 0)
         {
@@ -1729,7 +1729,7 @@ public sealed class PshCombiner : ISnapshotable
         z = ReadPlanned(slot, 2, regs, fog, consts);
     }
 
-    private float ReadFinalPlanned(int slot, int component, Span<float> regs, float efx, float efy, float efz,
+    private float ReadFinalPlanned(int slot, int component, ReadOnlySpan<float> regs, float efx, float efy, float efz,
         float[] fog, float[][] consts)
     {
         switch (_finalKind[slot])
@@ -1748,7 +1748,7 @@ public sealed class PshCombiner : ISnapshotable
         }
     }
 
-    private float ReadFinalAlphaPlanned(int slot, Span<float> regs, float efz, float[] fog,
+    private float ReadFinalAlphaPlanned(int slot, ReadOnlySpan<float> regs, float efz, float[] fog,
         float[][] consts)
     {
         // Alpha channel select: BLUE reads .b, ALPHA reads .a (ReadFinalAlpha).
@@ -1813,7 +1813,7 @@ public sealed class PshCombiner : ISnapshotable
             : ((flags & ControlUniqueC1) != 0) ? consts[(stage * 2) + 1] : consts[1];
     }
 
-    private float ReadComponent(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan,
+    private float ReadComponent(ReadOnlySpan<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan,
         int component)
     {
         if (reg == RegZero)
@@ -1851,8 +1851,8 @@ public sealed class PshCombiner : ISnapshotable
         return offset < 0 ? 0f : regs[offset + component];
     }
 
-    private float ReadFinalComponent(Span<float> regs, float efx, float efy, float efz, float[] fog, float[][] consts,
-        int reg, int chan, int component)
+    private float ReadFinalComponent(ReadOnlySpan<float> regs, float efx, float efy, float efz, float[] fog,
+        float[][] consts, int reg, int chan, int component)
     {
         if (reg == RegEfProd)
         {
@@ -1866,7 +1866,7 @@ public sealed class PshCombiner : ISnapshotable
             : ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
     }
 
-    private float ReadFinalAlpha(Span<float> regs, float efz, float[] fog, float[][] consts,
+    private float ReadFinalAlpha(ReadOnlySpan<float> regs, float efz, float[] fog, float[][] consts,
         int reg, int chan)
     {
         // Alpha channel select: BLUE reads .b, ALPHA reads .a.
@@ -1881,7 +1881,7 @@ public sealed class PshCombiner : ISnapshotable
             : reg == RegC1 ? consts[17][component] : ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
     }
 
-    private float ReadAlpha(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan)
+    private float ReadAlpha(ReadOnlySpan<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan)
     {
         // Alpha inputs: BLUE channel reads .b, ALPHA channel reads .a.
         int component = chan != 0 ? 3 : 2;
@@ -1995,8 +1995,8 @@ public sealed class PshCombiner : ISnapshotable
         WriteVec(regs, muxDest, muxx, muxy, muxz, blueToAlpha: false);
     }
 
-    private void ReadMappedVec(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan, int mod,
-        out float x, out float y, out float z)
+    private void ReadMappedVec(ReadOnlySpan<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan,
+        int mod, out float x, out float y, out float z)
     {
         if (chan != 0)
         {

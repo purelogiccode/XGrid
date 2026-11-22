@@ -29,7 +29,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
+$cli = "src\XGrid.Cli\bin\Release\net11.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 
 $media = "D:\spec-soak\media"

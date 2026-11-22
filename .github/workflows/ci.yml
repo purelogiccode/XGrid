@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
           cache: true
           cache-dependency-path: |
             Directory.Packages.props
@@ -100,7 +100,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
           cache: true
           cache-dependency-path: |
             Directory.Packages.props
@@ -114,7 +114,7 @@ jobs:
 
       - name: Hash assemblies (first pass)
         run: |
-          find src -type f -name '*.dll' -path '*/bin/Release/net10.0/*' -print0 \
+          find src -type f -name '*.dll' -path '*/bin/Release/net11.0/*' -print0 \
             | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/first.txt"
 
       - name: Clean
@@ -125,7 +125,7 @@ jobs:
 
       - name: Compare hashes
         run: |
-          find src -type f -name '*.dll' -path '*/bin/Release/net10.0/*' -print0 \
+          find src -type f -name '*.dll' -path '*/bin/Release/net11.0/*' -print0 \
             | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/second.txt"
           if ! diff -u "$RUNNER_TEMP/first.txt" "$RUNNER_TEMP/second.txt"; then
             echo "Build is not deterministic: assemblies differ between clean builds." >&2
@@ -145,7 +145,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
           cache: true
           cache-dependency-path: |
             Directory.Packages.props
@@ -173,7 +173,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
           cache: true
           cache-dependency-path: |
             Directory.Packages.props
@@ -232,7 +232,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
 
       - name: Download Linux test results
         uses: actions/download-artifact@v8
@@ -286,7 +286,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
           cache: true
           cache-dependency-path: |
             Directory.Packages.props
@@ -328,7 +328,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
           cache: true
           cache-dependency-path: |
             Directory.Packages.props

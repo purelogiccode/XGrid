@@ -35,7 +35,7 @@ $ErrorActionPreference = "Stop"
 # into an ephemeral per-user temp path that does not survive cleanup and does
 # not exist on the other development machine.
 if ($Dvd -eq "") { $Dvd = Join-Path (Split-Path -Parent $PSScriptRoot) "wt-data\xemu-tri\triangle.iso" }
-$cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
+$cli = "src\XGrid.Cli\bin\Release\net11.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 if (-not (Test-Path $Dvd)) { Write-Error "Triangle ISO not found: $Dvd (pass -Dvd <path>)"; exit 2 }
 

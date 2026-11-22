@@ -9,11 +9,11 @@ public sealed class CpuTest
     public string Name { get; init; } = string.Empty;
 
     /// <summary>Gets the initial register values (name to hex string).</summary>
-    public Dictionary<string, string> Registers { get; init; } = [];
+    public Dictionary<string, string> Registers { get; init; } = [with(global::System.StringComparer.Ordinal)];
 
     /// <summary>Gets the instruction bytes as a hex string.</summary>
     public string Code { get; init; } = string.Empty;
 
     /// <summary>Gets the expected register values after execution (name to hex string).</summary>
-    public Dictionary<string, string> Expected { get; init; } = [];
+    public Dictionary<string, string> Expected { get; init; } = [with(global::System.StringComparer.Ordinal)];
 }
