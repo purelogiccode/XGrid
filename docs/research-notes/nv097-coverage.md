@@ -496,3 +496,11 @@ ignore is therefore reference-faithful:
 **Valid-surface coverage gap on this leg: zero.** The counter is the instrument
 for the XFP2+ method work; the anchors are identical
 (`F9945E16`/`8836C7EB`), and the counter is opt-in and host-side.
+
+The menu 1B leg reads **16,514 outside-surface writes** (RAM `5C0CF968` / CPU
+`E2B4D327`, the accurate anchors, unchanged): `0x1D84` 8,216 and `0x1710` 8,178
+dominate, then `0x17C4` 108, `0x380` 4, and the same singles. Both large offsets
+are address arithmetic just outside a defined method (`0x1D84` is +8 from
+`SET_ANTI_ALIASING_CONTROL` at `0x1D7C`; `0x1710` is -0x10 from
+`SET_VERTEX_DATA_ARRAY_OFFSET` at `0x1720`), which the reference does not define
+and therefore ignores; the guest's own stream remains reproducible bit for bit.
