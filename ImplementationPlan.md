@@ -574,9 +574,19 @@ Reference: `pgraph/vertex.c`, `pgraph/draw.c`, `pgraph_gl_bind_inline_array`,
 Reference: `pgraph/glsl/vsh-prog.c`, `vsh.c`, `psh.c`, `vsh-ff.c`, `vsh.h`,
 `psh_regs.h`, `vsh_regs.h`.
 
-- [ ] Replace the partial hand transcription of the vertex-program interpreter and
-  combiner with the reference's complete program decode and evaluation, keeping
-  `VshProgramPlan` as the fast form and the interpreter as the fallback.
+- [x] Decode audit (2026-11-22): every reference shader module has a target and a
+  differential, and the "partial transcription" concern is dispositioned by
+  test rather than rewritten.
+  | Reference | XGrid target | Differential |
+  |---|---|---|
+  | `vsh-prog.c` | `VshProgram`, `VshProgramPlan` | `VshProgramPlanTests`: every MAC/ILU opcode, all source swizzles/negates, ARL-relative constants, fog writes, every output mask, paired register-one, 400-program fuzz - plan == interpreter bit-for-bit |
+  | `vsh-ff.c` | `FixedFunctionVertex` | `Nv2aFixedFunctionTests` + `Nv2aFixedFunctionLightingTests` + the `xgu *_ffp` corpus rows |
+  | `vsh.c` / `vsh.h` | `FixedFunctionVertexState` | the same tests (latched state) |
+  | `psh.c` | `PshCombiner` | `PshCombinerTests`, `PshCombinerReachTests`, the live compile gate |
+  | `glsl/psh.c` | `PshGlslGenerator` | 99 synthetic programs + the 5 gate-title configurations, compiled+linked live |
+  | `glsl/common.c`, `shaders.c` | generator prelude / `BuildKey` cache | compile gate; per-draw uniforms mean no recompile on mode changes |
+  | `glsl/geom.c` | - | **n/a for the software path**: the rasterizer assembles primitives directly; the GL backend declines non-triangles and replace mode composes the software frame |
+  The VSH runs on the CPU in both renderers (the reference's GL path also evaluates it host-side except where a GPU program is emitted), so no VSH GLSL completeness gap exists for the gates.
 - [ ] Port the reference's GLSL generation for VSH, PSH and fixed-function: the
   final combiner, fog, texgen, texture matrices, lighting.
 - [x] Live-driver compile gate (N12): the synthetic mode matrix (99 programs)
