@@ -389,9 +389,13 @@ Reference: `tcg/tcg.c`, `tcg/tcg-op.c`, `include/tcg/tcg.h`,
 
 Reference: `tcg/i386/tcg-target.c.inc`; the existing `RawBlockEmitter` (Iced).
 
-- [ ] Map the TCG IR to the existing raw emitter (one native function per
-  translated block) or a new IR executor; keep the IL/raw engine as the
-  fallback behind a flag.
+- [x] Map the TCG IR onto the machine: `XboxCpu` implements `ITcgMemory` over
+  its own MMU/MMIO path and `RunTcg` executes translated TBs (up to 16 members,
+  per-member poll) with the spec/raw engines as the fallback behind
+  `XGRID_TCG_ENGINE=1`. The **exactness gate is met** (four accurate 1B
+  goldens, the ktest log and the cpu-oracle) but the **speed gate is not**:
+  11.06-15.51 Msteps/s vs the fast raw engine 57-100, so it is **not
+  switched**. Next: the host code generator against the 6.3 ns/member bar.
 - [ ] Port the host helpers for memory, FPU/SSE, string ops and CALL/RET.
 - [ ] Differential: the 1B anchors, the ktest log and the cpu-oracle exact with
   the new engine; one engine per run, no mixing.

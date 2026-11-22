@@ -856,7 +856,7 @@ internal static class Program
                             $"caller={caller:X8} arg={argument:X8}");
                     }
 
-                    machine.Cpu.Step();
+                    machine.Cpu.StepEngineAware();
                     executed++;
 
                     if (++logAdvance >= 4096)
@@ -883,7 +883,7 @@ internal static class Program
                         break;
                     }
 
-                    machine.Cpu.Step();
+                    machine.Cpu.StepEngineAware();
                     executed++;
 
                     if (++breakAdvance >= 4096)
@@ -1443,7 +1443,7 @@ internal static class Program
                         break;
                     }
 
-                    machine.Cpu.Step();
+                    machine.Cpu.StepEngineAware();
                     executed++;
 
                     if (++breakAdvance >= 4096)

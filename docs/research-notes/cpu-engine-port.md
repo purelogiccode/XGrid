@@ -227,6 +227,28 @@ CPU `C43D5B49`, menu RAM `5C0CF968` / CPU `E2B4D327` (both `vec=0`). Speed:
 the task contract it is **not switched**; its role is the interpreter
 replacement for the non-JIT share (the fallback list is CLI/STI/CALL/RET).
 
+**Slice 4 (2026-11-22): the full gate evidence.** `StepEngineAware` routes the
+break/trace step path through the engine (`RunTcg(1)` with the member limit), so
+the ktest leg exercises it end to end. On the IR engine:
+
+| Gate item | Result |
+|---|---|
+| triangle 1B accurate RAM/CPU | `E58AE5D7` / `C43D5B49` - exact |
+| menu 1B accurate RAM/CPU | `5C0CF968` / `E2B4D327` - exact |
+| triangle 1B frame (sw / gl) | `5B50373D` / `79142DE4` - exact |
+| menu 1B frame (sw / gl) | `4EF1FBF6` / `B6116DAE` - exact |
+| ktest 792,800,535 steps park | `4E03A`, `vec=0`, log **40,797 B `CA5D3867`** byte-identical |
+| ktest 100M workload RAM/CPU | `1B558C8E` / `2631A7CF` - exact vs the reference engine |
+| cpu-oracle corpus | exact (P1S3 gate) |
+
+**Switch decision:** the engine is exact everywhere required, but its member
+cost is **not below the current raw runner** (11.06-15.51 Msteps/s vs the fast
+raw engine's 57-100), so per the task contract it stays behind
+`XGRID_TCG_ENGINE=1` and the product keeps the raw engine. The next speed step
+is the host code generator against the measured 6.3 ns/member bar; the engine's
+value today is the exact reference implementation and the interpreter
+replacement path.
+
 ### P1S5 - parity and switchover (4-6 sessions)
 
 - Four accurate 1B goldens, ktest, 22-row corpus, 30B/100B 007 legs exact.

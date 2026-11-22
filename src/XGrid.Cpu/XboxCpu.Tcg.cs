@@ -40,6 +40,18 @@ public sealed partial class XboxCpu : ITcgMemory, ITcgPollObserver
     /// <summary>Gets the translated-block cache misses (formations).</summary>
     public long TcgBlockMisses => _tcgBlocks?.Misses ?? 0;
 
+    /// <summary>Executes exactly one instruction through the active engine (break/trace path).</summary>
+    public void StepEngineAware()
+    {
+        if (TcgEngineEnabled)
+        {
+            RunTcg(1);
+            return;
+        }
+
+        Step();
+    }
+
     byte ITcgMemory.Read8(uint address) => (byte)ReadMemory(address, 8);
 
     ushort ITcgMemory.Read16(uint address) => (ushort)ReadMemory(address, 16);
