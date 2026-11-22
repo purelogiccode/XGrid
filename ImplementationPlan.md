@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-11-22):** P1 / **P1S5 - CPU engine port D: parity and switchover** (active, attempt 1).
+**Current status (2026-11-22):** P1 / **P1S6 - P1 gate: at least one game playable** (active, attempt 0).
 **Gameplay (P1):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - P1 sprint (2026-11-22): the objective is at least one game playable; no title is playable yet. P1S0 measured 007 at 0.100x (30B gameplay 413.254 s; runner 53.5%, non-JIT 20.1%, b4 35.7%, GL 0.42%; N15: shape fixes top out at ~0.20x). P1S1 is done: the live WASAPI sink plays the EP FIFO PCM (state=Playing; WAV SHA 813CB8DE... = TM8). The operator chose the full xemu/QEMU CPU engine port; P1S2 is done (QEMU CPUTLBEntry as QemuTlb, 9 exact differential tests; probe 0.84 vs 0.64 ns, so the TLB is not the lever - N16). P1S3 (TCG IR + i386 translator) is done: slices 1-5 landed (managed TCG IR + IR interpreter + 77 exact translator differentials: MOV/ALU/INC/DEC/NOP/JMP/Jcc, the reference memory shape Lea/Load/Store with 1/2/4-byte accesses and segment bases, 8/16-bit and partial registers, shifts/rotates, SHLD/SHRD, NEG/NOT, MOVZX/MOVSX, LEA, XCHG, SAHF/LAHF, MUL/IMUL/DIV/IDIV, PUSH/POP, BT/BTS/BTR/BTC, CMPXCHG/CMPXCHG8B, XADD, 16-bit addressing, REP string ops (MOVS/CMPS/STOS/LODS/SCAS), the MMX register file and the packed integer family (padd/psub saturation, pmul*, pcmp/pack/unpck, shifts, moves, maskmovq, pinsrw/pextrw/pmovmskb/pshufw, EMMS); 828 CPU tests green; the MMX file is the real FpuState and the 641-case cpu-oracle corpus runs through the IR engine with counted fallback - exact against the independent oracle, translated=2501/fallback=2344 after the integer batch: ADC/SBB, TEST, SETcc, CMOVcc, BSWAP, BSF/BSR, ARPL, sign-extends, XLAT, flag ops, PUSHF/POPF, PUSHA/POPA, LEAVE, LOOP/JECXZ), x87 (TcgFpu: full arithmetic/compare/unary/BCD/stack set over the shared FpuState/Fpu80) and SSE (TcgSse: moves, packed/scalar arithmetic, logical, compares, shuffles, conversions, MXCSR) - corpus 4202 translated / 643 fallback (641 harness FXSAVE + 2 ENTER), 892 CPU tests); P1S3 (TCG IR + i386 translator) is done; the IR interpreter measures 14.80 ns/member vs the raw runner 6.30 (2.3x) on a hot loop, and at real scale it pays ~132 ns/instruction, so the engine is integrated first (block runner, ITcgMemory over the CPU MMU, interrupt poll, fallback); P1S4 slice 1 lands the engine seam and TB cache: XboxCpu implements ITcgMemory over its own MMU/MMIO path, RunTcg polls interrupts and TSC per instruction with the exact interpreter as fallback, and TcgBlockCache caches one translated instruction per EIP (15-byte head check, clears on MMU flush and decoded-code stores) - exact on the triangle leg's first 10M steps (RAM 97CA74AA, CPU FA4E4131) at 5.24 vs 11.70 Msteps/s (1.06 without cache); slice 2 adds TcgExecutionState (no per-instruction allocations) and skips Fetch on TB hits -> still exact at 7.59 Msteps/s (2.7x the uncached interpreter, 0.65x the default cached one); the corrected real-scale cost is ~132 ns/instruction, so replacing the non-JIT share saves ~10% wall, and the switch gate now needs multi-member TBs with a per-member poll contract plus the codegen; slice 3 adds the per-member poll contract (TcgOpKind.Poll advances TSC and checks the PIC between members; a pending interrupt publishes the live state, delivers with the next member EIP and abandons the block) and the member limit that makes the step budget exact - multi-member TBs (up to 16) are now exact at 100k/1M/10M and at both 1B accurate anchors (triangle E58AE5D7/C43D5B49, menu 5C0CF968/E2B4D327) at 15.51 msps (10M) / 11.06 (triangle 1B) / 10.34 (menu 1B); the engine is not switched because it is not yet faster than the fast raw engine, 895 CPU tests). P1S4 is done and P1S5 (parity and switchover) is done: the parity bundle is exact with the ported engine (four accurate 1B goldens incl. both frames, ktest log CA5D3867 byte-identical, ktest 100M workload, cpu-oracle), the product is NOT switched because the engine is 5-7x slower, and the speed ceiling is recorded - the product is at 0.100x (13.7 ns/step), 0.5x needs ~2.7 ns/step, and the ported engine reaches 66-90 ns/step, so the phase stops with 0% of the required speedup from this port. The 0.5x P1 gate still needs xemu-class ~1.2 ns/step. Then P1S4 host codegen, P1S5 parity/switchover, P1S6 the P1 gate. The reference map is docs/research-notes/cpu-engine-port.md. The repository stays private until P1 (docs/open-source.md). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.65% (93.99 of 118). **Next:** P1S6 (P1 gate: at least one game playable), XFP0 (Port ledger, module map and differential harness for the xemu full port), XFP1 (PGRAPH method surface and state (pgraph.c, methods, registers)), XFP2 (PGRAPH vertex fetch, primitive assembly and draw path).
+**Phase score:** 79.65% (93.99 of 118). **Next:** XFP0 (Port ledger, module map and differential harness for the xemu full port), XFP1 (PGRAPH method surface and state (pgraph.c, methods, registers)), XFP2 (PGRAPH vertex fetch, primitive assembly and draw path), XFP3 (PGRAPH shader pipeline (VSH, PSH, fixed-function, GLSL generators)).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 22.
 <!-- STATUS:END -->
 
@@ -443,12 +443,35 @@ Reference: `tcg/i386/tcg-target.c.inc`; the existing `RawBlockEmitter` (Iced).
 
 #### P1S6 - P1 gate
 
-- [ ] Run the nine-part check on 007: own render, live input, >= 0.5x, 10
-  minutes, save/load, xemu frame policy, live audio, product defaults, gates.
-- [ ] Evidence bundle in `docs/status.json` and `docs/compatibility.md`; the
-  repository stays private until the operator confirms (publication gate).
-- [ ] Acceptance: **P1 met** (at least one game playable) or a documented
-  blocker with the measurement.
+- [x] Nine-part check on 007 (2026-11-22):
+  1. **Own render** - PASS (first-level driving scene, 100B steps, 48,208
+     colours, `vec=0`; TM4).
+  2. **Live input** - PASS (scripted XID edges move the guest stage; the
+     frontend merges live XInput).
+  3. **>= 0.5x** - **FAIL**: 30B gameplay 413.254 s = **0.100x** (P1S0).
+  4. **10 minutes** - **FAIL by derivation**: 10 guest minutes at 0.100x is
+     ~100 minutes wall; TM4 ran 100B steps to the scene, not a real-time
+     10-minute session.
+  5. **Save/load** - PASS (`.xgs` round trips, snapshots used throughout the
+     TM probes).
+  6. **xemu frame policy** - PASS (TM7: 007 `dmean=(18.0, 22.6, 14.6)` vs the
+     same scene captured from xemu 0.8.139).
+  7. **Live audio** - PASS (P1S1: live WASAPI sink, WAV SHA identical to TM8's
+     42.4% non-zero PCM).
+  8. **Product defaults** - PASS for the frontend defaults (software renderer,
+     fast mode, live audio), not re-run as a full real-time session.
+  9. **Gates** - PASS (four accurate 1B goldens, ktest log, cpu-oracle exact;
+     re-verified on the ported engine in P1S4/P1S5).
+- [x] Evidence bundle in `docs/status.json` and `docs/compatibility.md`; the
+  repository stays private (publication gate closed).
+- [x] Acceptance: **P1 not met - documented blocker with the measurement.**
+  The speed floor is the blocker: the product runs 007 at 0.100x and the
+  measured ceiling of the CPU engine port is 0% of the required speedup
+  (P1S4/P1S5: the ported engine is exact but 5-7x slower than the current
+  runner; N1-N16 each measured below the bar; GL is 0.42% of the wall and b4
+  35.7%). 0.5x needs ~2.7 ns/step, i.e. xemu's own TCG translation quality
+  (~1.2 ns/step), which is a different engine project from this port. Reopen
+  with an engine at <=2.7 ns/step, or an operator re-scope of the floor.
 
 **Price:** 1 session. **Bar:** correctness.
 
