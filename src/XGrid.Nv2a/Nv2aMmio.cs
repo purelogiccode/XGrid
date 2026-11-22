@@ -8709,7 +8709,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             // draw command's own set (captured under the current PGRAPH state)
             // or gets null and declines those modes.
             _guestTexelCapture ? GuestTexelsFor() : null,
-            BumpState);
+            BumpState,
+            _surfaceSwizzleTarget,
+            (int)_surfaceSwizzleWidth,
+            (int)_surfaceSwizzleHeight);
     }
 
     private PgraphDrawInfo BuildLegacyDrawInfo(
@@ -8748,7 +8751,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             eyeY,
             eyeZ,
             guestTexels: null,
-            BumpState);
+            BumpState,
+            _surfaceSwizzleTarget,
+            (int)_surfaceSwizzleWidth,
+            (int)_surfaceSwizzleHeight);
     }
 
     private static PgraphVertex ToBackendVertex(in PshVertex v)
@@ -8856,7 +8862,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // backend's surfaces are pitch-addressed, and these targets are
         // offscreen render-to-texture passes the guest samples later. The
         // front buffer the guest presents stays a PITCH surface.
-        IPgraphBackend? backend = _surfaceSwizzleTarget ? null : Backend;
+        IPgraphBackend? backend = Backend;
         if (backend is not null)
         {
             PgraphDrawInfo backendInfo = BuildLegacyDrawInfo(
@@ -10515,7 +10521,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // backend's surfaces are pitch-addressed, and these targets are
         // offscreen render-to-texture passes the guest samples later. The
         // front buffer the guest presents stays a PITCH surface.
-        IPgraphBackend? backend = _surfaceSwizzleTarget ? null : Backend;
+        IPgraphBackend? backend = Backend;
         if (backend is not null)
         {
             PgraphDrawInfo backendInfo = BuildCachedDrawInfo(a, b, c, clipX, clipY, clipW, clipH, bytes, zetaBytes);

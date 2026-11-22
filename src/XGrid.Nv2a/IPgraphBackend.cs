@@ -596,6 +596,9 @@ public readonly struct PgraphTextureSlot(
 /// <param name="eyez">Eye-space camera z.</param>
 /// <param name="guestTexels">Guest texel words the computed cube/dot texture modes read (null when none apply).</param>
 /// <param name="bump">The BUMPENVMAP per-stage matrices and luminance pairs.</param>
+/// <param name="colorSwizzle">Whether the color target is a SWIZZLE-type surface.</param>
+/// <param name="colorSwizzleWidth">The swizzled target's log2 width (0 otherwise).</param>
+/// <param name="colorSwizzleHeight">The swizzled target's log2 height (0 otherwise).</param>
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphDrawInfo(
     in PgraphVertex a, in PgraphVertex b, in PgraphVertex c,
@@ -615,7 +618,10 @@ public readonly struct PgraphDrawInfo(
     float eyey = 0f,
     float eyez = 0f,
     PgraphGuestTexelSet? guestTexels = null,
-    PgraphBumpState bump = default)
+    PgraphBumpState bump = default,
+    bool colorSwizzle = false,
+    int colorSwizzleWidth = 0,
+    int colorSwizzleHeight = 0)
 {
 
     /// <summary>Gets the first triangle vertex.</summary>
@@ -641,6 +647,21 @@ public readonly struct PgraphDrawInfo(
 
     /// <summary>Gets the color bytes per pixel.</summary>
     public uint ColorBytes { get; } = colorBytes;
+
+    /// <summary>
+    /// Gets whether the color target is a SWIZZLE-type surface: the backend
+    /// renders it at the log2 extent and, in replacement mode, downloads the
+    /// batch's drawn region to guest RAM in Morton order
+    /// (<see cref="PgraphDrawInfo.ColorSwizzleWidth"/>/Height), which is what
+    /// the guest's later sample of that render target reads.
+    /// </summary>
+    public bool ColorSwizzle { get; } = colorSwizzle;
+
+    /// <summary>Gets the swizzled color target's log2 width (0 when not swizzled).</summary>
+    public int ColorSwizzleWidth { get; } = colorSwizzleWidth;
+
+    /// <summary>Gets the swizzled color target's log2 height (0 when not swizzled).</summary>
+    public int ColorSwizzleHeight { get; } = colorSwizzleHeight;
 
     /// <summary>Gets the zeta bytes per pixel.</summary>
     public uint ZetaBytes { get; } = zetaBytes;

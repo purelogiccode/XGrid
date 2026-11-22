@@ -110,6 +110,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly float[] _batchData;
     private int _batchCount;
     private bool _batchOpen;
+
+    // XFP5 swizzled render target: the batch's target record, used to download
+    // the drawn clip region to guest RAM in Morton order after submission.
+    private bool _rtSwizzlePending;
+    private uint _rtAddress;
+    private uint _rtColorBytes;
+    private int _rtSwizzleWidth;
+    private int _rtSwizzleHeight;
+    private uint _rtClipX;
+    private uint _rtClipY;
+    private uint _rtClipW;
+    private uint _rtClipH;
+    private uint _rtDownloads;
+    private uint _rtSwizzleSeen;
     private bool _batchStateReady;
     private GlProgram? _batchProgram;
 
@@ -540,7 +554,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
                 $" unsupTex[{DescribeUnsupportedTexModes()}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} " +
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} rtDownloads={_rtDownloads} rtSwizzleSeen={_rtSwizzleSeen} " +
                 $"composedFrames={_composedFrames} composedPixels={_composedPixels} composedDraws={_composedDraws} " +
                 $"batchCalls={BatchCalls} batchTris={BatchTriangles} batchCap={_batchCapacity} " +
                 $"guestWordDraws={GuestWordDraws} guestWordMisses={GuestWordMisses} guestWordDeclined={_guestWordDeclinedDraws}]");
@@ -591,6 +605,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         if (_fatalError is not null)
         {
             return false;
+        }
+
+        if (info.ColorSwizzle)
+        {
+            _rtSwizzleSeen++;
+            _rtSwizzlePending = true;
+            _rtAddress = info.ColorSurfaceAddress;
+            _rtColorBytes = info.ColorBytes;
+            _rtSwizzleWidth = info.ColorSwizzleWidth;
+            _rtSwizzleHeight = info.ColorSwizzleHeight;
+            _rtClipX = info.ClipX;
+            _rtClipY = info.ClipY;
+            _rtClipW = info.ClipW;
+            _rtClipH = info.ClipH;
         }
 
         if (ReplaceMode && _frameComposed)
@@ -1086,6 +1114,63 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     }
 
     /// <summary>Submits every triangle buffered for the current batch as one instanced draw.</summary>
+    /// <summary>
+    /// XFP5: downloads a swizzled render target's drawn clip region from the
+    /// FBO into guest RAM in Morton order (the reference's
+    /// <c>surface_download</c> + <c>swizzle_rect</c>). The batch's vertices
+    /// address the surface at ClipX/ClipY, so the FBO pixel (x, y) maps to
+    /// the surface texel (ClipX + x, ClipY + y) and its swizzled offset; the
+    /// write goes through the GPU-memory adapter, which bumps the guest write
+    /// stamp so the texture cache re-hashes the surface when the guest samples
+    /// it. Zeta is not downloaded (the FBO keeps it for the frame's own depth
+    /// tests; a title that samples a swizzled render target's depth would need
+    /// the same walk over the depth attachment - none measured).
+    /// </summary>
+    private void DownloadSwizzledTarget()
+    {
+        _rtSwizzlePending = false;
+        if (!ReplaceMode || _rtColorBytes != 4 || _fbo == 0 ||
+            _rtSwizzleWidth <= 0 || _rtSwizzleHeight <= 0)
+        {
+            return;
+        }
+
+        int width = (int)Math.Min(_rtClipW, (uint)_fboWidth);
+        int height = (int)Math.Min(_rtClipH, (uint)_fboHeight);
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        byte[] rgba = new byte[width * height * 4];
+        long start = Stopwatch.GetTimestamp();
+        BindFbo(_fbo);
+        unsafe
+        {
+            fixed (byte* pRgba = rgba)
+            {
+                _gl.ReadPixels(0, 0, (uint)width, (uint)height, PixelFormat.Rgba, PixelType.UnsignedByte, pRgba);
+            }
+        }
+
+        _timings.AddReadback(Stopwatch.GetElapsedTime(start));
+        for (int y = 0; y < height; y++)
+        {
+            uint surfaceY = _rtClipY + (uint)y;
+            for (int x = 0; x < width; x++)
+            {
+                int at = ((y * width) + x) * 4;
+                uint pixel = (uint)((rgba[at] << 16) | (rgba[at + 1] << 8) | rgba[at + 2] |
+                                    (rgba[at + 3] << 24));
+                uint texel = Nv2AMmio.SwizzleOffset(
+                    (int)(_rtClipX + (uint)x), (int)surfaceY, _rtSwizzleWidth, _rtSwizzleHeight);
+                _memory.WritePhysical(_rtAddress + (texel * 4u), pixel);
+            }
+        }
+
+        _rtDownloads++;
+    }
+
     private void FlushBatch()
     {
         if (_batchCount == 0)
@@ -1100,6 +1185,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _timings.AddBatchFlushTicks(Stopwatch.GetTimestamp() - start);
         BatchCalls++;
         _batchCount = 0;
+
+        if (_rtSwizzlePending && ReplaceMode)
+        {
+            DownloadSwizzledTarget();
+        }
     }
 
     private readonly bool _probeEnabled = string.Equals(

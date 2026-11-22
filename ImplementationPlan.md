@@ -761,7 +761,30 @@ program cache, buffer objects.
   to the pre-port build (the report methods are not reached in the 1B gate
   path; the status block's older `5C0CF968`/`E58AE5D7` RAM figures are stale
   from a previous session, not moved here).
-- [ ] Slice 2 - swizzled render targets through the GL backend (measured, next).
+- [x] Slice 2 - swizzled render targets through the GL backend (2026-11-23).
+  `PgraphDrawInfo` now carries `ColorSwizzle` + the target's log2 extent, and
+  both fill entries pass the live surface geometry; the swizzled-target skip is
+  lifted, so the backend draws those targets. In replacement mode the backend
+  downloads the batch's drawn clip region from the FBO into guest RAM in
+  **Morton** order at `FlushBatch` (the reference's `surface_download` +
+  `swizzle_rect`), through the GPU-memory adapter - the guest write stamp
+  bumps, so the texture cache re-hashes the surface when the guest samples it,
+  and the present-dirty bit stays suppressed (the RT is not the front buffer).
+  Zeta is not downloaded (the FBO owns it for the frame; a title sampling a
+  swizzled render target's depth would need the same walk - none measured).
+  Differential: `SwizzledTargetLiveTests` (2 live rows) - a 4x4 swizzled
+  target draw lands pixel (2,0) at Morton word 4 while index 12 (pixel (0,3)'s
+  PITCH word, not a covered Morton word) stays zero, so a pitch walk would
+  fail the test; a pitch target never enters the swizzle path. Gates: both
+  accurate 1B goldens byte-identical and the ktest log `CA5D3867` (the gate
+  titles draw no swizzled targets at 1B: `rtSwizzleSeen=0`). The NGB 10B + 10M
+  window also draws only pitch targets (`rtSwizzleSeen=0`) - its recorded
+  swizzle surface sets there are clears - so the retail render-target window
+  is still to locate; probe later steps for the first `seen>0` frame.
+- [ ] Slice 2b - the NGB swizzled-target window: find the step range where the
+  256x256 `0x08080228` targets are drawn (probe `rtSwizzleSeen` over later
+  anchors), then compare the GL replace frame with the software frame and add
+  the zeta download if the frame shows a depth-driven difference.
   NGB at the 10B anchor + 10M steps in `--gpu gl --gpu-replace`: the backend
   reports **`draws=0 programs=0 presentUploads=1`** while the software leg
   executes 3,040 draws, and the recorded stream sets `0x08080228` /
