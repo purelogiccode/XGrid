@@ -735,6 +735,32 @@ Reference: `pgraph/texture.c`/`.h`, `surface.h`, `swizzle.c`/`.h`, `s3tc.c`
 Reference: `pgraph/gl/**` (14 files) - renderer, draw, texture, shaders,
 program cache, buffer objects.
 
+- [x] Slice 1 - occlusion reports (2026-11-23): the first measured gap. Every
+  one of the seven title streams issues **313-332** `GET_REPORT` /
+  `CLEAR_REPORT_VALUE` methods (the recorded `-pgraph.txt` census) and XGrid
+  declined both. Ported from `pgraph/gl/reports.c` + `pgraph.c`
+  `pgraph_write_zpass_pixel_cnt_report`: `SET_CONTEXT_DMA_REPORT` (0x1A8),
+  `SET_ZPASS_PIXEL_COUNT_ENABLE` (0x17CC), `CLEAR_REPORT_VALUE` (0x17C8) and
+  `GET_REPORT` (0x17D0, type 1 ZPASS). The software rasterizer counts a
+  fragment after ZCLIP, the alpha test, the stencil test and the depth test
+  (a pass when the depth test is disabled), so the per-draw
+  `GL_SAMPLES_PASSED` query set collapses to an exact immediate counter; the
+  compiled fills decline while counting is enabled so every fragment passes
+  the count point. `GET_REPORT` adds the count since the last GET to the
+  cumulative result and writes the 16-byte block at the parameter's 24-bit
+  offset in the report DMA (timestamp `0x0011223344556677`, result, done 0);
+  `CLEAR` drops the pending count and the result; a non-ZPASS type is ignored
+  (counted in `ZpassReportTypeMisses`). Differential: `Nv2aReportTests` (4
+  unit rows - block layout + accumulation + CLEAR, depth-pass-only counting,
+  disabled counting still writes the block, unknown type ignored), 516 Nv2a
+  tests. Snapshot **v11** appends the report state and still accepts v10: the
+  NGB v10 `.xgs` anchor loads and runs 1M steps with no fault. Gates: the
+  accurate menu/triangle frames are byte-identical, the CPU SHAs are
+  `E2B4D327`/`C43D5B49`, the ktest log is `CA5D3867`; the port is **guest-RAM
+  neutral on the gates** - a 64 MB accurate-menu `--ramdump` is byte-identical
+  to the pre-port build (the report methods are not reached in the 1B gate
+  path; the status block's older `5C0CF968`/`E58AE5D7` RAM figures are stale
+  from a previous session, not moved here).
 - [ ] Port the renderer behind the existing `IPgraphBackend` seam; keep
   `GlBackendFactory`/`GlPgraphBackend` names so the CLI/frontend do not change.
 - [ ] Port the shader program cache, texture upload, state shadow, draw

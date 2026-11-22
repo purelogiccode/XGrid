@@ -159,6 +159,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint MethodClearRectV = 0x1D9Cu;
     private const uint MethodContextDmaZeta = 0x198u;
     private const uint MethodContextDmaColor = 0x194u;
+    private const uint MethodContextDmaReport = 0x1A8u;
+    private const uint MethodClearReportValue = 0x17C8u;
+    private const uint MethodSetZpassPixelCountEnable = 0x17CCu;
+    private const uint MethodGetReport = 0x17D0u;
+    private const uint ZpassReportType = 1u;
     private const uint MethodAlphaTestEnable = 0x300u;
     private const uint MethodBlendEnable = 0x304u;
     private const uint MethodCullFaceEnable = 0x308u;
@@ -877,6 +882,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _stencilOpZpass;
     private uint _dmaZeta;
     private uint _dmaColor;
+
+    // XFP5 occlusion reports (xemu pgraph/gl/reports.c): SET_CONTEXT_DMA_REPORT
+    // targets the report block, SET_ZPASS_PIXEL_COUNT_ENABLE gates the count,
+    // and GET_REPORT writes the cumulative pass count at the parameter's
+    // 24-bit offset. The software rasterizer counts the fragments directly
+    // instead of wrapping draws in GL_SAMPLES_PASSED queries.
+    private uint _dmaReport;
+    private bool _zpassPixelCountEnable;
+    private uint _zpassPixelCount;
+    private uint _zpassPixelCountResult;
+
     private bool _waitingForNop;
     private bool _pusherKickPending;
     private uint _surfaceChannel;
@@ -1586,6 +1602,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _stencilOpZpass = StencilOpKeep;
         _dmaZeta = 0;
         _dmaColor = 0;
+        _dmaReport = 0;
+        _zpassPixelCountEnable = false;
+        _zpassPixelCount = 0;
+        _zpassPixelCountResult = 0;
         _waitingForNop = false;
         _pusherKickPending = false;
         _surfaceChannel = 0;
@@ -1991,6 +2011,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             writer.Write(entry.Method);
             writer.Write(entry.Parameter);
         }
+
+        // v11 (XFP5): occlusion-report state.
+        writer.Write(_dmaReport);
+        writer.Write(_zpassPixelCountEnable);
+        writer.Write(_zpassPixelCount);
+        writer.Write(_zpassPixelCountResult);
     }
 
     /// <summary>Restores FIFO positions, PGRAPH/method state, surfaces, flip/semaphore/PRAMIN, texture/combiner/zclip/fog/exotic state, and all diagnostic counters.</summary>
@@ -1998,7 +2024,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         ArgumentNullException.ThrowIfNull(reader);
         int version = reader.ReadInt32();
-        if (version != Nv2ASnapshotVersion)
+        if (version is not (Nv2ASnapshotVersion or (Nv2ASnapshotVersion - 1)))
         {
             throw new InvalidDataException($"Unsupported NV2A snapshot version {version}.");
         }
@@ -2346,13 +2372,28 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _methodStream.Add((reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32()));
         }
 
+        if (version >= 11)
+        {
+            _dmaReport = reader.ReadUInt32();
+            _zpassPixelCountEnable = reader.ReadBoolean();
+            _zpassPixelCount = reader.ReadUInt32();
+            _zpassPixelCountResult = reader.ReadUInt32();
+        }
+        else
+        {
+            _dmaReport = 0;
+            _zpassPixelCountEnable = false;
+            _zpassPixelCount = 0;
+            _zpassPixelCountResult = 0;
+        }
+
         // Backend state is host-side only and not part of the snapshot
         // format (v2 stays software-reproducible): drop it and let the
         // backend rebuild from guest state as methods flow again.
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 10;
+    private const int Nv2ASnapshotVersion = 11;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -3402,6 +3443,50 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
+    /// <summary>
+    /// Handles <c>NV097_GET_REPORT</c> for the ZPASS_PIXEL_CNT type: adds the
+    /// fragments that passed the depth test since the last GET to the
+    /// cumulative result (xemu <c>pgraph_gl_process_pending_report</c>) and
+    /// writes the report block at the parameter's 24-bit offset - the fixed
+    /// timestamp, the result and a zero done word
+    /// (<c>pgraph_write_zpass_pixel_cnt_report</c>). A report is written even
+    /// with counting disabled (the reference queues an empty query set); a
+    /// non-ZPASS type asserts in the reference and is ignored here.
+    /// </summary>
+    private void WriteZpassReport(uint parameter)
+    {
+        if ((parameter >> 24) != ZpassReportType)
+        {
+            ZpassReportTypeMisses++;
+            return;
+        }
+
+        if (!TryResolveDmaContext(_dmaReport, _surfaceChannel, out uint baseAddress, out uint limit))
+        {
+            return;
+        }
+
+        ulong target = baseAddress + (ulong)(parameter & 0x00FFFFFFu);
+        if (target + 16u > (ulong)limit + 1u || target + 16u > RamSize)
+        {
+            return;
+        }
+
+        _zpassPixelCountResult += _zpassPixelCount;
+        _zpassPixelCount = 0;
+        WriteGpu((uint)target, 0x44556677u); // timestamp 0x0011223344556677 LE
+        WriteGpu((uint)target + 4u, 0x00112233u);
+        WriteGpu((uint)target + 8u, _zpassPixelCountResult);
+        WriteGpu((uint)target + 12u, 0u);
+        ZpassReports++;
+    }
+
+    /// <summary>Gets how many ZPASS_PIXEL_CNT report blocks were written (XFP5).</summary>
+    public long ZpassReports { get; private set; }
+
+    /// <summary>Gets how many GET_REPORT calls used a type other than ZPASS_PIXEL_CNT (XFP5).</summary>
+    public long ZpassReportTypeMisses { get; private set; }
+
     private void RunPusher()
     {
         if (GpuMemory is null)
@@ -3751,6 +3836,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case MethodContextDmaColor:
                 _dmaColor = parameter;
+                break;
+            case MethodContextDmaReport:
+                // The reference drains queued reports against the OLD DMA
+                // before switching; the software report path is synchronous.
+                _dmaReport = parameter;
+                break;
+            case MethodClearReportValue:
+                // CLEAR_REPORT_VALUE drops the pending query set and queues a
+                // result reset (pgraph_gl_clear_report_value); synchronous
+                // here, so reset both the accumulated result and the count
+                // since the last GET.
+                _zpassPixelCount = 0;
+                _zpassPixelCountResult = 0;
+                break;
+            case MethodSetZpassPixelCountEnable:
+                _zpassPixelCountEnable = parameter != 0;
+                break;
+            case MethodGetReport:
+                WriteZpassReport(parameter);
                 break;
             case MethodAlphaTestEnable:
                 _alphaTestEnable = (parameter & 1u) != 0;
@@ -8452,6 +8556,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             }
         }
 
+        // XFP5 occlusion query: a fragment that survived ZCLIP, the alpha
+        // test, the stencil test and the depth test counts (GL_SAMPLES_PASSED
+        // semantics; with the depth test disabled every surviving fragment
+        // passes). The compiled fills are declined while counting is enabled,
+        // so every fragment goes through this point.
+        if (_zpassPixelCountEnable)
+        {
+            _zpassPixelCount++;
+        }
+
         bool writeStencil = stencilActive;
         uint stencilValue = stencilActive ? ApplyStencilOp(_stencilOpZpass, stencil, stencilRef) : 0u;
         bool writeDepth = depthActive && _depthMask;
@@ -10479,6 +10593,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                                 texModes[0] == PshCombiner.TexModeProject2D &&
                                 bytes == 4 &&
                                 !_surfaceSwizzleTarget &&
+                                !_zpassPixelCountEnable &&
                                 !_depthTestEnable &&
                                 !_stencilTestEnable &&
                                 _colorMask == ColorMaskAll &&
@@ -10630,7 +10745,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (!compiledModulate && !DiagnosticGenericFill && _combinerFastKind is 2 or 3 &&
             bytes == 4 && zetaBytes == 0 && _colorMask == ColorMaskAll &&
             !_blendEnable && !_alphaTestEnable && GpuMemory is not null &&
-            !anyClipPlane && !anyStageDotReader && !_surfaceSwizzleTarget)
+            !anyClipPlane && !anyStageDotReader && !_surfaceSwizzleTarget && !_zpassPixelCountEnable)
         {
             compiledLighting = true;
             if (texModes[0] == PshCombiner.TexModeProject2D)

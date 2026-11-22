@@ -320,7 +320,7 @@ Generated from `References2/xemu-0.8.139/hw/xbox` by `scripts/port-manifest.ps1 
 | `nv2a/pgraph/gl/meson.build` | `-` | n/a | build/trace metadata |
 | `nv2a/pgraph/gl/renderer.c` | `src/XGrid.GpuGl` | not-started | GL renderer port (XFP5) |
 | `nv2a/pgraph/gl/renderer.h` | `src/XGrid.GpuGl` | not-started | GL renderer port (XFP5) |
-| `nv2a/pgraph/gl/reports.c` | `src/XGrid.GpuGl` | not-started | GL renderer port (XFP5) |
+| `nv2a/pgraph/gl/reports.c` | `src/XGrid.Nv2a/Nv2aMmio.cs` | verified | report path: `Nv2aReportTests`; the seven-title census issues 313-332 GET_REPORT/CLEAR_REPORT_VALUE |
 | `nv2a/pgraph/gl/shaders.c` | `src/XGrid.GpuGl` | not-started | GL renderer port (XFP5) |
 | `nv2a/pgraph/gl/surface.c` | `src/XGrid.GpuGl` | not-started | GL renderer port (XFP5) |
 | `nv2a/pgraph/gl/texture.c` | `src/XGrid.GpuGl` | not-started | GL renderer port (XFP5) |
