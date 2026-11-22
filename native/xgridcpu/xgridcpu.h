@@ -46,10 +46,10 @@ enum {
 };
 
 typedef struct XgcMmioAccess {
-    uint32_t gpa;
-    uint32_t size;
-    uint32_t is_write;
-    uint32_t _pad;
+    uint32_t gpa;      /* guest physical address, or the port for I/O */
+    uint32_t size;     /* access width in bytes */
+    uint32_t is_write; /* 1 = write */
+    uint32_t flags;    /* bit0: port I/O (in/out), not memory-mapped */
     uint64_t value;
 } XgcMmioAccess;
 
@@ -71,6 +71,22 @@ XGC_API int xgc_map_mmio_ring_shadow(XgcCpu *cpu, uint32_t gpa, uint32_t size,
 XGC_API int xgc_mmio_take(XgcCpu *cpu, XgcMmioAccess *access);
 XGC_API void xgc_mmio_set_read(XgcCpu *cpu, uint32_t gpa, uint32_t size,
                                uint64_t value);
+
+/* Live read windows: a register read that cannot be served from a shadow
+ * calls `read` synchronously. The host implementation publishes the address
+ * and waits for the device model to answer, so device state (and time) is
+ * exact at the access. Writes stay queued either way. */
+typedef uint64_t (*XgcIoReadFn)(void *opaque, uint32_t gpa, unsigned size);
+
+XGC_API int xgc_map_mmio_ring_live(XgcCpu *cpu, uint32_t gpa, uint32_t size,
+                                   XgcIoReadFn read, void *opaque);
+
+/* Port I/O windows (the guest's in/out instructions). `port` is the I/O
+ * address, not a guest physical address. */
+XGC_API int xgc_map_io_ring_shadow(XgcCpu *cpu, uint32_t port, uint32_t size,
+                                   void *shadow);
+XGC_API int xgc_map_io_ring_live(XgcCpu *cpu, uint32_t port, uint32_t size,
+                                 XgcIoReadFn read, void *opaque);
 
 /* Inject one hardware interrupt vector (0-255); the x86 CPU takes it at the
  * next instruction boundary when IF=1. */

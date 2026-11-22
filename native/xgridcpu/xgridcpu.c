@@ -55,6 +55,9 @@ typedef struct XgcRing {
     uint32_t size;
     uint8_t *shadow;
     bool own_shadow;
+    bool is_io;
+    XgcIoReadFn live;
+    void *opaque;
 } XgcRing;
 
 struct XgcCpu {
@@ -135,7 +138,7 @@ static const MemoryRegionOps xgc_mmio_ops = {
 };
 
 static bool xgc_ring_push(XgcCpu *c, uint32_t gpa, uint32_t size,
-                          uint32_t is_write, uint64_t value)
+                          uint32_t is_write, uint32_t flags, uint64_t value)
 {
     int next = (c->ring_tail + 1) % XGC_RING_CAP;
 
@@ -145,7 +148,7 @@ static bool xgc_ring_push(XgcCpu *c, uint32_t gpa, uint32_t size,
     c->ring[c->ring_tail].gpa = gpa;
     c->ring[c->ring_tail].size = size;
     c->ring[c->ring_tail].is_write = is_write;
-    c->ring[c->ring_tail]._pad = 0;
+    c->ring[c->ring_tail].flags = flags;
     c->ring[c->ring_tail].value = value;
     c->ring_tail = next;
     return true;
@@ -157,10 +160,13 @@ static uint64_t xgc_ring_read(void *opaque, hwaddr addr, unsigned size)
     uint32_t off = (uint32_t)addr;
     uint64_t value = 0;
 
-    XGC_TRACE("ring read gpa=%x size=%u\n", r->base + off, size);
     if (off + size > r->size) {
         return 0;
     }
+    if (r->live) {
+        return r->live(r->opaque, r->base + off, size);
+    }
+    XGC_TRACE("ring read gpa=%x size=%u\n", r->base + off, size);
     memcpy(&value, r->shadow + off, size);
     return value;
 }
@@ -173,7 +179,8 @@ static void xgc_ring_write(void *opaque, hwaddr addr, uint64_t value,
 
     XGC_TRACE("ring write gpa=%x size=%u value=%llx\n",
               r->base + (uint32_t)addr, size, (unsigned long long)value);
-    xgc_ring_push(c, r->base + (uint32_t)addr, size, 1, value);
+    xgc_ring_push(c, r->base + (uint32_t)addr, size, 1, r->is_io ? 1u : 0u,
+                  value);
 }
 
 static const MemoryRegionOps xgc_ring_ops = {
@@ -429,16 +436,21 @@ int xgc_map_mmio(XgcCpu *c, uint32_t gpa, uint32_t size, XgcMmioReadFn read,
 }
 
 static int xgc_map_ring_impl(XgcCpu *c, uint32_t gpa, uint32_t size,
-                             uint8_t *shadow, bool own_shadow)
+                             uint8_t *shadow, bool own_shadow, bool is_io,
+                             XgcIoReadFn live, void *opaque)
 {
     MemoryRegion *mr;
     XgcRing *r;
 
-    if (!c || !shadow || size == 0 || c->nrings >= 8) {
+    if (!c || size == 0 || c->nrings >= 8) {
         if (own_shadow) {
             g_free(shadow);
         }
         return XGC_ERR_ARG;
+    }
+    if (!shadow) {
+        shadow = g_malloc0(size);
+        own_shadow = true;
     }
     r = g_new0(XgcRing, 1);
     r->cpu = c;
@@ -446,11 +458,18 @@ static int xgc_map_ring_impl(XgcCpu *c, uint32_t gpa, uint32_t size,
     r->size = size;
     r->shadow = shadow;
     r->own_shadow = own_shadow;
+    r->is_io = is_io;
+    r->live = live;
+    r->opaque = opaque;
 
     mr = g_new0(MemoryRegion, 1);
-    memory_region_init_io(mr, NULL, &xgc_ring_ops, r, "xgrid-mmio-ring",
-                          size);
-    memory_region_add_subregion(get_system_memory(), gpa, mr);
+    memory_region_init_io(mr, NULL, &xgc_ring_ops, r,
+                          is_io ? "xgrid-io-ring" : "xgrid-mmio-ring", size);
+    if (is_io) {
+        memory_region_add_subregion(get_system_io(), gpa, mr);
+    } else {
+        memory_region_add_subregion(get_system_memory(), gpa, mr);
+    }
     c->ring_mr[c->nrings] = mr;
     c->rings[c->nrings] = r;
     c->nrings++;
@@ -460,13 +479,31 @@ static int xgc_map_ring_impl(XgcCpu *c, uint32_t gpa, uint32_t size,
 
 int xgc_map_mmio_ring(XgcCpu *c, uint32_t gpa, uint32_t size)
 {
-    return xgc_map_ring_impl(c, gpa, size, g_malloc0(size), true);
+    return xgc_map_ring_impl(c, gpa, size, NULL, true, false, NULL, NULL);
 }
 
 int xgc_map_mmio_ring_shadow(XgcCpu *c, uint32_t gpa, uint32_t size,
                              void *shadow)
 {
-    return xgc_map_ring_impl(c, gpa, size, shadow, false);
+    return xgc_map_ring_impl(c, gpa, size, shadow, false, false, NULL, NULL);
+}
+
+int xgc_map_mmio_ring_live(XgcCpu *c, uint32_t gpa, uint32_t size,
+                           XgcIoReadFn read, void *opaque)
+{
+    return xgc_map_ring_impl(c, gpa, size, NULL, true, false, read, opaque);
+}
+
+int xgc_map_io_ring_shadow(XgcCpu *c, uint32_t port, uint32_t size,
+                           void *shadow)
+{
+    return xgc_map_ring_impl(c, port, size, shadow, false, true, NULL, NULL);
+}
+
+int xgc_map_io_ring_live(XgcCpu *c, uint32_t port, uint32_t size,
+                         XgcIoReadFn read, void *opaque)
+{
+    return xgc_map_ring_impl(c, port, size, NULL, true, true, read, opaque);
 }
 
 int xgc_mmio_take(XgcCpu *c, XgcMmioAccess *access)

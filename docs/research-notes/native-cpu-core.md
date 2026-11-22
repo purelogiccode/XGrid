@@ -170,11 +170,39 @@ by `iret`). Two findings made it work:
 The 100M self-loop still measures 235-245 Msteps/s across the boundary with
 the IRQ slice in place.
 
-**Next (XCN1):** synchronous MMIO reads (a request/response slot the native
-handler spins on while C# services it) or a per-window shadow refresh policy;
-map every Xbox window (NV2A, APU/ACI, PCI config, ROM/flash) and the PIO
-space; then the machine seam (PIC/PIT/APU/NV2A) and the 007 boot.
+**XCN1 device seam: live reads and port I/O (2026-11-22).** The control block
+is version 2: a window table (base/size/flags/shadow), a 64 KB shadow area, the
+write ring and a live-read request slot (`io_state`, `io_flags`, `io_addr`,
+`io_size`, `io_value`, `io_icount`). Each window is either **shadow** (reads
+from the section, refreshed between slices) or **live** (the host spins while
+C# drains the ring in order and answers; the request carries the instruction
+count so the device clock is exact at the access). Port I/O windows are mapped
+in QEMU's `system_io` address space, so the guest's `in`/`out` use the same
+path. The probe exercises all of it: shadow read/write, two live MMIO reads,
+a live MMIO write, `in eax, 0x60`, `out 0x60, eax`, the IRQ handler and a 100M
+self-loop, checking each value and the write-ring order: **PASS**.
 
+Measured costs (100,000-access real-mode loops, H1):
+
+| Path | Cost |
+|---|---|
+| RAM load | 25 ns |
+| MMIO write (queued) | 1843 ns |
+| MMIO read (shadow) | 1850 ns |
+| MMIO read (live) | 3943 ns |
+| C# answer inside a live read | 27 ns |
+| self-loop | 241.8 Msteps/s |
+
+The ~1.85 us is QEMU's I/O path, not the boundary: every MMIO instruction runs
+in a dedicated `CF_MEMI_ONLY` TB via `cpu_io_recompile()` because TCG marks
+`can_do_io` false until the last instruction of a TB. xemu pays the same. The
+process boundary adds ~2 us per live read; shadow windows avoid it and the C#
+service is ~27 ns. At the recorded ~1M device accesses per 30B 007 steps, the
+live path is ~2 s per 30B (~6% of guest time at 1x).
+
+**Next (XCN1):** map every Xbox window (NV2A, APU/ACI, PCI config, ROM/flash,
+SMC) and the PIO space; wire the C# PIC/PIT through `irq_pending` and the
+icount deadline; then the machine seam and the MCPX boot ROM.
 ## Risks / open questions
 
 1. **Standalone init.** QEMU has no system-mode library target. The shim must

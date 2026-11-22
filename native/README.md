@@ -76,7 +76,7 @@ cd native/xgridcpu && ./build.sh && ./xgc_test.exe
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
 $env:XGRIDCPU_HOST = (Resolve-Path native/xgridcpu/xgridcpu-host.exe).Path
 dotnet run --project tools/xcn1-host-probe -c Release
-# XCN1 NATIVE HOST PASS (100k correctness; 235.5 Msteps/s across the boundary)
+# XCN1 NATIVE HOST PASS (shadow + live MMIO/PIO, IRQ, 241.8 Msteps/s)
 
 $env:XGRIDCPU_DLL = (Resolve-Path native/xgridcpu/xgridcpu.dll).Path
 dotnet run --project tools/xcn0-probe -c Release
@@ -94,14 +94,14 @@ passes for reference.
 
 ## Host control block (XCN1)
 
-The section is `1 MB guest RAM + 0x2000` of control data. The CPU runs in
-`xgridcpu-host.exe`; C# owns the section, the read shadow and the write ring.
+The section is `1 MB guest RAM + 0x10800` of control data. The CPU runs in
+`xgridcpu-host.exe`; C# owns the section, the read shadows and the write ring.
 
 | Offset | Field |
 |---|---|
 | 0 | `magic` (`'XGCH'`) |
-| 4 | `version` (1) |
-| 8 | `ready` (host sets 1 after RAM/ring mapping) |
+| 4 | `version` (2) |
+| 8 | `ready` (host sets 1 after RAM/window mapping) |
 | 12 | `quit` |
 | 16 | `status` (1 = run requested, 2 = stopped) |
 | 20 | `run_budget` (instructions) |
@@ -111,13 +111,50 @@ The section is `1 MB guest RAM + 0x2000` of control data. The CPU runs in
 | 40 | `irq_pending` (C# sets 1) |
 | 44 | `irq_vector` (0-255) |
 | 48 | `reset` (1 = re-seat the CPU at 0x1000:0x8000) |
-| 64 | `shadow[0x1000]` - the `0xF0000000` read window |
-| 4160 | `ring[64]` - queued `XgcMmioAccess` writes |
-| 5696 | `XgcRegs` (13 x u32) |
+| 52 | `nwindows` |
+| 56 | `windows[8]` - `{base, size, flags, shadow}` (16 bytes each) |
+| 184 | `io_state` (0 idle, 1 request, 2 done) |
+| 188 | `io_flags` (bit0: port I/O) |
+| 192 | `io_addr`, 196 `io_size`, 200 `io_value` (u64), 208 `io_icount` (u64) |
+| 0x100 | `shadow[0x10000]` - shadow windows are slices of this |
+| 0x10100 | `ring[64]` - queued `XgcMmioAccess` writes |
+| 0x10700 | `XgcRegs` (13 x u32) |
 
-Between slices the host drains the write ring into the shared array, copies
-the architectural registers and sets `status = 2`. A slice is one `xgc_run`
-call, so the C# device model observes every write in order.
+Window flags: `1` = the base is an I/O port, `2` = live reads.
+
+- **Shadow window** (`0`): reads return bytes from the section shadow that C#
+  refreshes between slices. Use it for ROM/flash and registers whose value is
+  a pure function of device state at slice boundaries.
+- **Live window** (`2`): a read publishes `{addr, size, flags, icount}` with
+  `io_state = 1` and spins; C# (which is already polling for the slice to end)
+  drains the write ring in order and answers into `io_value` with
+  `io_state = 2`. This makes device registers - and device **time**, via
+  `io_icount` - exact at the access.
+- Writes are always queued and are published to the section **before** a live
+  read is announced, so a read observes every earlier write in order.
+
+## Measured seam costs (H1, 2026-11-22)
+
+`tools/xcn1-host-probe`, real-mode loops of 100,000 accesses:
+
+| Path | Cost |
+|---|---|
+| RAM load | **25 ns** |
+| MMIO write (queued) | **1843 ns** |
+| MMIO read (shadow) | **1850 ns** |
+| MMIO read (live, cross-process) | **3943 ns** |
+| C# answer inside a live read | **27 ns** |
+| 100M-step self-loop | **241.8 Msteps/s** |
+
+The ~1.85 us is QEMU's I/O path, not the boundary: an MMIO instruction runs in
+a dedicated `CF_MEMI_ONLY` translation block (`cpu_io_recompile`), which is
+QEMU's design and applies to xemu too. The process boundary adds ~2 us on top
+for live reads; shadow windows avoid it, and the C# service itself is ~27 ns.
+At the recorded ~1M device accesses per 30B 007 steps, even the live path is
+~2 s per 30B (about 6% of guest time at 1x).
+
+`XGRID_CPU_TRACE=1` prints the slice trace (icount, EIP, request word,
+pending vector, EFLAGS/hflags, exception) and enables QEMU's `int` log.
 
 ### Interrupts
 
