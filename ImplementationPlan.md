@@ -761,6 +761,25 @@ program cache, buffer objects.
   to the pre-port build (the report methods are not reached in the 1B gate
   path; the status block's older `5C0CF968`/`E58AE5D7` RAM figures are stale
   from a previous session, not moved here).
+- [ ] Slice 2 - swizzled render targets through the GL backend (measured, next).
+  NGB at the 10B anchor + 10M steps in `--gpu gl --gpu-replace`: the backend
+  reports **`draws=0 programs=0 presentUploads=1`** while the software leg
+  executes 3,040 draws, and the recorded stream sets `0x08080228` /
+  `0x0A0A0228` (SWIZZLE) targets beside the pitch ones. Removing the
+  swizzled-target skip makes the backend draw (736 triangles / 368 batch
+  calls), but the FBO content is then **never downloaded**: the guest's later
+  sample of that render target reads guest RAM, so the port needs the
+  reference's `surface.c` download (unswizzle `swizzle_rect` on flip / before
+  the surface is sampled) before the skip can be lifted. Scope: carry the
+  target's swizzle geometry and guest address in `PgraphDrawInfo`/clear info,
+  render the log-dimension FBO, and download the dirty swizzled surface to
+  guest RAM (Morton order, the same address the software twin writes);
+  acceptance = NGB GL replace `draws>0`, the RT RAM bytes equal to the
+  software twin's, the presented frame within policy, `composedFrames=0`, plus
+  a synthetic 4x4 swizzled-target download test.
+- [ ] `blit.c` - **deferred by census**: 0 `009F` subchannel methods in every
+  recorded stream (the seven tm7 title logs, the gate logs and the 10B+20M
+  NGB probe). Revisit only with a title that issues an image blit.
 - [ ] Port the renderer behind the existing `IPgraphBackend` seam; keep
   `GlBackendFactory`/`GlPgraphBackend` names so the CLI/frontend do not change.
 - [ ] Port the shader program cache, texture upload, state shadow, draw
