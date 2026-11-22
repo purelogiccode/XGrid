@@ -4,14 +4,14 @@
   "objective": "At least one game playable: the P1 sprint now ports the xemu/QEMU CPU engine to C# (softmmu/TLB, TCG IR + i386 translator, host codegen, parity) because the measured 0.100x wall is 94% CPU and shape fixes top out at ~0.20x (N15). Live WASAPI audio is landed (P1S1). C# first, NuGet host packages allowed and inventoried; GPL-2.0; Avalonia kept; the repository stays private until P1",
   "current": {
     "milestone": "P1",
-    "id": "XFP2",
-    "title": "PGRAPH vertex fetch, primitive assembly and draw path",
+    "id": "XFP3",
+    "title": "PGRAPH shader pipeline (VSH, PSH, fixed-function, GLSL generators)",
     "plan": "E1",
     "status": "active",
     "started": "2026-11-22",
     "attempts": 0,
-    "acceptance": "vertex.c/draw.c semantics are ported (array formats, stride, inline arrays, elements, ranges, culling, clip); the 007 and Ninja Gaiden Black draw/pixel counters reproduce the pre-port build (or the port fixes a measured gap), and the gates stay exact.",
-    "price": "4-6 sessions; correctness bar.",
+    "acceptance": "The Ninja Gaiden Black row passes the screenshot policy (colour count within 25% of xemu's 1,351, |dmean| <= 25, black within 2 points) and the xgu corpus rows plus the four accurate goldens stay exact; the generated shaders compile on the live driver.",
+    "price": "5-8 sessions; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -257,21 +257,9 @@
   ],
   "queue": [
     {
-      "id": "XFP2",
-      "title": "PGRAPH vertex fetch, primitive assembly and draw path",
-      "status": "active",
-      "depends": [
-        "XFP1"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "vertex.c/draw.c semantics are ported (array formats, stride, inline arrays, elements, ranges, culling, clip); the 007 and Ninja Gaiden Black draw/pixel counters reproduce the pre-port build (or the port fixes a measured gap), and the gates stay exact.",
-      "price": "4-6 sessions; correctness bar."
-    },
-    {
       "id": "XFP3",
       "title": "PGRAPH shader pipeline (VSH, PSH, fixed-function, GLSL generators)",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "XFP2"
       ],
@@ -653,6 +641,13 @@
       "date": "2026-11-22",
       "evidence": "XFP1 method surface and state complete: nv097-coverage.ps1 -Check PASS (215 defines, 201 rows, 1042 handled + 280 declined offsets, real case4 strides); opt-in counter reads 226 outside-surface writes in 18.6M methods on triangle 1B and 16,514 on menu 1B, all at reference-gap offsets xemu ignores (valid-surface gap zero); seven-title differential at the TM7 anchors (10M steps each) is 0/0/3/0/0/0/0 with the 3 at 0x1710; PgraphState owns the texture register file, transform rows/constants, PshCombiner and the six surface/clip scalars (delegating/ref properties, zero call-site churn); anchors exact after every section (fast triangle F9945E16/8836C7EB, menu 5C0CF968/E2B4D327; accurate triangle E58AE5D7/C43D5B49); 480 Nv2a tests; --pgraph-port not needed (the state type is the storage)",
       "commitMessage": "nv2a: close XFP1 with the method surface, state type and seven-title differential (XFP1)"
+    },
+    {
+      "id": "XFP2",
+      "title": "PGRAPH vertex fetch, primitive assembly and draw path",
+      "date": "2026-11-22",
+      "evidence": "XFP2 vertex fetch/assembly/draw verified: Nv2aVertexFormatTests pins all six array formats + defaults/count/stride (10 differentials); Nv2aCullFaceTests pins cull off/back/front/both, front-face CW/CCW, degenerate and clip-window rejections (8); Nv2aPrimitiveAssemblyTests pins DRAW_ARRAYS packed start/count, range coalescing vs separation and one command per BEGIN/END (4); 496 Nv2a tests. Title counter parity: 007 +1M from tm4/007-100b.xgs = 134,004 draws / 1,005,989,482 px / 6,478 frames / EIP 0x1FC9E / CPU 17C548A3; NGB +2B from tm6/ngb-10b.xgs = 4,251 draws / 1,073,213 skipped / 187,315,817 px / 238,137 frames / EIP 0x8001B047. Software fill kept as the oracle; four accurate 1B anchors, ktest log and triangle 1B anchor unchanged; fast-engine one-frame sensitivity to the host flag set documented. No re-baseline.",
+      "commitMessage": "nv2a: close XFP2 with the fetch, assembly and title parity (XFP2)"
     }
   ],
   "negatives": [
