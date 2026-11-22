@@ -661,8 +661,24 @@ Reference: `pgraph/texture.c`/`.h`, `surface.h`, `swizzle.c`/`.h`, `s3tc.c`
   title enables it), present capture stays pitch-only (PCRTC scans linear
   memory), and a swizzled *front* buffer in GL replace mode has no backend
   composition (every measured title presents a PITCH surface).
-- [ ] Texture cache content identity (the GL backend's key/fingerprint vs the
-  reference's texture binding identity).
+- [ ] Texture cache content identity. **Reference** (`gl/texture.c`
+  `pgraph_gl_bind_textures`): the LRU key is the full `TextureShape` plus
+  `texture_vram_offset`/`texture_length` (and the palette offset/length for
+  I8), the content is `fast_hash` over the whole range, dirtiness comes from
+  the NV2A dirty bitmap over that range, and a binding with `draw_time` is
+  rebuilt. **XGrid today**: `TextureKey` = offset/color/width/height/pitch/
+  linear only, and a 16-sample texel fingerprint stands in for content - a
+  change outside those texels is missed, and the key cannot distinguish mip
+  count, dimensionality (volume depth), the cube flag, border, the palette
+  range or the data length. **Design (priced next):** per-page write
+  generations in `PhysicalMemory.NoteGuestWrite` (the single write choke,
+  host-side, not serialized; ~1 increment per guest write), a
+  `GetWriteGenerationSum(address, length)` query exposed through the GPU-memory
+  adapter, the missing key fields, and a whole-range hash recomputed only when
+  the stamp moves (the reference's "only hash when dirty" rule). The cube
+  decode reuses the same stamp. Gate: 100M-leg cost of the write choke must
+  stay under 2%; otherwise use a per-page dirty bitset with the same query
+  shape.
 - [x] Texture formats (2026-11-23): all **43** reference ids are classified and
   backed. The table split is explicit: 32 word-decodable colour ids
   (`TryDecodeWord` + `DecodeTextureTexel`), the paletted `I8_A8R8G8B8`
