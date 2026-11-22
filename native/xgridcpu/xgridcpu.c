@@ -53,6 +53,7 @@ typedef struct XgcRing {
     uint32_t base;
     uint32_t size;
     uint8_t *shadow;
+    bool own_shadow;
 } XgcRing;
 
 struct XgcCpu {
@@ -362,7 +363,9 @@ void xgc_destroy(XgcCpu *c)
     for (i = 0; i < c->nrings; i++) {
         memory_region_destroy(c->ring_mr[i]);
         g_free(c->ring_mr[i]);
-        g_free(c->rings[i]->shadow);
+        if (c->rings[i]->own_shadow) {
+            g_free(c->rings[i]->shadow);
+        }
         g_free(c->rings[i]);
     }
     if (c->cpu) {
@@ -412,19 +415,24 @@ int xgc_map_mmio(XgcCpu *c, uint32_t gpa, uint32_t size, XgcMmioReadFn read,
     return XGC_OK;
 }
 
-int xgc_map_mmio_ring(XgcCpu *c, uint32_t gpa, uint32_t size)
+static int xgc_map_ring_impl(XgcCpu *c, uint32_t gpa, uint32_t size,
+                             uint8_t *shadow, bool own_shadow)
 {
     MemoryRegion *mr;
     XgcRing *r;
 
-    if (!c || size == 0 || c->nrings >= 8) {
+    if (!c || !shadow || size == 0 || c->nrings >= 8) {
+        if (own_shadow) {
+            g_free(shadow);
+        }
         return XGC_ERR_ARG;
     }
     r = g_new0(XgcRing, 1);
     r->cpu = c;
     r->base = gpa;
     r->size = size;
-    r->shadow = g_malloc0(size);
+    r->shadow = shadow;
+    r->own_shadow = own_shadow;
 
     mr = g_new0(MemoryRegion, 1);
     memory_region_init_io(mr, NULL, &xgc_ring_ops, r, "xgrid-mmio-ring",
@@ -435,6 +443,17 @@ int xgc_map_mmio_ring(XgcCpu *c, uint32_t gpa, uint32_t size)
     c->nrings++;
     xgc_flush_tb(c);
     return XGC_OK;
+}
+
+int xgc_map_mmio_ring(XgcCpu *c, uint32_t gpa, uint32_t size)
+{
+    return xgc_map_ring_impl(c, gpa, size, g_malloc0(size), true);
+}
+
+int xgc_map_mmio_ring_shadow(XgcCpu *c, uint32_t gpa, uint32_t size,
+                             void *shadow)
+{
+    return xgc_map_ring_impl(c, gpa, size, shadow, false);
 }
 
 int xgc_mmio_take(XgcCpu *c, XgcMmioAccess *access)

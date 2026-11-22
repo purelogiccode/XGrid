@@ -74,21 +74,22 @@ cd native/xgridcpu && ./build.sh && ./xgc_test.exe
 # XCN1 MMIO SHADOW+RING C PASS (shadow reads, queued writes, 100k steps)
 
 $env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
+$env:XGRIDCPU_HOST = (Resolve-Path native/xgridcpu/xgridcpu-host.exe).Path
+dotnet run --project tools/xcn1-host-probe -c Release
+# XCN1 NATIVE HOST PASS (100k correctness; 235.5 Msteps/s across the boundary)
+
 $env:XGRIDCPU_DLL = (Resolve-Path native/xgridcpu/xgridcpu.dll).Path
 dotnet run --project tools/xcn0-probe -c Release
-# XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO host boundary is XCN1)
+# XCN0 CSHARP SPIKE PASS (vCPU/RAM/step)
 ```
 
-The native shadow+ring path passes in C: reads come from a native shadow
-window and writes are queued for the host. Under the **.NET-hosted DLL** the
-MMIO path fails before the first ring read (`0xC0000409`), and a managed
-callback fails at the callback, while the same code passes as a native
-executable. The .NET host enables Control Flow Guard and the policy cannot be
-disabled at runtime (`SetProcessMitigationPolicy` -> error 5), which is
-consistent with the native ring's indirect call being blocked. The C#
-vCPU/RAM/step path is proven. XCN1 must put the CPU in a native process or a
-custom non-CFG host (or fix the DLL/TCG indirect-call ABI) and expose the
-shadow+write ring across that boundary.
+The native shadow+ring path passes in C, and the **native host process**
+(`xgridcpu-host.exe` + `tools/xcn1-host-probe`) passes end-to-end: shared
+guest RAM, a shared read shadow, a write ring, 100,000-step correctness and
+235.5 Msteps/s on a 100M self-loop. C# never calls the DLL, so the .NET
+Control Flow Guard boundary is gone. The .NET-hosted DLL MMIO path remains a
+documented CFG-blocked diagnostic; the native host is the product
+architecture. The C# vCPU/RAM/step DLL probe still passes for reference.
 
 Measured on the 100M-step self-loop: **246.9 Msteps/s from C** (0.405 s) and
 **247.5 Msteps/s from C#** (0.404 s), 4.05 ns/step (~0.34x guest time on this

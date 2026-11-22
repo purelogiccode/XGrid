@@ -136,20 +136,19 @@ guest time on this trivial loop. That is 3.4x the current raw JIT
 (x87/SSE, TB churn and devices), and 0.5x is 365 Msteps/s. The next measurement
 is the 007 boot leg once the MMIO ring and the machine seam exist.
 
-**Deferred to XCN1 (the first slice): the .NET MMIO host boundary.** The
-native shadow+ring path passes in C (`ring_test.c`), and the native direct
-callback path passes in C (`test.c`). Under the **.NET-hosted DLL** the MMIO
-path fails: a managed callback fails at the callback, and the native shadow
-ring (no callback on the TCG stack) fails before the first ring read
-(`0xC0000409`), while the same ring code passes as a native executable. The
-.NET host enables Control Flow Guard and the process policy cannot be
-disabled at runtime (`SetProcessMitigationPolicy(ProcessControlFlowGuardPolicy)`
-returns error 5), which is consistent with the native ring's indirect call
-being blocked at the first access. The C# vCPU/RAM/step path is proven. XCN1
-must put the CPU in a native process or a custom non-CFG host (or fix the
-DLL/TCG indirect-call ABI) and expose the shadow+write ring across that
-boundary; the product link should also become a custom meson target instead
-of the filtered fat archives.
+**XCN1 native host PASS (2026-11-22).** The CPU now runs in a native process
+(`native/xgridcpu/xgridcpu-host.exe`) attached to a named shared section: 1 MB
+guest RAM plus a control block (read shadow, write ring, budget/status and
+registers). `tools/xcn1-host-probe` creates the section, starts the host, sets
+the read shadow, signals a 100,000-step slice, drains the write ring and
+checks the registers; a following 100M self-loop measures **235.5 Msteps/s**
+across the process boundary (0.425 s). C# never calls the DLL, so the .NET
+Control Flow Guard boundary is gone. The .NET-hosted DLL MMIO path remains the
+documented CFG-blocked diagnostic; the host is the product architecture.
+
+**Next (XCN1):** extend the control block with IRQ lines, device write
+dispatch and read-shadow updates; the custom meson target; then the machine
+seam (PIC/PIT/APU/NV2A) and the 007 boot.
 
 **Next (XCN1):** the native MMIO ring + host-side dispatch, the custom meson
 target, then the machine seam (PIC/PIT/APU/NV2A) and the 007 boot.

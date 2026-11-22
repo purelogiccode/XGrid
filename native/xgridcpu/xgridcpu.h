@@ -66,6 +66,8 @@ XGC_API int xgc_map_mmio(XgcCpu *cpu, uint32_t gpa, uint32_t size,
  * device model (C#) updates the shadow between run slices and drains the
  * write queue; the softmmu callback never calls managed code. */
 XGC_API int xgc_map_mmio_ring(XgcCpu *cpu, uint32_t gpa, uint32_t size);
+XGC_API int xgc_map_mmio_ring_shadow(XgcCpu *cpu, uint32_t gpa, uint32_t size,
+                                     void *shadow);
 XGC_API int xgc_mmio_take(XgcCpu *cpu, XgcMmioAccess *access);
 XGC_API void xgc_mmio_set_read(XgcCpu *cpu, uint32_t gpa, uint32_t size,
                                uint64_t value);
