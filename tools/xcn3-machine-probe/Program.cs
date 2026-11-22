@@ -223,7 +223,7 @@ namespace XGrid.Xcn3MachineProbe
                         Write32(ctl + OffIrqPending, 1);
                     }
                     long dropped = (long)Read64(ctl + OffDropped);
-                    if ((slices % 250) == 0 || left == 0 || dropped != lastDropped)
+                    if ((slices % 10) == 0 || left == 0)
                     {
                         lastDropped = dropped;
                         Console.WriteLine($"slice {slices}: t={sw.Elapsed.TotalSeconds:F1}s " +
@@ -231,7 +231,10 @@ namespace XGrid.Xcn3MachineProbe
                             $"eip=0x{Read32(ctl + OffRegs + 32):X8} " +
                             $"io={s_reads}/{s_writes} irqs={s_irqs} dropped={dropped} " +
                             $"nv2a draws={machine.Nv2A.DrawsExecuted} frames={machine.Nv2A.FramesPresented} " +
-                            $"ide={machine.Ide.AccessCount}");
+                            $"ide={machine.Ide.AccessCount} " +
+                            $"drain={s_drainTicks * 1e3 / Stopwatch.Frequency:F0}ms " +
+                            $"spin={s_spinTicks * 1e3 / Stopwatch.Frequency:F0}ms " +
+                            $"svc={s_serviceTicks * 1e3 / Stopwatch.Frequency:F0}ms");
                     }
                 }
                 sw.Stop();
