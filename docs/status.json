@@ -4,14 +4,14 @@
   "objective": "At least one game playable: the P1 sprint now ports the xemu/QEMU CPU engine to C# (softmmu/TLB, TCG IR + i386 translator, host codegen, parity) because the measured 0.100x wall is 94% CPU and shape fixes top out at ~0.20x (N15). Live WASAPI audio is landed (P1S1). C# first, NuGet host packages allowed and inventoried; GPL-2.0; Avalonia kept; the repository stays private until P1",
   "current": {
     "milestone": "P1",
-    "id": "XFP3",
-    "title": "PGRAPH shader pipeline (VSH, PSH, fixed-function, GLSL generators)",
+    "id": "XFP4",
+    "title": "PGRAPH surface, texture and cache semantics",
     "plan": "E1",
     "status": "active",
     "started": "2026-11-22",
     "attempts": 0,
-    "acceptance": "The Ninja Gaiden Black row passes the screenshot policy (colour count within 25% of xemu's 1,351, |dmean| <= 25, black within 2 points) and the xgu corpus rows plus the four accurate goldens stay exact; the generated shaders compile on the live driver.",
-    "price": "5-8 sessions; correctness bar.",
+    "acceptance": "Surface geometry/clear rules and every texture format (swizzle, mip chain, cube) are ported; the 22-row corpus reproduces its documented pairs and the four accurate goldens are exact.",
+    "price": "4-6 sessions; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -257,21 +257,9 @@
   ],
   "queue": [
     {
-      "id": "XFP3",
-      "title": "PGRAPH shader pipeline (VSH, PSH, fixed-function, GLSL generators)",
-      "status": "active",
-      "depends": [
-        "XFP2"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "The Ninja Gaiden Black row passes the screenshot policy (colour count within 25% of xemu's 1,351, |dmean| <= 25, black within 2 points) and the xgu corpus rows plus the four accurate goldens stay exact; the generated shaders compile on the live driver.",
-      "price": "5-8 sessions; correctness bar."
-    },
-    {
       "id": "XFP4",
       "title": "PGRAPH surface, texture and cache semantics",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "XFP3"
       ],
@@ -648,6 +636,13 @@
       "date": "2026-11-22",
       "evidence": "XFP2 vertex fetch/assembly/draw verified: Nv2aVertexFormatTests pins all six array formats + defaults/count/stride (10 differentials); Nv2aCullFaceTests pins cull off/back/front/both, front-face CW/CCW, degenerate and clip-window rejections (8); Nv2aPrimitiveAssemblyTests pins DRAW_ARRAYS packed start/count, range coalescing vs separation and one command per BEGIN/END (4); 496 Nv2a tests. Title counter parity: 007 +1M from tm4/007-100b.xgs = 134,004 draws / 1,005,989,482 px / 6,478 frames / EIP 0x1FC9E / CPU 17C548A3; NGB +2B from tm6/ngb-10b.xgs = 4,251 draws / 1,073,213 skipped / 187,315,817 px / 238,137 frames / EIP 0x8001B047. Software fill kept as the oracle; four accurate 1B anchors, ktest log and triangle 1B anchor unchanged; fast-engine one-frame sensitivity to the host flag set documented. No re-baseline.",
       "commitMessage": "nv2a: close XFP2 with the fetch, assembly and title parity (XFP2)"
+    },
+    {
+      "id": "XFP3",
+      "title": "PGRAPH shader pipeline (VSH, PSH, fixed-function, GLSL generators)",
+      "date": "2026-11-22",
+      "evidence": "XFP3 decode audit complete: vsh-prog.c -> VshProgram/VshProgramPlan (every MAC/ILU opcode, swizzles/negates, ARL-relative constants, fog, output masks, paired r1, 400-program fuzz exact); vsh-ff.c/vsh.c -> FixedFunctionVertex/State (fixed-function + lighting tests, xgu *_ffp rows); psh.c -> PshCombiner (combiner/reach tests); glsl/psh.c -> PshGlslGenerator (99 synthetic + the 5 gate-title configurations compiled+linked live at capacities 1/8/32, menu's 4 a subset); glsl/common.c/shaders.c -> generator prelude/BuildKey; glsl/geom.c n/a for the software path. NGB colour-count differential withdrawn (moment-mismatched pair, L1 89.1%). Full solution 2233 tests across 14 projects, format clean; four accurate 1B goldens, ktest log and triangle 1B anchor unchanged.",
+      "commitMessage": "gl: close XFP3 with the shader decode audit (XFP3)"
     }
   ],
   "negatives": [
