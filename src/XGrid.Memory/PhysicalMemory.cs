@@ -5,7 +5,7 @@ using XGrid.Core.Snapshots;
 namespace XGrid.Memory;
 
 /// <summary>Flat physical RAM. All accesses are little-endian and bounds-checked.</summary>
-public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWriteStamp
+public sealed unsafe class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWriteStamp
 {
     /// <summary>Default retail Xbox RAM size (64 MB).</summary>
     private const uint DefaultSize = 64u * 1024 * 1024;
@@ -37,16 +37,42 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWr
     // loader's backend reset.
     private const int WriteStampPageShift = 12;
     private readonly uint[] _writeStamp;
+    private readonly byte[]? _array;
+    private readonly byte* _external;
 
     /// <summary>Allocates RAM of the given size in bytes.</summary>
     public PhysicalMemory(uint size = DefaultSize)
+        : this(size, null)
+    {
+    }
+
+    /// <summary>
+    /// Wraps a host buffer as physical RAM. The native CPU host shares its
+    /// guest RAM through a section, so the device model and the vCPU read and
+    /// write the same bytes with no copy.
+    /// </summary>
+    /// <param name="size">RAM size in bytes.</param>
+    /// <param name="external">Host pointer to a buffer of at least <paramref name="size"/> bytes, or null for a managed array.</param>
+    public PhysicalMemory(uint size, IntPtr? external)
     {
         if (size == 0 || size > int.MaxValue)
         {
             throw new ArgumentOutOfRangeException(nameof(size), size, "RAM size must be between 1 byte and 2 GB.");
         }
 
-        RawBytes = new byte[size];
+        if (external is { } pointer)
+        {
+            if (pointer == IntPtr.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(external), "Host RAM pointer must not be null.");
+            }
+            _external = (byte*)pointer;
+        }
+        else
+        {
+            _array = new byte[size];
+        }
+
         Size = size;
         _writeStamp = new uint[(size >> WriteStampPageShift) + 1];
     }
@@ -54,58 +80,71 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWr
     /// <summary>Gets the RAM size in bytes.</summary>
     public uint Size { get; }
 
+    /// <summary>Gets a value indicating whether RAM is a host buffer instead of a managed array (native CPU host).</summary>
+    public bool IsExternal => _array is null;
+
+    /// <summary>Gets the host pointer of an external backing buffer, or <see cref="IntPtr.Zero"/>.</summary>
+    public IntPtr ExternalPointer => (IntPtr)_external;
+
     /// <summary>Gets the backing byte array (C3 raw emitter pins it for direct access).</summary>
-    public byte[] RawBytes { get; }
+    /// <exception cref="InvalidOperationException">RAM is host-backed.</exception>
+    public byte[] RawBytes => _array ?? throw new InvalidOperationException(
+        "RAM is host-backed (native CPU host); use the span accessors instead of RawBytes.");
+
+    /// <summary>Gets a writable span over all of RAM, array- or host-backed.</summary>
+    public Span<byte> Bytes => _array is not null
+        ? _array
+        : new Span<byte>(_external, (int)Size);
 
     /// <summary>Reads one byte.</summary>
     public byte Read8(uint address)
     {
-        return RawBytes[CheckedIndex(address, 1)];
+        return Bytes[CheckedIndex(address, 1)];
     }
 
     /// <summary>Reads a 16-bit little-endian value.</summary>
     public ushort Read16(uint address)
     {
-        return Endian.Read16(RawBytes.AsSpan(CheckedIndex(address, 2), 2));
+        return Endian.Read16(Bytes.Slice(CheckedIndex(address, 2), 2));
     }
 
     /// <summary>Reads a 32-bit little-endian value.</summary>
     public uint Read32(uint address)
     {
-        return Endian.Read32(RawBytes.AsSpan(CheckedIndex(address, 4), 4));
+        return Endian.Read32(Bytes.Slice(CheckedIndex(address, 4), 4));
     }
 
     /// <summary>Reads a 64-bit little-endian value.</summary>
     public ulong Read64(uint address)
     {
-        return Endian.Read64(RawBytes.AsSpan(CheckedIndex(address, 8), 8));
+        return Endian.Read64(Bytes.Slice(CheckedIndex(address, 8), 8));
     }
 
     /// <summary>Writes one byte.</summary>
     public void Write8(uint address, byte value)
     {
-        RawBytes[CheckedIndex(address, 1)] = value;
+        Bytes[CheckedIndex(address, 1)] = value;
         NoteGuestWrite(address, 1);
     }
 
     /// <summary>Writes a 16-bit little-endian value.</summary>
     public void Write16(uint address, ushort value)
     {
-        Endian.Write16(RawBytes.AsSpan(CheckedIndex(address, 2), 2), value);
+        Endian.Write16(Bytes.Slice(CheckedIndex(address, 2), 2), value);
         NoteGuestWrite(address, 2);
     }
 
     /// <summary>Writes a 32-bit little-endian value.</summary>
     public void Write32(uint address, uint value)
     {
-        Endian.Write32(RawBytes.AsSpan(CheckedIndex(address, 4), 4), value);
+        Endian.Write32(Bytes.Slice(CheckedIndex(address, 4), 4), value);
         NoteGuestWrite(address, 4);
     }
 
     /// <summary>Writes a 64-bit little-endian value.</summary>
     public void Write64(uint address, ulong value)
     {
-        Endian.Write64(RawBytes.AsSpan(CheckedIndex(address, 8), 8), value);
+        Endian.Write64(Bytes.Slice(CheckedIndex(address, 8), 8), value);
         NoteGuestWrite(address, 8);
     }
 
@@ -124,19 +163,19 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWr
     /// <summary>Returns a writable span over RAM.</summary>
     public Span<byte> GetSpan(uint address, int length)
     {
-        return RawBytes.AsSpan(CheckedRange(address, length), length);
+        return Bytes.Slice(CheckedRange(address, length), length);
     }
 
     /// <summary>Returns a read-only span over RAM.</summary>
     public ReadOnlySpan<byte> GetReadOnlySpan(uint address, int length)
     {
-        return RawBytes.AsSpan(CheckedRange(address, length), length);
+        return Bytes.Slice(CheckedRange(address, length), length);
     }
 
     /// <summary>Zeroes all of RAM.</summary>
     public void Clear()
     {
-        Array.Clear(RawBytes);
+        Bytes.Clear();
         if (_presentWatchCount > 0)
         {
             // Fail-closed: wholesale RAM replacement while a backend FBO is
@@ -219,7 +258,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWr
 
         writer.Write(RamStateVersion);
         writer.Write(Size);
-        writer.Write(RawBytes);
+        writer.Write(Bytes);
     }
 
     /// <summary>Restores the full RAM contents (V1 snapshot).</summary>
@@ -245,7 +284,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, IGuestWr
             throw new InvalidDataException($"Snapshot RAM payload truncated ({bytes.Length} of {Size} bytes).");
         }
 
-        Buffer.BlockCopy(bytes, 0, RawBytes, 0, (int)Size);
+        bytes.CopyTo(Bytes);
         if (_presentWatchCount > 0)
         {
             // Fail-closed (§132 (a*)): snapshot load replaces RAM wholesale;

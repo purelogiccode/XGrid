@@ -245,6 +245,35 @@ run:
 **Next (XCN2):** back `PhysicalMemory` with the section (a pointer-backed
 mode), map every `AddressSpace` region as a window, run the full
 `XboxMachine` (HDD/IDE, NV2A, APU), and drive snapshots and the display.
+
+**XCN3 machine seam (2026-11-22).** `PhysicalMemory` now has a host-backed
+mode (`new PhysicalMemory(size, IntPtr)`): the accessors and spans go through
+`Bytes`, `RawBytes` throws for host RAM, and `TryGetRamBytes` returns false so
+the GPU fast paths fall back. `IImmutableImageDevice` exposes `Image` and
+`AddressRegion` exposes `BaseAddress`/`Size`, so the host client can turn the
+machine's memory map into windows: RAM aliases become QEMU region aliases,
+flash/mirror/overlay become direct memory copied from the image, everything
+else is live. Control block v5 carries 24 windows, a 1024-entry ring and a
+`dropped` counter.
+
+**A real run-loop bug was fixed:** `xgc_run` cleared `exception_index` before
+every chunk, so an exception raised at a chunk boundary was discarded and the
+faulting instruction re-executed forever. The run surfaced it as an `fldz`
+(`D9 EE`) at `0x80052E1C` faulting `#NM` (`CR0.TS=1`) every ~86 instructions
+for 200M steps at 0.5 Msteps/s. With the fix the machine runs at
+**160 Msteps/s** on the full boot workload.
+
+The full machine now reaches the kernel: 12 regions / 13 windows, the HDD
+attached, the SMC handshake and 19 SMBus transactions, PIT/PIC interrupts and
+IDE command traffic. It parks at `EIP=0x80052E1C` (`hlt` after masking the
+interrupts) with the IDE at 434 accesses - the next blocker is the interrupt
+timing model: devices advance **once per slice**, so timer delivery is batched
+and a slice-size-dependent boot (1M steps idles, 200k steps progresses) is the
+symptom. The fix is a per-slice **deadline**: the C# side computes the next
+timer expiry and the host stops the slice there.
+
+**Next (XCN3):** the slice deadline + interrupt-wake path, then the full boot
+to the dashboard (NV2A first method, first frame).
 ## Risks / open questions
 
 1. **Standalone init.** QEMU has no system-mode library target. The shim must

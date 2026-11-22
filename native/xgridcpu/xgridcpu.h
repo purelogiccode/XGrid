@@ -94,6 +94,15 @@ XGC_API int xgc_map_io_ring_live(XgcCpu *cpu, uint32_t port, uint32_t size,
 XGC_API int xgc_map_direct(XgcCpu *cpu, uint32_t gpa, uint32_t size,
                            void *host, int priority);
 
+/* RAM alias window: aliases the RAM mapped at `src_gpa` (QEMU region alias,
+ * no second RAM block), wrapping every `ram_size` bytes of the window. */
+XGC_API int xgc_map_ram_alias(XgcCpu *cpu, uint32_t gpa, uint32_t size,
+                              uint32_t src_gpa, int priority);
+
+/* Writes the queue dropped because the slice produced more than the shared
+ * ring can hold (diagnostic; a non-zero value means the slice is too big). */
+XGC_API uint64_t xgc_mmio_dropped(XgcCpu *cpu);
+
 /* Inject one hardware interrupt vector (0-255); the x86 CPU takes it at the
  * next instruction boundary when IF=1. */
 XGC_API int xgc_set_irq(XgcCpu *cpu, uint32_t vector);

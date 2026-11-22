@@ -18,6 +18,8 @@ namespace XGrid.Memory;
 /// </remarks>
 public interface IImmutableImageDevice
 {
+    /// <summary>Gets the host image backing the window. A mirror window may repeat this image across its range; the image is never larger than the window.</summary>
+    ReadOnlyMemory<byte> Image { get; }
 }
 
 /// <summary>Read-only memory window backed by a byte image (flash/ROM).</summary>
@@ -37,6 +39,9 @@ public sealed class RomDevice : IMmioDevice, IImmutableImageDevice
     /// <summary>Gets the image size in bytes.</summary>
     // ReSharper disable once UnusedMember.Global
     public int Size => _data.Length;
+
+    /// <summary>Gets the image bytes.</summary>
+    public ReadOnlyMemory<byte> Image => _data;
 
     /// <summary>Reads <paramref name="size"/> bytes little-endian from the image at the offset of <paramref name="address"/> from the window base.</summary>
     public uint Read(uint address, int size)
@@ -83,6 +88,9 @@ public sealed class RomAliasDevice : IMmioDevice, IImmutableImageDevice
     // ReSharper disable once UnusedMember.Global
     public int Size => _data.Length;
 
+    /// <summary>Gets the image bytes (mirrored across the window by address masking).</summary>
+    public ReadOnlyMemory<byte> Image => _data;
+
     /// <summary>Reads <paramref name="size"/> bytes little-endian from the image with the address offset masked to the power-of-two image size, so the image mirrors across the window.</summary>
     public uint Read(uint address, int size)
     {
@@ -122,6 +130,9 @@ public sealed class RomOverlayDevice : IMmioDevice, IImmutableImageDevice
 
     /// <summary>Gets or sets whether the overlay is active.</summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>Gets the overlay image bytes.</summary>
+    public ReadOnlyMemory<byte> Image => _overlay;
 
     /// <summary>Reads <paramref name="size"/> bytes little-endian from the overlay while <see cref="Enabled"/> is true; when disabled, forwards the read to the underlying device.</summary>
     public uint Read(uint address, int size)

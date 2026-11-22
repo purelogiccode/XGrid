@@ -22,10 +22,11 @@ namespace XGrid.Xcn1BootProbe
         private const uint ShadowMirror = FlashSize;
         private const uint ShadowOverlay = ShadowMirror + MirrorSize;
         private const uint CtlOffset = RamSize;
-        private const uint SectionSize = CtlOffset + 0x100 + ShadowSize + (64 * 24) + 0x100;
+        private const uint SectionSize = CtlOffset + 0x250 + ShadowSize + (RingCapacity * 24) + 0x100;
 
         private const uint Magic = 0x58474348u;
-        private const uint Version = 3u;
+        private const uint Version = 5u;
+        private const int RingCapacity = 1024;
         private const uint WinDirect = 0x4;
 
         private const int OffMagic = 0;
@@ -42,16 +43,17 @@ namespace XGrid.Xcn1BootProbe
         private const int OffReset = 48;
         private const int OffNWindows = 52;
         private const int OffWindows = 56;
-        private const int OffIoState = 216;
-        private const int OffIoFlags = 220;
-        private const int OffIoAddr = 224;
-        private const int OffIoSize = 228;
-        private const int OffIoValue = 232;
-        private const int OffIoIcount = 240;
-        private const int OffRamSize = 248;
-        private const int OffShadowSize = 252;
-        private const int OffRing = 0x100 + (int)ShadowSize;
-        private const int OffRegs = OffRing + (64 * 24);
+        private const int OffIoState = 536;
+        private const int OffIoFlags = 540;
+        private const int OffIoAddr = 544;
+        private const int OffIoSize = 548;
+        private const int OffIoValue = 552;
+        private const int OffIoIcount = 560;
+        private const int OffRingCapacity = 576;
+        private const int OffRamSize = 568;
+        private const int OffShadowSize = 572;
+        private const int OffRing = 0x250 + (int)ShadowSize;
+        private const int OffRegs = OffRing + (RingCapacity * 24);
 
         private static uint Read32(byte* p) => Volatile.Read(ref *(uint*)p);
 
@@ -110,6 +112,7 @@ namespace XGrid.Xcn1BootProbe
                 Write32(ctl + OffVersion, Version);
                 Write32(ctl + OffRamSize, RamSize);
                 Write32(ctl + OffShadowSize, ShadowSize);
+                Write32(ctl + OffRingCapacity, RingCapacity);
                 WriteWindow(ctl, 0, 0xF0000000u, FlashSize, WinDirect, ShadowFlash, 0);
                 WriteWindow(ctl, 1, 0xFF000000u, MirrorSize, WinDirect, ShadowMirror, 0);
                 WriteWindow(ctl, 2, 0xFFF00000u, FlashSize, WinDirect, ShadowOverlay, 1);
@@ -117,16 +120,16 @@ namespace XGrid.Xcn1BootProbe
 
                 // Flash at 0xF0000000, the 16 MB alias at 0xFF000000 and the
                 // overlay at 0xFFF00000 (flash + MCPX ROM at the top).
-                bios.CopyTo(new Span<byte>(basePtr + CtlOffset + 0x100 + ShadowFlash,
+                bios.CopyTo(new Span<byte>(basePtr + CtlOffset + 0x250 + ShadowFlash,
                     bios.Length));
                 for (int i = 0; i < 16; i++)
                 {
                     bios.CopyTo(new Span<byte>(
-                        basePtr + CtlOffset + 0x100 + ShadowMirror + (i * (int)FlashSize),
+                        basePtr + CtlOffset + 0x250 + ShadowMirror + (i * (int)FlashSize),
                         bios.Length));
                 }
                 overlay.CopyTo(new Span<byte>(
-                    basePtr + CtlOffset + 0x100 + ShadowOverlay, overlay.Length));
+                    basePtr + CtlOffset + 0x250 + ShadowOverlay, overlay.Length));
 
                 var psi = new ProcessStartInfo(host, $"{name} {CtlOffset}")
                 {

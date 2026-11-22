@@ -47,7 +47,7 @@ typedef struct XgcMmio {
     void *opaque;
 } XgcMmio;
 
-#define XGC_RING_CAP 64
+#define XGC_RING_CAP 1024
 
 typedef struct XgcRing {
     struct XgcCpu *cpu;
@@ -63,18 +63,20 @@ typedef struct XgcRing {
 struct XgcCpu {
     CPUState *cpu;
     MemoryRegion *ram[4];
+    uint32_t ram_base[4];
     int nram;
     MemoryRegion *mmio_mr[8];
     XgcMmio *mmio[8];
     int nmmio;
-    MemoryRegion *ring_mr[8];
-    XgcRing *rings[8];
+    MemoryRegion *ring_mr[24];
+    XgcRing *rings[24];
     int nrings;
-    MemoryRegion *direct_mr[16];
+    MemoryRegion *direct_mr[64];
     int ndirect;
     XgcMmioAccess ring[XGC_RING_CAP];
     int ring_head;
     int ring_tail;
+    uint64_t ring_dropped;
 };
 
 static bool g_initialized;
@@ -150,6 +152,7 @@ static bool xgc_ring_push(XgcCpu *c, uint32_t gpa, uint32_t size,
     int next = (c->ring_tail + 1) % XGC_RING_CAP;
 
     if (next == c->ring_head) {
+        c->ring_dropped++;
         return false;
     }
     c->ring[c->ring_tail].gpa = gpa;
@@ -415,9 +418,60 @@ int xgc_map_ram(XgcCpu *c, uint32_t gpa, uint32_t size, void *host)
     mr = g_new0(MemoryRegion, 1);
     memory_region_init_ram_ptr(mr, NULL, "xgrid-ram", size, host);
     memory_region_add_subregion(get_system_memory(), gpa, mr);
+    c->ram_base[c->nram] = gpa;
     c->ram[c->nram++] = mr;
     xgc_flush_tb(c);
     return XGC_OK;
+}
+
+int xgc_map_ram_alias(XgcCpu *c, uint32_t gpa, uint32_t size, uint32_t src_gpa,
+                      int priority)
+{
+    MemoryRegion *src = NULL;
+    uint32_t src_size = 0;
+    uint32_t done = 0;
+    int i;
+
+    if (!c || size == 0) {
+        return XGC_ERR_ARG;
+    }
+    for (i = 0; i < c->nram; i++) {
+        if (c->ram_base[i] == src_gpa) {
+            src = c->ram[i];
+            src_size = memory_region_size(src);
+            break;
+        }
+    }
+    if (!src || src_size == 0) {
+        return XGC_ERR_ARG;
+    }
+    /* The managed RamAliasDevice masks the window into RAM, so a window larger
+     * than RAM is RAM repeated; alias it in RAM-sized pieces. */
+    while (done < size) {
+        uint32_t piece = size - done;
+        MemoryRegion *mr;
+
+        if (piece > src_size) {
+            piece = src_size;
+        }
+        if (c->ndirect >= 64) {
+            return XGC_ERR_ARG;
+        }
+        mr = g_new0(MemoryRegion, 1);
+        memory_region_init_alias(mr, NULL, "xgrid-ram-alias", src, 0, piece);
+        memory_region_add_subregion_overlap(get_system_memory(), gpa + done, mr,
+                                            priority);
+        c->direct_mr[c->ndirect++] = mr;
+        done += piece;
+    }
+    xgc_flush_tb(c);
+    XGC_TRACE("ram alias gpa=%x size=%x src=%x\n", gpa, size, src_gpa);
+    return XGC_OK;
+}
+
+uint64_t xgc_mmio_dropped(XgcCpu *c)
+{
+    return c ? c->ring_dropped : 0;
 }
 
 int xgc_map_mmio(XgcCpu *c, uint32_t gpa, uint32_t size, XgcMmioReadFn read,
@@ -453,7 +507,7 @@ static int xgc_map_ring_impl(XgcCpu *c, uint32_t gpa, uint32_t size,
     MemoryRegion *mr;
     XgcRing *r;
 
-    if (!c || size == 0 || c->nrings >= 8) {
+    if (!c || size == 0 || c->nrings >= 24) {
         if (own_shadow) {
             g_free(shadow);
         }
@@ -522,7 +576,7 @@ int xgc_map_direct(XgcCpu *c, uint32_t gpa, uint32_t size, void *host,
 {
     MemoryRegion *mr;
 
-    if (!c || !host || size == 0 || c->ndirect >= 16) {
+    if (!c || !host || size == 0 || c->ndirect >= 64) {
         return XGC_ERR_ARG;
     }
     mr = g_new0(MemoryRegion, 1);
@@ -654,7 +708,10 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
         c->cpu->neg.icount_decr.u32 = chunk;
         c->cpu->icount_extra = 0;
         c->cpu->icount_budget = chunk;
-        c->cpu->exception_index = -1;
+        /* Never clear exception_index here: an exception raised at the end of
+         * a chunk must be delivered by the next cpu_exec. Clearing it drops
+         * the fault and re-executes the instruction forever (the fldz / #NM
+         * storm). QEMU clears it itself after delivery. */
 
         {
             uint32_t irq_before = c->cpu->interrupt_request;
@@ -667,12 +724,13 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
             icount_update(c->cpu);
             after = icount_get_raw();
 
-            print = dbg < 3 || irq_before != 0 || ret == EXCP_HALTED;
+            print = dbg < 3 || irq_before != 0 || ret == EXCP_HALTED ||
+                    (ret != EXCP_INTERRUPT && dbg < 200);
             if (getenv("XGRID_CPU_TRACE") && print) {
                 CPUX86State *env = cpu_env(c->cpu);
                 XGC_TRACE("chunk before=%lld after=%lld low=%u extra=%d "
                           "budget=%lld ret=%d eip=%x ecx=%x irq=%x->%x vec=%d "
-                          "eflags=%x hf=%x hf2=%x exc=%d\n",
+                          "eflags=%x hf=%x hf2=%x exc=%d cr0=%x\n",
                           (long long)before, (long long)after,
                           c->cpu->neg.icount_decr.u16.low,
                           (int)c->cpu->icount_extra,
@@ -680,7 +738,21 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
                           env->eip, env->regs[R_ECX],
                           irq_before, c->cpu->interrupt_request, xgc_irq_vector,
                           env->eflags, env->hflags, env->hflags2,
-                          c->cpu->exception_index);
+                          c->cpu->exception_index, env->cr[0]);
+                if (c->cpu->exception_index == 7) {
+                    uint8_t code[16];
+                    if (cpu_memory_rw_debug(c->cpu, env->eip, code,
+                                            sizeof(code), false) == 0) {
+                        XGC_TRACE("  #NM at %x: %02x %02x %02x %02x %02x %02x "
+                                  "%02x %02x %02x %02x %02x %02x\n",
+                                  env->eip, code[0], code[1], code[2], code[3],
+                                  code[4], code[5], code[6], code[7], code[8],
+                                  code[9], code[10], code[11]);
+                    }
+                    XGC_TRACE("  cr0=%x idt=%llx/%x tr=%x cr3=%x\n", env->cr[0],
+                              (unsigned long long)env->idt.base, env->idt.limit,
+                              env->tr.selector, env->cr[3]);
+                }
             }
             dbg++;
         }

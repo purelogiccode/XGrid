@@ -96,13 +96,14 @@ passes for reference.
 
 The section is created by C#; the layout is `RAM at 0`, then the control area
 at a C#-chosen offset passed as `xgridcpu-host.exe <section> <ctrl-offset>`.
-The header holds `ram_size`, `shadow_size` and the window table; the shadow
-area starts at `ctrl + 0x100` and the ring and registers follow it.
+The header holds `ram_size`, `shadow_size`, `ring_capacity` and the window
+table; the shadow area starts at `ctrl + 0x250` and the ring and registers
+follow it.
 
 | Offset | Field |
 |---|---|
 | 0 | `magic` (`'XGCH'`) |
-| 4 | `version` (3) |
+| 4 | `version` (5) |
 | 8 | `ready` (host sets 1 after RAM/window mapping) |
 | 12 | `quit` |
 | 16 | `status` (1 = run requested, 2 = stopped) |
@@ -111,16 +112,17 @@ area starts at `ctrl + 0x100` and the ring and registers follow it.
 | 32 | `rc` |
 | 36 | `ring_count` |
 | 40 | `irq_pending` (C# sets 1) |
-| 44 | `irq_vector` (0-255) |
+| 44 | `irq_vector` (legacy; the ack callback wins) |
 | 48 | `reset` (1 = architectural reset, 2 = real mode at 0x1000:0x8000) |
 | 52 | `nwindows` |
-| 56 | `windows[8]` - `{base, size, flags, shadow, priority}` (20 bytes each) |
-| 216 | `io_state` (0 idle, 1 request, 2 done) |
-| 220 | `io_flags` (bit0: port I/O) |
-| 224 | `io_addr`, 228 `io_size`, 232 `io_value` (u64), 240 `io_icount` (u64) |
-| 248 | `ram_size`, 252 `shadow_size` |
+| 56 | `windows[24]` - `{base, size, flags, shadow, priority}` (20 bytes each) |
+| 536 | `io_state` (0 idle, 1 request, 2 done) |
+| 540 | `io_flags` (bit0: port I/O, bit31: interrupt acknowledge) |
+| 544 | `io_addr`, 548 `io_size`, 552 `io_value` (u64), 560 `io_icount` (u64) |
+| 568 | `ram_size`, 572 `shadow_size`, 576 `ring_capacity`, 584 `dropped` (u64) |
 
-Window flags: `1` = the base is an I/O port, `2` = live reads, `4` = direct.
+Window flags: `1` = the base is an I/O port, `2` = live reads, `4` = direct,
+`8` = RAM alias (aliases the RAM at gpa 0, wrapping every `ram_size` bytes).
 
 - **Shadow window** (`0`): reads return bytes from the section shadow that C#
   refreshes between slices. Use it for ROM/flash and registers whose value is
@@ -131,12 +133,14 @@ Window flags: `1` = the base is an I/O port, `2` = live reads, `4` = direct.
   `io_state = 2`. This makes device registers - and device **time**, via
   `io_icount` - exact at the access.
 - **Direct window** (`4`): the shadow slice is plain memory
-  (`memory_region_init_ram_ptr`), so the CPU reads and writes it with no
-  callback. Use it for RAM, flash images, ROM overlays and aliases; `priority`
-  orders overlaps (the MCPX overlay over the flash mirror).
+  (`memory_region_init_ram_ptr`), no callback. `priority` orders overlaps.
+- **RAM alias** (`8`): `memory_region_init_alias` over the RAM region, in
+  RAM-sized pieces, so the 128 MB mirror and the 0x80000000 contiguous alias
+  cost no extra memory.
 
-Writes are always queued and are published to the section **before** a live
-read is announced, so a read observes every earlier write in order.
+Writes are always queued (1024 entries) and are published to the section
+**before** a live read is announced, so a read observes every earlier write in
+order. `dropped` counts writes lost to a full ring (a too-large slice).
 
 ## Boot ROM probe (XCN2)
 
@@ -185,6 +189,24 @@ Result at 1B steps: the boot chain runs through the 1BL, the SMC handshake and
 `EIP=0x8001B02E`** (the same address the managed engine idles at) with **194
 interrupts delivered and acknowledged** through the C# PIC. 188.7 Msteps/s on
 this I/O-heavy leg.
+
+## Machine probe (XCN3)
+
+```powershell
+$env:XGRIDCPU_HOST = (Resolve-Path native/xgridcpu/xgridcpu-host.exe).Path
+dotnet run --project tools/xcn3-machine-probe -c Release -- `
+  data/xemu/Complex_4627.bin data/xemu/mcpx_1.0.bin `
+  data/xemu/xbox_hdd.qcow2 data/xemu/eeprom.bin 400000000 1000000
+```
+
+`tools/xcn3-machine-probe` runs the **full `XboxMachine`** on the native CPU:
+guest RAM *is* the section (host-backed `PhysicalMemory`), every
+`AddressSpace` region becomes a window (`RamAliasDevice` → region alias,
+flash/mirror/overlay → direct from `IImmutableImageDevice.Image`, NV2A/APU/
+ACI/USB/nvnet → live), the whole 64 KB I/O space is one live window, and each
+slice calls `Bus.Advance(executed)` so the PIT/RTC/APU/NV2A keep time. A
+halted CPU (`executed == 0`) advances device time by the slice so a timer can
+wake it.
 
 ## Measured seam costs (H1, 2026-11-22)`tools/xcn1-host-probe`, real-mode loops of 100,000 accesses:
 

@@ -27,12 +27,14 @@
 #include "xgridcpu.h"
 
 #define XGC_HOST_MAGIC   0x58474348u
-#define XGC_HOST_VERSION 3u
+#define XGC_HOST_VERSION 5u
+#define XGC_HOST_SHADOW  0x250u
 
-#define XGC_HOST_MAX_WINDOWS 8
+#define XGC_HOST_MAX_WINDOWS 24
 #define XGC_WIN_IO           0x1u  /* the base is an I/O port */
 #define XGC_WIN_LIVE         0x2u  /* reads are serviced by C# */
 #define XGC_WIN_DIRECT       0x4u  /* the shadow slice is plain memory */
+#define XGC_WIN_RAM_ALIAS    0x8u  /* alias the RAM at gpa 0 */
 
 #define XGC_IO_IDLE     0u
 #define XGC_IO_REQUEST  1u
@@ -71,6 +73,9 @@ typedef struct XgcHostControl {
     uint64_t io_icount;
     uint32_t ram_size;
     uint32_t shadow_size;
+    uint32_t ring_capacity;
+    uint32_t reserved2;
+    uint64_t dropped;
 } XgcHostControl;
 
 #define XGC_ASSERT_OFF(field, off) \
@@ -84,16 +89,18 @@ XGC_ASSERT_OFF(irq_vector, 44);
 XGC_ASSERT_OFF(reset, 48);
 XGC_ASSERT_OFF(nwindows, 52);
 XGC_ASSERT_OFF(windows, 56);
-XGC_ASSERT_OFF(io_state, 216);
-XGC_ASSERT_OFF(io_flags, 220);
-XGC_ASSERT_OFF(io_addr, 224);
-XGC_ASSERT_OFF(io_size, 228);
-XGC_ASSERT_OFF(io_value, 232);
-XGC_ASSERT_OFF(io_icount, 240);
-XGC_ASSERT_OFF(ram_size, 248);
-XGC_ASSERT_OFF(shadow_size, 252);
+XGC_ASSERT_OFF(io_state, 536);
+XGC_ASSERT_OFF(io_flags, 540);
+XGC_ASSERT_OFF(io_addr, 544);
+XGC_ASSERT_OFF(io_size, 548);
+XGC_ASSERT_OFF(io_value, 552);
+XGC_ASSERT_OFF(io_icount, 560);
+XGC_ASSERT_OFF(ram_size, 568);
+XGC_ASSERT_OFF(shadow_size, 572);
+XGC_ASSERT_OFF(ring_capacity, 576);
+XGC_ASSERT_OFF(dropped, 584);
 _Static_assert(sizeof(XgcHostWindow) == 20, "window size");
-_Static_assert(offsetof(XgcHostControl, windows) + 8 * 20 <= 216,
+_Static_assert(offsetof(XgcHostControl, windows) + 24 * 20 <= 536,
                "header fits");
 
 typedef struct XgcHost {
@@ -103,6 +110,7 @@ typedef struct XgcHost {
     uint8_t *shadow;
     XgcMmioAccess *ring;
     XgcRegs *regs;
+    uint32_t ring_capacity;
     bool error;
 } XgcHost;
 
@@ -117,7 +125,8 @@ static void host_publish_ring(XgcHost *h)
 {
     XgcMmioAccess access;
 
-    while (h->ctl->ring_count < 64 && xgc_mmio_take(h->cpu, &access) != 0) {
+    while (h->ctl->ring_count < h->ring_capacity &&
+           xgc_mmio_take(h->cpu, &access) != 0) {
         h->ring[h->ctl->ring_count++] = access;
     }
 }
@@ -196,12 +205,23 @@ static int host_map_windows(XgcHost *h)
             return -1;
         }
         shadow = h->shadow + w->shadow;
-        if (w->shadow + w->size > h->ctl->shadow_size) {
+        if (!live && (w->flags & XGC_WIN_RAM_ALIAS) == 0 &&
+            w->shadow + w->size > h->ctl->shadow_size) {
+            fprintf(stderr, "window %u shadow overflow\n", i);
             return -1;
         }
         if (direct) {
             if (xgc_map_direct(h->cpu, w->base, w->size, shadow,
                                w->priority) != XGC_OK) {
+                fprintf(stderr, "window %u direct failed\n", i);
+                return -1;
+            }
+            continue;
+        }
+        if ((w->flags & XGC_WIN_RAM_ALIAS) != 0) {
+            if (xgc_map_ram_alias(h->cpu, w->base, w->size, 0,
+                                  w->priority) != XGC_OK) {
+                fprintf(stderr, "window %u ram-alias failed\n", i);
                 return -1;
             }
             continue;
@@ -216,6 +236,7 @@ static int host_map_windows(XgcHost *h)
                                        host_io_read, ctx)
                 : xgc_map_io_ring_shadow(h->cpu, w->base, w->size, shadow);
             if (rc != XGC_OK) {
+                fprintf(stderr, "window %u io failed\n", i);
                 return -1;
             }
         } else {
@@ -224,6 +245,7 @@ static int host_map_windows(XgcHost *h)
                                          host_io_read, ctx)
                 : xgc_map_mmio_ring_shadow(h->cpu, w->base, w->size, shadow);
             if (rc != XGC_OK) {
+                fprintf(stderr, "window %u mmio failed\n", i);
                 return -1;
             }
         }
@@ -270,10 +292,15 @@ int main(int argc, char **argv)
     memset(&host, 0, sizeof(host));
     host.base = base;
     host.ctl = ctl;
-    host.shadow = (uint8_t *)ctl + 0x100;
+    host.shadow = (uint8_t *)ctl + XGC_HOST_SHADOW;
+    host.ring_capacity = ctl->ring_capacity;
+    if (host.ring_capacity == 0 || host.ring_capacity > 4096) {
+        fprintf(stderr, "bad ring capacity %u\n", ctl->ring_capacity);
+        return 4;
+    }
     host.ring = (XgcMmioAccess *)(host.shadow + ctl->shadow_size);
-    host.regs = (XgcRegs *)(host.shadow + ctl->shadow_size +
-                            64u * sizeof(XgcMmioAccess));
+    host.regs = (XgcRegs *)((uint8_t *)host.ring +
+                            host.ring_capacity * sizeof(XgcMmioAccess));
 
     if (xgc_init() != XGC_OK) {
         fprintf(stderr, "xgc_init failed\n");
@@ -324,6 +351,7 @@ int main(int argc, char **argv)
             ctl->executed = executed;
             ctl->rc = rc;
             host_publish_ring(&host);
+            ctl->dropped = xgc_mmio_dropped(host.cpu);
             xgc_get_regs(host.cpu, host.regs);
             ctl->status = 2;
         }

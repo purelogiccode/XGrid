@@ -42,9 +42,11 @@ public sealed class XboxMachine : IIdleSkipHost
     private readonly List<(string Tag, ISnapshotable Target)> _snapshotSections = [];
 
     /// <summary>Creates the machine with RAM, bus, and CPU wired together.</summary>
-    public XboxMachine(uint ramSize = DefaultRamSize)
+    /// <param name="ramSize">RAM size in bytes.</param>
+    /// <param name="ramPointer">Host buffer to use as RAM (native CPU host), or null to allocate a managed array.</param>
+    public XboxMachine(uint ramSize = DefaultRamSize, IntPtr? ramPointer = null)
     {
-        Ram = new PhysicalMemory(ramSize);
+        Ram = new PhysicalMemory(ramSize, ramPointer);
         Memory = new AddressSpace(Ram);
         Bus = new XboxBus();
         Cpu = new XboxCpu(Memory, Bus.Io)
@@ -914,7 +916,7 @@ public sealed class XboxMachine : IIdleSkipHost
             PhysicalMemory ram = memory.Ram;
             if (address < ram.Size && address <= ram.Size - 4u)
             {
-                value = BinaryPrimitives.ReadUInt32LittleEndian(ram.RawBytes.AsSpan((int)address, 4));
+                value = BinaryPrimitives.ReadUInt32LittleEndian(ram.Bytes.Slice((int)address, 4));
                 return true;
             }
 
@@ -925,6 +927,15 @@ public sealed class XboxMachine : IIdleSkipHost
         public bool TryGetRamBytes(out byte[] bytes, out uint size)
         {
             PhysicalMemory ram = memory.Ram;
+            if (ram.IsExternal)
+            {
+                // Host-backed RAM (native CPU host) has no managed array; the
+                // callers fall back to the per-word interface path.
+                bytes = [];
+                size = 0;
+                return false;
+            }
+
             bytes = ram.RawBytes;
             size = ram.Size;
             return true;
@@ -946,7 +957,7 @@ public sealed class XboxMachine : IIdleSkipHost
                 return false;
             }
 
-            BinaryPrimitives.WriteUInt32LittleEndian(ram.RawBytes.AsSpan((int)address, 4), value);
+            BinaryPrimitives.WriteUInt32LittleEndian(ram.Bytes.Slice((int)address, 4), value);
             uint page = address >> 12;
             if (!_pageMemoValid || page != _pageMemo)
             {

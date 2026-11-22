@@ -25,10 +25,11 @@ namespace XGrid.Xcn2SmcProbe
         private const uint ShadowOverlay = ShadowMirror + MirrorSize;
         private const uint ShadowSize = ShadowOverlay + FlashSize;
         private const uint CtlOffset = RamSize;
-        private const uint SectionSize = CtlOffset + 0x100 + ShadowSize + (64 * 24) + 0x100;
+        private const uint SectionSize = CtlOffset + 0x250 + ShadowSize + (RingCapacity * 24) + 0x100;
 
         private const uint Magic = 0x58474348u;
-        private const uint Version = 3u;
+        private const uint Version = 5u;
+        private const int RingCapacity = 1024;
         private const uint WinIo = 0x1;
         private const uint WinLive = 0x2;
         private const uint WinDirect = 0x4;
@@ -47,16 +48,17 @@ namespace XGrid.Xcn2SmcProbe
         private const int OffReset = 48;
         private const int OffNWindows = 52;
         private const int OffWindows = 56;
-        private const int OffIoState = 216;
-        private const int OffIoFlags = 220;
-        private const int OffIoAddr = 224;
-        private const int OffIoSize = 228;
-        private const int OffIoValue = 232;
-        private const int OffIoIcount = 240;
-        private const int OffRamSize = 248;
-        private const int OffShadowSize = 252;
-        private const int OffRing = 0x100 + (int)ShadowSize;
-        private const int OffRegs = OffRing + (64 * 24);
+        private const int OffIoState = 536;
+        private const int OffIoFlags = 540;
+        private const int OffIoAddr = 544;
+        private const int OffIoSize = 548;
+        private const int OffIoValue = 552;
+        private const int OffIoIcount = 560;
+        private const int OffRingCapacity = 576;
+        private const int OffRamSize = 568;
+        private const int OffShadowSize = 572;
+        private const int OffRing = 0x250 + (int)ShadowSize;
+        private const int OffRegs = OffRing + (RingCapacity * 24);
 
         private static readonly XboxBus Bus = new XboxBus();
         private static long s_portReads;
@@ -106,22 +108,23 @@ namespace XGrid.Xcn2SmcProbe
                 Write32(ctl + OffVersion, Version);
                 Write32(ctl + OffRamSize, RamSize);
                 Write32(ctl + OffShadowSize, ShadowSize);
+                Write32(ctl + OffRingCapacity, RingCapacity);
                 WriteWindow(ctl, 0, 0xF0000000u, FlashSize, WinDirect, ShadowFlash, 0);
                 WriteWindow(ctl, 1, 0xFF000000u, MirrorSize, WinDirect, ShadowMirror, 0);
                 WriteWindow(ctl, 2, 0xFFF00000u, FlashSize, WinDirect, ShadowOverlay, 1);
                 WriteWindow(ctl, 3, 0x0000u, 0x10000u, WinIo | WinLive, 0, 0);
                 Write32(ctl + OffNWindows, 4);
 
-                bios.CopyTo(new Span<byte>(basePtr + CtlOffset + 0x100 + ShadowFlash,
+                bios.CopyTo(new Span<byte>(basePtr + CtlOffset + 0x250 + ShadowFlash,
                     bios.Length));
                 for (int i = 0; i < 16; i++)
                 {
                     bios.CopyTo(new Span<byte>(
-                        basePtr + CtlOffset + 0x100 + ShadowMirror + (i * (int)FlashSize),
+                        basePtr + CtlOffset + 0x250 + ShadowMirror + (i * (int)FlashSize),
                         bios.Length));
                 }
                 overlay.CopyTo(new Span<byte>(
-                    basePtr + CtlOffset + 0x100 + ShadowOverlay, overlay.Length));
+                    basePtr + CtlOffset + 0x250 + ShadowOverlay, overlay.Length));
 
                 var psi = new ProcessStartInfo(host, $"{name} {CtlOffset}")
                 {
@@ -285,7 +288,7 @@ namespace XGrid.Xcn2SmcProbe
         private static void DrainRing(byte* ctl)
         {
             uint count = Read32(ctl + OffRingCount);
-            for (uint i = 0; i < count && i < 64; i++)
+            for (uint i = 0; i < count && i < RingCapacity; i++)
             {
                 byte* e = ctl + OffRing + (int)(i * 24);
                 uint address = Read32(e);

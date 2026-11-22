@@ -17,10 +17,11 @@ namespace XGrid.Xcn1HostProbe
         private const int RamSize = 1024 * 1024;
         private const int ShadowSize = 0x10000;
         private const int CtlOffset = RamSize;
-        private const int SectionSize = CtlOffset + 0x100 + ShadowSize + (64 * 24) + 0x100;
+        private const int SectionSize = CtlOffset + 0x250 + ShadowSize + (RingCapacity * 24) + 0x100;
 
         private const uint Magic = 0x58474348u;
-        private const uint Version = 3u;
+        private const uint Version = 5u;
+        private const int RingCapacity = 1024;
 
         // Control-block offsets, relative to the control area (CtlOffset).
         private const int OffMagic = 0;
@@ -37,17 +38,18 @@ namespace XGrid.Xcn1HostProbe
         private const int OffReset = 48;
         private const int OffNWindows = 52;
         private const int OffWindows = 56;
-        private const int OffIoState = 216;
-        private const int OffIoFlags = 220;
-        private const int OffIoAddr = 224;
-        private const int OffIoSize = 228;
-        private const int OffIoValue = 232;
-        private const int OffIoIcount = 240;
-        private const int OffRamSize = 248;
-        private const int OffShadowSize = 252;
-        private const int OffShadow = 0x100;
-        private const int OffRing = 0x100 + ShadowSize;
-        private const int OffRegs = OffRing + (64 * 24);
+        private const int OffIoState = 536;
+        private const int OffIoFlags = 540;
+        private const int OffIoAddr = 544;
+        private const int OffIoSize = 548;
+        private const int OffIoValue = 552;
+        private const int OffIoIcount = 560;
+        private const int OffRingCapacity = 576;
+        private const int OffRamSize = 568;
+        private const int OffShadowSize = 572;
+        private const int OffShadow = 0x250;
+        private const int OffRing = 0x250 + ShadowSize;
+        private const int OffRegs = OffRing + (RingCapacity * 24);
 
         private const uint WinIo = 0x1;
         private const uint WinLive = 0x2;
@@ -115,6 +117,7 @@ namespace XGrid.Xcn1HostProbe
                 Write32(ctl + OffVersion, Version);
                 Write32(ctl + OffRamSize, RamSize);
                 Write32(ctl + OffShadowSize, ShadowSize);
+                Write32(ctl + OffRingCapacity, RingCapacity);
                 WriteWindow(ctl, 0, 0xF0000000u, 0x1000, 0, 0, 0);
                 WriteWindow(ctl, 1, 0xF1000000u, 0x1000, WinLive, 0, 0);
                 WriteWindow(ctl, 2, 0x60u, 8, WinIo | WinLive, 0, 0);
@@ -433,7 +436,7 @@ namespace XGrid.Xcn1HostProbe
         private static void DrainRing(byte* ctl)
         {
             uint count = Read32(ctl + OffRingCount);
-            for (uint i = 0; i < count && i < 64; i++)
+            for (uint i = 0; i < count && i < RingCapacity; i++)
             {
                 byte* e = ctl + OffRing + (int)(i * 24);
                 uint address = Read32(e);
@@ -450,6 +453,13 @@ namespace XGrid.Xcn1HostProbe
             uint address = Read32(ctl + OffIoAddr);
             uint size = Read32(ctl + OffIoSize);
             uint flags = Read32(ctl + OffIoFlags);
+            if ((flags & 0x80000000u) != 0)
+            {
+                // Interrupt acknowledge: the probe only queues one vector.
+                Write64(ctl + OffIoValue, Read32(ctl + OffIrqVector));
+                Write32(ctl + OffIoState, IoDone);
+                return;
+            }
             ulong value;
             if ((flags & WinIo) != 0)
             {
