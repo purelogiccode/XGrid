@@ -358,6 +358,13 @@ draws and no flips, so the flipped frame stays at the boot animation.
 The buffer was never missing: `TryCopyScanoutFrame` (new, reads PCRTC START) plus
 `--frame-scanout` recover it. Measured at 1B, same runs:
 
+> **Anchor note (2026-11-23, XFP4 sweep):** the 1B fast RAM/CPU columns below are the
+> G3 (2026-10-24) records. The XFP4 sweep re-ran all 14 staged samples at 1B fast:
+> **14/14 PASS, zero faults**, every frame/scanout/display SHA exactly as listed, and
+> RAM identical to the pre-task build (`mesh` `FCECC39A` both) - only the fast CPU
+> SHA moved, the known `--jit-spin`/IRQ-placement artifact (the accurate-mode CPU
+> SHAs and the ktest log are the gates and are exact). Treat the frame/scanout
+> columns as current; the fast CPU column is historical.
 | sample | flipped frame | scanout | what the scanout contains |
 |---|---|---|---|
 | `gamma` | 1 colour | **768 colours, 298,744 px** | the gradient + grey borders |
