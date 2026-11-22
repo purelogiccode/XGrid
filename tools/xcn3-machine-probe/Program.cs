@@ -71,6 +71,7 @@ namespace XGrid.Xcn3MachineProbe
         private static long s_spinTicks;
         private static byte[] s_bios = [];
         private static bool s_haltLogged;
+        private static bool s_panicLogged;
 
         private static uint Read32(byte* p) => Volatile.Read(ref *(uint*)p);
 
@@ -87,6 +88,7 @@ namespace XGrid.Xcn3MachineProbe
             string romPath = args.Length > 1 ? args[1] : Path.Combine(root, "data", "xemu", "mcpx_1.0.bin");
             string hddPath = args.Length > 2 ? args[2] : Path.Combine(root, "data", "xemu", "xbox_hdd.qcow2");
             string eepromPath = args.Length > 3 ? args[3] : Path.Combine(root, "data", "xemu", "eeprom.bin");
+            string dvdPath = args.Length > 6 ? args[6] : "";
             uint budget = args.Length > 4 ? uint.Parse(args[4]) : 2_000_000_000;
             uint slice = args.Length > 5 ? uint.Parse(args[5]) : 1_000_000;
 
@@ -116,6 +118,10 @@ namespace XGrid.Xcn3MachineProbe
                 if (File.Exists(hddPath))
                 {
                     machine.AttachHdd(hddPath);
+                }
+                if (dvdPath.Length != 0 && File.Exists(dvdPath))
+                {
+                    machine.AttachDvd(dvdPath);
                 }
 
                 Write32(ctl + OffMagic, Magic);
@@ -204,6 +210,29 @@ namespace XGrid.Xcn3MachineProbe
                     left -= chunk;
                     slices++;
                     ulong ran = Read64(ctl + OffExecuted);
+                    if (!s_panicLogged)
+                    {
+                        uint nowEip = Read32(ctl + OffRegs + 32);
+                        if ((nowEip & 0xFFFFF000u) == 0x80015000u)
+                        {
+                            s_panicLogged = true;
+                            byte* code = basePtr + ((nowEip & 0x0FFFFFFFu) - 16);
+                            Console.WriteLine($"panic: eip=0x{nowEip:X8} " +
+                                $"eax=0x{Read32(ctl + OffRegs):X8} " +
+                                $"ecx=0x{Read32(ctl + OffRegs + 4):X8} " +
+                                $"edx=0x{Read32(ctl + OffRegs + 8):X8} " +
+                                $"ebx=0x{Read32(ctl + OffRegs + 12):X8} " +
+                                $"esi=0x{Read32(ctl + OffRegs + 24):X8} " +
+                                $"edi=0x{Read32(ctl + OffRegs + 28):X8} " +
+                                $"eflags=0x{Read32(ctl + OffRegs + 36):X8}");
+                            System.Text.StringBuilder hx = new System.Text.StringBuilder();
+                            for (int i = 0; i < 32; i++)
+                            {
+                                hx.Append(code[i].ToString("X2")).Append(' ');
+                            }
+                            Console.WriteLine($"panic: bytes[0x{(nowEip & 0x0FFFFFFFu) - 16:X}]={hx}");
+                        }
+                    }
                     // A halted CPU executes nothing; let device time pass so a
                     // timer interrupt can wake it (QEMU's main loop does the
                     // same with the next timer deadline).

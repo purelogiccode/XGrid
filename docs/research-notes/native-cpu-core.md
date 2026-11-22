@@ -285,10 +285,18 @@ consumer is behind, and C# drains the ring continuously in its poll loop. A
 saturated ring therefore slows the vCPU instead of losing commands. Result on
 the full machine: **`dropped=0`**, the IDE completes (32 bus-master starts) and
 the **NV2A comes alive: 2599 draws, 158,966 methods, 8 clears, 1 frame** - the
-native CPU is driving the C# GPU. Two new items follow: the guest then panics
-at `EIP=0x800151EF` (the kernel's illegal-instruction path), and the wall is
-2.2 Msteps/s while the GPU work runs, because the host blocks on device writes
-instead of overlapping them with C# processing.
+native CPU is driving the C# GPU.
+
+**What the 2.5 Msteps/s leg actually is (measured, not a fault).** After the
+first frame the guest sits in `KeStallExecutionProcessor` (`0x800153D0`,
+`sub eax,1; jne`) called from `0x800151EE`, i.e. a **device timeout loop**, not a
+panic and not an illegal instruction (the earlier `0x800151EF` reading was the
+caller). The attribution is `drain 3719 ms`, `service 285 ms`, `advance 9 ms`,
+`spin 44072 ms` of 159 s; the remaining ~111 s is the vCPU itself running the
+delay loop. Attaching a DVD (`args[6]`) does not change the outcome, so the
+wait is not the ATAPI probe. The next step is to identify the device: read the
+NV2A/PIC pending state while the guest is in the stall (the first flip
+completed, so a flip/vblank completion or a device IRQ is the likely pair).
 
 The full machine now reaches the kernel: 12 regions / 13 windows, the HDD
 attached, the SMC handshake and 19 SMBus transactions, PIT/PIC interrupts and
