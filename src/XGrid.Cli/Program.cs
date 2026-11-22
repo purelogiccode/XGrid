@@ -1898,6 +1898,10 @@ internal static class Program
         Console.WriteLine(
             $"CR3=0x{context.Cr3:X8} IDT=0x{context.Idtr.Base:X8}/{context.Idtr.Limit:X4} GDT=0x{context.Gdtr.Base:X8}/{context.Gdtr.Limit:X4}");
         Console.WriteLine($"OverlayEnabled={machine.Bus.RomOverlayEnabled}");
+        if (XGrid.Cpu.Tcg.TcgCoverage.Enabled)
+        {
+            Console.WriteLine(XGrid.Cpu.Tcg.TcgCoverage.Describe());
+        }
         if (machine.Cpu.IdleSkipEnabled)
         {
             Console.WriteLine(

@@ -4,14 +4,14 @@
   "objective": "At least one game playable: the P1 sprint now ports the xemu/QEMU CPU engine to C# (softmmu/TLB, TCG IR + i386 translator, host codegen, parity) because the measured 0.100x wall is 94% CPU and shape fixes top out at ~0.20x (N15). Live WASAPI audio is landed (P1S1). C# first, NuGet host packages allowed and inventoried; GPL-2.0; Avalonia kept; the repository stays private until P1",
   "current": {
     "milestone": "P1",
-    "id": "P1S3",
-    "title": "CPU engine port B: TCG IR and the i386 translator",
+    "id": "P1S4",
+    "title": "CPU engine port C: host code generation",
     "plan": "E1",
     "status": "active",
     "started": "2026-11-22",
     "attempts": 0,
-    "acceptance": "tools/cpu-oracle (641+ cases) is exact on the managed TCG IR interpreter and the fallback count on the 007/ktest legs is recorded.",
-    "price": "8-12 sessions; correctness bar.",
+    "acceptance": "The ported engine reproduces the four accurate 1B goldens, the ktest log and the cpu-oracle exactly, and its member cost is below the current raw runner; otherwise it is not switched.",
+    "price": "6-10 sessions; correctness + not-slower.",
     "bar": "correctness"
   },
   "position": {
@@ -257,21 +257,9 @@
   ],
   "queue": [
     {
-      "id": "P1S3",
-      "title": "CPU engine port B: TCG IR and the i386 translator",
-      "status": "active",
-      "depends": [
-        "P1S2"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "tools/cpu-oracle (641+ cases) is exact on the managed TCG IR interpreter and the fallback count on the 007/ktest legs is recorded.",
-      "price": "8-12 sessions; correctness bar."
-    },
-    {
       "id": "P1S4",
       "title": "CPU engine port C: host code generation",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "P1S3"
       ],
@@ -690,6 +678,13 @@
       "date": "2026-11-22",
       "evidence": "P1S2: ported the QEMU CPUTLBEntry shape as src/XGrid.Cpu/QemuTlb.cs (addr_read/addr_write/addr_code + addend, 1024 entries, 4 KB pages, per-access tags, flush page/all); 9 QemuTlbTests (differential vs Mmu.Translate, read-only write miss, non-executable code, addend offsets, collision, flush) all green; XGrid.Cpu.Tests 703/703; format clean. Probe micro-benchmark on H1: QemuTlb read 0.84 ns/lookup vs the current SoftTlb 0.64 ns -> the TLB shape is not the 2x lever (N16), the current TLB is already fast. The 5x is the block/translator shape; P1S3 (TCG IR + i386 translator) is next. No engine wiring: QemuTlb is the reference shape for the TCG port and the current SoftTlb stays the engine's TLB. No gate anchor moved (the type is unused by the machine path).",
       "commitMessage": "cpu: port the QEMU CPUTLBEntry shape and measure the probe (P1S2)"
+    },
+    {
+      "id": "P1S3",
+      "title": "CPU engine port B: TCG IR and the i386 translator",
+      "date": "2026-11-22",
+      "evidence": "corpus exact through the IR engine (4202 translated / 643 fallback, 641 harness FXSAVE + 2 ENTER); real-leg translator coverage 007 1B 0.9231 (83 fallbacks: Call 56, Ret 20, Iret 2, MovCr 1), ktest 792,800,535 steps 0.8864 (Sti 181496, Cli 130146, Call/Ret ~20k), triangle 0.9229, menu 0.9216; 188 translator differentials and 892 CPU tests green, format clean; probe behavior-neutral by same-command A/B",
+      "commitMessage": "cpu: close P1S3 with the corpus gate and real-leg coverage (P1S3)"
     }
   ],
   "negatives": [

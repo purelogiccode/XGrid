@@ -128,6 +128,25 @@ ENTER (2, 16-bit); the other 641 are the harness epilogue's FXSAVE. **188
 differentials**, 892 CPU tests green, format clean; the harness compares the
 full FPU (control/status/tag/top and every 80-bit register) and XMM/MXCSR state.
 
+**Real-leg coverage (P1S3 acceptance, 2026-11-22).** `TcgCoverage` is an opt-in,
+state-free probe (`XGRID_TCG_COVERAGE=1`, deterministic stride
+`XGRID_TCG_COVERAGE_SAMPLE`): it asks the translator about every instruction the
+interpreter serves (JIT-served instructions do not reach it), so the share
+characterizes exactly the population P1S4 would translate. Measured with the
+stride at 256:
+
+| Leg | Translated | Fallback | Share | Fallback reasons |
+|---|---|---|---|---|
+| 007 `Agent Under Fire` 1B boot (fast raw, sw) | 996 | 83 | 0.9231 | Call 56, Ret 20, Iret 2, MovCrWrite 1, indirect jump 1, Cli/Out/Interrupt 1 |
+| ktest 792,800,535 steps | 2,744,940 | 351,926 | 0.8864 | Sti 181,496, Cli 130,146, Call 19,975, Ret 19,974, Out 142, Invlpg 48, Rdtsc 44, indirect jump 33, In 27, Iret 24, Interrupt 10, Cpuid 4 |
+| triangle 1B (fast raw) | 347 | 29 | 0.9229 | Call 18, Ret 7, MovCrRead 2, MovCrWrite 1, Sti 1 |
+| menu 1B (fast raw) | 1,093 | 93 | 0.9216 | Call 51, Ret 32, Iret 3, Out 2, Interrupt 2, MovCrWrite 1, In 1, indirect jump 1 |
+
+The probe is behavior-neutral by same-command A/B against the parent commit
+(triangle 1B `gl+replace` RAM `F5D26889` / CPU `8836C7EB` on both builds). The
+real-code fallback list is the P1S4 shape order: **CALL/RET** (and IRET), then
+CLI/STI, IN/OUT, MOV CR, INVLPG/RDTSC/CPUID and indirect jumps.
+
 ### P1S4 - host code generation (6-10 sessions)
 
 - Map the IR to the existing raw emitter (one native function per TB) or a new

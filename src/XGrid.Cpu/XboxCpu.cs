@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using XGrid.Core.Devices;
+using XGrid.Cpu.Tcg;
 using XGrid.Memory;
 
 namespace XGrid.Cpu;
@@ -183,10 +184,12 @@ public sealed partial class XboxCpu
                     Context.DefaultOperandSize,
                     Context.DefaultAddressSize);
                 DecodeCount++;
+                TcgCoverage.Observe(instruction, Context.Eip);
             }
             else
             {
                 instruction = FetchDecodeCached(_decodeCache, buffer, out SpecHandler? spec);
+                TcgCoverage.Observe(instruction, Context.Eip);
 
                 if (spec is not null && instruction.IsValid)
                 {
