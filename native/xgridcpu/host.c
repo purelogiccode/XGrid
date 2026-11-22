@@ -38,6 +38,7 @@
 #define XGC_IO_REQUEST  1u
 #define XGC_IO_DONE     2u
 #define XGC_IO_ERROR    0x80000000u
+#define XGC_IO_IRQ_ACK  0x80000000u /* io_flags bit for an interrupt ack */
 
 typedef struct XgcHostWindow {
     uint32_t base;
@@ -148,6 +149,34 @@ static uint64_t host_io_read(void *opaque, uint32_t addr, unsigned size)
     return __atomic_load_n(&ctl->io_value, __ATOMIC_ACQUIRE);
 }
 
+/* CPU interrupt acknowledge: ask the device model (the C# PIC) for the vector
+ * at delivery time, so an IF=0 or masked interrupt is never acknowledged. */
+static uint32_t host_irq_ack(void *opaque)
+{
+    XgcHost *h = opaque;
+    XgcHostControl *ctl = h->ctl;
+    ULONGLONG deadline;
+
+    host_publish_ring(h);
+
+    ctl->io_flags = XGC_IO_IRQ_ACK;
+    ctl->io_addr = 0;
+    ctl->io_size = 0;
+    ctl->io_value = 0xFFFFFFFFu;
+    ctl->io_icount = xgc_icount(h->cpu);
+    __atomic_store_n(&ctl->io_state, XGC_IO_REQUEST, __ATOMIC_RELEASE);
+
+    deadline = GetTickCount64() + 5000;
+    while (__atomic_load_n(&ctl->io_state, __ATOMIC_ACQUIRE) == XGC_IO_REQUEST) {
+        if (GetTickCount64() > deadline) {
+            h->error = true;
+            return 0xFFFFFFFFu;
+        }
+        YieldProcessor();
+    }
+    return (uint32_t)__atomic_load_n(&ctl->io_value, __ATOMIC_ACQUIRE);
+}
+
 static int host_map_windows(XgcHost *h)
 {
     uint32_t i;
@@ -255,6 +284,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "xgc_create failed\n");
         return 4;
     }
+    xgc_set_irq_callback(host.cpu, host_irq_ack, &host);
     if (ctl->ram_size == 0 ||
         xgc_map_ram(host.cpu, 0, ctl->ram_size, base) != XGC_OK ||
         host_map_windows(&host) != 0) {

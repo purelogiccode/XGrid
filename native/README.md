@@ -158,9 +158,35 @@ the device the C# machine already models (`Amd756Smbus` + `SmcDevice`).
 
 Measured: 200M steps in 0.797 s = **251 Msteps/s** (TB cache hot, ROM only).
 
-## Measured seam costs (H1, 2026-11-22)
+### Interrupt acknowledge
 
-`tools/xcn1-host-probe`, real-mode loops of 100,000 accesses:
+`xgc_set_irq_callback()` installs a vector callback: when the CPU takes a
+hardware interrupt it calls the device model, so a masked line or `IF=0` never
+acknowledges the PIC. `xgridcpu-host.exe` implements it as another live
+request (`io_flags = 0x80000000`); the C# side answers with
+`Pic8259.Acknowledge()`.
+
+## Machine seam probe (XCN2)
+
+```powershell
+$env:XGRIDCPU_HOST = (Resolve-Path native/xgridcpu/xgridcpu-host.exe).Path
+dotnet run --project tools/xcn2-smc-probe -c Release -- `
+  data/xemu/Complex_4627.bin data/xemu/mcpx_1.0.bin 1000000000
+```
+
+`tools/xcn2-smc-probe` adds the whole 64 KB I/O space as one live window
+dispatched to the **real C# `XboxBus`**: `PciBus` (0xCF8/0xCFC, which programs
+the AMD756 BAR), `Amd756Smbus` + `SmcDevice`, `Pic8259`, `Pit8254` and
+`Rtc146818`. Between slices it calls `Bus.Advance(executed)` (1 instruction =
+1 CPU cycle) and raises `irq_pending` while the PIC has a pending line.
+
+Result at 1B steps: the boot chain runs through the 1BL, the SMC handshake and
+19 SMBus transactions, and reaches the **kernel idle loop at
+`EIP=0x8001B02E`** (the same address the managed engine idles at) with **194
+interrupts delivered and acknowledged** through the C# PIC. 188.7 Msteps/s on
+this I/O-heavy leg.
+
+## Measured seam costs (H1, 2026-11-22)`tools/xcn1-host-probe`, real-mode loops of 100,000 accesses:
 
 | Path | Cost |
 |---|---|

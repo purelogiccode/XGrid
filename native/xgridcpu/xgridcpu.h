@@ -34,6 +34,7 @@ typedef struct XgcRegs {
     uint32_t eax, ecx, edx, ebx, esp, ebp, esi, edi;
     uint32_t eip, eflags;
     uint16_t cs, ds, es, fs, gs, ss;
+    uint32_t tsc_lo, tsc_hi;
 } XgcRegs;
 
 enum {
@@ -97,6 +98,13 @@ XGC_API int xgc_map_direct(XgcCpu *cpu, uint32_t gpa, uint32_t size,
  * next instruction boundary when IF=1. */
 XGC_API int xgc_set_irq(XgcCpu *cpu, uint32_t vector);
 
+/* Optional interrupt-acknowledge callback: when installed, the CPU asks the
+ * device model for the vector at the moment it takes the interrupt (so a
+ * masked or IF=0 interrupt is never acknowledged). The legacy vector set by
+ * xgc_set_irq is only used when no callback is installed. */
+typedef uint32_t (*XgcIrqAckFn)(void *opaque);
+XGC_API void xgc_set_irq_callback(XgcCpu *cpu, XgcIrqAckFn ack, void *opaque);
+
 XGC_API int xgc_reset_real(XgcCpu *cpu, uint32_t eip, uint32_t esp);
 XGC_API int xgc_reset(XgcCpu *cpu);
 XGC_API int xgc_run(XgcCpu *cpu, uint32_t max_insns, uint64_t *executed);
@@ -106,6 +114,7 @@ XGC_API void xgc_set_regs(XgcCpu *cpu, const XgcRegs *regs);
 XGC_API void xgc_flush_tb(XgcCpu *cpu);
 
 XGC_API uint64_t xgc_icount(XgcCpu *cpu);
+XGC_API uint64_t xgc_tsc(XgcCpu *cpu);
 
 /* XCN0 diagnostic: call a host callback outside QEMU. */
 typedef uint64_t (*XgcTestCallback)(void *opaque, uint32_t gpa, uint32_t size);

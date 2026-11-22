@@ -221,6 +221,30 @@ port window (dispatch to the existing C# devices), drive the PIC from
 `irq_pending` and advance the timers by the executed count. The 1BL's first
 blocker is already identified: `Amd756Smbus` at ports `0xC000`-`0xC00F` and the
 SMC at SMBus address `0x10`.
+
+**XCN2 machine seam PASS (2026-11-22).** Two more findings made the boot chain
+run:
+
+- **RDTSC needs the virtual clock.** `cpu_get_tsc` (xemu's XBOX path) reads
+  `qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)`, which routes to
+  `cpus_accel->get_virtual_clock`. Our dummy `AccelOpsClass` left it NULL, so
+  RDTSC returned 0 forever and the MCPX ROM's RDTSC delay loop spun 2B steps.
+  Setting `get_virtual_clock`/`get_elapsed_ticks = icount_get` (what
+  `tcg_accel_ops_init` does) and calling `cpu_exec_start/end` around
+  `cpu_exec` makes the 733 MHz TSC follow the instruction count.
+- **Interrupt acknowledge needs the device model.** `xgc_set_irq_callback`
+  asks C# for the vector at delivery time (another live request,
+  `io_flags = 0x80000000`), so a masked line or `IF=0` never acknowledges the
+  PIC. `tools/xcn2-smc-probe` runs the whole boot with the real `XboxBus`
+  behind a 64 KB live I/O window (PCI config, AMD756 SMBus + SMC, PIC, PIT,
+  RTC) and `Bus.Advance(executed)` per slice: at 1B steps the guest reaches the
+  **kernel idle loop at `EIP=0x8001B02E`** (the managed engine's idle address)
+  with **194 interrupts delivered** through the C# PIC, at 188.7 Msteps/s on
+  the I/O-heavy leg.
+
+**Next (XCN2):** back `PhysicalMemory` with the section (a pointer-backed
+mode), map every `AddressSpace` region as a window, run the full
+`XboxMachine` (HDD/IDE, NV2A, APU), and drive snapshots and the display.
 ## Risks / open questions
 
 1. **Standalone init.** QEMU has no system-mode library target. The shim must

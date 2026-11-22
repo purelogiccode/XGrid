@@ -45,6 +45,9 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
     /// <summary>Gets the address of the 0/1 pending word emitted code polls (see <see cref="IInterruptSource.PendingFlagAddress"/>).</summary>
     public nint PendingFlagAddress { get; }
 
+    /// <summary>Gets whether any unmasked line is requesting service.</summary>
+    public bool Pending => _pendingFlag[0] != 0;
+
     private static bool IsTraceEnabled()
     {
         string? value = Environment.GetEnvironmentVariable("XGRID_PIC_TRACE");

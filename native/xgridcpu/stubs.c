@@ -182,6 +182,17 @@ void qemu_mutex_unlock_main_loop(void);
 int pic_read_irq(void *s)
 {
     (void)s;
+    {
+        extern int xgc_irq_ack_vector(void);
+        int acked = xgc_irq_ack_vector();
+        if (acked >= 0) {
+            if (getenv("XGRID_CPU_TRACE")) {
+                fprintf(stderr, "pic_read_irq ack=%d\n", acked);
+                fflush(stderr);
+            }
+            return acked;
+        }
+    }
     if (getenv("XGRID_CPU_TRACE")) {
         fprintf(stderr, "pic_read_irq queued=%d\n", xgc_irq_vector);
         fflush(stderr);

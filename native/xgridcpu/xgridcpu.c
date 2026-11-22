@@ -97,6 +97,11 @@ static void xgc_handle_interrupt(CPUState *cpu, int mask)
 static const AccelOpsClass xgc_accel_ops = {
     .create_vcpu_thread = xgc_vcpu_thread,
     .handle_interrupt = xgc_handle_interrupt,
+    /* The Xbox TSC is derived from QEMU_CLOCK_VIRTUAL (xemu's
+     * hw/i386/x86-cpu.c cpu_get_tsc), so the clock must follow icount: without
+     * this the RDTSC delay loops in the MCPX ROM never advance. */
+    .get_virtual_clock = icount_get,
+    .get_elapsed_ticks = icount_get,
 };
 
 void cpus_register_accel(const AccelOpsClass *ops);
@@ -558,6 +563,24 @@ void xgc_mmio_set_read(XgcCpu *c, uint32_t gpa, uint32_t size, uint64_t value)
 
 int xgc_irq_vector = -1;
 
+static XgcIrqAckFn g_irq_ack;
+static void *g_irq_ack_opaque;
+
+int xgc_irq_ack_vector(void)
+{
+    if (!g_irq_ack) {
+        return -1;
+    }
+    return (int)g_irq_ack(g_irq_ack_opaque);
+}
+
+void xgc_set_irq_callback(XgcCpu *c, XgcIrqAckFn ack, void *opaque)
+{
+    (void)c;
+    g_irq_ack = ack;
+    g_irq_ack_opaque = opaque;
+}
+
 int xgc_set_irq(XgcCpu *c, uint32_t vector)
 {
     if (!c || vector > 255) {
@@ -638,7 +661,9 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
             static int dbg;
             int print;
 
+            cpu_exec_start(c->cpu);
             ret = cpu_exec(c->cpu);
+            cpu_exec_end(c->cpu);
             icount_update(c->cpu);
             after = icount_get_raw();
 
@@ -707,6 +732,8 @@ void xgc_get_regs(XgcCpu *c, XgcRegs *r)
     r->fs = env->segs[R_FS].selector;
     r->gs = env->segs[R_GS].selector;
     r->ss = env->segs[R_SS].selector;
+    r->tsc_lo = (uint32_t)xgc_tsc(c);
+    r->tsc_hi = (uint32_t)(xgc_tsc(c) >> 32);
 }
 
 void xgc_set_regs(XgcCpu *c, const XgcRegs *r)
@@ -747,6 +774,17 @@ uint64_t xgc_icount(XgcCpu *c)
 {
     (void)c;
     return (uint64_t)icount_get_raw();
+}
+
+uint64_t xgc_tsc(XgcCpu *c)
+{
+    CPUX86State *env;
+
+    if (!c) {
+        return 0;
+    }
+    env = cpu_env(c->cpu);
+    return cpu_get_tsc(env) + env->tsc_offset;
 }
 
 uint64_t xgc_test_callback(XgcTestCallback fn)
