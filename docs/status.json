@@ -4,14 +4,14 @@
   "objective": "At least one game playable: the P1 sprint now ports the xemu/QEMU CPU engine to C# (softmmu/TLB, TCG IR + i386 translator, host codegen, parity) because the measured 0.100x wall is 94% CPU and shape fixes top out at ~0.20x (N15). Live WASAPI audio is landed (P1S1). C# first, NuGet host packages allowed and inventoried; GPL-2.0; Avalonia kept; the repository stays private until P1",
   "current": {
     "milestone": "P1",
-    "id": "XFP1",
-    "title": "PGRAPH method surface and state (pgraph.c, methods, registers)",
+    "id": "XFP2",
+    "title": "PGRAPH vertex fetch, primitive assembly and draw path",
     "plan": "E1",
     "status": "active",
     "started": "2026-11-22",
     "attempts": 0,
-    "acceptance": "Every NV097 method the seven titles write is dispatched or explicitly declined with a counter; the 1B method histogram shows no unexpected unknown; the four accurate 1B goldens and the ktest log are byte-identical.",
-    "price": "3-5 sessions; correctness bar.",
+    "acceptance": "vertex.c/draw.c semantics are ported (array formats, stride, inline arrays, elements, ranges, culling, clip); the 007 and Ninja Gaiden Black draw/pixel counters reproduce the pre-port build (or the port fixes a measured gap), and the gates stay exact.",
+    "price": "4-6 sessions; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -257,21 +257,9 @@
   ],
   "queue": [
     {
-      "id": "XFP1",
-      "title": "PGRAPH method surface and state (pgraph.c, methods, registers)",
-      "status": "active",
-      "depends": [
-        "XFP0"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "Every NV097 method the seven titles write is dispatched or explicitly declined with a counter; the 1B method histogram shows no unexpected unknown; the four accurate 1B goldens and the ktest log are byte-identical.",
-      "price": "3-5 sessions; correctness bar."
-    },
-    {
       "id": "XFP2",
       "title": "PGRAPH vertex fetch, primitive assembly and draw path",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "XFP1"
       ],
@@ -658,6 +646,13 @@
       "date": "2026-11-22",
       "evidence": "port-manifest.ps1 -Check PASS: 170 hw/xbox files (111 in-scope) each with one appendix row; 27 verified (24.3%), 9 ported, 53 in-progress, 22 not-started, 23 out-of-scope, 36 n/a; targets exist for every ported/verified row, no orphan Ported from/Derived from header, every ported/verified reference file named in THIRD_PARTY_NOTICES.md (13 companion headers added); differential classes recorded (vector table / register pre-post / title-corpus row); docs/open-source.md already in the README index; status.ps1 -Check green; no emulator source change",
       "commitMessage": "docs: close XFP0 with the port manifest gate (XFP0)"
+    },
+    {
+      "id": "XFP1",
+      "title": "PGRAPH method surface and state (pgraph.c, methods, registers)",
+      "date": "2026-11-22",
+      "evidence": "XFP1 method surface and state complete: nv097-coverage.ps1 -Check PASS (215 defines, 201 rows, 1042 handled + 280 declined offsets, real case4 strides); opt-in counter reads 226 outside-surface writes in 18.6M methods on triangle 1B and 16,514 on menu 1B, all at reference-gap offsets xemu ignores (valid-surface gap zero); seven-title differential at the TM7 anchors (10M steps each) is 0/0/3/0/0/0/0 with the 3 at 0x1710; PgraphState owns the texture register file, transform rows/constants, PshCombiner and the six surface/clip scalars (delegating/ref properties, zero call-site churn); anchors exact after every section (fast triangle F9945E16/8836C7EB, menu 5C0CF968/E2B4D327; accurate triangle E58AE5D7/C43D5B49); 480 Nv2a tests; --pgraph-port not needed (the state type is the storage)",
+      "commitMessage": "nv2a: close XFP1 with the method surface, state type and seven-title differential (XFP1)"
     }
   ],
   "negatives": [
