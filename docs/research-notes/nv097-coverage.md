@@ -467,3 +467,31 @@ complete.
 - The 30 immediate-mode entries (~75 method offsets) are the largest single
   block; if a target title uses `SET_VERTEX3F`, that is the first
   implementation slice.
+
+## XFP1 unknown-method probe (2026-11-22)
+
+`Nv097MethodTable.cs` is generated from this note by
+`scripts/nv097-coverage.ps1 -GenerateTable` (ranges expand over their offsets;
+`case4` expands over the four texture slots at a 0x40 stride) and
+`Nv2aMmio.RecordMethod` counts any write outside it when
+`XGRID_NV2A_UNKNOWN=1`. `scripts/nv097-coverage.ps1 -Check` verifies this table
+against xemu 0.8.139 `nv2a_regs.h` (215 defines, 201 rows, 129 handled + 72
+recorded; expanded 1,031 handled + 280 declined offsets).
+
+Measured on the triangle 1B leg (`--jit --jit-raw --gpu sw`): **361 unknown
+writes out of 18,577,029 methods (0.002%)**, RAM `F9945E16` / CPU `8836C7EB`
+identical to the counter-off run. The residual offsets are alias groups this
+note's range kinds do not model yet:
+
+| Offsets | Count at 1B | Reading |
+|---|---:|---|
+| `0x17C4` | 107 | texture-matrix alias next to `SET_TEXTURE_MATRIX` |
+| `0x1D84` | 73 | next to `SET_ZSTENCIL_CLEAR_VALUE` (`0x1D8C`) |
+| `0x1710` | 37 | vertex-array alias between `0x1700` and `0x1720` |
+| `0x424`, `0x428`, `0x42C` | 36 each | `SET_TEXTURE_MATRIX_ENABLE` group: four consecutive dwords, not a 0x40 slot stride |
+| `0x3D0`-`0x3F8` | 3 each | per-stage texgen `SET_TEXGEN_S/T/R/Q`: 0x10 stage stride, not the texture 0x40 stride |
+| `0x16BC`, `0x1D80`, `0x380`, `0x9F8` | 2-3 each | singles adjacent to named methods |
+
+These 18 offsets are the XFP1 method-surface work left: either add them to this
+table with a latch (the reference's alias semantics) or decline them with a
+reason. They do not move any gate anchor (the counter is opt-in and host-side).

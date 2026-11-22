@@ -1010,6 +1010,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     public IGpuMemory? GpuMemory { get; }
 
+    /// <summary>Gets whether the unknown-method counter is enabled (XGRID_NV2A_UNKNOWN=1).</summary>
+    public static bool TrackingUnknownMethods { get; } = string.Equals(
+        Environment.GetEnvironmentVariable("XGRID_NV2A_UNKNOWN"),
+        "1",
+        StringComparison.Ordinal);
+
+    private readonly Dictionary<uint, long> _unknownMethods = [];
+
+    /// <summary>Gets the number of NV097 writes outside the reference's method surface.</summary>
+    public long UnknownMethodCount { get; private set; }
+
+    /// <summary>Gets the unknown method offsets and their counts (diagnostic).</summary>
+    public IReadOnlyDictionary<uint, long> UnknownMethods => _unknownMethods;
+
     /// <summary>Gets the total number of PGRAPH method triples observed (diagnostics for every backend).</summary>
     public long MethodTotal { get; private set; }
 
@@ -3581,6 +3595,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         _surfaceChannel = channel;
         MethodTotal++;
+        if (TrackingUnknownMethods && !Nv097MethodTable.IsKnown(method))
+        {
+            UnknownMethodCount++;
+            _unknownMethods.TryGetValue(method, out long unknownCount);
+            _unknownMethods[method] = unknownCount + 1;
+        }
+
         if (CollectMethodHistogram)
         {
             uint key = (subchannel << 16) | method;

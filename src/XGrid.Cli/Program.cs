@@ -2290,6 +2290,24 @@ internal static class Program
             $"inlineElements={machine.Nv2A.InlineElementCount} " +
             $"fixedFn={machine.Nv2A.FixedFunctionDraws} fixedFnLit={machine.Nv2A.FixedFunctionLitDraws} " +
             $"fixedFnLights={machine.Nv2A.FixedFunctionLightedDraws}");
+        if (XGrid.Nv2a.Nv2AMmio.TrackingUnknownMethods)
+        {
+            var unknown = new System.Text.StringBuilder();
+            foreach (KeyValuePair<uint, long> entry in machine.Nv2A.UnknownMethods)
+            {
+                if (unknown.Length > 0)
+                {
+                    unknown.Append(',');
+                }
+
+                unknown.Append(string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture, "0x{0:X3}={1}", entry.Key, entry.Value));
+            }
+
+            Console.WriteLine(
+                $"NV2A unknownMethods={machine.Nv2A.UnknownMethodCount} offsets={unknown}");
+        }
+
         if (machine.Nv2A.RasterTimingEnabled)
         {
             Console.WriteLine(
