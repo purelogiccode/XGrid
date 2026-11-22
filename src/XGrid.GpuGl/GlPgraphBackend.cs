@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -1192,6 +1193,12 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
+    // XFP5 diagnostic: XGRID_GL_DUMP_FLIP=<dir> dumps the FBO and the
+    // present-upload source for each stale-FBO flip (the only frames where the
+    // two writers can lose each other), after the batch flush so the FBO holds
+    // the submitted frame.
+    private readonly string? _dumpFlipDir = Environment.GetEnvironmentVariable("XGRID_GL_DUMP_FLIP");
+
     private readonly bool _probeEnabled = string.Equals(
         Environment.GetEnvironmentVariable("XGRID_GL_PROBE"), "1", StringComparison.Ordinal);
     private long _probeDraws;
@@ -1332,6 +1339,31 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _frameComposed = false;
         }
 
+        if (_dumpFlipDir is not null && _fbo != 0 && record.ColorBytes == 4 &&
+            _dirtyWatch?.PresentDirty == true)
+        {
+            FlushBatch();
+            int dw = (int)Math.Min(record.Width, (uint)_fboWidth);
+            int dh = (int)Math.Min(record.Height, (uint)_fboHeight);
+            if (dw > 0 && dh > 0)
+            {
+                byte[] fboPixels = new byte[dw * dh * 4];
+                BindFbo(_fbo);
+                unsafe
+                {
+                    fixed (byte* p = fboPixels)
+                    {
+                        _gl.ReadPixels(0, 0, (uint)dw, (uint)dh, PixelFormat.Rgba, PixelType.UnsignedByte, p);
+                    }
+                }
+
+                Directory.CreateDirectory(_dumpFlipDir);
+                string stem = Path.Combine(_dumpFlipDir, $"flip-{Flips}");
+                File.WriteAllBytes(stem + "-fbo.raw", fboPixels);
+                File.WriteAllText(stem + ".txt", $"{dw}x{dh}");
+            }
+        }
+
         if (_fbo != 0 && _dirtyWatch?.PresentDirty == true)
         {
             DeleteFbo();
@@ -1358,6 +1390,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 if (droppedStaleFbo)
                 {
                     _flipStaleUploads++;
+                }
+
+                if (_dumpFlipDir is not null)
+                {
+                    Directory.CreateDirectory(_dumpFlipDir);
+                    string stem = Path.Combine(_dumpFlipDir, $"flip-{Flips}");
+                    File.WriteAllBytes(stem + "-ram.raw", upload);
+                    File.WriteAllText(stem + "-ram.txt", $"{record.Width}x{record.Height}");
                 }
 
                 // The upload made the FBO authoritative from guest RAM at
