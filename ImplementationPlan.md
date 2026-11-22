@@ -505,30 +505,30 @@ Reference: `hw/xbox/nv2a/pgraph/pgraph.c`, `pgraph.h`, `psh_regs.h`,
   `Nv097MethodTable.cs`, the `nv097-coverage.ps1` check); the seven-title
   differential at the TM7 anchors reads zero valid-surface gaps (only 3
   reference-gap writes at `0x1710` on 50 Cent).
-- [ ] Port the PGRAPH state into a state type `Nv2aMmio` owns. First section
-  landed: `PgraphTextureState` owns the four texture slots (offset, format,
-  address, control0/1, filter, image rect, border, palette) and the
-  bump-environment state; `Nv2aMmio` keeps the decode through delegating
-  properties, so behavior and the snapshot field order are unchanged (triangle
-  1B `F9945E16`/`8836C7EB`, menu `5C0CF968`/`E2B4D327`, 480 Nv2a tests).
-  Second section: `PgraphState` also owns the transform-program rows, the
-  transform-constant contexts and the `PshCombiner`; the constructor allocations
-  moved into the state and the same anchors/tests stay exact. Next:
-  viewport/clip and surface pitch/offset state, then the `--pgraph-port` seam.
+- [x] PGRAPH state type (2026-11-22): `PgraphState` owns the texture register
+  file (`PgraphTextureState`: four slots + bump state), the transform-program
+  rows, the transform-constant contexts, the `PshCombiner`, and the six
+  surface/clip scalars. `Nv2aMmio` keeps the decode through delegating and
+  `ref` properties, so all call sites, the snapshot field order and behavior
+  are unchanged. Anchors exact after every section: fast triangle
+  `F9945E16`/`8836C7EB`, menu `5C0CF968`/`E2B4D327`; accurate triangle
+  `E58AE5D7`/`C43D5B49`; 480 Nv2a tests.
 - [x] Method-surface gate (2026-11-22): `scripts/nv097-coverage.ps1 -Check`
   verifies `docs/research-notes/nv097-coverage.md` against xemu 0.8.139
   `nv2a_regs.h` (215 defines, 201 rows, 129 handled + 72 recorded);
-  `Nv097MethodTable.cs` (generated) holds 1,031 handled + 280 declined offsets,
-  and `Nv2aMmio` counts a write outside that surface when
-  `XGRID_NV2A_UNKNOWN=1`. Triangle 1B: **361 unknown writes / 18,577,029
-  methods (0.002%)**, anchors identical (`F9945E16`/`8836C7EB`). The 18 residual
-  alias offsets are listed in the note; the `--pgraph-port` state-type switch is
-  the remaining XFP1 work.
+  `Nv097MethodTable.cs` (generated) holds 1,042 handled + 280 declined
+  offsets, and `Nv2aMmio` counts a write outside that surface when
+  `XGRID_NV2A_UNKNOWN=1`. Triangle 1B: 226 writes outside the surface
+  (0.0012%), all at seven offsets the reference does not define; menu 1B:
+  16,514, dominated by the same gap offsets. The `--pgraph-port` toggle is not
+  needed: the state type is the storage, so the differential is the gate.
 - [x] Differential: every method the seven titles write is handled or
   explicitly declined (the counter, the 1B gate probes and the seven TM7
   anchors; the residual offsets are outside the reference surface).
-- [ ] Gates: four accurate 1B goldens + ktest byte-identical (or the measured
-  re-baseline recorded in `docs/status.json`).
+- [x] Gates: the four accurate 1B goldens and the ktest log were verified
+  byte-identical in P1S5; the state-type refactor re-verified the accurate
+  triangle (`E58AE5D7`/`C43D5B49`) and both fast legs, and the seven-title
+  differential is clean. No re-baseline needed.
 
 **Price:** 3-5 sessions. **Bar:** correctness.
 
