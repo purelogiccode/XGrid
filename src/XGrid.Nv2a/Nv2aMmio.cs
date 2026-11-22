@@ -1371,6 +1371,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the number of pending DRAW_ARRAYS ranges. Diagnostics.</summary>
     public int DrawArrayRangeCount => _drawArraysRanges.Count;
 
+    /// <summary>Gets the number of DRAW_ARRAYS ranges submitted to primitive assembly.</summary>
+    public int DrawArrayRangesSubmitted { get; private set; }
+
     /// <summary>Reads a current inline attribute component (diagnostics).</summary>
     public uint ReadInlineValueWord(int attribute, int component)
     {
@@ -5453,6 +5456,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         switch (mode)
         {
             case VertexFetchMode.Arrays:
+                DrawArrayRangesSubmitted += _drawArraysRanges.Count;
                 foreach ((int start, int count) in _drawArraysRanges)
                 {
                     AssemblePrimitives(start, count);
