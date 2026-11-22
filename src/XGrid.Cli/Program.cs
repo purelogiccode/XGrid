@@ -1902,6 +1902,13 @@ internal static class Program
         {
             Console.WriteLine(XGrid.Cpu.Tcg.TcgCoverage.Describe());
         }
+
+        if (XboxCpu.TcgEngineEnabled)
+        {
+            Console.WriteLine(
+                $"tcg-engine: translated={machine.Cpu.TcgTranslatedInstructions} fallback={machine.Cpu.TcgFallbackInstructions} " +
+                $"blocks={machine.Cpu.TcgBlockCount} hits={machine.Cpu.TcgBlockHits} misses={machine.Cpu.TcgBlockMisses}");
+        }
         if (machine.Cpu.IdleSkipEnabled)
         {
             Console.WriteLine(

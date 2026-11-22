@@ -178,6 +178,23 @@ measure the 1B/ktest legs, and only then decide whether the codegen buys the
 last ~1%. The full 0.5x P1 gate still needs xemu-class per-step cost (~1.2
 ns/step), which is the reference's TCG shape, not an IR-codegen increment.
 
+**Slice 1 (2026-11-22): the engine seam and the TB cache.** `XboxCpu` implements
+`ITcgMemory` over its own `ReadMemory`/`WriteMemory` (same MMU, MMIO and
+page-fault delivery), `RunTcg` polls interrupts and advances TSC per instruction
+and falls back to the exact interpreter when the translator declines, and
+`TcgBlockCache` caches one translated instruction per guest EIP with a 15-byte
+head check plus clears on every MMU flush and decoded-code-page store. Measured
+on the triangle 1B media's first 10M steps (`--gpu sw`): the engine is **exact**
+(RAM `97CA74AA`, CPU `FA4E4131`, EIP `0x00401A9E` = the accurate engine),
+translated 9,979,686 / fallback 20,314 (99.8%), and 1.06 -> **5.24 Msteps/s**
+with the cache. Multi-instruction TBs are **not exact**: the accurate engine
+polls interrupts and counts TSC per instruction, so a block that spans a
+pending delivery shifts it; 16-member blocks diverged (RAM `35651C72`) and were
+capped to one instruction until the IR has a per-member poll contract. Next:
+per-instruction allocation reuse (the interpreter's `temps`/`wide` arrays and
+the engine's `gprs`/`segments` spans) and then the user-space multi-member block
+with an explicit poll hook.
+
 ### P1S5 - parity and switchover (4-6 sessions)
 
 - Four accurate 1B goldens, ktest, 22-row corpus, 30B/100B 007 legs exact.

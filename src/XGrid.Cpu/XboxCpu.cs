@@ -269,6 +269,15 @@ public sealed partial class XboxCpu
                 }
             }
 
+            if (TcgEngineEnabled)
+            {
+                // P1S4 (opt-in): the managed TCG IR engine, one instruction at
+                // a time over the same MMU/MMIO path, with the interpreter as
+                // the per-instruction fallback.
+                executed += RunTcg(maxInstructions - executed);
+                continue;
+            }
+
             if (JitEnabled)
             {
                 // Fast-mode JIT (opt-in): serve whole blocks natively. A zero

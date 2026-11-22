@@ -841,14 +841,23 @@ public sealed partial class XboxCpu
             // disciplines aligned if either side ever changes.
             FlushFromPtStore++;
             cache?.Flush();
+            _tcgBlocks?.Clear();
             InvalidateDataXlat();
             return;
         }
 
+        ulong dropsBefore = cache?.PageDrops ?? 0;
         cache?.DropPhysicalPage(firstPage);
         if (lastPage != firstPage)
         {
             cache?.DropPhysicalPage(lastPage);
+        }
+
+        if ((cache?.PageDrops ?? 0) != dropsBefore)
+        {
+            // A decoded code page changed: the TCG block cache holds linear-keyed
+            // blocks that may cover it.
+            _tcgBlocks?.Clear();
         }
 
         // §237: an image-window entry has no page-tracked reverse index (the
@@ -867,6 +876,7 @@ public sealed partial class XboxCpu
     {
         FlushFromMmu++;
         _decodeCache?.Flush();
+        _tcgBlocks?.Clear();
         InvalidateDataXlat();
     }
 
@@ -878,6 +888,7 @@ public sealed partial class XboxCpu
     {
         FlushFromFlushPage++;
         _decodeCache?.Flush();
+        _tcgBlocks?.Clear();
         InvalidateDataXlat();
     }
 }
