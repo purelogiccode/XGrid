@@ -17,16 +17,16 @@ namespace XGrid.Cpu.Tests;
 /// </summary>
 public sealed class CpuOracleTests
 {
-    private const uint CodeBase = 0x00040000;
-    private const uint CaseStride = 128;
-    private const uint PageBase = 0x00200000;
-    private const uint PageStride = 0x2000;
-    private const uint FxsaveAddress = 0x001F0000;
-    private const uint MemorySize = 0x00600000;
-    private const int FxsaveSize = 512;
-    private const int PageDumpSize = 256;
+    internal const uint CodeBase = 0x00040000;
+    internal const uint CaseStride = 128;
+    internal const uint PageBase = 0x00200000;
+    internal const uint PageStride = 0x2000;
+    internal const uint FxsaveAddress = 0x001F0000;
+    internal const uint MemorySize = 0x00600000;
+    internal const int FxsaveSize = 512;
+    internal const int PageDumpSize = 256;
 
-    private static readonly byte[] FxsaveSentinel = CreateSentinel();
+    internal static readonly byte[] FxsaveSentinel = CreateSentinel();
 
     [Fact]
     public void InstructionCorpus_MatchesIndependentOracle()
@@ -55,7 +55,7 @@ public sealed class CpuOracleTests
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
-    private static string? RunCase(
+    internal static string? RunCase(
         PhysicalMemory memory,
         AddressSpace bus,
         CpuOracleCase testCase,
@@ -167,13 +167,13 @@ public sealed class CpuOracleTests
     /// <see cref="PageBase"/>, so the corpus size (not a fixed 6 MB) decides how
     /// much RAM must be mapped.
     /// </summary>
-    private static uint MemorySizeFor(int caseCount)
+    internal static uint MemorySizeFor(int caseCount)
     {
         long needed = Math.Max(MemorySize, PageBase + (caseCount * PageStride) + PageStride);
         return (uint)((needed + 0xFFF) & ~0xFFFL);
     }
 
-    private static string FindCorpusDirectory()
+    internal static string FindCorpusDirectory()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null && directory.Parent is not null)
@@ -190,7 +190,7 @@ public sealed class CpuOracleTests
         throw new DirectoryNotFoundException("tests/XGrid.Cpu.Tests/cpu-oracle/int.json not found above the test output directory.");
     }
 
-    private static bool IsComparedFxsaveByte(int offset)
+    internal static bool IsComparedFxsaveByte(int offset)
     {
         // FCW/FSW and MXCSR are architectural.  The abridged tag, FOP, FPU
         // pointers, MXCSR mask and the contents of empty register slots are
@@ -199,14 +199,14 @@ public sealed class CpuOracleTests
         return offset < 4 || (offset is >= 24 and < 28);
     }
 
-    private static byte[] CreateSentinel()
+    internal static byte[] CreateSentinel()
     {
         byte[] sentinel = new byte[FxsaveSize];
         Array.Fill(sentinel, (byte)0xFF);
         return sentinel;
     }
 
-    private static void SetRegister(XboxContext context, string name, uint value)
+    internal static void SetRegister(XboxContext context, string name, uint value)
     {
         switch (name.ToUpperInvariant())
         {
@@ -222,7 +222,7 @@ public sealed class CpuOracleTests
         }
     }
 
-    private static uint GetRegister(XboxContext context, string name)
+    internal static uint GetRegister(XboxContext context, string name)
     {
         return name.ToUpperInvariant() switch
         {

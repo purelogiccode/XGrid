@@ -99,8 +99,20 @@ pcmp/pack/punpck, pand/pandn/por/pxor, pavg/pmin/pmax/psadbw, the eight shifts
 (immediate and MMX/memory counts), movd/movq/movntq/maskmovq/pmovmskb/pextrw/
 pinsrw/pshufw and EMMS. **122 differentials total** (registers, EFLAGS, EIP,
 guest memory, all eight MMX registers and the tag word); `XGrid.Cpu.Tests`
-**825/825**, format clean. Next: x87 (59 corpus cases) and SSE (37), then the
-cpu-oracle coverage gate.
+**825/825**, format clean. Slice 9: the IR's MMX file is the machine's real
+`FpuState` (the hardware alias onto `ST(Top+i)`, tags and EMMS included) instead
+of a private copy, and the **P1S3 corpus gate** is live:
+`TcgCorpusTests` runs all 641 corpus cases through an IR engine that decodes each
+instruction, offers it to the translator, executes translated instructions on
+the IR interpreter and falls back to the exact interpreter otherwise, then
+compares EIP, GPRs, masked EFLAGS, the FXSAVE image and the case data page
+against the oracle. **Exact** (`translated=2430 fallback=2415`; the two harness
+instructions `fxsave`/`ldmxcsr` are 1,282 of the fallbacks). The corpus caught a
+real translator bug: 8/16-bit `CMPXCHG` compared the full 32-bit destination
+instead of the operand-sized register, so `cmpxchg cl, bl` never matched (two
+focused differentials added; the corpus fails pre-fix). Next shapes, by the
+measured fallback list: ADC/SBB (carry-live), SETcc/CMOVcc, x87 (59 cases),
+SSE (37), LOOP/JECXZ, ENTER/LEAVE, XLAT and the string/high-byte tails.
 
 ### P1S4 - host code generation (6-10 sessions)
 

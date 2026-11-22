@@ -1,6 +1,5 @@
 using System;
 using XGrid.Cpu.Tcg;
-using XGrid.Memory;
 using Xunit;
 
 namespace XGrid.Cpu.Tests;
@@ -49,14 +48,14 @@ public sealed class TcgTranslatorTests
             builder.Exit();
         }
 
-        TcgMmxState? mmxState = mmx ? TcgMmxState.FromFpu(tcg.Context.Fpu) : null;
+        FpuState? fpuState = mmx ? tcg.Context.Fpu : null;
         TcgResult result = TcgInterpreter.Execute(
             builder.Build(),
             initial,
             initialFlags,
             segments,
-            new TestMemory(tcg.Bus()),
-            mmxState);
+            new TcgTestMemory(tcg.Bus()),
+            fpuState);
 
         interpreter.Step();
         for (int i = 0; i < 8; i++)
@@ -70,10 +69,10 @@ public sealed class TcgTranslatorTests
         {
             for (int i = 0; i < 8; i++)
             {
-                Assert.Equal(interpreter.Context.Fpu.GetMmxRegister(i), result.Mmx!.Read(i));
+                Assert.Equal(interpreter.Context.Fpu.GetMmxRegister(i), result.Fpu!.GetMmxRegister(i));
             }
 
-            Assert.Equal(interpreter.Context.Fpu.TagWord, result.Mmx!.TagWord);
+            Assert.Equal(interpreter.Context.Fpu.TagWord, result.Fpu!.TagWord);
         }
 
         verify?.Invoke(interpreter, tcg);
@@ -589,6 +588,32 @@ public sealed class TcgTranslatorTests
     public void CmpxchgEqual()
     {
         AssertMatches([0x0F, 0xB1, 0xCB], cpu => { Set(cpu, Gpr.Eax, 5); Set(cpu, Gpr.Ebx, 5); Set(cpu, Gpr.Ecx, 7); });
+    }
+
+    [Fact]
+    public void CmpxchgByteRegisterComparesTheLowByte()
+    {
+        AssertMatches(
+            [0x0F, 0xB0, 0xD9],
+            cpu =>
+            {
+                Set(cpu, Gpr.Eax, 0x11111111);
+                Set(cpu, Gpr.Ecx, 0x33333311);
+                Set(cpu, Gpr.Ebx, 0x22222222);
+            });
+    }
+
+    [Fact]
+    public void CmpxchgWordRegisterComparesTheLowWord()
+    {
+        AssertMatches(
+            [0x66, 0x0F, 0xB1, 0xD9],
+            cpu =>
+            {
+                Set(cpu, Gpr.Eax, 0x11112222);
+                Set(cpu, Gpr.Ecx, 0x33332222);
+                Set(cpu, Gpr.Ebx, 0x44445555);
+            });
     }
 
     [Fact]
@@ -1141,45 +1166,5 @@ public sealed class TcgTranslatorTests
             [0x0F, 0x77],
             cpu => { Mmx(cpu, 0, 0x1122334455667788); Mmx(cpu, 1, 0x99AABBCCDDEEFF00); },
             mmx: true);
-    }
-
-    private sealed class TestMemory(AddressSpace bus) : ITcgMemory
-    {
-        public byte Read8(uint address)
-        {
-            return bus.Read8(address);
-        }
-
-        public ushort Read16(uint address)
-        {
-            return (ushort)(bus.Read8(address) | (bus.Read8(address + 1) << 8));
-        }
-
-        public uint Read32(uint address)
-        {
-            return (uint)(bus.Read8(address)
-                | (bus.Read8(address + 1) << 8)
-                | (bus.Read8(address + 2) << 16)
-                | (bus.Read8(address + 3) << 24));
-        }
-
-        public void Write8(uint address, byte value)
-        {
-            bus.Write8(address, value);
-        }
-
-        public void Write16(uint address, ushort value)
-        {
-            bus.Write8(address, (byte)value);
-            bus.Write8(address + 1, (byte)(value >> 8));
-        }
-
-        public void Write32(uint address, uint value)
-        {
-            bus.Write8(address, (byte)value);
-            bus.Write8(address + 1, (byte)(value >> 8));
-            bus.Write8(address + 2, (byte)(value >> 16));
-            bus.Write8(address + 3, (byte)(value >> 24));
-        }
     }
 }

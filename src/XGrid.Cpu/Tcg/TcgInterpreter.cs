@@ -39,12 +39,12 @@ public interface ITcgMemory
 /// <summary>The result of executing a managed TCG program on the reference interpreter.</summary>
 public sealed class TcgResult
 {
-    internal TcgResult(uint[] registers, uint eflags, uint eip, TcgMmxState? mmx)
+    internal TcgResult(uint[] registers, uint eflags, uint eip, FpuState? fpu)
     {
         Registers = registers;
         Eflags = eflags;
         Eip = eip;
-        Mmx = mmx;
+        Fpu = fpu;
     }
 
     /// <summary>Gets the eight general-purpose registers after execution.</summary>
@@ -57,7 +57,7 @@ public sealed class TcgResult
     public uint Eip { get; }
 
     /// <summary>Gets the MMX/x87 register file when the program used one (null otherwise).</summary>
-    public TcgMmxState? Mmx { get; }
+    public FpuState? Fpu { get; }
 }
 
 /// <summary>
@@ -74,7 +74,7 @@ public static class TcgInterpreter
     /// <returns>The final register state.</returns>
     public static TcgResult Execute(TcgProgram program, ReadOnlySpan<uint> registers, uint eflags)
     {
-        return Execute(program, registers, eflags, ReadOnlySpan<uint>.Empty, memory: null, mmx: null);
+        return Execute(program, registers, eflags, ReadOnlySpan<uint>.Empty, memory: null, fpu: null);
     }
 
     /// <summary>Executes a program with the guest memory and segment bases.</summary>
@@ -83,7 +83,7 @@ public static class TcgInterpreter
     /// <param name="eflags">The initial EFLAGS.</param>
     /// <param name="segmentBases">The six segment bases in <see cref="SegmentRegister"/> order.</param>
     /// <param name="memory">The guest memory (null for register-only programs).</param>
-    /// <param name="mmx">The MMX/x87 register file (null unless the program uses MMX).</param>
+    /// <param name="fpu">The x87/MMX register file (null unless the program uses MMX).</param>
     /// <returns>The final register state.</returns>
     public static TcgResult Execute(
         TcgProgram program,
@@ -91,7 +91,7 @@ public static class TcgInterpreter
         uint eflags,
         ReadOnlySpan<uint> segmentBases,
         ITcgMemory? memory,
-        TcgMmxState? mmx = null)
+        FpuState? fpu = null)
     {
         if (registers.Length < 8)
         {
@@ -322,7 +322,7 @@ public static class TcgInterpreter
                     {
                         uint destination = op.IsMemory
                             ? Load(memory, temps[op.Left], op.Size)
-                            : gprs[op.GuestRegister];
+                            : ReadRegisterSized(gprs, op.GuestRegister, op.Size);
                         uint accumulator = ReadAccumulator(gprs, op.Size);
                         eflags = AluOps.Sub(accumulator, destination, 0, op.Size * 8, eflags, out _);
                         if (accumulator == destination)
@@ -388,7 +388,7 @@ public static class TcgInterpreter
                     eflags = ExecuteString(op, gprs, eflags, segmentBases, memory);
                     break;
                 case TcgOpKind.Mmx:
-                    ExecuteMmx(op, temps, wide, mmx ?? throw new InvalidOperationException("an MMX operation needs a TcgMmxState"), gprs, segmentBases, memory);
+                    ExecuteMmx(op, temps, wide, fpu ?? throw new InvalidOperationException("an MMX operation needs an FpuState"), gprs, segmentBases, memory);
                     break;
                 case TcgOpKind.Lea:
                     temps[op.Dest] = EffectiveAddress(op, gprs, segmentBases);
@@ -405,18 +405,18 @@ public static class TcgInterpreter
                 case TcgOpKind.ConditionalSetEip:
                     if (TcgConditions.Met(op.Condition, eflags))
                     {
-                        return new TcgResult(gprs, eflags, op.Immediate, mmx);
+                        return new TcgResult(gprs, eflags, op.Immediate, fpu);
                     }
 
                     break;
                 case TcgOpKind.Exit:
-                    return new TcgResult(gprs, eflags, eip, mmx);
+                    return new TcgResult(gprs, eflags, eip, fpu);
                 default:
                     throw new InvalidOperationException($"unknown TCG op {op.Kind}");
             }
         }
 
-        return new TcgResult(gprs, eflags, eip, mmx);
+        return new TcgResult(gprs, eflags, eip, fpu);
     }
 
     private static void WriteRegister8(uint[] gprs, int registerIndex, byte value)
@@ -455,6 +455,18 @@ public static class TcgInterpreter
             1 => gprs[0] & 0xFFu,
             2 => gprs[0] & 0xFFFFu,
             _ => gprs[0],
+        };
+    }
+
+    private static uint ReadRegisterSized(uint[] gprs, int registerIndex, int size)
+    {
+        return size switch
+        {
+            1 => registerIndex < 4
+                ? (byte)gprs[registerIndex]
+                : (byte)(gprs[registerIndex - 4] >> 8),
+            2 => gprs[registerIndex] & 0xFFFFu,
+            _ => gprs[registerIndex],
         };
     }
 
@@ -569,7 +581,7 @@ public static class TcgInterpreter
         TcgOp op,
         uint[] temps,
         ulong[] wide,
-        TcgMmxState mmx,
+        FpuState fpu,
         uint[] gprs,
         ReadOnlySpan<uint> segmentBases,
         ITcgMemory? memory)
@@ -578,7 +590,7 @@ public static class TcgInterpreter
         {
             case TcgMmxOp.ToTemp:
                 {
-                    ulong value = mmx.Read(op.GuestRegister);
+                    ulong value = fpu.GetMmxRegister(op.GuestRegister);
                     if (op.Size == 4)
                     {
                         value &= 0xFFFFFFFF;
@@ -590,7 +602,7 @@ public static class TcgInterpreter
                 }
 
             case TcgMmxOp.FromTemp:
-                mmx.Write(op.GuestRegister, op.Size == 4 ? temps[op.Left] : wide[op.Left]);
+                fpu.SetMmxRegister(op.GuestRegister, op.Size == 4 ? temps[op.Left] : wide[op.Left]);
                 break;
             case TcgMmxOp.Load:
                 {
@@ -631,10 +643,10 @@ public static class TcgInterpreter
                 }
 
             case TcgMmxOp.Binary:
-                mmx.Write(op.GuestRegister, ComputeMmx(op.Mnemonic, mmx.Read(op.GuestRegister), wide[op.Left]));
+                fpu.SetMmxRegister(op.GuestRegister, ComputeMmx(op.Mnemonic, fpu.GetMmxRegister(op.GuestRegister), wide[op.Left]));
                 break;
             case TcgMmxOp.Shift:
-                mmx.Write(op.GuestRegister, ShiftMmx(op.Mnemonic, mmx.Read(op.GuestRegister), (int)(temps[op.Left] & 0xFF)));
+                fpu.SetMmxRegister(op.GuestRegister, ShiftMmx(op.Mnemonic, fpu.GetMmxRegister(op.GuestRegister), (int)(temps[op.Left] & 0xFF)));
                 break;
             case TcgMmxOp.Maskmovq:
                 {
@@ -643,8 +655,8 @@ public static class TcgInterpreter
                         throw new InvalidOperationException("a memory access needs an ITcgMemory");
                     }
 
-                    ulong data = mmx.Read(op.GuestRegister);
-                    ulong mask = mmx.Read(op.Left);
+                    ulong data = fpu.GetMmxRegister(op.GuestRegister);
+                    ulong mask = fpu.GetMmxRegister(op.Left);
                     uint address = SegmentBase(segmentBases, SegmentRegister.Es) + gprs[7];
                     for (int i = 0; i < 8; i++)
                     {
@@ -659,20 +671,20 @@ public static class TcgInterpreter
 
             case TcgMmxOp.Pinsrw:
                 {
-                    ulong destination = mmx.Read(op.GuestRegister);
+                    ulong destination = fpu.GetMmxRegister(op.GuestRegister);
                     int lane = (int)(op.Control & 3);
                     ulong mask = 0xFFFFUL << (16 * lane);
                     destination = (destination & ~mask) | (((ulong)temps[op.Left] & 0xFFFF) << (16 * lane));
-                    mmx.Write(op.GuestRegister, destination);
+                    fpu.SetMmxRegister(op.GuestRegister, destination);
                     break;
                 }
 
             case TcgMmxOp.Pextrw:
-                temps[op.Dest] = (uint)((mmx.Read(op.GuestRegister) >> (16 * (int)(op.Control & 3))) & 0xFFFF);
+                temps[op.Dest] = (uint)((fpu.GetMmxRegister(op.GuestRegister) >> (16 * (int)(op.Control & 3))) & 0xFFFF);
                 break;
             case TcgMmxOp.Pmovmskb:
                 {
-                    ulong source = mmx.Read(op.GuestRegister);
+                    ulong source = fpu.GetMmxRegister(op.GuestRegister);
                     uint result = 0;
                     for (int i = 0; i < 8; i++)
                     {
@@ -696,12 +708,12 @@ public static class TcgInterpreter
                         result |= (ulong)(ushort)(source >> (16 * lane)) << (16 * i);
                     }
 
-                    mmx.Write(op.GuestRegister, result);
+                    fpu.SetMmxRegister(op.GuestRegister, result);
                     break;
                 }
 
             case TcgMmxOp.Emms:
-                mmx.Empty();
+                fpu.EmptyAll();
                 break;
             default:
                 throw new InvalidOperationException($"unknown MMX op {op.MmxOp}");
