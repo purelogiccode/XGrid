@@ -67,6 +67,8 @@ namespace XGrid.Xcn3MachineProbe
         private static long s_irqs;
         private static long s_serviceTicks;
         private static long s_advanceTicks;
+        private static long s_drainTicks;
+        private static long s_spinTicks;
         private static byte[] s_bios = [];
         private static bool s_haltLogged;
 
@@ -184,7 +186,9 @@ namespace XGrid.Xcn3MachineProbe
                         }
                         if (Read32(ctl + OffRingCount) != Read32(ctl + OffRingTail))
                         {
+                            long drainStart = Stopwatch.GetTimestamp();
                             DrainRing(ctl, machine);
+                            s_drainTicks += Stopwatch.GetTimestamp() - drainStart;
                             continue;
                         }
                         if (process.HasExited || DateTime.UtcNow > deadline)
@@ -193,7 +197,9 @@ namespace XGrid.Xcn3MachineProbe
                             Console.Error.Write(hostLog.ToString());
                             return 1;
                         }
+                        long spinStart = Stopwatch.GetTimestamp();
                         Thread.SpinWait(32);
+                        s_spinTicks += Stopwatch.GetTimestamp() - spinStart;
                     }
                     left -= chunk;
                     slices++;
@@ -242,6 +248,8 @@ namespace XGrid.Xcn3MachineProbe
                 Console.WriteLine($"boot: wall={sw.Elapsed.TotalSeconds:F3} s " +
                     $"= {budget / sw.Elapsed.TotalSeconds / 1e6:F1} Msteps/s " +
                     $"(service={s_serviceTicks * 1e3 / Stopwatch.Frequency:F0} ms " +
+                    $"drain={s_drainTicks * 1e3 / Stopwatch.Frequency:F0} ms " +
+                    $"spin={s_spinTicks * 1e3 / Stopwatch.Frequency:F0} ms " +
                     $"advance={s_advanceTicks * 1e3 / Stopwatch.Frequency:F0} ms)");
 
                 Write32(ctl + OffQuit, 1);

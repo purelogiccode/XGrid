@@ -748,6 +748,13 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
 
             print = dbg < 3 || irq_before != 0 || ret == EXCP_HALTED ||
                     (ret != EXCP_INTERRUPT && dbg < 200);
+            {
+                static int ud_logged;
+                if (c->cpu->exception_index == 6 && ud_logged < 3) {
+                    ud_logged++;
+                    print = 1;
+                }
+            }
             if (getenv("XGRID_CPU_TRACE") && print) {
                 CPUX86State *env = cpu_env(c->cpu);
                 XGC_TRACE("chunk before=%lld after=%lld low=%u extra=%d "
