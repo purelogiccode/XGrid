@@ -112,7 +112,13 @@ real translator bug: 8/16-bit `CMPXCHG` compared the full 32-bit destination
 instead of the operand-sized register, so `cmpxchg cl, bl` never matched (two
 focused differentials added; the corpus fails pre-fix). Next shapes, by the
 measured fallback list: ADC/SBB (carry-live), SETcc/CMOVcc, x87 (59 cases),
-SSE (37), LOOP/JECXZ, ENTER/LEAVE, XLAT and the string/high-byte tails.
+SSE (37), LOOP/JECXZ, ENTER/LEAVE, XLAT and the string/high-byte tails. Slice 10:
+that integer list - ADC/SBB, TEST, SETcc, CMOVcc (16/32), BSWAP, BSF/BSR (the
+reference zero-source rule), ARPL (register and memory), CBW/CWDE/CWD/CDQ, XLAT,
+CLD/STD/CLC/STC/CMC, PUSHF/POPF, PUSHA/POPA, LEAVE and LOOP/LOOPE/LOOPNE/JECXZ
+(16/32 address size), with 16-bit stack-pointer wrap on PUSH/POP. **159
+differentials total**, 863 CPU tests green, corpus fallback 2415 -> 2344. ENTER
+and the 16-bit LEAVE stay fallbacks (documented). Next: x87, then SSE.
 
 ### P1S4 - host code generation (6-10 sessions)
 

@@ -29,8 +29,14 @@ public enum TcgOpKind
     /// <summary>Adds two temps and computes the flags for the operand size.</summary>
     Add,
 
+    /// <summary>Adds two temps plus the carry flag.</summary>
+    Adc,
+
     /// <summary>Subtracts two temps and computes the flags for the operand size.</summary>
     Sub,
+
+    /// <summary>Subtracts two temps plus the borrow flag.</summary>
+    Sbb,
 
     /// <summary>Bitwise AND of two temps, with the logical flags.</summary>
     And,
@@ -142,6 +148,39 @@ public enum TcgOpKind
 
     /// <summary>An MMX operation (packed integer, move, shift or mask).</summary>
     Mmx,
+
+    /// <summary>Writes the condition result (0/1) into a temp (SETcc).</summary>
+    SetCondition,
+
+    /// <summary>Moves the source into the destination temp when the condition holds (CMOVcc).</summary>
+    ConditionalMove,
+
+    /// <summary>Byte-swaps the low 32 bits.</summary>
+    Bswap,
+
+    /// <summary>Bit scan forward/backward with the reference ZF rule.</summary>
+    BitScan,
+
+    /// <summary>Adjusts a selector's RPL (ARPL).</summary>
+    Arpl,
+
+    /// <summary>CBW/CWDE/CWD/CDQ.</summary>
+    SignExtend,
+
+    /// <summary>XLAT (AL = [segment:(E)BX+AL]).</summary>
+    Xlat,
+
+    /// <summary>Sets or clears an EFLAGS bit.</summary>
+    FlagOp,
+
+    /// <summary>Reads EFLAGS (with the reserved bit set) into a temp.</summary>
+    ReadFlags,
+
+    /// <summary>Writes EFLAGS from a temp (POPF).</summary>
+    WriteFlags,
+
+    /// <summary>LOOP/LOOPE/LOOPNE/JECXZ.</summary>
+    Loop,
 
     /// <summary>Computes a guest effective address from the memory operand shape.</summary>
     Lea,
@@ -259,4 +298,7 @@ public readonly struct TcgOp
 
     /// <summary>Gets the MMX mnemonic (packed binary/shift semantics).</summary>
     public Mnemonic Mnemonic { get; init; }
+
+    /// <summary>Gets whether a flag op sets (true) or clears (false) its bit.</summary>
+    public bool On { get; init; }
 }

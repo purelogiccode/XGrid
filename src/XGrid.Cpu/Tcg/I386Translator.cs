@@ -51,10 +51,13 @@ public static class I386Translator
                 return TryMov(instruction, size, builder, out reason);
             case Mnemonic.Add:
             case Mnemonic.Sub:
+            case Mnemonic.Adc:
+            case Mnemonic.Sbb:
             case Mnemonic.And:
             case Mnemonic.Or:
             case Mnemonic.Xor:
             case Mnemonic.Cmp:
+            case Mnemonic.Test:
                 return TryAlu(instruction, size, builder, out reason);
             case Mnemonic.Inc:
             case Mnemonic.Dec:
@@ -114,6 +117,105 @@ public static class I386Translator
             case Mnemonic.Emms:
                 builder.MmxEmms();
                 return true;
+            case Mnemonic.Setcc:
+                return TrySetcc(instruction, builder, out reason);
+            case Mnemonic.Cmovcc:
+                return TryCmovcc(instruction, size, builder, out reason);
+            case Mnemonic.Bswap:
+                {
+                    if (instruction.Operand1.Kind != OperandKind.Register)
+                    {
+                        reason = "bswap destination";
+                        return false;
+                    }
+
+                    int value = builder.NewTemp();
+                    builder.ReadRegister(value, instruction.Operand1.RegisterIndex, 4);
+                    int swapped = builder.NewTemp();
+                    builder.Bswap(swapped, value);
+                    builder.WriteRegister(instruction.Operand1.RegisterIndex, swapped, 4);
+                    return true;
+                }
+
+            case Mnemonic.Bsf:
+            case Mnemonic.Bsr:
+                return TryBitScan(instruction, builder, out reason);
+            case Mnemonic.Arpl:
+                return TryArpl(instruction, builder, out reason);
+            case Mnemonic.Cbw:
+                builder.SignExtend(instruction.OperandSize == 16 ? 0 : 1);
+                return true;
+            case Mnemonic.Cdq:
+                builder.SignExtend(instruction.OperandSize == 16 ? 2 : 3);
+                return true;
+            case Mnemonic.Xlat:
+                builder.Xlat(
+                    (int)(instruction.Operand1.Memory.SegmentOverride ?? SegmentRegister.Ds),
+                    instruction.AddressSize == 16);
+                return true;
+            case Mnemonic.Cld:
+                builder.FlagOp(FlagBits.Df, false);
+                return true;
+            case Mnemonic.Std:
+                builder.FlagOp(FlagBits.Df, true);
+                return true;
+            case Mnemonic.Clc:
+                builder.FlagOp(FlagBits.Cf, false);
+                return true;
+            case Mnemonic.Stc:
+                builder.FlagOp(FlagBits.Cf, true);
+                return true;
+            case Mnemonic.Cmc:
+                builder.ToggleFlag(FlagBits.Cf);
+                return true;
+            case Mnemonic.Pushf:
+                {
+                    int flags = builder.NewTemp();
+                    builder.ReadFlags(flags);
+                    builder.Push(flags, size, instruction.AddressSize == 16);
+                    return true;
+                }
+
+            case Mnemonic.Popf:
+                {
+                    int flags = builder.NewTemp();
+                    builder.Pop(flags, size, instruction.AddressSize == 16);
+                    builder.WriteFlags(flags);
+                    return true;
+                }
+
+            case Mnemonic.Pusha:
+                return TryPushAll(instruction, size, builder, out reason);
+            case Mnemonic.Popa:
+                return TryPopAll(instruction, size, builder, out reason);
+            case Mnemonic.Leave:
+                return TryLeave(instruction, size, builder, out reason);
+            case Mnemonic.Loop:
+            case Mnemonic.LoopE:
+            case Mnemonic.LoopNe:
+            case Mnemonic.Jecxz:
+                {
+                    if (instruction.Operand1.Kind != OperandKind.Immediate)
+                    {
+                        reason = "loop target";
+                        return false;
+                    }
+
+                    int kind = instruction.Mnemonic switch
+                    {
+                        Mnemonic.Loop => 0,
+                        Mnemonic.LoopE => 1,
+                        Mnemonic.LoopNe => 2,
+                        _ => 3,
+                    };
+                    builder.SetEip(eip + (uint)instruction.Length);
+                    builder.Loop(kind, eip + (uint)instruction.Length + instruction.Operand1.Immediate,
+                        instruction.AddressSize == 16);
+                    builder.Exit();
+                    terminatesBlock = true;
+                    return true;
+                }
+
             case var mmx when IsMmxMnemonic(mmx):
                 return TryMmx(instruction, builder, out reason);
             case Mnemonic.Jmp:
@@ -231,6 +333,37 @@ public static class I386Translator
         if (instruction.Mnemonic == Mnemonic.Cmp)
         {
             builder.Cmp(left, right, size);
+            return true;
+        }
+
+        if (instruction.Mnemonic == Mnemonic.Test)
+        {
+            int scratch = builder.NewTemp();
+            builder.Alu(TcgOpKind.And, scratch, left, right, size);
+            return true;
+        }
+
+        if (instruction.Mnemonic is Mnemonic.Adc or Mnemonic.Sbb)
+        {
+            int carried = builder.NewTemp();
+            if (instruction.Mnemonic == Mnemonic.Adc)
+            {
+                builder.Adc(carried, left, right, size);
+            }
+            else
+            {
+                builder.Sbb(carried, left, right, size);
+            }
+
+            if (destination.Kind == OperandKind.Register)
+            {
+                builder.WriteRegister(destination.RegisterIndex, carried, size);
+            }
+            else
+            {
+                builder.Store(address, carried, size);
+            }
+
             return true;
         }
 
@@ -883,6 +1016,187 @@ public static class I386Translator
         return true;
     }
 
+    private static bool TrySetcc(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        int result = builder.NewTemp();
+        builder.SetCondition(result, instruction.Condition);
+        if (destination.Kind == OperandKind.Register)
+        {
+            builder.WriteRegister(destination.RegisterIndex, result, 1);
+            return true;
+        }
+
+        if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.Store(address, result, 1);
+            return true;
+        }
+
+        reason = "setcc destination";
+        return false;
+    }
+
+    private static bool TryCmovcc(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        if (destination.Kind != OperandKind.Register)
+        {
+            reason = "cmovcc destination";
+            return false;
+        }
+
+        int value = builder.NewTemp();
+        builder.ReadRegister(value, destination.RegisterIndex, size);
+        if (!TryReadSource(instruction.Operand2, size, builder, out int source, out reason))
+        {
+            return false;
+        }
+
+        builder.ConditionalMove(value, source, instruction.Condition, size);
+        builder.WriteRegister(destination.RegisterIndex, value, size);
+        return true;
+    }
+
+    private static bool TryBitScan(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        if (destination.Kind != OperandKind.Register)
+        {
+            reason = "bit scan destination";
+            return false;
+        }
+
+        int size = destination.Size / 8;
+        int value = builder.NewTemp();
+        builder.ReadRegister(value, destination.RegisterIndex, size);
+        if (!TryReadSource(instruction.Operand2, size, builder, out int source, out reason))
+        {
+            return false;
+        }
+
+        builder.BitScan(value, source, size, instruction.Mnemonic == Mnemonic.Bsr);
+        builder.WriteRegister(destination.RegisterIndex, value, size);
+        return true;
+    }
+
+    private static bool TryArpl(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        Operand destination = instruction.Operand1;
+        Operand source = instruction.Operand2;
+        if (source.Kind != OperandKind.Register)
+        {
+            reason = "arpl source";
+            return false;
+        }
+
+        int sourceValue = builder.NewTemp();
+        builder.ReadRegister(sourceValue, source.RegisterIndex, 2);
+
+        if (destination.Kind == OperandKind.Register)
+        {
+            int value = builder.NewTemp();
+            builder.ReadRegister(value, destination.RegisterIndex, 2);
+            builder.Arpl(value, sourceValue);
+            builder.WriteRegister(destination.RegisterIndex, value, 2);
+            return true;
+        }
+
+        if (destination.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(destination.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.ArplMemory(address, sourceValue);
+            return true;
+        }
+
+        reason = "arpl destination";
+        return false;
+    }
+
+    private static bool TryPushAll(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        bool address16 = instruction.AddressSize == 16;
+        var values = new int[8];
+        for (int i = 0; i < 8; i++)
+        {
+            values[i] = builder.NewTemp();
+            builder.ReadRegister(values[i], i, size);
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            builder.Push(values[i], size, address16);
+        }
+
+        return true;
+    }
+
+    private static bool TryPopAll(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        bool address16 = instruction.AddressSize == 16;
+        int[] order = [7, 6, 5, 4, 3, 2, 1, 0];
+        foreach (int register in order)
+        {
+            int value = builder.NewTemp();
+            builder.Pop(value, size, address16);
+            if (register != 4)
+            {
+                builder.WriteRegister(register, value, size);
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryLeave(
+        DecodedInstruction instruction,
+        int size,
+        TcgBuilder builder,
+        out string? reason)
+    {
+        reason = null;
+        if (size != 4)
+        {
+            reason = "16-bit leave";
+            return false;
+        }
+
+        int frame = builder.NewTemp();
+        builder.ReadRegister(frame, (int)Gpr.Ebp, 4);
+        builder.WriteRegister((int)Gpr.Esp, frame, 4);
+        int saved = builder.NewTemp();
+        builder.Pop(saved, 4, instruction.AddressSize == 16);
+        builder.WriteRegister((int)Gpr.Ebp, saved, 4);
+        return true;
+    }
+
     private static bool TryBitTest(
         DecodedInstruction instruction,
         int size,
@@ -1172,12 +1486,12 @@ public static class I386Translator
                 return false;
             }
 
-            builder.Push(value, size);
+            builder.Push(value, size, instruction.AddressSize == 16);
             return true;
         }
 
         int popped = builder.NewTemp();
-        builder.Pop(popped, size);
+        builder.Pop(popped, size, instruction.AddressSize == 16);
         if (instruction.Operand1.Kind == OperandKind.Register)
         {
             builder.WriteRegister(instruction.Operand1.RegisterIndex, popped, size);

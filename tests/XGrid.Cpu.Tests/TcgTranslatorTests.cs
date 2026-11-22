@@ -1167,4 +1167,255 @@ public sealed class TcgTranslatorTests
             cpu => { Mmx(cpu, 0, 0x1122334455667788); Mmx(cpu, 1, 0x99AABBCCDDEEFF00); },
             mmx: true);
     }
+
+    [Fact]
+    public void AdcCarriesIn()
+    {
+        AssertMatches(
+            [0x11, 0xD8],
+            cpu => { Set(cpu, Gpr.Eax, 0xFFFFFFFF); Set(cpu, Gpr.Ebx, 0); Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf); });
+    }
+
+    [Fact]
+    public void AdcCarryOut()
+    {
+        AssertMatches(
+            [0x83, 0xD0, 0x00],
+            cpu => { Set(cpu, Gpr.Eax, 0xFFFFFFFE); Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf); });
+    }
+
+    [Fact]
+    public void SbbBorrowsIn()
+    {
+        AssertMatches(
+            [0x19, 0xD8],
+            cpu => { Set(cpu, Gpr.Eax, 5); Set(cpu, Gpr.Ebx, 1); Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf); });
+    }
+
+    [Fact]
+    public void SbbByte()
+    {
+        AssertMatches(
+            [0x18, 0xD8],
+            cpu => { Set(cpu, Gpr.Eax, 0x11223300); Set(cpu, Gpr.Ebx, 0x44556601); Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf); });
+    }
+
+    [Fact]
+    public void TestRegister()
+    {
+        AssertMatches([0x85, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0x0000F0F0); Set(cpu, Gpr.Ebx, 0x0000000F); });
+    }
+
+    [Fact]
+    public void TestImmediate()
+    {
+        AssertMatches([0xA9, 0x00, 0x00, 0x00, 0x80], cpu => Set(cpu, Gpr.Eax, 0xFFFFFFFF));
+    }
+
+    [Fact]
+    public void SeteTaken()
+    {
+        AssertMatches(
+            [0x0F, 0x94, 0xC0],
+            cpu => { Set(cpu, Gpr.Eax, 0x11223344); Flags(cpu, FlagBits.Reserved1 | FlagBits.Zf); });
+    }
+
+    [Fact]
+    public void SetneMemory()
+    {
+        AssertMatches(
+            [0x0F, 0x95, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => { Memory32(cpu, 0x2000, 0x11223344); Flags(cpu, FlagBits.Reserved1); },
+            (interpreter, tcg) => Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000)));
+    }
+
+    [Fact]
+    public void CmovzTaken()
+    {
+        AssertMatches(
+            [0x0F, 0x44, 0xD8],
+            cpu => { Set(cpu, Gpr.Eax, 0x11111111); Set(cpu, Gpr.Ebx, 0x22222222); Flags(cpu, FlagBits.Reserved1 | FlagBits.Zf); });
+    }
+
+    [Fact]
+    public void CmovnzNotTaken()
+    {
+        AssertMatches(
+            [0x0F, 0x45, 0xD8],
+            cpu => { Set(cpu, Gpr.Eax, 0x11111111); Set(cpu, Gpr.Ebx, 0x22222222); Flags(cpu, FlagBits.Reserved1 | FlagBits.Zf); });
+    }
+
+    [Fact]
+    public void CmovWord()
+    {
+        AssertMatches(
+            [0x66, 0x0F, 0x4C, 0xD8],
+            cpu => { Set(cpu, Gpr.Eax, 0x11112222); Set(cpu, Gpr.Ebx, 0x33334444); Flags(cpu, FlagBits.Reserved1); });
+    }
+
+    [Fact]
+    public void BswapRegister()
+    {
+        AssertMatches([0x0F, 0xC8], cpu => Set(cpu, Gpr.Eax, 0x11223344));
+    }
+
+    [Fact]
+    public void BsfFound()
+    {
+        AssertMatches([0x0F, 0xBC, 0xC3], cpu => { Set(cpu, Gpr.Eax, 0xAAAAAAAA); Set(cpu, Gpr.Ebx, 0x00000100); });
+    }
+
+    [Fact]
+    public void BsfZeroKeepsDestination()
+    {
+        AssertMatches([0x0F, 0xBC, 0xC3], cpu => { Set(cpu, Gpr.Eax, 0xAAAAAAAA); Set(cpu, Gpr.Ebx, 0); });
+    }
+
+    [Fact]
+    public void BsrFound()
+    {
+        AssertMatches([0x0F, 0xBD, 0xC3], cpu => { Set(cpu, Gpr.Eax, 0xAAAAAAAA); Set(cpu, Gpr.Ebx, 0x00080100); });
+    }
+
+    [Fact]
+    public void BsrWordZero()
+    {
+        AssertMatches([0x66, 0x0F, 0xBD, 0xC3], cpu => { Set(cpu, Gpr.Eax, 0x12345678); Set(cpu, Gpr.Ebx, 0x00010000); });
+    }
+
+    [Fact]
+    public void ArplAdjusts()
+    {
+        AssertMatches([0x63, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0x0010); Set(cpu, Gpr.Ebx, 0x0003); });
+    }
+
+    [Fact]
+    public void ArplNoAdjust()
+    {
+        AssertMatches([0x63, 0xD8], cpu => { Set(cpu, Gpr.Eax, 0x0013); Set(cpu, Gpr.Ebx, 0x0001); });
+    }
+
+    [Fact]
+    public void Cwde()
+    {
+        AssertMatches([0x98], cpu => Set(cpu, Gpr.Eax, 0x12348000));
+    }
+
+    [Fact]
+    public void Cbw()
+    {
+        AssertMatches([0x66, 0x98], cpu => Set(cpu, Gpr.Eax, 0x12345680));
+    }
+
+    [Fact]
+    public void Cdq()
+    {
+        AssertMatches([0x99], cpu => Set(cpu, Gpr.Eax, 0x80000000));
+    }
+
+    [Fact]
+    public void Cwd()
+    {
+        AssertMatches([0x66, 0x99], cpu => Set(cpu, Gpr.Eax, 0x12348000));
+    }
+
+    [Fact]
+    public void Xlat()
+    {
+        AssertMatches(
+            [0xD7],
+            cpu => { Set(cpu, Gpr.Eax, 0x11223305); Set(cpu, Gpr.Ebx, 0x3000); cpu.Ram().Write8(0x3005, 0x9A); });
+    }
+
+    [Fact]
+    public void CldClearsDirection()
+    {
+        AssertMatches([0xFC], cpu => Flags(cpu, FlagBits.Reserved1 | FlagBits.Df | FlagBits.Cf));
+    }
+
+    [Fact]
+    public void StdSetsDirection()
+    {
+        AssertMatches([0xFD], cpu => Flags(cpu, FlagBits.Reserved1));
+    }
+
+    [Fact]
+    public void CmcTogglesCarry()
+    {
+        AssertMatches([0xF5], cpu => Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf | FlagBits.Zf));
+    }
+
+    [Fact]
+    public void StcSetsCarry()
+    {
+        AssertMatches([0xF9], cpu => Flags(cpu, FlagBits.Reserved1));
+    }
+
+    [Fact]
+    public void PushfPopfRoundTrip()
+    {
+        AssertMatches(
+            [0x9C, 0x9D],
+            cpu => Flags(cpu, FlagBits.Reserved1 | FlagBits.Cf | FlagBits.Pf | FlagBits.Af | FlagBits.Zf | FlagBits.Sf | FlagBits.Of));
+    }
+
+    [Fact]
+    public void PushaPopaRoundTrip()
+    {
+        AssertMatches(
+            [0x60, 0x61],
+            cpu =>
+            {
+                Set(cpu, Gpr.Eax, 0x11111111);
+                Set(cpu, Gpr.Ebx, 0x22222222);
+                Set(cpu, Gpr.Ecx, 0x33333333);
+                Set(cpu, Gpr.Edx, 0x44444444);
+                Set(cpu, Gpr.Esi, 0x55555555);
+                Set(cpu, Gpr.Edi, 0x66666666);
+                Set(cpu, Gpr.Ebp, 0x77777777);
+            },
+            (interpreter, tcg) =>
+            {
+                Assert.Equal(interpreter.Ram().Read32(0x7FC0), tcg.Ram().Read32(0x7FC0));
+                Assert.Equal(interpreter.Ram().Read32(0x7FD8), tcg.Ram().Read32(0x7FD8));
+            });
+    }
+
+    [Fact]
+    public void LeaveRestoresFrame()
+    {
+        AssertMatches(
+            [0xC9],
+            cpu => { Memory32(cpu, 0x7FFC, 0x11223344); Memory32(cpu, 0x8000, 0x55667788); Set(cpu, Gpr.Ebp, 0x7FFC); Set(cpu, Gpr.Esp, 0x7000); });
+    }
+
+    [Fact]
+    public void LoopTaken()
+    {
+        AssertMatches([0xE2, 0xFE], cpu => Set(cpu, Gpr.Ecx, 3));
+    }
+
+    [Fact]
+    public void LoopFallsThroughAtZero()
+    {
+        AssertMatches([0xE2, 0xFE], cpu => Set(cpu, Gpr.Ecx, 0));
+    }
+
+    [Fact]
+    public void LoopeNotTakenWithoutZero()
+    {
+        AssertMatches([0xE1, 0xFE], cpu => { Set(cpu, Gpr.Ecx, 3); Flags(cpu, FlagBits.Reserved1); });
+    }
+
+    [Fact]
+    public void JecxzTaken()
+    {
+        AssertMatches([0x67, 0xE3, 0xFE], cpu => Set(cpu, Gpr.Ecx, 0x12340000));
+    }
+
+    [Fact]
+    public void JecxzNotTaken()
+    {
+        AssertMatches([0xE3, 0xFE], cpu => Set(cpu, Gpr.Ecx, 1));
+    }
 }

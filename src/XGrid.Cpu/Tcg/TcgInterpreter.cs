@@ -140,6 +140,26 @@ public static class TcgInterpreter
                     eflags = AluOps.Add(temps[op.Left], temps[op.Right], 0, op.Size * 8, eflags, out uint sum);
                     temps[op.Dest] = sum;
                     break;
+                case TcgOpKind.Adc:
+                    eflags = AluOps.Add(
+                        temps[op.Left],
+                        temps[op.Right],
+                        (eflags & FlagBits.Cf) != 0 ? 1u : 0u,
+                        op.Size * 8,
+                        eflags,
+                        out uint carried);
+                    temps[op.Dest] = carried;
+                    break;
+                case TcgOpKind.Sbb:
+                    eflags = AluOps.Sub(
+                        temps[op.Left],
+                        temps[op.Right],
+                        (eflags & FlagBits.Cf) != 0 ? 1u : 0u,
+                        op.Size * 8,
+                        eflags,
+                        out uint borrowed);
+                    temps[op.Dest] = borrowed;
+                    break;
                 case TcgOpKind.Sub:
                     eflags = AluOps.Sub(temps[op.Left], temps[op.Right], 0, op.Size * 8, eflags, out uint difference);
                     temps[op.Dest] = difference;
@@ -264,18 +284,19 @@ public static class TcgInterpreter
                     break;
                 case TcgOpKind.Push:
                     {
-                        uint esp = gprs[4] - (uint)op.Size;
-                        gprs[4] = esp;
+                        uint esp = (gprs[4] - (uint)op.Size) & (op.Address16 ? 0xFFFFu : 0xFFFFFFFFu);
+                        gprs[4] = op.Address16 ? (gprs[4] & 0xFFFF0000u) | esp : esp;
                         Store(memory, SegmentBase(segmentBases, SegmentRegister.Ss) + esp, temps[op.Left], op.Size);
                         break;
                     }
 
                 case TcgOpKind.Pop:
                     {
-                        uint esp = gprs[4];
+                        uint esp = op.Address16 ? gprs[4] & 0xFFFFu : gprs[4];
                         temps[op.Dest] = Load(
                             memory, SegmentBase(segmentBases, SegmentRegister.Ss) + esp, op.Size);
-                        gprs[4] = esp + (uint)op.Size;
+                        uint advanced = (esp + (uint)op.Size) & (op.Address16 ? 0xFFFFu : 0xFFFFFFFFu);
+                        gprs[4] = op.Address16 ? (gprs[4] & 0xFFFF0000u) | advanced : advanced;
                         break;
                     }
 
@@ -399,6 +420,144 @@ public static class TcgInterpreter
                 case TcgOpKind.Store:
                     Store(memory, temps[op.Left], temps[op.Right], op.Size);
                     break;
+                case TcgOpKind.SetCondition:
+                    temps[op.Dest] = TcgConditions.Met(op.Condition, eflags) ? 1u : 0u;
+                    break;
+                case TcgOpKind.ConditionalMove:
+                    if (TcgConditions.Met(op.Condition, eflags))
+                    {
+                        temps[op.Dest] = Mask(temps[op.Right], op.Size);
+                    }
+
+                    break;
+                case TcgOpKind.Bswap:
+                    {
+                        uint value = temps[op.Left];
+                        temps[op.Dest] = (value >> 24)
+                            | ((value >> 8) & 0x0000FF00u)
+                            | ((value << 8) & 0x00FF0000u)
+                            | (value << 24);
+                        break;
+                    }
+
+                case TcgOpKind.BitScan:
+                    {
+                        uint source = op.Size == 2 ? temps[op.Left] & 0xFFFFu : temps[op.Left];
+                        if (source == 0)
+                        {
+                            eflags |= FlagBits.Zf;
+                        }
+                        else
+                        {
+                            eflags &= ~FlagBits.Zf;
+                            temps[op.Dest] = (uint)(op.On
+                                ? System.Numerics.BitOperations.Log2(source)
+                                : System.Numerics.BitOperations.TrailingZeroCount(source));
+                        }
+
+                        break;
+                    }
+
+                case TcgOpKind.Arpl:
+                    {
+                        ushort destination = op.IsMemory
+                            ? (ushort)Load(memory, temps[op.Left], 2)
+                            : (ushort)temps[op.Dest];
+                        ushort source = (ushort)temps[op.Right];
+                        if ((destination & 3) < (source & 3))
+                        {
+                            eflags |= FlagBits.Zf;
+                            ushort adjusted = (ushort)((destination & 0xFFFC) | (source & 3));
+                            if (op.IsMemory)
+                            {
+                                Store(memory, temps[op.Left], adjusted, 2);
+                            }
+                            else
+                            {
+                                temps[op.Dest] = adjusted;
+                            }
+                        }
+                        else
+                        {
+                            eflags &= ~FlagBits.Zf;
+                        }
+
+                        break;
+                    }
+
+                case TcgOpKind.SignExtend:
+                    switch (op.Immediate)
+                    {
+                        case 0:
+                            gprs[0] = (gprs[0] & 0xFFFF0000u) | (uint)(0xFFFF & (int)(sbyte)(byte)gprs[0]);
+                            break;
+                        case 1:
+                            gprs[0] = (uint)(int)(short)(ushort)gprs[0];
+                            break;
+                        case 2:
+                            {
+                                bool negative = ((short)(ushort)gprs[0]) < 0;
+                                gprs[2] = (gprs[2] & 0xFFFF0000u) | (negative ? 0xFFFFu : 0u);
+                                break;
+                            }
+
+                        default:
+                            gprs[2] = (int)gprs[0] < 0 ? 0xFFFFFFFFu : 0u;
+                            break;
+                    }
+
+                    break;
+                case TcgOpKind.Xlat:
+                    {
+                        uint baseIndex = op.Address16 ? gprs[3] & 0xFFFFu : gprs[3];
+                        uint address = SegmentBase(segmentBases, (SegmentRegister)op.Segment)
+                            + baseIndex
+                            + (gprs[0] & 0xFFu);
+                        gprs[0] = (gprs[0] & 0xFFFFFF00u) | Load(memory, address, 1);
+                        break;
+                    }
+
+                case TcgOpKind.FlagOp:
+                    eflags = op.Size == 2
+                        ? eflags ^ op.Immediate
+                        : op.On ? eflags | op.Immediate : eflags & ~op.Immediate;
+                    break;
+                case TcgOpKind.ReadFlags:
+                    temps[op.Dest] = eflags | FlagBits.Reserved1;
+                    break;
+                case TcgOpKind.WriteFlags:
+                    eflags = temps[op.Left] | FlagBits.Reserved1;
+                    break;
+                case TcgOpKind.Loop:
+                    {
+                        bool address16 = op.Address16;
+                        int kind = op.GuestRegister;
+                        bool take;
+                        if (kind == 3)
+                        {
+                            take = ReadIndex(gprs, Gpr.Ecx, address16) == 0;
+                        }
+                        else
+                        {
+                            uint counter = (ReadIndex(gprs, Gpr.Ecx, address16) - 1u) & (address16 ? 0xFFFFu : 0xFFFFFFFFu);
+                            WriteCounter(gprs, counter, address16);
+                            bool zero = (eflags & FlagBits.Zf) != 0;
+                            take = kind switch
+                            {
+                                0 => counter != 0,
+                                1 => counter != 0 && zero,
+                                _ => counter != 0 && !zero,
+                            };
+                        }
+
+                        if (take)
+                        {
+                            eip = op.Immediate;
+                        }
+
+                        break;
+                    }
+
                 case TcgOpKind.SetEip:
                     eip = op.Immediate;
                     break;

@@ -287,17 +287,19 @@ public sealed class TcgBuilder
     /// <summary>Emits a stack push.</summary>
     /// <param name="value">Value temp.</param>
     /// <param name="size">Operand size in bytes.</param>
-    public void Push(int value, int size)
+    /// <param name="address16">True for a 16-bit stack pointer.</param>
+    public void Push(int value, int size, bool address16 = false)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.Push, Left = value, Size = size });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Push, Left = value, Size = size, Address16 = address16 });
     }
 
     /// <summary>Emits a stack pop.</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="size">Operand size in bytes.</param>
-    public void Pop(int dest, int size)
+    /// <param name="address16">True for a 16-bit stack pointer.</param>
+    public void Pop(int dest, int size, bool address16 = false)
     {
-        _ops.Add(new TcgOp { Kind = TcgOpKind.Pop, Dest = dest, Size = size });
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Pop, Dest = dest, Size = size, Address16 = address16 });
     }
 
     /// <summary>Emits a bit test/modify (BT/BTS/BTR/BTC).</summary>
@@ -563,6 +565,163 @@ public sealed class TcgBuilder
     public void MmxEmms()
     {
         _ops.Add(new TcgOp { Kind = TcgOpKind.Mmx, MmxOp = TcgMmxOp.Emms });
+    }
+
+    /// <summary>Emits an add-with-carry.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="left">Left temp.</param>
+    /// <param name="right">Right temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Adc(int dest, int left, int right, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Adc, Dest = dest, Left = left, Right = right, Size = size });
+    }
+
+    /// <summary>Emits a subtract-with-borrow.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="left">Left temp.</param>
+    /// <param name="right">Right temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void Sbb(int dest, int left, int right, int size)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Sbb, Dest = dest, Left = left, Right = right, Size = size });
+    }
+
+    /// <summary>Emits a SETcc result (0 or 1) into a temp.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="condition">The condition code.</param>
+    public void SetCondition(int dest, ConditionCode condition)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.SetCondition, Dest = dest, Condition = condition, Size = 1 });
+    }
+
+    /// <summary>Emits a CMOVcc (destination temp keeps its value unless the condition holds).</summary>
+    /// <param name="dest">Destination temp (already loaded with the old value).</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="condition">The condition code.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    public void ConditionalMove(int dest, int source, ConditionCode condition, int size)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.ConditionalMove,
+            Dest = dest,
+            Right = source,
+            Condition = condition,
+            Size = size,
+        });
+    }
+
+    /// <summary>Emits a byte swap of the low 32 bits.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="source">Source temp.</param>
+    public void Bswap(int dest, int source)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Bswap, Dest = dest, Left = source, Size = 4 });
+    }
+
+    /// <summary>Emits a bit scan (BSF/BSR).</summary>
+    /// <param name="dest">Destination temp (its old value survives a zero source).</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">Operand size in bytes.</param>
+    /// <param name="reverse">True for BSR.</param>
+    public void BitScan(int dest, int source, int size, bool reverse)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.BitScan,
+            Dest = dest,
+            Left = source,
+            Size = size,
+            On = reverse,
+        });
+    }
+
+    /// <summary>Emits an ARPL on a temp (ZF set when adjusted).</summary>
+    /// <param name="dest">Destination temp, updated in place.</param>
+    /// <param name="source">Source temp.</param>
+    public void Arpl(int dest, int source)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Arpl, Dest = dest, Right = source, Size = 2 });
+    }
+
+    /// <summary>Emits an ARPL on a memory word (stored only when adjusted).</summary>
+    /// <param name="address">Address temp.</param>
+    /// <param name="source">Source temp.</param>
+    public void ArplMemory(int address, int source)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Arpl,
+            Left = address,
+            Right = source,
+            Size = 2,
+            IsMemory = true,
+        });
+    }
+
+    /// <summary>Emits CBW (0), CWDE (1), CWD (2) or CDQ (3).</summary>
+    /// <param name="kind">The extension kind.</param>
+    public void SignExtend(int kind)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.SignExtend, Immediate = (uint)kind });
+    }
+
+    /// <summary>Emits XLAT.</summary>
+    /// <param name="segment">The segment register index.</param>
+    /// <param name="address16">True for a 16-bit address size.</param>
+    public void Xlat(int segment, bool address16)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Xlat,
+            Segment = segment,
+            Address16 = address16,
+        });
+    }
+
+    /// <summary>Emits a flag set or clear.</summary>
+    /// <param name="mask">The EFLAGS bit.</param>
+    /// <param name="on">True to set the bit, false to clear it.</param>
+    public void FlagOp(uint mask, bool on)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.FlagOp, Immediate = mask, On = on });
+    }
+
+    /// <summary>Emits a flag complement (CMC).</summary>
+    /// <param name="mask">The EFLAGS bit.</param>
+    public void ToggleFlag(uint mask)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.FlagOp, Immediate = mask, Size = 2 });
+    }
+
+    /// <summary>Emits a read of EFLAGS (reserved bit set) into a temp.</summary>
+    /// <param name="dest">Destination temp.</param>
+    public void ReadFlags(int dest)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.ReadFlags, Dest = dest, Size = 4 });
+    }
+
+    /// <summary>Emits a write of EFLAGS from a temp.</summary>
+    /// <param name="source">Source temp.</param>
+    public void WriteFlags(int source)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.WriteFlags, Left = source, Size = 4 });
+    }
+
+    /// <summary>Emits LOOP (0), LOOPE (1), LOOPNE (2) or JECXZ (3).</summary>
+    /// <param name="kind">The loop kind.</param>
+    /// <param name="target">Target EIP.</param>
+    /// <param name="address16">True for a 16-bit address size (CX).</param>
+    public void Loop(int kind, uint target, bool address16)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Loop,
+            GuestRegister = kind,
+            Immediate = target,
+            Address16 = address16,
+        });
     }
 
     /// <summary>Emits an effective-address computation (QEMU's address shape).</summary>
