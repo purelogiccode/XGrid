@@ -83,9 +83,12 @@ The native shadow+ring path passes in C: reads come from a native shadow
 window and writes are queued for the host. Under the **.NET-hosted DLL** the
 MMIO path fails before the first ring read (`0xC0000409`), and a managed
 callback fails at the callback, while the same code passes as a native
-executable. The C# vCPU/RAM/step path is proven. XCN1 must put the CPU in a
-native process/boundary (or fix the DLL/TCG ABI) and expose the shadow+write
-ring to C#.
+executable. The .NET host enables Control Flow Guard and the policy cannot be
+disabled at runtime (`SetProcessMitigationPolicy` -> error 5), which is
+consistent with the native ring's indirect call being blocked. The C#
+vCPU/RAM/step path is proven. XCN1 must put the CPU in a native process or a
+custom non-CFG host (or fix the DLL/TCG indirect-call ABI) and expose the
+shadow+write ring across that boundary.
 
 Measured on the 100M-step self-loop: **246.9 Msteps/s from C** (0.405 s) and
 **247.5 Msteps/s from C#** (0.404 s), 4.05 ns/step (~0.34x guest time on this

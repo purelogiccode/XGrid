@@ -142,9 +142,13 @@ callback path passes in C (`test.c`). Under the **.NET-hosted DLL** the MMIO
 path fails: a managed callback fails at the callback, and the native shadow
 ring (no callback on the TCG stack) fails before the first ring read
 (`0xC0000409`), while the same ring code passes as a native executable. The
-C# vCPU/RAM/step path is proven. XCN1 must put the CPU in a native process or
-a native host boundary (or fix the DLL/TCG ABI) and expose the shadow+write
-ring to C#; the product link should also become a custom meson target instead
+.NET host enables Control Flow Guard and the process policy cannot be
+disabled at runtime (`SetProcessMitigationPolicy(ProcessControlFlowGuardPolicy)`
+returns error 5), which is consistent with the native ring's indirect call
+being blocked at the first access. The C# vCPU/RAM/step path is proven. XCN1
+must put the CPU in a native process or a custom non-CFG host (or fix the
+DLL/TCG indirect-call ABI) and expose the shadow+write ring across that
+boundary; the product link should also become a custom meson target instead
 of the filtered fat archives.
 
 **Next (XCN1):** the native MMIO ring + host-side dispatch, the custom meson
