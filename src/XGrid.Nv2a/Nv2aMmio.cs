@@ -336,6 +336,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint BeginEndQuads = 8u;
     private const uint MaxInlineWords = 65536u;
     private const uint SurfaceTypePitch = 1u;
+    private const uint SurfaceTypeSwizzle = 2u;
     private const uint ZetaFormatZ16 = 1u;
     private const uint ZetaFormatZ24S8 = 2u;
     private const float ZetaDepthRangeZ16 = 65535f;
@@ -442,6 +443,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly float[][] _pshCoords = [new float[4], new float[4], new float[4], new float[4]];
     private readonly float[] _pshStageDots = new float[PshCombiner.TextureSlots];
     private readonly int[] _pshTexModes = new int[PshCombiner.TextureSlots];
+
+    // Surface geometry for the current clear/draw. A SWIZZLE-type surface
+    // stores its texels in the log-dimension Morton order (xemu
+    // `swizzle_rect` + `generate_swizzle_masks`) instead of the pitch walk;
+    // the masks are derived per draw from the surface format's log2 width and
+    // height, the same masks the texture sampler uses.
+    private bool _surfaceSwizzleTarget;
+    private bool _surfaceSwizzleMorton;
+    private uint _surfaceSwizzleMaskX;
+    private uint _surfaceSwizzleMaskY;
+    private uint _surfaceSwizzleWidth;
+    private uint _surfaceSwizzleHeight;
 
     // Per-draw transform-program scratch (D5): the vertex constant file, the
     // input/output register files and the transformed-vertex map are refilled
@@ -3307,6 +3320,43 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             || offset + ((ulong)pitch * height) <= (ulong)limit + 1;
     }
 
+    /// <summary>
+    /// Latches the current surface's addressing geometry: the PITCH type walks
+    /// rows by the pitch register, the SWIZZLE type tiles the log2 dimensions
+    /// in Morton order (xemu <c>surface_get_dimensions</c> +
+    /// <c>swizzle_rect</c>; the zeta binding shares the surface type).
+    /// </summary>
+    private void LoadSurfaceGeometry()
+    {
+        _surfaceSwizzleTarget = ((_surfaceFormat & 0xF00u) >> 8) == SurfaceTypeSwizzle;
+        if (!_surfaceSwizzleTarget)
+        {
+            _surfaceSwizzleMorton = false;
+            _surfaceSwizzleMaskX = 0u;
+            _surfaceSwizzleMaskY = 0u;
+            _surfaceSwizzleWidth = 0u;
+            _surfaceSwizzleHeight = 0u;
+            return;
+        }
+
+        int width = 1 << (int)((_surfaceFormat >> 16) & 0xFu);
+        int height = 1 << (int)((_surfaceFormat >> 20) & 0xFu);
+        _surfaceSwizzleWidth = (uint)width;
+        _surfaceSwizzleHeight = (uint)height;
+        ComputeSwizzleMasks(width, height, out _surfaceSwizzleMaskX, out _surfaceSwizzleMaskY);
+        _surfaceSwizzleMorton = (_surfaceSwizzleMaskX & 0xAAAAAAAAu) == 0 &&
+                                (_surfaceSwizzleMaskY & 0x55555555u) == 0;
+    }
+
+    /// <summary>The texel offset of (x, y) in the latched swizzled surface.</summary>
+    private uint SwizzleSurfaceTexelOffset(uint x, uint y)
+    {
+        return _surfaceSwizzleMorton
+            ? (SpreadMortonBits(x) & _surfaceSwizzleMaskX) |
+              ((SpreadMortonBits(y) << 1) & _surfaceSwizzleMaskY)
+            : InterleaveBits(x, _surfaceSwizzleMaskX) | InterleaveBits(y, _surfaceSwizzleMaskY);
+    }
+
     private void RunPusher()
     {
         if (GpuMemory is null)
@@ -4443,19 +4493,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        if ((_surfaceFormat & 0xF00u) >> 8 != SurfaceTypePitch)
-        {
-            return;
-        }
-
+        LoadSurfaceGeometry();
         bool clearColor = (parameter & 0xF0u) != 0;
         if (!clearColor && (parameter & 0x3u) == 0)
         {
             return;
         }
 
-        uint width = _surfaceClipH >> 16;
-        uint height = _surfaceClipV >> 16;
+        // A swizzled surface's extent is its log2 dimensions
+        // (surface_get_dimensions); a pitch surface uses the clip extent.
+        uint width = _surfaceSwizzleTarget ? _surfaceSwizzleWidth : _surfaceClipH >> 16;
+        uint height = _surfaceSwizzleTarget ? _surfaceSwizzleHeight : _surfaceClipV >> 16;
         if (width == 0 || height == 0)
         {
             return;
@@ -4485,7 +4533,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (bytes != 0)
             {
                 uint pitch = _surfacePitch & 0xFFFFu;
-                if (pitch != 0 && SurfaceFitsContext(_dmaColor, PresentedColorOffset, pitch, y1 - ymin + 1))
+                if (_surfaceSwizzleTarget)
+                {
+                    // The swizzled layout ignores the pitch register; the
+                    // reference still asserts pitch * height fits the DMA
+                    // context, so derive the row stride when it is unset.
+                    pitch = pitch != 0 ? pitch : width * bytes;
+                }
+
+                if (pitch != 0 && SurfaceFitsContext(_dmaColor, PresentedColorOffset, pitch, height))
                 {
                     // CLEAR_SURFACE_R/G/B/A mask the channels: a channel whose
                     // bit is clear keeps the surface's previous value. The
@@ -4503,13 +4559,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     uint mask = ClearColorChannelBits(colorFormat, channels) & lanes;
                     if (mask == lanes)
                     {
-                        FillSurface(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1,
-                            y1, pixel);
+                        FillSurfaceCore(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1,
+                            y1, pixel, _surfaceSwizzleTarget);
                     }
                     else if (mask != 0)
                     {
-                        MergeSurface(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1,
-                            y1, pixel, mask);
+                        MergeSurfaceCore(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1,
+                            y1, pixel, mask, _surfaceSwizzleTarget);
                     }
 
                     if (mask != 0)
@@ -4541,7 +4597,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (bytes != 0 && fields != 0)
             {
                 uint pitch = (_surfacePitch >> 16) & 0xFFFFu;
-                if (pitch != 0 && SurfaceFitsContext(_dmaZeta, _surfaceZetaOffset, pitch, y1 - ymin + 1))
+                if (_surfaceSwizzleTarget)
+                {
+                    pitch = pitch != 0 ? pitch : width * bytes;
+                }
+
+                if (pitch != 0 && SurfaceFitsContext(_dmaZeta, _surfaceZetaOffset, pitch, height))
                 {
                     // Z24S8: depth is the high 24 bits, stencil the low byte
                     // (pgraph_get_clear_depth_stencil_value), and CLEAR_SURFACE_Z
@@ -4556,13 +4617,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
                     if (mask == lanes)
                     {
-                        FillSurface(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1,
-                            pixel);
+                        FillSurfaceCore(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1,
+                            y1, pixel, _surfaceSwizzleTarget);
                     }
                     else
                     {
-                        MergeSurface(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1,
-                            pixel, mask);
+                        MergeSurfaceCore(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1,
+                            y1, pixel, mask, _surfaceSwizzleTarget);
                     }
 
                     backendZetaFields = fields;
@@ -4589,11 +4650,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    private void FillSurface(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax,
-        uint pixel)
+    /// <summary>
+    /// Fills a clear rectangle. <paramref name="swizzle"/> selects the
+    /// surface's Morton layout (the log-dimension masks latched by
+    /// <see cref="LoadSurfaceGeometry"/>) instead of the pitch walk; the
+    /// 4-byte span fast lane only applies to the pitch layout.
+    /// </summary>
+    private void FillSurfaceCore(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax,
+        uint pixel, bool swizzle)
     {
         using GpuWriteBatch batch = new(_memoryFast);
-        if (GpuMemory is null || pitch == 0)
+        if (GpuMemory is null || (pitch == 0 && !swizzle))
         {
             return;
         }
@@ -4603,9 +4670,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // instead of paying one interface call plus a bounds check per pixel
         // (measured ~20 ns/pixel, ~0.5 s of a 1B-step triangle leg - the
         // clears were its whole cost). Only the exactly in-range, 4-byte
-        // aligned case takes the fast lane; everything else keeps the
+        // aligned pitch case takes the fast lane; everything else keeps the
         // per-pixel loop and its partial-fill-on-overflow behaviour.
-        if (bytes == 4
+        if (!swizzle
+            && bytes == 4
             && (offset & 3u) == 0
             && (pitch & 3u) == 0
             && _memoryFast is not null
@@ -4621,7 +4689,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             uint row = offset + (y * pitch);
             for (uint x = xmin; x <= xmax; x++)
             {
-                uint address = row + (x * bytes);
+                uint address = offset + (swizzle
+                    ? SwizzleSurfaceTexelOffset(x, y) * bytes
+                    : (y * pitch) + (x * bytes));
                 if (address + bytes > RamSize)
                 {
                     return;
@@ -4683,15 +4753,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// Fills a clear rectangle where only <paramref name="mask"/>'s lanes are
     /// written: each pixel is <c>(old &amp; ~mask) | (pixel &amp; mask)</c>,
     /// the GL masked-clear rule. The full-mask case keeps the faster
-    /// <see cref="FillSurface"/> path; this is only reached when the guest
+    /// <see cref="FillSurfaceCore"/> path; this is only reached when the guest
     /// programs a partial <c>NV097_CLEAR_SURFACE_R/G/B/A</c> or a depth-only /
-    /// stencil-only zeta clear.
+    /// stencil-only zeta clear. <paramref name="swizzle"/> selects the
+    /// surface's Morton layout over the pitch walk.
     /// </summary>
-    private void MergeSurface(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax,
-        uint pixel, uint mask)
+    private void MergeSurfaceCore(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax,
+        uint pixel, uint mask, bool swizzle)
     {
         using GpuWriteBatch batch = new(_memoryFast);
-        if (GpuMemory is null || pitch == 0 || mask == 0 || bytes == 0)
+        if (GpuMemory is null || (pitch == 0 && !swizzle) || mask == 0 || bytes == 0)
         {
             return;
         }
@@ -4705,8 +4776,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         mask &= lanes;
         pixel &= lanes;
 
-        // 4-byte aligned 32-bit surfaces can merge in the RAM view directly.
-        if (bytes == 4
+        // 4-byte aligned 32-bit pitch surfaces can merge in the RAM view
+        // directly; the swizzled layout keeps the per-pixel walk.
+        if (!swizzle
+            && bytes == 4
             && (offset & 3u) == 0
             && (pitch & 3u) == 0
             && _memoryFast is not null
@@ -4733,7 +4806,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             uint row = offset + (y * pitch);
             for (uint x = xmin; x <= xmax; x++)
             {
-                uint address = row + (x * bytes);
+                uint address = swizzle
+                    ? offset + (SwizzleSurfaceTexelOffset(x, y) * bytes)
+                    : row + (x * bytes);
                 if (address + bytes > RamSize)
                 {
                     return;
@@ -7641,9 +7716,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private uint ZetaBytesPerPixel()
     {
-        return ((_surfaceFormat & 0xF00u) >> 8) != SurfaceTypePitch
-            ? 0
-            : ((_surfacePitch >> 16) & 0xFFFFu) == 0
+        bool pitch = ((_surfacePitch >> 16) & 0xFFFFu) != 0;
+        // A swizzled zeta surface ignores the pitch register (the reference
+        // binds it with the color surface's log2 dimensions), so an unset
+        // pitch is still a backed zeta target.
+        return (!pitch && !_surfaceSwizzleTarget)
             ? 0
             : ((_surfaceFormat >> 4) & 0xFu) switch
             {
@@ -8239,7 +8316,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         bool haveZeta = false;
         if ((stencilActive || depthActive) && zetaBytes != 0)
         {
-            zetaAddress = _zetaSurfaceBase + _surfaceZetaOffset + (y * zetaPitch) + (x * zetaBytes);
+            zetaAddress = _zetaSurfaceBase + _surfaceZetaOffset +
+                (_surfaceSwizzleTarget
+                    ? SwizzleSurfaceTexelOffset(x, y) * zetaBytes
+                    : (y * zetaPitch) + (x * zetaBytes));
             if (zetaAddress + zetaBytes <= RamSize)
             {
                 storedZeta = zetaBytes == 4 ? ReadGpu(zetaAddress) : ReadHalf(zetaAddress);
@@ -8336,7 +8416,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         if (colorWrite)
         {
-            uint address = _colorSurfaceBase + PresentedColorOffset + (y * pitch) + (x * bytes);
+            uint address = _colorSurfaceBase + PresentedColorOffset +
+                (_surfaceSwizzleTarget
+                    ? SwizzleSurfaceTexelOffset(x, y) * bytes
+                    : (y * pitch) + (x * bytes));
             (float R, float G, float B, float A) src = (r, g, b, a);
             (float R, float G, float B, float A) result = src;
             bool needDst = _blendEnable || (_colorMask & ColorMaskAll) != ColorMaskAll;
@@ -8592,6 +8675,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
+        LoadSurfaceGeometry();
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
         _colorSurfaceBase = SurfaceBase(_dmaColor);
@@ -8607,7 +8691,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        IPgraphBackend? backend = Backend;
+        // A swizzled target is painted by the software rasterizer only: the
+        // backend's surfaces are pitch-addressed, and these targets are
+        // offscreen render-to-texture passes the guest samples later. The
+        // front buffer the guest presents stays a PITCH surface.
+        IPgraphBackend? backend = _surfaceSwizzleTarget ? null : Backend;
         if (backend is not null)
         {
             PgraphDrawInfo backendInfo = BuildLegacyDrawInfo(
@@ -10245,6 +10333,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
+        LoadSurfaceGeometry();
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
         _colorSurfaceBase = SurfaceBase(_dmaColor);
@@ -10260,7 +10349,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        IPgraphBackend? backend = Backend;
+        // A swizzled target is painted by the software rasterizer only: the
+        // backend's surfaces are pitch-addressed, and these targets are
+        // offscreen render-to-texture passes the guest samples later. The
+        // front buffer the guest presents stays a PITCH surface.
+        IPgraphBackend? backend = _surfaceSwizzleTarget ? null : Backend;
         if (backend is not null)
         {
             PgraphDrawInfo backendInfo = BuildCachedDrawInfo(a, b, c, clipX, clipY, clipW, clipH, bytes, zetaBytes);
@@ -10337,6 +10430,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                                 _samplerPlans[0].Convolution == 0 &&
                                 texModes[0] == PshCombiner.TexModeProject2D &&
                                 bytes == 4 &&
+                                !_surfaceSwizzleTarget &&
                                 !_depthTestEnable &&
                                 !_stencilTestEnable &&
                                 _colorMask == ColorMaskAll &&
@@ -10488,7 +10582,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (!compiledModulate && !DiagnosticGenericFill && _combinerFastKind is 2 or 3 &&
             bytes == 4 && zetaBytes == 0 && _colorMask == ColorMaskAll &&
             !_blendEnable && !_alphaTestEnable && GpuMemory is not null &&
-            !anyClipPlane && !anyStageDotReader)
+            !anyClipPlane && !anyStageDotReader && !_surfaceSwizzleTarget)
         {
             compiledLighting = true;
             if (texModes[0] == PshCombiner.TexModeProject2D)
