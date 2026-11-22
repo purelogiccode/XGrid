@@ -94,13 +94,15 @@ passes for reference.
 
 ## Host control block (XCN1)
 
-The section is `1 MB guest RAM + 0x10800` of control data. The CPU runs in
-`xgridcpu-host.exe`; C# owns the section, the read shadows and the write ring.
+The section is created by C#; the layout is `RAM at 0`, then the control area
+at a C#-chosen offset passed as `xgridcpu-host.exe <section> <ctrl-offset>`.
+The header holds `ram_size`, `shadow_size` and the window table; the shadow
+area starts at `ctrl + 0x100` and the ring and registers follow it.
 
 | Offset | Field |
 |---|---|
 | 0 | `magic` (`'XGCH'`) |
-| 4 | `version` (2) |
+| 4 | `version` (3) |
 | 8 | `ready` (host sets 1 after RAM/window mapping) |
 | 12 | `quit` |
 | 16 | `status` (1 = run requested, 2 = stopped) |
@@ -110,17 +112,15 @@ The section is `1 MB guest RAM + 0x10800` of control data. The CPU runs in
 | 36 | `ring_count` |
 | 40 | `irq_pending` (C# sets 1) |
 | 44 | `irq_vector` (0-255) |
-| 48 | `reset` (1 = re-seat the CPU at 0x1000:0x8000) |
+| 48 | `reset` (1 = architectural reset, 2 = real mode at 0x1000:0x8000) |
 | 52 | `nwindows` |
-| 56 | `windows[8]` - `{base, size, flags, shadow}` (16 bytes each) |
-| 184 | `io_state` (0 idle, 1 request, 2 done) |
-| 188 | `io_flags` (bit0: port I/O) |
-| 192 | `io_addr`, 196 `io_size`, 200 `io_value` (u64), 208 `io_icount` (u64) |
-| 0x100 | `shadow[0x10000]` - shadow windows are slices of this |
-| 0x10100 | `ring[64]` - queued `XgcMmioAccess` writes |
-| 0x10700 | `XgcRegs` (13 x u32) |
+| 56 | `windows[8]` - `{base, size, flags, shadow, priority}` (20 bytes each) |
+| 216 | `io_state` (0 idle, 1 request, 2 done) |
+| 220 | `io_flags` (bit0: port I/O) |
+| 224 | `io_addr`, 228 `io_size`, 232 `io_value` (u64), 240 `io_icount` (u64) |
+| 248 | `ram_size`, 252 `shadow_size` |
 
-Window flags: `1` = the base is an I/O port, `2` = live reads.
+Window flags: `1` = the base is an I/O port, `2` = live reads, `4` = direct.
 
 - **Shadow window** (`0`): reads return bytes from the section shadow that C#
   refreshes between slices. Use it for ROM/flash and registers whose value is
@@ -130,8 +130,33 @@ Window flags: `1` = the base is an I/O port, `2` = live reads.
   drains the write ring in order and answers into `io_value` with
   `io_state = 2`. This makes device registers - and device **time**, via
   `io_icount` - exact at the access.
-- Writes are always queued and are published to the section **before** a live
-  read is announced, so a read observes every earlier write in order.
+- **Direct window** (`4`): the shadow slice is plain memory
+  (`memory_region_init_ram_ptr`), so the CPU reads and writes it with no
+  callback. Use it for RAM, flash images, ROM overlays and aliases; `priority`
+  orders overlaps (the MCPX overlay over the flash mirror).
+
+Writes are always queued and are published to the section **before** a live
+read is announced, so a read observes every earlier write in order.
+
+## Boot ROM probe (XCN2)
+
+```powershell
+$env:XGRIDCPU_HOST = (Resolve-Path native/xgridcpu/xgridcpu-host.exe).Path
+dotnet run --project tools/xcn1-boot-probe -c Release -- `
+  data/xemu/Complex_4627.bin data/xemu/mcpx_1.0.bin 200000000
+```
+
+The probe maps 64 MB RAM, the 1 MB BIOS at `0xF0000000`, its 16 MB alias at
+`0xFF000000` and the overlay at `0xFFF00000` (BIOS + the 512-byte MCPX ROM at
+the top), then runs an architectural reset from `0xFFFFFFF0`. The 1BL enters
+protected mode (`CS=0x0008`), reads the BIOS xcode stream at `0xFF000080`
+through the mirror (`ESI=0xFF00025D`), programs the chipset over PCI config
+space and reaches the **AMD756 SMBus handshake at I/O ports
+`0xC000`-`0xC00A`**, polling `in al, 0xC000` for status `0x10` (the SMC). With
+no device windows mapped it retries forever - the expected stop, and exactly
+the device the C# machine already models (`Amd756Smbus` + `SmcDevice`).
+
+Measured: 200M steps in 0.797 s = **251 Msteps/s** (TB cache hot, ROM only).
 
 ## Measured seam costs (H1, 2026-11-22)
 

@@ -27,20 +27,12 @@
 #include "xgridcpu.h"
 
 #define XGC_HOST_MAGIC   0x58474348u
-#define XGC_HOST_VERSION 2u
-
-#define XGC_HOST_RAM      (1024u * 1024u)
-#define XGC_HOST_CTRL     XGC_HOST_RAM
-#define XGC_HOST_SHADOW   0x100u
-#define XGC_HOST_SHADOWSZ 0x10000u
-#define XGC_HOST_RING     (XGC_HOST_SHADOW + XGC_HOST_SHADOWSZ)
-#define XGC_HOST_RINGSZ   (64u * 24u)
-#define XGC_HOST_REGS     (XGC_HOST_RING + XGC_HOST_RINGSZ)
-#define XGC_HOST_SECTION  (XGC_HOST_REGS + 0x100u)
+#define XGC_HOST_VERSION 3u
 
 #define XGC_HOST_MAX_WINDOWS 8
 #define XGC_WIN_IO           0x1u  /* the base is an I/O port */
 #define XGC_WIN_LIVE         0x2u  /* reads are serviced by C# */
+#define XGC_WIN_DIRECT       0x4u  /* the shadow slice is plain memory */
 
 #define XGC_IO_IDLE     0u
 #define XGC_IO_REQUEST  1u
@@ -52,6 +44,7 @@ typedef struct XgcHostWindow {
     uint32_t size;
     uint32_t flags;
     uint32_t shadow; /* byte offset into the section's shadow area */
+    int32_t priority;
 } XgcHostWindow;
 
 typedef struct XgcHostControl {
@@ -75,6 +68,8 @@ typedef struct XgcHostControl {
     uint32_t io_size;
     volatile uint64_t io_value;
     uint64_t io_icount;
+    uint32_t ram_size;
+    uint32_t shadow_size;
 } XgcHostControl;
 
 #define XGC_ASSERT_OFF(field, off) \
@@ -88,20 +83,23 @@ XGC_ASSERT_OFF(irq_vector, 44);
 XGC_ASSERT_OFF(reset, 48);
 XGC_ASSERT_OFF(nwindows, 52);
 XGC_ASSERT_OFF(windows, 56);
-XGC_ASSERT_OFF(io_state, 184);
-XGC_ASSERT_OFF(io_flags, 188);
-XGC_ASSERT_OFF(io_addr, 192);
-XGC_ASSERT_OFF(io_size, 196);
-XGC_ASSERT_OFF(io_value, 200);
-XGC_ASSERT_OFF(io_icount, 208);
-_Static_assert(sizeof(XgcHostWindow) == 16, "window size");
-_Static_assert(offsetof(XgcHostControl, windows) + 8 * 16 <= 0x100,
+XGC_ASSERT_OFF(io_state, 216);
+XGC_ASSERT_OFF(io_flags, 220);
+XGC_ASSERT_OFF(io_addr, 224);
+XGC_ASSERT_OFF(io_size, 228);
+XGC_ASSERT_OFF(io_value, 232);
+XGC_ASSERT_OFF(io_icount, 240);
+XGC_ASSERT_OFF(ram_size, 248);
+XGC_ASSERT_OFF(shadow_size, 252);
+_Static_assert(sizeof(XgcHostWindow) == 20, "window size");
+_Static_assert(offsetof(XgcHostControl, windows) + 8 * 20 <= 216,
                "header fits");
 
 typedef struct XgcHost {
     uint8_t *base;
     XgcHostControl *ctl;
     XgcCpu *cpu;
+    uint8_t *shadow;
     XgcMmioAccess *ring;
     XgcRegs *regs;
     bool error;
@@ -161,19 +159,23 @@ static int host_map_windows(XgcHost *h)
         XgcHostWindow *w = &h->ctl->windows[i];
         bool is_io = (w->flags & XGC_WIN_IO) != 0;
         bool live = (w->flags & XGC_WIN_LIVE) != 0;
+        bool direct = (w->flags & XGC_WIN_DIRECT) != 0;
         XgcHostWindowCtx *ctx;
         uint8_t *shadow;
 
         if (w->size == 0) {
             return -1;
         }
-        if (!live) {
-            if (w->shadow + w->size > XGC_HOST_SHADOWSZ) {
+        shadow = h->shadow + w->shadow;
+        if (w->shadow + w->size > h->ctl->shadow_size) {
+            return -1;
+        }
+        if (direct) {
+            if (xgc_map_direct(h->cpu, w->base, w->size, shadow,
+                               w->priority) != XGC_OK) {
                 return -1;
             }
-            shadow = h->base + XGC_HOST_CTRL + XGC_HOST_SHADOW + w->shadow;
-        } else {
-            shadow = NULL;
+            continue;
         }
         ctx = calloc(1, sizeof(*ctx));
         ctx->host = h;
@@ -206,12 +208,15 @@ int main(int argc, char **argv)
     uint8_t *base;
     XgcHostControl *ctl;
     XgcHost host;
+    uint64_t ctl_offset;
 
-    if (argc < 2) {
-        fprintf(stderr, "usage: %s <shared-section-name>\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s <shared-section-name> <control-offset>\n",
+                argv[0]);
         return 2;
     }
 
+    ctl_offset = _strtoui64(argv[2], NULL, 0);
     mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, argv[1]);
     if (!mapping) {
         fprintf(stderr, "OpenFileMapping(%s) failed: %lu\n", argv[1],
@@ -226,7 +231,7 @@ int main(int argc, char **argv)
         return 3;
     }
 
-    ctl = (XgcHostControl *)(base + XGC_HOST_CTRL);
+    ctl = (XgcHostControl *)(base + ctl_offset);
     if (ctl->magic != XGC_HOST_MAGIC || ctl->version != XGC_HOST_VERSION) {
         fprintf(stderr, "shared control magic/version mismatch: %08x/%u\n",
                 ctl->magic, ctl->version);
@@ -236,8 +241,10 @@ int main(int argc, char **argv)
     memset(&host, 0, sizeof(host));
     host.base = base;
     host.ctl = ctl;
-    host.ring = (XgcMmioAccess *)(base + XGC_HOST_CTRL + XGC_HOST_RING);
-    host.regs = (XgcRegs *)(base + XGC_HOST_CTRL + XGC_HOST_REGS);
+    host.shadow = (uint8_t *)ctl + 0x100;
+    host.ring = (XgcMmioAccess *)(host.shadow + ctl->shadow_size);
+    host.regs = (XgcRegs *)(host.shadow + ctl->shadow_size +
+                            64u * sizeof(XgcMmioAccess));
 
     if (xgc_init() != XGC_OK) {
         fprintf(stderr, "xgc_init failed\n");
@@ -248,7 +255,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "xgc_create failed\n");
         return 4;
     }
-    if (xgc_map_ram(host.cpu, 0, XGC_HOST_RAM, base) != XGC_OK ||
+    if (ctl->ram_size == 0 ||
+        xgc_map_ram(host.cpu, 0, ctl->ram_size, base) != XGC_OK ||
         host_map_windows(&host) != 0) {
         fprintf(stderr, "map failed\n");
         return 4;
@@ -269,7 +277,11 @@ int main(int argc, char **argv)
             int rc;
 
             if (ctl->reset) {
-                xgc_reset_real(host.cpu, 0x1000, 0x8000);
+                if (ctl->reset == 2) {
+                    xgc_reset_real(host.cpu, 0x1000, 0x8000);
+                } else {
+                    xgc_reset(host.cpu);
+                }
                 ctl->reset = 0;
             }
             if (ctl->irq_pending) {

@@ -15,12 +15,14 @@ namespace XGrid.Xcn1HostProbe
     internal static unsafe class Program
     {
         private const int RamSize = 1024 * 1024;
-        private const int SectionSize = RamSize + 0x10800;
+        private const int ShadowSize = 0x10000;
+        private const int CtlOffset = RamSize;
+        private const int SectionSize = CtlOffset + 0x100 + ShadowSize + (64 * 24) + 0x100;
 
         private const uint Magic = 0x58474348u;
-        private const uint Version = 2u;
+        private const uint Version = 3u;
 
-        // Control-block offsets, relative to the control area (RamSize).
+        // Control-block offsets, relative to the control area (CtlOffset).
         private const int OffMagic = 0;
         private const int OffVersion = 4;
         private const int OffReady = 8;
@@ -35,15 +37,17 @@ namespace XGrid.Xcn1HostProbe
         private const int OffReset = 48;
         private const int OffNWindows = 52;
         private const int OffWindows = 56;
-        private const int OffIoState = 184;
-        private const int OffIoFlags = 188;
-        private const int OffIoAddr = 192;
-        private const int OffIoSize = 196;
-        private const int OffIoValue = 200;
-        private const int OffIoIcount = 208;
+        private const int OffIoState = 216;
+        private const int OffIoFlags = 220;
+        private const int OffIoAddr = 224;
+        private const int OffIoSize = 228;
+        private const int OffIoValue = 232;
+        private const int OffIoIcount = 240;
+        private const int OffRamSize = 248;
+        private const int OffShadowSize = 252;
         private const int OffShadow = 0x100;
-        private const int OffRing = 0x10100;
-        private const int OffRegs = 0x10700;
+        private const int OffRing = 0x100 + ShadowSize;
+        private const int OffRegs = OffRing + (64 * 24);
 
         private const uint WinIo = 0x1;
         private const uint WinLive = 0x2;
@@ -105,19 +109,21 @@ namespace XGrid.Xcn1HostProbe
             try
             {
                 basePtr += view.PointerOffset;
-                byte* ctl = basePtr + RamSize;
+                byte* ctl = basePtr + CtlOffset;
 
                 Write32(ctl + OffMagic, Magic);
                 Write32(ctl + OffVersion, Version);
-                WriteWindow(ctl, 0, 0xF0000000u, 0x1000, 0, 0);
-                WriteWindow(ctl, 1, 0xF1000000u, 0x1000, WinLive, 0);
-                WriteWindow(ctl, 2, 0x60u, 8, WinIo | WinLive, 0);
+                Write32(ctl + OffRamSize, RamSize);
+                Write32(ctl + OffShadowSize, ShadowSize);
+                WriteWindow(ctl, 0, 0xF0000000u, 0x1000, 0, 0, 0);
+                WriteWindow(ctl, 1, 0xF1000000u, 0x1000, WinLive, 0, 0);
+                WriteWindow(ctl, 2, 0x60u, 8, WinIo | WinLive, 0, 0);
                 Write32(ctl + OffNWindows, 3);
 
                 // Shadow-only read window: 0xF0000000 -> 0xCAFEBABE.
                 *(uint*)(ctl + OffShadow) = 0xCAFEBABEu;
 
-                var psi = new ProcessStartInfo(host, name)
+                var psi = new ProcessStartInfo(host, $"{name} {CtlOffset}")
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -233,7 +239,7 @@ namespace XGrid.Xcn1HostProbe
                 irqHandler.CopyTo(new Span<byte>(basePtr + 0x3000, irqHandler.Length));
                 *(uint*)(basePtr + 0x2004) = 0;
 
-                Write32(ctl + OffReset, 1);
+                Write32(ctl + OffReset, 2);
                 Write32(ctl + OffRunBudget, 10_000);
                 RunSlice(ctl, process);
 
@@ -257,7 +263,7 @@ namespace XGrid.Xcn1HostProbe
                     0xEB, 0xFE,
                 };
                 liveCode.CopyTo(new Span<byte>(basePtr + 0x1000, liveCode.Length));
-                Write32(ctl + OffReset, 1);
+                Write32(ctl + OffReset, 2);
                 Write32(ctl + OffRunBudget, 400_000);
                 int beforeLive = s_liveReads;
                 s_serviceTicks = 0;
@@ -286,7 +292,7 @@ namespace XGrid.Xcn1HostProbe
                     0xEB, 0xFE,
                 };
                 shadowCode.CopyTo(new Span<byte>(basePtr + 0x1000, shadowCode.Length));
-                Write32(ctl + OffReset, 1);
+                Write32(ctl + OffReset, 2);
                 Write32(ctl + OffRunBudget, 400_000);
                 var shadowWatch = Stopwatch.StartNew();
                 int beforeShadow = s_liveReads + s_portReads;
@@ -308,7 +314,7 @@ namespace XGrid.Xcn1HostProbe
                     0xEB, 0xFE,
                 };
                 ramCode.CopyTo(new Span<byte>(basePtr + 0x1000, ramCode.Length));
-                Write32(ctl + OffReset, 1);
+                Write32(ctl + OffReset, 2);
                 Write32(ctl + OffRunBudget, 400_000);
                 var ramWatch = Stopwatch.StartNew();
                 RunSlice(ctl, process);
@@ -328,7 +334,7 @@ namespace XGrid.Xcn1HostProbe
                     0xEB, 0xFE,
                 };
                 writeCode.CopyTo(new Span<byte>(basePtr + 0x1000, writeCode.Length));
-                Write32(ctl + OffReset, 1);
+                Write32(ctl + OffReset, 2);
                 Write32(ctl + OffRunBudget, 400_000);
                 var writeWatch = Stopwatch.StartNew();
                 RunSlice(ctl, process);
@@ -340,7 +346,7 @@ namespace XGrid.Xcn1HostProbe
 
                 // Perf phase: a tight self-loop at 0x1000.
                 *(uint*)(basePtr + 0x1000) = 0xFEEB;
-                Write32(ctl + OffReset, 1);
+                Write32(ctl + OffReset, 2);
                 Write32(ctl + OffRunBudget, 100_000_000);
                 var sw = Stopwatch.StartNew();
                 RunSlice(ctl, process);
@@ -379,13 +385,14 @@ namespace XGrid.Xcn1HostProbe
         }
 
         private static void WriteWindow(byte* ctl, int index, uint address, uint size,
-            uint flags, uint shadow)
+            uint flags, uint shadow, int priority)
         {
-            byte* w = ctl + OffWindows + (index * 16);
+            byte* w = ctl + OffWindows + (index * 20);
             Write32(w, address);
             Write32(w + 4, size);
             Write32(w + 8, flags);
             Write32(w + 12, shadow);
+            Write32(w + 16, (uint)priority);
         }
 
         private static void RunSlice(byte* ctl, Process process)
@@ -465,3 +472,4 @@ namespace XGrid.Xcn1HostProbe
         }
     }
 }
+

@@ -70,6 +70,8 @@ struct XgcCpu {
     MemoryRegion *ring_mr[8];
     XgcRing *rings[8];
     int nrings;
+    MemoryRegion *direct_mr[16];
+    int ndirect;
     XgcMmioAccess ring[XGC_RING_CAP];
     int ring_head;
     int ring_tail;
@@ -388,6 +390,10 @@ void xgc_destroy(XgcCpu *c)
         }
         g_free(c->rings[i]);
     }
+    for (i = 0; i < c->ndirect; i++) {
+        memory_region_destroy(c->direct_mr[i]);
+        g_free(c->direct_mr[i]);
+    }
     if (c->cpu) {
         object_unref(OBJECT(c->cpu));
     }
@@ -506,6 +512,24 @@ int xgc_map_io_ring_live(XgcCpu *c, uint32_t port, uint32_t size,
     return xgc_map_ring_impl(c, port, size, NULL, true, true, read, opaque);
 }
 
+int xgc_map_direct(XgcCpu *c, uint32_t gpa, uint32_t size, void *host,
+                   int priority)
+{
+    MemoryRegion *mr;
+
+    if (!c || !host || size == 0 || c->ndirect >= 16) {
+        return XGC_ERR_ARG;
+    }
+    mr = g_new0(MemoryRegion, 1);
+    memory_region_init_ram_ptr(mr, NULL, "xgrid-direct", size, host);
+    memory_region_add_subregion_overlap(get_system_memory(), gpa, mr, priority);
+    c->direct_mr[c->ndirect++] = mr;
+    xgc_flush_tb(c);
+    XGC_TRACE("direct map gpa=%x size=%x prio=%d host=%p\n", gpa, size,
+              priority, host);
+    return XGC_OK;
+}
+
 int xgc_mmio_take(XgcCpu *c, XgcMmioAccess *access)
 {
     if (!c || !access || c->ring_head == c->ring_tail) {
@@ -563,6 +587,19 @@ int xgc_reset_real(XgcCpu *c, uint32_t eip, uint32_t esp)
         return XGC_ERR_ARG;
     }
     xgc_set_real_mode(c, eip, esp);
+    return XGC_OK;
+}
+
+int xgc_reset(XgcCpu *c)
+{
+    if (!c) {
+        return XGC_ERR_ARG;
+    }
+    /* Architectural reset: CS.base 0xFFFF0000, EIP 0xFFF0, real mode. */
+    cpu_reset(c->cpu);
+    xgc_flush_tb(c);
+    XGC_TRACE("reset: eip=%x cs=%x\n", cpu_env(c->cpu)->eip,
+              cpu_env(c->cpu)->segs[R_CS].selector);
     return XGC_OK;
 }
 

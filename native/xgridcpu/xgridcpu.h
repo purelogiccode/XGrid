@@ -88,11 +88,17 @@ XGC_API int xgc_map_io_ring_shadow(XgcCpu *cpu, uint32_t port, uint32_t size,
 XGC_API int xgc_map_io_ring_live(XgcCpu *cpu, uint32_t port, uint32_t size,
                                  XgcIoReadFn read, void *opaque);
 
+/* Direct windows: the CPU reads and writes `host` with no callback (RAM, ROM,
+ * flash and aliases). `priority` orders overlapping windows. */
+XGC_API int xgc_map_direct(XgcCpu *cpu, uint32_t gpa, uint32_t size,
+                           void *host, int priority);
+
 /* Inject one hardware interrupt vector (0-255); the x86 CPU takes it at the
  * next instruction boundary when IF=1. */
 XGC_API int xgc_set_irq(XgcCpu *cpu, uint32_t vector);
 
 XGC_API int xgc_reset_real(XgcCpu *cpu, uint32_t eip, uint32_t esp);
+XGC_API int xgc_reset(XgcCpu *cpu);
 XGC_API int xgc_run(XgcCpu *cpu, uint32_t max_insns, uint64_t *executed);
 
 XGC_API void xgc_get_regs(XgcCpu *cpu, XgcRegs *regs);

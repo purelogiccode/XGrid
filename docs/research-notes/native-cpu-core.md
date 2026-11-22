@@ -200,9 +200,27 @@ process boundary adds ~2 us per live read; shadow windows avoid it and the C#
 service is ~27 ns. At the recorded ~1M device accesses per 30B 007 steps, the
 live path is ~2 s per 30B (~6% of guest time at 1x).
 
-**Next (XCN1):** map every Xbox window (NV2A, APU/ACI, PCI config, ROM/flash,
-SMC) and the PIO space; wire the C# PIC/PIT through `irq_pending` and the
-icount deadline; then the machine seam and the MCPX boot ROM.
+**XCN2 boot ROM probe (2026-11-22).** The shim gained an architectural reset
+(`xgc_reset`, CS.base `0xFFFF0000`, EIP `0xFFF0`) and direct windows
+(`memory_region_init_ram_ptr`, no callback, priority-ordered overlaps), and the
+host now takes the control offset as an argument so C# owns the whole layout.
+`tools/xcn1-boot-probe` maps 64 MB RAM, the 1 MB BIOS at `0xF0000000`, its
+16 MB alias at `0xFF000000` and the overlay at `0xFFF00000` (BIOS + the
+512-byte MCPX ROM at the top), then runs from the reset vector. The 1BL
+executes: it enters protected mode (`CS=0x0008`), runs the BIOS **xcode
+interpreter** from `0xFF000080` through the mirror (`ESI=0xFF00025D`), programs
+the chipset over PCI config space and reaches the **AMD756 SMBus handshake at
+I/O ports `0xC000`-`0xC00A`**, polling `in al, 0xC000` for status `0x10` (the
+SMC). With no device window mapped it retries forever: the expected stop, and
+the exact device the C# machine already models (`Amd756Smbus` + `SmcDevice`).
+200M steps ran in 0.797 s = **251 Msteps/s**.
+
+**Next (XCN2):** back the machine's RAM with the section, map every
+`AddressSpace` region as a live window and every `IoSpace` region as a live
+port window (dispatch to the existing C# devices), drive the PIC from
+`irq_pending` and advance the timers by the executed count. The 1BL's first
+blocker is already identified: `Amd756Smbus` at ports `0xC000`-`0xC00F` and the
+SMC at SMBus address `0x10`.
 ## Risks / open questions
 
 1. **Standalone init.** QEMU has no system-mode library target. The shim must
