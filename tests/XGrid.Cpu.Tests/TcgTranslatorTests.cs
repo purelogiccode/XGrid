@@ -1792,4 +1792,66 @@ public sealed class TcgTranslatorTests
             },
             sse: true);
     }
+
+    [Fact]
+    public void PollStopsTheBlockAndReturnsTheNextMemberEip()
+    {
+        var builder = new TcgBuilder(0x1000);
+        byte[] first = [0xB8, 0x01, 0x00, 0x00, 0x00];
+        byte[] second = [0xBB, 0x02, 0x00, 0x00, 0x00];
+        Assert.True(I386Translator.TryTranslate(Decoder.Decode(first), 0x1000, builder, out _, out _));
+        builder.Poll(0x1005);
+        Assert.True(I386Translator.TryTranslate(Decoder.Decode(second), 0x1005, builder, out _, out _));
+        builder.SetEip(0x100A);
+        builder.Exit();
+
+        var state = new TcgExecutionState { Eflags = FlagBits.Reserved1 };
+        state.Poll = new StopAtFirstPoll();
+        TcgInterpreter.Execute(builder.Build(), state, memory: null, fpu: null, context: null);
+
+        Assert.True(state.Interrupted);
+        Assert.Equal(1, state.MembersDone);
+        Assert.Equal(1u, state.Registers[0]);
+        Assert.Equal(0u, state.Registers[3]);
+        Assert.Equal(0x1005u, state.Eip);
+    }
+
+    [Fact]
+    public void PollWithoutInterruptRunsTheWholeBlock()
+    {
+        var builder = new TcgBuilder(0x1000);
+        byte[] first = [0xB8, 0x01, 0x00, 0x00, 0x00];
+        byte[] second = [0xBB, 0x02, 0x00, 0x00, 0x00];
+        Assert.True(I386Translator.TryTranslate(Decoder.Decode(first), 0x1000, builder, out _, out _));
+        builder.Poll(0x1005);
+        Assert.True(I386Translator.TryTranslate(Decoder.Decode(second), 0x1005, builder, out _, out _));
+        builder.SetEip(0x100A);
+        builder.Exit();
+
+        var state = new TcgExecutionState { Eflags = FlagBits.Reserved1 };
+        state.Poll = new NeverPoll();
+        TcgInterpreter.Execute(builder.Build(), state, memory: null, fpu: null, context: null);
+
+        Assert.False(state.Interrupted);
+        Assert.Equal(1u, state.Registers[0]);
+        Assert.Equal(2u, state.Registers[3]);
+        Assert.Equal(0x100Au, state.Eip);
+    }
+
+    private sealed class StopAtFirstPoll : ITcgPollObserver
+    {
+        public bool BeforeMember(TcgExecutionState state, uint eip)
+        {
+            state.Eip = eip;
+            return true;
+        }
+    }
+
+    private sealed class NeverPoll : ITcgPollObserver
+    {
+        public bool BeforeMember(TcgExecutionState state, uint eip)
+        {
+            return false;
+        }
+    }
 }

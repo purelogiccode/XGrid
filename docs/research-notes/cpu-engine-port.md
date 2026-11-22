@@ -207,6 +207,26 @@ multi-member TBs plus the codegen: the next slice is the per-member poll contrac
 (TSC++ and a pending-interrupt check between members, with the block abandoned
 and the interrupt delivered), then re-measure.
 
+**Slice 3 (2026-11-22): the per-member poll contract and multi-member TBs.**
+`TcgOpKind.Poll` sits between members: it advances TSC, checks the PIC and, when
+an interrupt is pending, publishes the live block state to the CPU, delivers the
+interrupt with the next member's EIP as the return address, and abandons the
+block. The member limit (`TcgExecutionState.MemberLimit`) makes the caller's
+step budget exact - the last slice's divergence was a budget-stop returning
+without publishing the block's EFLAGS, found by comparing the printed state
+(EFLAGS `0x02` vs `0x06` at identical EIP/registers). Blocks now cover up to 16
+members with a probe translation so a declined member never leaves a half-emitted
+poll.
+
+**Evidence.** Exact against the accurate engine at 100k/1M/10M steps (RAM and CPU
+SHAs identical) and at the **1B accurate anchors**: triangle RAM `E58AE5D7` /
+CPU `C43D5B49`, menu RAM `5C0CF968` / CPU `E2B4D327` (both `vec=0`). Speed:
+**15.51 Msteps/s** at 10M (reference 14.91 same window) and **11.06**
+(triangle 1B) / **10.34** (menu 1B) Msteps/s, with translated shares 87.7% /
+95.3%. The engine is correct but not yet faster than the fast raw engine, so per
+the task contract it is **not switched**; its role is the interpreter
+replacement for the non-JIT share (the fallback list is CLI/STI/CALL/RET).
+
 ### P1S5 - parity and switchover (4-6 sessions)
 
 - Four accurate 1B goldens, ktest, 22-row corpus, 30B/100B 007 legs exact.

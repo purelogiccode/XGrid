@@ -158,6 +158,9 @@ public enum TcgOpKind
     /// <summary>An SSE instruction (<see cref="TcgSse"/> helper).</summary>
     Sse,
 
+    /// <summary>A mid-block poll (TSC and pending interrupts before the next member).</summary>
+    Poll,
+
     /// <summary>Writes the condition result (0/1) into a temp (SETcc).</summary>
     SetCondition,
 

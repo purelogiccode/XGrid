@@ -31,13 +31,15 @@ internal sealed class TcgBlockCache
     /// <param name="addressSize">The default address size.</param>
     /// <param name="program">The cached program.</param>
     /// <param name="length">The block length in bytes.</param>
+    /// <param name="members">The guest instruction count.</param>
     /// <returns>True when the cache holds a valid block.</returns>
     public bool TryGet(
         uint eip,
         int operandSize,
         int addressSize,
         out TcgProgram? program,
-        out int length)
+        out int length,
+        out int members)
     {
         Entry? entry = _entries[eip & (Slots - 1)];
         if (entry is not null
@@ -48,11 +50,13 @@ internal sealed class TcgBlockCache
             Hits++;
             program = entry.Program;
             length = entry.Length;
+            members = entry.Members;
             return true;
         }
 
         program = null;
         length = 0;
+        members = 0;
         return false;
     }
 
@@ -63,13 +67,15 @@ internal sealed class TcgBlockCache
     /// <param name="addressSize">The default address size.</param>
     /// <param name="program">The translated program.</param>
     /// <param name="length">The block length in bytes.</param>
+    /// <param name="members">The guest instruction count.</param>
     public void Put(
         uint eip,
         ReadOnlySpan<byte> head,
         int operandSize,
         int addressSize,
         TcgProgram program,
-        int length)
+        int length,
+        int members)
     {
         Misses++;
         int slot = (int)(eip & (Slots - 1));
@@ -86,6 +92,7 @@ internal sealed class TcgBlockCache
             Head = head[..HeadBytes].ToArray(),
             Program = program,
             Length = length,
+            Members = members,
         };
     }
 
@@ -114,5 +121,7 @@ internal sealed class TcgBlockCache
         public TcgProgram Program { get; init; } = null!;
 
         public int Length { get; init; }
+
+        public int Members { get; init; }
     }
 }

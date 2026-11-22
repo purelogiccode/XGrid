@@ -820,6 +820,13 @@ public sealed class TcgBuilder
         _ops.Add(new TcgOp { Kind = TcgOpKind.ConditionalSetEip, Immediate = target, Condition = condition });
     }
 
+    /// <summary>Emits a mid-block poll before the next member.</summary>
+    /// <param name="nextEip">The next member's guest EIP.</param>
+    public void Poll(uint nextEip)
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Poll, Immediate = nextEip });
+    }
+
     /// <summary>Emits the end-of-block marker.</summary>
     public void Exit()
     {

@@ -461,6 +461,25 @@ public static class TcgInterpreter
                 case TcgOpKind.ReadFpuStatus:
                     temps[op.Dest] = (fpu ?? throw new InvalidOperationException("an x87 operation needs an FpuState")).StatusWord;
                     break;
+                case TcgOpKind.Poll:
+                    state.MembersDone++;
+                    if (state.MembersDone >= state.MemberLimit)
+                    {
+                        state.LimitReached = true;
+                        state.Eip = op.Immediate;
+                        state.Eflags = eflags;
+                        return;
+                    }
+
+                    if (state.Poll is not null && state.Poll.BeforeMember(state, op.Immediate))
+                    {
+                        // The observer published the delivered state (registers,
+                        // EFLAGS and the handler EIP) back into the state.
+                        state.Interrupted = true;
+                        return;
+                    }
+
+                    break;
                 case TcgOpKind.Sse:
                     eflags = TcgSse.Execute(
                         op.Instruction,

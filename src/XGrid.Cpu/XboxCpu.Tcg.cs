@@ -12,7 +12,7 @@ namespace XGrid.Cpu;
 /// declines. It is opt-in (<c>XGRID_TCG_ENGINE=1</c>) and never mixes with the
 /// JIT or spec-block engines.
 /// </summary>
-public sealed partial class XboxCpu : ITcgMemory
+public sealed partial class XboxCpu : ITcgMemory, ITcgPollObserver
 {
     /// <summary>Gets whether the TCG IR engine is enabled (the environment variable is read once).</summary>
     public static bool TcgEngineEnabled { get; } = string.Equals(
@@ -63,6 +63,10 @@ public sealed partial class XboxCpu : ITcgMemory
         {
             uint eip = Context.Eip;
             Context.Tsc++;
+            _tcgState.MembersDone = 0;
+            _tcgState.Interrupted = false;
+            _tcgState.LimitReached = false;
+            _tcgState.MemberLimit = budget - executed;
 
             if (InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
             {
@@ -83,10 +87,12 @@ public sealed partial class XboxCpu : ITcgMemory
             {
                 int operandSize = Context.DefaultOperandSize;
                 int addressSize = Context.DefaultAddressSize;
-                if (!TcgBlocks.TryGet(eip, operandSize, addressSize, out TcgProgram? program, out _))
+                if (!TcgBlocks.TryGet(
+                        eip, operandSize, addressSize, out TcgProgram? program, out _, out int members))
                 {
                     Fetch(buffer);
-                    if (!TryBuildTcgBlock(eip, buffer, operandSize, addressSize, out program, out int length))
+                    if (!TryBuildTcgBlock(
+                            eip, buffer, operandSize, addressSize, out program, out int length, out members))
                     {
                         TcgFallbackInstructions++;
                         StepWithoutAccounting();
@@ -94,7 +100,7 @@ public sealed partial class XboxCpu : ITcgMemory
                         continue;
                     }
 
-                    TcgBlocks.Put(eip, buffer, operandSize, addressSize, program!, length);
+                    TcgBlocks.Put(eip, buffer, operandSize, addressSize, program!, length, members);
                 }
 
                 for (int i = 0; i < 8; i++)
@@ -108,6 +114,7 @@ public sealed partial class XboxCpu : ITcgMemory
                 }
 
                 _tcgState.Eflags = Context.Eflags;
+                _tcgState.Poll = this;
                 TcgInterpreter.Execute(program!, _tcgState, this, Context.Fpu, Context);
                 for (int i = 0; i < 8; i++)
                 {
@@ -116,7 +123,25 @@ public sealed partial class XboxCpu : ITcgMemory
 
                 Context.Eflags = _tcgState.Eflags;
                 Context.Eip = _tcgState.Eip;
-                TcgTranslatedInstructions++;
+                if (_tcgState.Interrupted)
+                {
+                    // Completed members plus the delivery itself (the same
+                    // count Step's poll contributes).
+                    executed += _tcgState.MembersDone + 1;
+                    TcgTranslatedInstructions += _tcgState.MembersDone;
+                }
+                else if (_tcgState.LimitReached)
+                {
+                    executed += _tcgState.MembersDone;
+                    TcgTranslatedInstructions += _tcgState.MembersDone;
+                }
+                else
+                {
+                    executed += members;
+                    TcgTranslatedInstructions += members;
+                }
+
+                continue;
             }
             catch (PageFaultSignal fault)
             {
@@ -128,12 +153,53 @@ public sealed partial class XboxCpu : ITcgMemory
                 {
                     throw new UnhandledGuestException(14, eip);
                 }
-            }
 
-            executed++;
+                executed += _tcgState.MembersDone + 1;
+                continue;
+            }
         }
 
         return executed;
+    }
+
+    bool ITcgPollObserver.BeforeMember(TcgExecutionState state, uint eip)
+    {
+        Context.Tsc++;
+        if (InterruptSource is null || (Context.Eflags & FlagBits.If) == 0)
+        {
+            return false;
+        }
+
+        int vector = PollInterrupt();
+        if (vector < 0)
+        {
+            return false;
+        }
+
+        // Publish the live block state before the delivery: the handler's stack
+        // push and segment loads must see the block's registers, not the
+        // block-entry snapshot.
+        for (int i = 0; i < 8; i++)
+        {
+            Context.WriteRegister((Gpr)i, state.Registers[i]);
+        }
+
+        Context.Eflags = state.Eflags;
+        Context.Halted = false;
+        if (!TryTransferToInterrupt(vector, eip, false, 0))
+        {
+            return false;
+        }
+
+        InterruptCount++;
+        for (int i = 0; i < 8; i++)
+        {
+            state.Registers[i] = Context.ReadRegister((Gpr)i);
+        }
+
+        state.Eflags = Context.Eflags;
+        state.Eip = Context.Eip;
+        return true;
     }
 
     /// <summary>
@@ -146,17 +212,16 @@ public sealed partial class XboxCpu : ITcgMemory
         int operandSize,
         int addressSize,
         out TcgProgram? program,
-        out int length)
+        out int length,
+        out int members)
     {
         program = null;
         length = 0;
+        members = 0;
         var builder = new TcgBuilder(eip);
         Span<byte> source = stackalloc byte[Decoder.MaxInstructionLength];
         int offset = 0;
-        // One guest instruction per TB keeps the per-instruction interrupt
-        // poll and TSC accounting exact. Multi-member blocks need a per-member
-        // poll contract (P1S4 next slice).
-        for (int member = 0; member < 1; member++)
+        for (int member = 0; member < 16; member++)
         {
             uint memberEip = eip + (uint)offset;
             if (member == 0)
@@ -178,14 +243,29 @@ public sealed partial class XboxCpu : ITcgMemory
             }
 
             DecodedInstruction decoded = Decoder.Decode(source, operandSize, addressSize);
-            if (!decoded.IsValid
-                || !I386Translator.TryTranslate(decoded, memberEip, builder, out bool terminates, out _))
+            if (!decoded.IsValid)
             {
                 break;
             }
 
+            // Probe on a throwaway builder so a declined member never leaves a
+            // half-emitted program (and never emits its poll).
+            var probe = new TcgBuilder(memberEip);
+            if (!I386Translator.TryTranslate(decoded, memberEip, probe, out _, out _))
+            {
+                break;
+            }
+
+            if (member != 0)
+            {
+                builder.Poll(memberEip);
+            }
+
+            I386Translator.TryTranslate(
+                decoded, memberEip, builder, out bool terminates, out _);
             offset += decoded.Length;
             length = offset;
+            members++;
             if (terminates)
             {
                 program = builder.Build();
