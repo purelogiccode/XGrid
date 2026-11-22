@@ -77,10 +77,13 @@ public sealed class Nv2aCullFaceTests
     private static void WriteTriangle(ArrayMemory memory, bool clockwise)
     {
         // A clockwise triangle in Y-down screen space has positive signed area.
-        float[][] vertices = clockwise
+        WriteVertices(memory, clockwise
             ? [[2f, 2f], [12f, 2f], [2f, 12f]]
-            : [[2f, 2f], [2f, 12f], [12f, 2f]];
+            : [[2f, 2f], [2f, 12f], [12f, 2f]]);
+    }
 
+    private static void WriteVertices(ArrayMemory memory, float[][] vertices)
+    {
         for (int i = 0; i < 3; i++)
         {
             uint at = 0x2000u + ((uint)i * 16u);
@@ -91,15 +94,41 @@ public sealed class Nv2aCullFaceTests
         }
     }
 
+    /// <summary>Draws an arbitrary triangle with the common state.</summary>
+    private static (long Culled, ulong Pixels) DrawVertices(
+        float[][] vertices,
+        uint cullEnable,
+        uint cullFace,
+        uint frontFace)
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteVertices(memory, vertices);
+        PushDrawState(nv2A, memory, cullEnable, cullFace, frontFace);
+        return (nv2A.TrianglesCulled, nv2A.DrawnPixels);
+    }
+
     private static (long Culled, ulong Pixels) Draw(
         bool clockwise,
         uint cullEnable,
         uint cullFace,
         uint frontFace)
     {
-        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
-        WriteTriangle(memory, clockwise);
+        return DrawVertices(
+            clockwise
+                ? [[2f, 2f], [12f, 2f], [2f, 12f]]
+                : [[2f, 2f], [2f, 12f], [12f, 2f]],
+            cullEnable,
+            cullFace,
+            frontFace);
+    }
 
+    private static void PushDrawState(
+        Nv2AMmio nv2A,
+        ArrayMemory memory,
+        uint cullEnable,
+        uint cullFace,
+        uint frontFace)
+    {
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>
         {
             // 16x16 A8R8G8B8 surface at 0x3000 (pitch 0x40 = 16 pixels).
@@ -138,7 +167,6 @@ public sealed class Nv2aCullFaceTests
         };
 
         PushMethods(nv2A, memory, [.. pushes]);
-        return (nv2A.TrianglesCulled, nv2A.DrawnPixels);
     }
 
     [Fact]
@@ -203,6 +231,28 @@ public sealed class Nv2aCullFaceTests
         Assert.Equal(1, ccwCulled);
         Assert.Equal(0UL, cwPixels);
         Assert.Equal(0UL, ccwPixels);
+    }
+
+    [Fact]
+    public void DegenerateTriangle_IsRejectedWithoutACullCount()
+    {
+        // Two vertices coincide: area == 0, rejected before culling.
+        (long culled, ulong pixels) = DrawVertices(
+            [[2f, 2f], [2f, 2f], [12f, 12f]], cullEnable: 1u, CullFaceBack, FrontFaceCw);
+
+        Assert.Equal(0, culled);
+        Assert.Equal(0UL, pixels);
+    }
+
+    [Fact]
+    public void TriangleOutsideTheClipWindow_IsRejected()
+    {
+        // The 16x16 surface clip (0x200/0x204) excludes a triangle at 100..112.
+        (long culled, ulong pixels) = DrawVertices(
+            [[100f, 100f], [112f, 100f], [100f, 112f]], cullEnable: 0u, CullFaceBack, FrontFaceCw);
+
+        Assert.Equal(0, culled);
+        Assert.Equal(0UL, pixels);
     }
 
     [Fact]
