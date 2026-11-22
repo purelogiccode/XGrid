@@ -140,6 +140,9 @@ public enum TcgOpKind
     /// <summary>String operation with optional REP (MOVS/CMPS/STOS/LODS/SCAS).</summary>
     StringOp,
 
+    /// <summary>An MMX operation (packed integer, move, shift or mask).</summary>
+    Mmx,
+
     /// <summary>Computes a guest effective address from the memory operand shape.</summary>
     Lea,
 
@@ -157,6 +160,46 @@ public enum TcgOpKind
 
     /// <summary>Ends the block.</summary>
     Exit,
+}
+
+/// <summary>The MMX sub-operations carried by <see cref="TcgOpKind.Mmx"/>.</summary>
+public enum TcgMmxOp
+{
+    /// <summary>Copies an MMX register (or its low 32 bits) into a temp.</summary>
+    ToTemp,
+
+    /// <summary>Writes a temp into an MMX register (low 32 or all 64 bits).</summary>
+    FromTemp,
+
+    /// <summary>Loads 32 or 64 bits from guest memory into a temp.</summary>
+    Load,
+
+    /// <summary>Stores 32 or 64 bits from a temp into guest memory.</summary>
+    Store,
+
+    /// <summary>A packed binary operation (<c>ComputeMmx</c> semantics).</summary>
+    Binary,
+
+    /// <summary>A packed shift by a temp count.</summary>
+    Shift,
+
+    /// <summary>Masked byte store through ES:EDI.</summary>
+    Maskmovq,
+
+    /// <summary>Inserts a word lane.</summary>
+    Pinsrw,
+
+    /// <summary>Extracts a word lane.</summary>
+    Pextrw,
+
+    /// <summary>Packs the MMX sign bits into a GPR.</summary>
+    Pmovmskb,
+
+    /// <summary>Shuffles four words by an immediate control.</summary>
+    Pshufw,
+
+    /// <summary>Empties the x87/MMX tag word.</summary>
+    Emms,
 }
 
 /// <summary>One managed TCG IR operation.</summary>
@@ -207,4 +250,13 @@ public readonly struct TcgOp
 
     /// <summary>Gets the condition (conditional branch).</summary>
     public ConditionCode Condition { get; init; }
+
+    /// <summary>Gets the MMX sub-operation (<see cref="TcgOpKind.Mmx"/>).</summary>
+    public TcgMmxOp MmxOp { get; init; }
+
+    /// <summary>Gets the MMX control byte (shuffle, word lane).</summary>
+    public uint Control { get; init; }
+
+    /// <summary>Gets the MMX mnemonic (packed binary/shift semantics).</summary>
+    public Mnemonic Mnemonic { get; init; }
 }

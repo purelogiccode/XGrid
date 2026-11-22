@@ -39,11 +39,12 @@ public interface ITcgMemory
 /// <summary>The result of executing a managed TCG program on the reference interpreter.</summary>
 public sealed class TcgResult
 {
-    internal TcgResult(uint[] registers, uint eflags, uint eip)
+    internal TcgResult(uint[] registers, uint eflags, uint eip, TcgMmxState? mmx)
     {
         Registers = registers;
         Eflags = eflags;
         Eip = eip;
+        Mmx = mmx;
     }
 
     /// <summary>Gets the eight general-purpose registers after execution.</summary>
@@ -54,6 +55,9 @@ public sealed class TcgResult
 
     /// <summary>Gets EIP after execution.</summary>
     public uint Eip { get; }
+
+    /// <summary>Gets the MMX/x87 register file when the program used one (null otherwise).</summary>
+    public TcgMmxState? Mmx { get; }
 }
 
 /// <summary>
@@ -70,7 +74,7 @@ public static class TcgInterpreter
     /// <returns>The final register state.</returns>
     public static TcgResult Execute(TcgProgram program, ReadOnlySpan<uint> registers, uint eflags)
     {
-        return Execute(program, registers, eflags, ReadOnlySpan<uint>.Empty, memory: null);
+        return Execute(program, registers, eflags, ReadOnlySpan<uint>.Empty, memory: null, mmx: null);
     }
 
     /// <summary>Executes a program with the guest memory and segment bases.</summary>
@@ -79,13 +83,15 @@ public static class TcgInterpreter
     /// <param name="eflags">The initial EFLAGS.</param>
     /// <param name="segmentBases">The six segment bases in <see cref="SegmentRegister"/> order.</param>
     /// <param name="memory">The guest memory (null for register-only programs).</param>
+    /// <param name="mmx">The MMX/x87 register file (null unless the program uses MMX).</param>
     /// <returns>The final register state.</returns>
     public static TcgResult Execute(
         TcgProgram program,
         ReadOnlySpan<uint> registers,
         uint eflags,
         ReadOnlySpan<uint> segmentBases,
-        ITcgMemory? memory)
+        ITcgMemory? memory,
+        TcgMmxState? mmx = null)
     {
         if (registers.Length < 8)
         {
@@ -95,6 +101,7 @@ public static class TcgInterpreter
         var gprs = new uint[8];
         registers[..8].CopyTo(gprs);
         var temps = new uint[program.TempCount];
+        var wide = new ulong[program.TempCount];
         uint eip = program.StartEip;
 
         foreach (TcgOp op in program.Ops)
@@ -380,6 +387,9 @@ public static class TcgInterpreter
                 case TcgOpKind.StringOp:
                     eflags = ExecuteString(op, gprs, eflags, segmentBases, memory);
                     break;
+                case TcgOpKind.Mmx:
+                    ExecuteMmx(op, temps, wide, mmx ?? throw new InvalidOperationException("an MMX operation needs a TcgMmxState"), gprs, segmentBases, memory);
+                    break;
                 case TcgOpKind.Lea:
                     temps[op.Dest] = EffectiveAddress(op, gprs, segmentBases);
                     break;
@@ -395,18 +405,18 @@ public static class TcgInterpreter
                 case TcgOpKind.ConditionalSetEip:
                     if (TcgConditions.Met(op.Condition, eflags))
                     {
-                        return new TcgResult(gprs, eflags, op.Immediate);
+                        return new TcgResult(gprs, eflags, op.Immediate, mmx);
                     }
 
                     break;
                 case TcgOpKind.Exit:
-                    return new TcgResult(gprs, eflags, eip);
+                    return new TcgResult(gprs, eflags, eip, mmx);
                 default:
                     throw new InvalidOperationException($"unknown TCG op {op.Kind}");
             }
         }
 
-        return new TcgResult(gprs, eflags, eip);
+        return new TcgResult(gprs, eflags, eip, mmx);
     }
 
     private static void WriteRegister8(uint[] gprs, int registerIndex, byte value)
@@ -553,6 +563,427 @@ public static class TcgInterpreter
     private static void WriteCounter(uint[] gprs, uint value, bool address16)
     {
         gprs[1] = address16 ? (gprs[1] & 0xFFFF0000u) | (value & 0xFFFFu) : value;
+    }
+
+    private static void ExecuteMmx(
+        TcgOp op,
+        uint[] temps,
+        ulong[] wide,
+        TcgMmxState mmx,
+        uint[] gprs,
+        ReadOnlySpan<uint> segmentBases,
+        ITcgMemory? memory)
+    {
+        switch (op.MmxOp)
+        {
+            case TcgMmxOp.ToTemp:
+                {
+                    ulong value = mmx.Read(op.GuestRegister);
+                    if (op.Size == 4)
+                    {
+                        value &= 0xFFFFFFFF;
+                    }
+
+                    wide[op.Dest] = value;
+                    temps[op.Dest] = (uint)value;
+                    break;
+                }
+
+            case TcgMmxOp.FromTemp:
+                mmx.Write(op.GuestRegister, op.Size == 4 ? temps[op.Left] : wide[op.Left]);
+                break;
+            case TcgMmxOp.Load:
+                {
+                    if (memory is null)
+                    {
+                        throw new InvalidOperationException("a memory access needs an ITcgMemory");
+                    }
+
+                    uint address = temps[op.Left];
+                    ulong value = op.Size == 4
+                        ? memory.Read32(address)
+                        : memory.Read32(address) | ((ulong)memory.Read32(address + 4) << 32);
+                    wide[op.Dest] = value;
+                    temps[op.Dest] = (uint)value;
+                    break;
+                }
+
+            case TcgMmxOp.Store:
+                {
+                    if (memory is null)
+                    {
+                        throw new InvalidOperationException("a memory access needs an ITcgMemory");
+                    }
+
+                    uint address = temps[op.Left];
+                    ulong value = wide[op.Right];
+                    if (op.Size == 4)
+                    {
+                        memory.Write32(address, (uint)value);
+                    }
+                    else
+                    {
+                        memory.Write32(address, (uint)value);
+                        memory.Write32(address + 4, (uint)(value >> 32));
+                    }
+
+                    break;
+                }
+
+            case TcgMmxOp.Binary:
+                mmx.Write(op.GuestRegister, ComputeMmx(op.Mnemonic, mmx.Read(op.GuestRegister), wide[op.Left]));
+                break;
+            case TcgMmxOp.Shift:
+                mmx.Write(op.GuestRegister, ShiftMmx(op.Mnemonic, mmx.Read(op.GuestRegister), (int)(temps[op.Left] & 0xFF)));
+                break;
+            case TcgMmxOp.Maskmovq:
+                {
+                    if (memory is null)
+                    {
+                        throw new InvalidOperationException("a memory access needs an ITcgMemory");
+                    }
+
+                    ulong data = mmx.Read(op.GuestRegister);
+                    ulong mask = mmx.Read(op.Left);
+                    uint address = SegmentBase(segmentBases, SegmentRegister.Es) + gprs[7];
+                    for (int i = 0; i < 8; i++)
+                    {
+                        if (((mask >> (8 * i)) & 0x80) != 0)
+                        {
+                            memory.Write8(address + (uint)i, (byte)(data >> (8 * i)));
+                        }
+                    }
+
+                    break;
+                }
+
+            case TcgMmxOp.Pinsrw:
+                {
+                    ulong destination = mmx.Read(op.GuestRegister);
+                    int lane = (int)(op.Control & 3);
+                    ulong mask = 0xFFFFUL << (16 * lane);
+                    destination = (destination & ~mask) | (((ulong)temps[op.Left] & 0xFFFF) << (16 * lane));
+                    mmx.Write(op.GuestRegister, destination);
+                    break;
+                }
+
+            case TcgMmxOp.Pextrw:
+                temps[op.Dest] = (uint)((mmx.Read(op.GuestRegister) >> (16 * (int)(op.Control & 3))) & 0xFFFF);
+                break;
+            case TcgMmxOp.Pmovmskb:
+                {
+                    ulong source = mmx.Read(op.GuestRegister);
+                    uint result = 0;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        if (((source >> (8 * i)) & 0x80) != 0)
+                        {
+                            result |= 1u << i;
+                        }
+                    }
+
+                    temps[op.Dest] = result;
+                    break;
+                }
+
+            case TcgMmxOp.Pshufw:
+                {
+                    ulong source = wide[op.Left];
+                    ulong result = 0;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        int lane = (int)((op.Control >> (2 * i)) & 3);
+                        result |= (ulong)(ushort)(source >> (16 * lane)) << (16 * i);
+                    }
+
+                    mmx.Write(op.GuestRegister, result);
+                    break;
+                }
+
+            case TcgMmxOp.Emms:
+                mmx.Empty();
+                break;
+            default:
+                throw new InvalidOperationException($"unknown MMX op {op.MmxOp}");
+        }
+    }
+
+    private static ulong ComputeMmx(Mnemonic mnemonic, ulong left, ulong right)
+    {
+        switch (mnemonic)
+        {
+            case Mnemonic.Paddb:
+                return MapBytes(left, right, static (x, y) => (byte)(x + y));
+            case Mnemonic.Paddw:
+                return MapWords(left, right, static (x, y) => (ushort)(x + y));
+            case Mnemonic.Paddd:
+                return MapDwords(left, right, static (x, y) => x + y);
+            case Mnemonic.Paddsb:
+                return MapBytes(left, right, static (x, y) => SaturateSByte((sbyte)x + (sbyte)y));
+            case Mnemonic.Paddsw:
+                return MapWords(left, right, static (x, y) => SaturateInt16((short)x + (short)y));
+            case Mnemonic.Paddusb:
+                return MapBytes(left, right, static (x, y) => SaturateByte(x + y));
+            case Mnemonic.Paddusw:
+                return MapWords(left, right, static (x, y) => SaturateUInt16(x + y));
+            case Mnemonic.Psubb:
+                return MapBytes(left, right, static (x, y) => (byte)(x - y));
+            case Mnemonic.Psubw:
+                return MapWords(left, right, static (x, y) => (ushort)(x - y));
+            case Mnemonic.Psubd:
+                return MapDwords(left, right, static (x, y) => x - y);
+            case Mnemonic.Psubsb:
+                return MapBytes(left, right, static (x, y) => SaturateSByte((sbyte)x - (sbyte)y));
+            case Mnemonic.Psubsw:
+                return MapWords(left, right, static (x, y) => SaturateInt16((short)x - (short)y));
+            case Mnemonic.Psubusb:
+                return MapBytes(left, right, static (x, y) => SaturateByte(x - y));
+            case Mnemonic.Psubusw:
+                return MapWords(left, right, static (x, y) => SaturateUInt16(x - y));
+            case Mnemonic.Pmullw:
+                return MapWords(left, right, static (x, y) => (ushort)(x * y));
+            case Mnemonic.Pmulhw:
+                return MapWords(left, right, static (x, y) => (ushort)(((short)x * (short)y) >> 16));
+            case Mnemonic.Pmulhuw:
+                return MapWords(left, right, static (x, y) => (ushort)(((uint)x * y) >> 16));
+            case Mnemonic.Pmaddwd:
+                {
+                    ulong result = 0;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        int p0 = (short)(left >> (16 * (2 * i))) * (short)(right >> (16 * (2 * i)));
+                        int p1 = (short)(left >> (16 * ((2 * i) + 1))) * (short)(right >> (16 * ((2 * i) + 1)));
+                        result |= (ulong)(uint)(p0 + p1) << (32 * i);
+                    }
+
+                    return result;
+                }
+
+            case Mnemonic.Pcmpeqb:
+                return MapBytes(left, right, static (x, y) => x == y ? (byte)0xFF : (byte)0);
+            case Mnemonic.Pcmpeqw:
+                return MapWords(left, right, static (x, y) => x == y ? (ushort)0xFFFF : (ushort)0);
+            case Mnemonic.Pcmpeqd:
+                return MapDwords(left, right, static (x, y) => x == y ? 0xFFFFFFFFu : 0u);
+            case Mnemonic.Pcmpgtb:
+                return MapBytes(left, right, static (x, y) => (sbyte)x > (sbyte)y ? (byte)0xFF : (byte)0);
+            case Mnemonic.Pcmpgtw:
+                return MapWords(left, right, static (x, y) => (short)x > (short)y ? (ushort)0xFFFF : (ushort)0);
+            case Mnemonic.Pcmpgtd:
+                return MapDwords(left, right, static (x, y) => (int)x > (int)y ? 0xFFFFFFFFu : 0u);
+            case Mnemonic.Pand:
+                return left & right;
+            case Mnemonic.Pandn:
+                return ~left & right;
+            case Mnemonic.Por:
+                return left | right;
+            case Mnemonic.Pxor:
+                return left ^ right;
+            case Mnemonic.Pavgb:
+                return MapBytes(left, right, static (x, y) => (byte)((x + y + 1) >> 1));
+            case Mnemonic.Pavgw:
+                return MapWords(left, right, static (x, y) => (ushort)((x + y + 1) >> 1));
+            case Mnemonic.Pminub:
+                return MapBytes(left, right, static (x, y) => Math.Min(x, y));
+            case Mnemonic.Pmaxub:
+                return MapBytes(left, right, static (x, y) => Math.Max(x, y));
+            case Mnemonic.Pminsw:
+                return MapWords(left, right, static (x, y) => ((short)x < (short)y ? x : y));
+            case Mnemonic.Pmaxsw:
+                return MapWords(left, right, static (x, y) => ((short)x > (short)y ? x : y));
+            case Mnemonic.Psadbw:
+                {
+                    int sum = 0;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        sum += Math.Abs((int)((left >> (8 * i)) & 0xFF) - (int)((right >> (8 * i)) & 0xFF));
+                    }
+
+                    return (ushort)sum;
+                }
+
+            case Mnemonic.Packsswb:
+                return PackWordsToBytes(left, right, static v => SaturateSByte(v));
+            case Mnemonic.Packuswb:
+                return PackWordsToBytes(left, right, static v => SaturateByte(v));
+            case Mnemonic.Packssdw:
+                return PackDwordsToWords(left, right);
+            case Mnemonic.Punpcklbw:
+                return InterleaveBytes(left, right, 0);
+            case Mnemonic.Punpckhbw:
+                return InterleaveBytes(left, right, 4);
+            case Mnemonic.Punpcklwd:
+                return InterleaveWords(left, right, 0);
+            case Mnemonic.Punpckhwd:
+                return InterleaveWords(left, right, 2);
+            case Mnemonic.Punpckldq:
+                return (left & 0xFFFFFFFFUL) | ((right & 0xFFFFFFFFUL) << 32);
+            case Mnemonic.Punpckhdq:
+                return ((left >> 32) & 0xFFFFFFFFUL) | ((right >> 32) << 32);
+            default:
+                throw new InvalidOperationException($"Unsupported MMX operation {mnemonic}.");
+        }
+    }
+
+    private static ulong ShiftMmx(Mnemonic mnemonic, ulong value, int count)
+    {
+        switch (mnemonic)
+        {
+            case Mnemonic.Psllw:
+                if (count > 15)
+                {
+                    return 0;
+                }
+
+                return MapWords(value, 0, (x, _) => (ushort)(x << count));
+
+            case Mnemonic.Psrlw:
+                if (count > 15)
+                {
+                    return 0;
+                }
+
+                return MapWords(value, 0, (x, _) => (ushort)(x >> count));
+
+            case Mnemonic.Psraw:
+                if (count > 15)
+                {
+                    return MapWords(value, 0, static (x, _) => (ushort)((short)x < 0 ? 0xFFFF : 0));
+                }
+
+                return MapWords(value, 0, (x, _) => (ushort)((short)x >> count));
+
+            case Mnemonic.Pslld:
+                if (count > 31)
+                {
+                    return 0;
+                }
+
+                return MapDwords(value, 0, (x, _) => x << count);
+
+            case Mnemonic.Psrld:
+                if (count > 31)
+                {
+                    return 0;
+                }
+
+                return MapDwords(value, 0, (x, _) => x >> count);
+
+            case Mnemonic.Psrad:
+                if (count > 31)
+                {
+                    return MapDwords(value, 0, static (x, _) => (int)x < 0 ? 0xFFFFFFFFu : 0u);
+                }
+
+                return MapDwords(value, 0, (x, _) => (uint)((int)x >> count));
+
+            case Mnemonic.Psllq:
+                return count > 63 ? 0 : value << count;
+
+            default:
+                return count > 63 ? 0 : value >> count;
+        }
+    }
+
+    private static ulong MapBytes(ulong left, ulong right, Func<byte, byte, byte> operation)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            result |= (ulong)operation((byte)(left >> (8 * i)), (byte)(right >> (8 * i))) << (8 * i);
+        }
+
+        return result;
+    }
+
+    private static ulong MapWords(ulong left, ulong right, Func<ushort, ushort, ushort> operation)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            result |= (ulong)operation((ushort)(left >> (16 * i)), (ushort)(right >> (16 * i))) << (16 * i);
+        }
+
+        return result;
+    }
+
+    private static ulong MapDwords(ulong left, ulong right, Func<uint, uint, uint> operation)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 2; i++)
+        {
+            result |= (ulong)operation((uint)(left >> (32 * i)), (uint)(right >> (32 * i))) << (32 * i);
+        }
+
+        return result;
+    }
+
+    private static byte SaturateSByte(int value)
+    {
+        return value < sbyte.MinValue ? (byte)0x80 : value > sbyte.MaxValue ? (byte)0x7F : (byte)value;
+    }
+
+    private static byte SaturateByte(int value)
+    {
+        return value < 0 ? (byte)0 : value > 0xFF ? (byte)0xFF : (byte)value;
+    }
+
+    private static ushort SaturateInt16(int value)
+    {
+        return value < short.MinValue ? (ushort)0x8000 : value > short.MaxValue ? (ushort)0x7FFF : (ushort)value;
+    }
+
+    private static ushort SaturateUInt16(int value)
+    {
+        return value < 0 ? (ushort)0 : value > 0xFFFF ? (ushort)0xFFFF : (ushort)value;
+    }
+
+    private static ulong PackWordsToBytes(ulong left, ulong right, Func<short, byte> saturate)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            result |= (ulong)saturate((short)(left >> (16 * i))) << (8 * i);
+            result |= (ulong)saturate((short)(right >> (16 * i))) << (8 * (i + 4));
+        }
+
+        return result;
+    }
+
+    private static ulong PackDwordsToWords(ulong left, ulong right)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 2; i++)
+        {
+            result |= (ulong)SaturateInt16((int)(uint)(left >> (32 * i))) << (16 * i);
+            result |= (ulong)SaturateInt16((int)(uint)(right >> (32 * i))) << (16 * (i + 2));
+        }
+
+        return result;
+    }
+
+    private static ulong InterleaveBytes(ulong left, ulong right, int start)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            result |= (ulong)(byte)(left >> (8 * (start + i))) << (16 * i);
+            result |= (ulong)(byte)(right >> (8 * (start + i))) << ((16 * i) + 8);
+        }
+
+        return result;
+    }
+
+    private static ulong InterleaveWords(ulong left, ulong right, int start)
+    {
+        ulong result = 0;
+        for (int i = 0; i < 2; i++)
+        {
+            result |= (ulong)(ushort)(left >> (16 * (start + i))) << (32 * i);
+            result |= (ulong)(ushort)(right >> (16 * (start + i))) << ((32 * i) + 16);
+        }
+
+        return result;
     }
 
     private static uint Mask(uint value, int size)

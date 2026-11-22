@@ -15,7 +15,8 @@ public sealed class TcgTranslatorTests
     private static void AssertMatches(
         byte[] code,
         Action<XboxCpu>? setup = null,
-        Action<XboxCpu, XboxCpu>? verify = null)
+        Action<XboxCpu, XboxCpu>? verify = null,
+        bool mmx = false)
     {
         XboxCpu interpreter = CpuHarness.Create(code);
         XboxCpu tcg = CpuHarness.Create(code);
@@ -48,12 +49,14 @@ public sealed class TcgTranslatorTests
             builder.Exit();
         }
 
+        TcgMmxState? mmxState = mmx ? TcgMmxState.FromFpu(tcg.Context.Fpu) : null;
         TcgResult result = TcgInterpreter.Execute(
             builder.Build(),
             initial,
             initialFlags,
             segments,
-            new TestMemory(tcg.Bus()));
+            new TestMemory(tcg.Bus()),
+            mmxState);
 
         interpreter.Step();
         for (int i = 0; i < 8; i++)
@@ -63,6 +66,16 @@ public sealed class TcgTranslatorTests
 
         Assert.Equal(interpreter.Context.Eflags, result.Eflags);
         Assert.Equal(interpreter.Context.Eip, result.Eip);
+        if (mmx)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                Assert.Equal(interpreter.Context.Fpu.GetMmxRegister(i), result.Mmx!.Read(i));
+            }
+
+            Assert.Equal(interpreter.Context.Fpu.TagWord, result.Mmx!.TagWord);
+        }
+
         verify?.Invoke(interpreter, tcg);
     }
 
@@ -79,6 +92,17 @@ public sealed class TcgTranslatorTests
     private static void Memory32(XboxCpu cpu, uint address, uint value)
     {
         cpu.Ram().Write32(address, value);
+    }
+
+    private static void Mmx(XboxCpu cpu, int index, ulong value)
+    {
+        cpu.Context.WriteMmx(index, value);
+    }
+
+    private static void Memory64(XboxCpu cpu, uint address, ulong value)
+    {
+        cpu.Ram().Write32(address, (uint)value);
+        cpu.Ram().Write32(address + 4, (uint)(value >> 32));
     }
 
     [Fact]
@@ -771,6 +795,352 @@ public sealed class TcgTranslatorTests
                 Assert.Equal(interpreter.Ram().Read8(0x3000), tcg.Ram().Read8(0x3000));
                 Assert.Equal(interpreter.Ram().Read8(0x3001), tcg.Ram().Read8(0x3001));
             });
+    }
+
+    [Fact]
+    public void PaddbWraps()
+    {
+        AssertMatches(
+            [0x0F, 0xFC, 0xC1],
+            cpu => { Mmx(cpu, 0, 0xFFFFFFFFFFFFFFFF); Mmx(cpu, 1, 0x0101010101010101); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void PaddswSaturates()
+    {
+        AssertMatches(
+            [0x0F, 0xED, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x7FFF7FFF7FFF7FFF); Mmx(cpu, 1, 0x0001000100010001); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void PaddusbSaturates()
+    {
+        AssertMatches(
+            [0x0F, 0xDC, 0xC1],
+            cpu => { Mmx(cpu, 0, 0xF0F0F0F0F0F0F0F0); Mmx(cpu, 1, 0x2020202020202020); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void PsubuswSaturates()
+    {
+        AssertMatches(
+            [0x0F, 0xD9, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0001000100010001); Mmx(cpu, 1, 0x0002000200020002); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void PadddWraps()
+    {
+        AssertMatches(
+            [0x0F, 0xFE, 0xC1],
+            cpu => { Mmx(cpu, 0, 0xFFFFFFFF00000001); Mmx(cpu, 1, 0x0000000100000001); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Psubd()
+    {
+        AssertMatches(
+            [0x0F, 0xFA, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0000000100000005); Mmx(cpu, 1, 0x0000000200000003); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pmullw()
+    {
+        AssertMatches(
+            [0x0F, 0xD5, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0002000300040005); Mmx(cpu, 1, 0x0007000B000D0011); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void PmulhwSigned()
+    {
+        AssertMatches(
+            [0x0F, 0xE5, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x80008000FFFF0002); Mmx(cpu, 1, 0x7FFF0002FFFF0003); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pmaddwd()
+    {
+        AssertMatches(
+            [0x0F, 0xF5, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0002000300040005); Mmx(cpu, 1, 0x0007000B000D0011); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pcmpeqb()
+    {
+        AssertMatches(
+            [0x0F, 0x74, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0011223344556677); Mmx(cpu, 1, 0x0011223344556678); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pcmpgtw()
+    {
+        AssertMatches(
+            [0x0F, 0x65, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0001FFFF80000002); Mmx(cpu, 1, 0x0002000200000003); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pand()
+    {
+        AssertMatches(
+            [0x0F, 0xDB, 0xC1],
+            cpu => { Mmx(cpu, 0, 0xF0F0F0F0F0F0F0F0); Mmx(cpu, 1, 0x0FF00FF00FF00FF0); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Por()
+    {
+        AssertMatches(
+            [0x0F, 0xEB, 0xC1],
+            cpu => { Mmx(cpu, 0, 0xF000000000000000); Mmx(cpu, 1, 0x00000000000000FF); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pxor()
+    {
+        AssertMatches(
+            [0x0F, 0xEF, 0xC1],
+            cpu => { Mmx(cpu, 0, 0xFFFFFFFF00000000); Mmx(cpu, 1, 0xFFFF0000FFFF0000); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Punpcklbw()
+    {
+        AssertMatches(
+            [0x0F, 0x60, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x8877665544332211); Mmx(cpu, 1, 0xCCBBAA9988776655); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Packssdw()
+    {
+        AssertMatches(
+            [0x0F, 0x6B, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0001000200008000); Mmx(cpu, 1, 0x7FFFFFFF80000000); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Packuswb()
+    {
+        AssertMatches(
+            [0x0F, 0x67, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x00FF0001FF000002); Mmx(cpu, 1, 0x8000FFFF7FFF0000); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pavgb()
+    {
+        AssertMatches(
+            [0x0F, 0xE0, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x00010203FCFDFEFF); Mmx(cpu, 1, 0x0F0F0F0FF0F0F0F0); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pminsw()
+    {
+        AssertMatches(
+            [0x0F, 0xEA, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x0001FFFF80000002); Mmx(cpu, 1, 0x0002000200000003); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Psadbw()
+    {
+        AssertMatches(
+            [0x0F, 0xF6, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x1020304050607080); Mmx(cpu, 1, 0x0011223344556677); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void PsllwImmediatePastWidthClears()
+    {
+        AssertMatches(
+            [0x0F, 0x71, 0xF1, 0x14],
+            cpu => Mmx(cpu, 1, 0xFFFFFFFFFFFFFFFF),
+            mmx: true);
+    }
+
+    [Fact]
+    public void PsrlqImmediate()
+    {
+        AssertMatches(
+            [0x0F, 0x73, 0xD1, 0x08],
+            cpu => Mmx(cpu, 1, 0xFFEEDDCCBBAA9988),
+            mmx: true);
+    }
+
+    [Fact]
+    public void PsrawImmediatePastWidthSignFillsPerWord()
+    {
+        AssertMatches(
+            [0x0F, 0x71, 0xE1, 0x14],
+            cpu => Mmx(cpu, 1, 0x00000000FFFF8001),
+            mmx: true);
+    }
+
+    [Fact]
+    public void PsradCountFromMmx()
+    {
+        AssertMatches(
+            [0x0F, 0xE2, 0xC1],
+            cpu => { Mmx(cpu, 0, 0x80000000FFFF0000); Mmx(cpu, 1, 4); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void MovqRegister()
+    {
+        AssertMatches(
+            [0x0F, 0x6F, 0xC1],
+            cpu => Mmx(cpu, 1, 0x1122334455667788),
+            mmx: true);
+    }
+
+    [Fact]
+    public void MovqLoad()
+    {
+        AssertMatches(
+            [0x0F, 0x6F, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => Memory64(cpu, 0x2000, 0x99AABBCCDDEEFF00),
+            mmx: true);
+    }
+
+    [Fact]
+    public void MovqStore()
+    {
+        AssertMatches(
+            [0x0F, 0x7F, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => Mmx(cpu, 0, 0x0123456789ABCDEF),
+            (interpreter, tcg) =>
+            {
+                Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000));
+                Assert.Equal(interpreter.Ram().Read32(0x2004), tcg.Ram().Read32(0x2004));
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void MovdToMmxZeroExtends()
+    {
+        AssertMatches(
+            [0x0F, 0x6E, 0xC0],
+            cpu => { Set(cpu, Gpr.Eax, 0x89ABCDEF); Mmx(cpu, 0, 0xFFFFFFFFFFFFFFFF); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void MovdFromMmx()
+    {
+        AssertMatches(
+            [0x0F, 0x7E, 0xC0],
+            cpu => Mmx(cpu, 0, 0x1122334455667788),
+            mmx: true);
+    }
+
+    [Fact]
+    public void MovntqStore()
+    {
+        AssertMatches(
+            [0x0F, 0xE7, 0x05, 0x00, 0x20, 0x00, 0x00],
+            cpu => Mmx(cpu, 0, 0xFEDCBA9876543210),
+            (interpreter, tcg) =>
+            {
+                Assert.Equal(interpreter.Ram().Read32(0x2000), tcg.Ram().Read32(0x2000));
+                Assert.Equal(interpreter.Ram().Read32(0x2004), tcg.Ram().Read32(0x2004));
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pmovmskb()
+    {
+        AssertMatches(
+            [0x0F, 0xD7, 0xC1],
+            cpu => Mmx(cpu, 1, 0x807F0080FF0001FF),
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pextrw()
+    {
+        AssertMatches(
+            [0x0F, 0xC5, 0xC1, 0x02],
+            cpu => Mmx(cpu, 1, 0x1111222233334444),
+            mmx: true);
+    }
+
+    [Fact]
+    public void Pinsrw()
+    {
+        AssertMatches(
+            [0x0F, 0xC4, 0xC1, 0x01],
+            cpu => { Set(cpu, Gpr.Ecx, 0x0000BEEF); Mmx(cpu, 0, 0x1111222233334444); },
+            mmx: true);
+    }
+
+    [Fact]
+    public void PshufwReversesWords()
+    {
+        AssertMatches(
+            [0x0F, 0x70, 0xC1, 0x1B],
+            cpu => Mmx(cpu, 1, 0x1111222233334444),
+            mmx: true);
+    }
+
+    [Fact]
+    public void MaskmovqWritesSelectedBytes()
+    {
+        AssertMatches(
+            [0x0F, 0xF7, 0xC1],
+            cpu =>
+            {
+                Set(cpu, Gpr.Edi, 0x3000);
+                Mmx(cpu, 0, 0x8877665544332211);
+                Mmx(cpu, 1, 0xFF00FF00FF00FF00);
+            },
+            (interpreter, tcg) =>
+            {
+                for (uint i = 0; i < 8; i++)
+                {
+                    Assert.Equal(interpreter.Ram().Read8(0x3000 + i), tcg.Ram().Read8(0x3000 + i));
+                }
+            },
+            mmx: true);
+    }
+
+    [Fact]
+    public void EmmsEmptiesTags()
+    {
+        AssertMatches(
+            [0x0F, 0x77],
+            cpu => { Mmx(cpu, 0, 0x1122334455667788); Mmx(cpu, 1, 0x99AABBCCDDEEFF00); },
+            mmx: true);
     }
 
     private sealed class TestMemory(AddressSpace bus) : ITcgMemory

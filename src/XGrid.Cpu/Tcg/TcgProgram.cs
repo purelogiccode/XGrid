@@ -382,6 +382,189 @@ public sealed class TcgBuilder
         });
     }
 
+    /// <summary>Emits an MMX register read (low 32 or all 64 bits) into a temp.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="mmx">MMX register index.</param>
+    /// <param name="size">4 for MOVD, 8 for MOVQ and packed sources.</param>
+    public void MmxToTemp(int dest, int mmx, int size)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.ToTemp,
+            Dest = dest,
+            GuestRegister = mmx,
+            Size = size,
+        });
+    }
+
+    /// <summary>Emits an MMX register write from a temp.</summary>
+    /// <param name="mmx">MMX register index.</param>
+    /// <param name="source">Source temp.</param>
+    /// <param name="size">4 to zero-extend, 8 for the full register.</param>
+    public void MmxFromTemp(int mmx, int source, int size)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.FromTemp,
+            Left = source,
+            GuestRegister = mmx,
+            Size = size,
+        });
+    }
+
+    /// <summary>Emits a 4- or 8-byte guest-memory load into a temp.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="address">Address temp.</param>
+    /// <param name="size">Access size in bytes (4 or 8).</param>
+    public void MmxLoad(int dest, int address, int size)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Load,
+            Dest = dest,
+            Left = address,
+            Size = size,
+        });
+    }
+
+    /// <summary>Emits a 4- or 8-byte guest-memory store from a temp.</summary>
+    /// <param name="address">Address temp.</param>
+    /// <param name="value">Value temp.</param>
+    /// <param name="size">Access size in bytes (4 or 8).</param>
+    public void MmxStore(int address, int value, int size)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Store,
+            Left = address,
+            Right = value,
+            Size = size,
+        });
+    }
+
+    /// <summary>Emits a packed binary MMX operation.</summary>
+    /// <param name="mnemonic">The packed operation.</param>
+    /// <param name="mmx">Destination MMX register index.</param>
+    /// <param name="source">Source value temp.</param>
+    public void MmxBinary(Mnemonic mnemonic, int mmx, int source)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Binary,
+            Mnemonic = mnemonic,
+            GuestRegister = mmx,
+            Left = source,
+            Size = 8,
+        });
+    }
+
+    /// <summary>Emits a packed MMX shift.</summary>
+    /// <param name="mnemonic">The shift operation.</param>
+    /// <param name="mmx">Destination MMX register index.</param>
+    /// <param name="count">Count temp (the low byte is used).</param>
+    public void MmxShift(Mnemonic mnemonic, int mmx, int count)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Shift,
+            Mnemonic = mnemonic,
+            GuestRegister = mmx,
+            Left = count,
+            Size = 8,
+        });
+    }
+
+    /// <summary>Emits a masked byte store (MASKMOVQ).</summary>
+    /// <param name="data">Data MMX register index.</param>
+    /// <param name="mask">Mask MMX register index.</param>
+    public void MmxMaskmovq(int data, int mask)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Maskmovq,
+            GuestRegister = data,
+            Left = mask,
+            Size = 8,
+        });
+    }
+
+    /// <summary>Emits a PINSRW.</summary>
+    /// <param name="mmx">Destination MMX register index.</param>
+    /// <param name="value">Source value temp.</param>
+    /// <param name="lane">Word lane (0-3).</param>
+    public void MmxPinsrw(int mmx, int value, uint lane)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Pinsrw,
+            GuestRegister = mmx,
+            Left = value,
+            Control = lane,
+            Size = 8,
+        });
+    }
+
+    /// <summary>Emits a PEXTRW.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="mmx">Source MMX register index.</param>
+    /// <param name="lane">Word lane (0-3).</param>
+    public void MmxPextrw(int dest, int mmx, uint lane)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Pextrw,
+            Dest = dest,
+            GuestRegister = mmx,
+            Control = lane,
+        });
+    }
+
+    /// <summary>Emits a PMOVMSKB.</summary>
+    /// <param name="dest">Destination temp.</param>
+    /// <param name="mmx">Source MMX register index.</param>
+    public void MmxPmovmskb(int dest, int mmx)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Pmovmskb,
+            Dest = dest,
+            GuestRegister = mmx,
+        });
+    }
+
+    /// <summary>Emits a PSHUFW.</summary>
+    /// <param name="mmx">Destination MMX register index.</param>
+    /// <param name="source">Source value temp.</param>
+    /// <param name="control">The two-bit lane selectors.</param>
+    public void MmxPshufw(int mmx, int source, uint control)
+    {
+        _ops.Add(new TcgOp
+        {
+            Kind = TcgOpKind.Mmx,
+            MmxOp = TcgMmxOp.Pshufw,
+            GuestRegister = mmx,
+            Left = source,
+            Control = control,
+            Size = 8,
+        });
+    }
+
+    /// <summary>Emits EMMS (the x87/MMX tag word becomes empty).</summary>
+    public void MmxEmms()
+    {
+        _ops.Add(new TcgOp { Kind = TcgOpKind.Mmx, MmxOp = TcgMmxOp.Emms });
+    }
+
     /// <summary>Emits an effective-address computation (QEMU's address shape).</summary>
     /// <param name="dest">Destination temp.</param>
     /// <param name="memory">The decoded memory operand.</param>

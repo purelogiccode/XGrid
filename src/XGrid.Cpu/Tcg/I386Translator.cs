@@ -111,6 +111,11 @@ public static class I386Translator
             case Mnemonic.Lods:
             case Mnemonic.Scas:
                 return TryString(instruction, builder, out reason);
+            case Mnemonic.Emms:
+                builder.MmxEmms();
+                return true;
+            case var mmx when IsMmxMnemonic(mmx):
+                return TryMmx(instruction, builder, out reason);
             case Mnemonic.Jmp:
                 if (instruction.Operand1.Kind != OperandKind.Immediate)
                 {
@@ -592,6 +597,290 @@ public static class I386Translator
 
         reason = "xchg operands";
         return false;
+    }
+
+    private static bool IsMmxMnemonic(Mnemonic mnemonic)
+    {
+        return mnemonic is
+            Mnemonic.Movd or Mnemonic.Movq or Mnemonic.Movntq or Mnemonic.Maskmovq or
+            Mnemonic.Pinsrw or Mnemonic.Pextrw or Mnemonic.Pmovmskb or Mnemonic.Pshufw or
+            Mnemonic.Paddb or Mnemonic.Paddw or Mnemonic.Paddd or
+            Mnemonic.Paddsb or Mnemonic.Paddsw or Mnemonic.Paddusb or Mnemonic.Paddusw or
+            Mnemonic.Psubb or Mnemonic.Psubw or Mnemonic.Psubd or
+            Mnemonic.Psubsb or Mnemonic.Psubsw or Mnemonic.Psubusb or Mnemonic.Psubusw or
+            Mnemonic.Pmullw or Mnemonic.Pmulhw or Mnemonic.Pmulhuw or Mnemonic.Pmaddwd or
+            Mnemonic.Pcmpeqb or Mnemonic.Pcmpeqw or Mnemonic.Pcmpeqd or
+            Mnemonic.Pcmpgtb or Mnemonic.Pcmpgtw or Mnemonic.Pcmpgtd or
+            Mnemonic.Pand or Mnemonic.Pandn or Mnemonic.Por or Mnemonic.Pxor or
+            Mnemonic.Pavgb or Mnemonic.Pavgw or
+            Mnemonic.Pminub or Mnemonic.Pmaxub or Mnemonic.Pminsw or Mnemonic.Pmaxsw or
+            Mnemonic.Psadbw or
+            Mnemonic.Packsswb or Mnemonic.Packuswb or Mnemonic.Packssdw or
+            Mnemonic.Punpcklbw or Mnemonic.Punpcklwd or Mnemonic.Punpckldq or
+            Mnemonic.Punpckhbw or Mnemonic.Punpckhwd or Mnemonic.Punpckhdq or
+            Mnemonic.Psllw or Mnemonic.Pslld or Mnemonic.Psllq or
+            Mnemonic.Psrlw or Mnemonic.Psrld or Mnemonic.Psrlq or
+            Mnemonic.Psraw or Mnemonic.Psrad;
+    }
+
+    private static bool TryMmx(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        switch (instruction.Mnemonic)
+        {
+            case Mnemonic.Movd:
+                return TryMmxMovd(instruction, builder, out reason);
+            case Mnemonic.Movq:
+                return TryMmxMovq(instruction, builder, out reason);
+            case Mnemonic.Movntq:
+                {
+                    if (instruction.Operand1.Kind != OperandKind.Memory)
+                    {
+                        reason = "movntq destination";
+                        return false;
+                    }
+
+                    if (!TryAddress(instruction.Operand1.Memory, builder, out int address, out reason))
+                    {
+                        return false;
+                    }
+
+                    int value = builder.NewTemp();
+                    builder.MmxToTemp(value, instruction.Operand2.RegisterIndex, 8);
+                    builder.MmxStore(address, value, 8);
+                    return true;
+                }
+
+            case Mnemonic.Maskmovq:
+                builder.MmxMaskmovq(instruction.Operand1.RegisterIndex, instruction.Operand2.RegisterIndex);
+                return true;
+            case Mnemonic.Pinsrw:
+                {
+                    int value = builder.NewTemp();
+                    if (instruction.Operand2.Kind == OperandKind.Register)
+                    {
+                        builder.ReadRegister(value, instruction.Operand2.RegisterIndex, 4);
+                    }
+                    else if (instruction.Operand2.Kind == OperandKind.Memory)
+                    {
+                        if (!TryAddress(instruction.Operand2.Memory, builder, out int address, out reason))
+                        {
+                            return false;
+                        }
+
+                        builder.Load(value, address, 2);
+                    }
+                    else
+                    {
+                        reason = "pinsrw source";
+                        return false;
+                    }
+
+                    builder.MmxPinsrw(instruction.Operand1.RegisterIndex, value, instruction.Operand3.Immediate & 3);
+                    return true;
+                }
+
+            case Mnemonic.Pextrw:
+                {
+                    if (instruction.Operand2.Kind != OperandKind.Register)
+                    {
+                        reason = "pextrw source";
+                        return false;
+                    }
+
+                    int result = builder.NewTemp();
+                    builder.MmxPextrw(result, instruction.Operand2.RegisterIndex, instruction.Operand3.Immediate & 3);
+                    builder.WriteRegister(instruction.Operand1.RegisterIndex, result, 4);
+                    return true;
+                }
+
+            case Mnemonic.Pmovmskb:
+                {
+                    if (instruction.Operand2.Kind != OperandKind.Register)
+                    {
+                        reason = "pmovmskb source";
+                        return false;
+                    }
+
+                    int result = builder.NewTemp();
+                    builder.MmxPmovmskb(result, instruction.Operand2.RegisterIndex);
+                    builder.WriteRegister(instruction.Operand1.RegisterIndex, result, 4);
+                    return true;
+                }
+
+            case Mnemonic.Pshufw:
+                {
+                    int source = builder.NewTemp();
+                    if (!TryReadMmxSource64(instruction.Operand2, builder, source, out reason))
+                    {
+                        return false;
+                    }
+
+                    builder.MmxPshufw(instruction.Operand1.RegisterIndex, source, instruction.Operand3.Immediate & 0xFF);
+                    return true;
+                }
+
+            case Mnemonic.Psllw:
+            case Mnemonic.Pslld:
+            case Mnemonic.Psllq:
+            case Mnemonic.Psrlw:
+            case Mnemonic.Psrld:
+            case Mnemonic.Psrlq:
+            case Mnemonic.Psraw:
+            case Mnemonic.Psrad:
+                {
+                    int count;
+                    if (instruction.Operand2.Kind == OperandKind.Immediate)
+                    {
+                        count = builder.NewTemp();
+                        builder.MovImmediate(count, instruction.Operand2.Immediate, 4);
+                    }
+                    else
+                    {
+                        count = builder.NewTemp();
+                        if (!TryReadMmxSource64(instruction.Operand2, builder, count, out reason))
+                        {
+                            return false;
+                        }
+                    }
+
+                    builder.MmxShift(instruction.Mnemonic, instruction.Operand1.RegisterIndex, count);
+                    return true;
+                }
+
+            default:
+                {
+                    // Every remaining MMX mnemonic is the packed binary family
+                    // (padd/psub/pcmp/pack/punpck/pmul/pavg/pmin/pmax/psadbw/logical).
+                    int source = builder.NewTemp();
+                    if (!TryReadMmxSource64(instruction.Operand2, builder, source, out reason))
+                    {
+                        return false;
+                    }
+
+                    builder.MmxBinary(instruction.Mnemonic, instruction.Operand1.RegisterIndex, source);
+                    return true;
+                }
+        }
+    }
+
+    private static bool TryReadMmxSource64(
+        Operand operand,
+        TcgBuilder builder,
+        int destination,
+        out string? reason)
+    {
+        reason = null;
+        if (operand.Kind == OperandKind.Register)
+        {
+            builder.MmxToTemp(destination, operand.RegisterIndex, 8);
+            return true;
+        }
+
+        if (operand.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(operand.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.MmxLoad(destination, address, 8);
+            return true;
+        }
+
+        reason = "mmx source";
+        return false;
+    }
+
+    private static bool TryMmxMovd(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        bool toMmx = instruction.Operand1.Kind == OperandKind.Register && instruction.Operand1.Size == 64;
+        if (toMmx)
+        {
+            int value = builder.NewTemp();
+            if (instruction.Operand2.Kind == OperandKind.Register)
+            {
+                builder.ReadRegister(value, instruction.Operand2.RegisterIndex, 4);
+            }
+            else if (instruction.Operand2.Kind == OperandKind.Memory)
+            {
+                if (!TryAddress(instruction.Operand2.Memory, builder, out int address, out reason))
+                {
+                    return false;
+                }
+
+                builder.MmxLoad(value, address, 4);
+            }
+            else
+            {
+                reason = "movd source";
+                return false;
+            }
+
+            builder.MmxFromTemp(instruction.Operand1.RegisterIndex, value, 4);
+            return true;
+        }
+
+        if (instruction.Operand2.Kind != OperandKind.Register)
+        {
+            reason = "movd source register";
+            return false;
+        }
+
+        int result = builder.NewTemp();
+        builder.MmxToTemp(result, instruction.Operand2.RegisterIndex, 4);
+        if (instruction.Operand1.Kind == OperandKind.Register)
+        {
+            builder.WriteRegister(instruction.Operand1.RegisterIndex, result, 4);
+            return true;
+        }
+
+        if (instruction.Operand1.Kind == OperandKind.Memory)
+        {
+            if (!TryAddress(instruction.Operand1.Memory, builder, out int address, out reason))
+            {
+                return false;
+            }
+
+            builder.MmxStore(address, result, 4);
+            return true;
+        }
+
+        reason = "movd destination";
+        return false;
+    }
+
+    private static bool TryMmxMovq(DecodedInstruction instruction, TcgBuilder builder, out string? reason)
+    {
+        reason = null;
+        if (instruction.Operand1.Kind == OperandKind.Register && instruction.Operand1.Size == 64)
+        {
+            int value = builder.NewTemp();
+            if (!TryReadMmxSource64(instruction.Operand2, builder, value, out reason))
+            {
+                return false;
+            }
+
+            builder.MmxFromTemp(instruction.Operand1.RegisterIndex, value, 8);
+            return true;
+        }
+
+        if (instruction.Operand1.Kind != OperandKind.Memory || instruction.Operand2.Kind != OperandKind.Register)
+        {
+            reason = "movq shape";
+            return false;
+        }
+
+        if (!TryAddress(instruction.Operand1.Memory, builder, out int destination, out reason))
+        {
+            return false;
+        }
+
+        int stored = builder.NewTemp();
+        builder.MmxToTemp(stored, instruction.Operand2.RegisterIndex, 8);
+        builder.MmxStore(destination, stored, 8);
+        return true;
     }
 
     private static bool TryBitTest(

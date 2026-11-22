@@ -92,10 +92,15 @@ semantics (a divide error raises `TcgDivideErrorException`), and PUSH/POP
 16-bit addressing (BX/BP/SI/DI forms, 16-bit wrap before the segment base, the
 BP-based SS default). Slice 7: REP string ops (MOVS/CMPS/STOS/LODS/SCAS,
 REP/REPNE termination, DF direction, 16/32-bit address size, 1/2/4-byte
-elements). **86 differentials total** (registers, EFLAGS, EIP and guest
-memory); `XGrid.Cpu.Tests` **789/789**, format clean. Next: the vector/FPU
-blocks - MMX (170 corpus cases), x87 (59) and SSE (37); the cpu-oracle gate
-needs those.
+elements). Slice 8: the MMX register file (<c>TcgMmxState</c>, the hardware alias
+onto <c>ST(Top+i)</c> with the tag-word rule) and the packed integer family -
+padd/psub (wrap and signed/unsigned saturation), pmullw/pmulhw/pmulhuw/pmaddwd,
+pcmp/pack/punpck, pand/pandn/por/pxor, pavg/pmin/pmax/psadbw, the eight shifts
+(immediate and MMX/memory counts), movd/movq/movntq/maskmovq/pmovmskb/pextrw/
+pinsrw/pshufw and EMMS. **122 differentials total** (registers, EFLAGS, EIP,
+guest memory, all eight MMX registers and the tag word); `XGrid.Cpu.Tests`
+**825/825**, format clean. Next: x87 (59 corpus cases) and SSE (37), then the
+cpu-oracle coverage gate.
 
 ### P1S4 - host code generation (6-10 sessions)
 
