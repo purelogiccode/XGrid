@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -145,6 +146,12 @@ namespace XGrid.Xcn0Probe
                     }
 
                     Console.WriteLine("XCN0 CSHARP SPIKE PASS (vCPU/RAM/step; MMIO ring is XCN1)");
+
+                    var sw = Stopwatch.StartNew();
+                    int prc = xgc_run(cpu, 100_000_000, out ulong perfSteps);
+                    sw.Stop();
+                    double mps = perfSteps / sw.Elapsed.TotalSeconds / 1e6;
+                    Console.WriteLine($"perf: rc={prc} steps={perfSteps} wall={sw.Elapsed.TotalSeconds:F3} s = {mps:F1} Msteps/s");
                     return 0;
                 }
                 finally

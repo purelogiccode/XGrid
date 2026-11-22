@@ -83,5 +83,11 @@ from QEMU's softmmu during `cpu_exec` fails fast in this host/runtime
 works, so the ABI is correct. XCN1 must service MMIO through a native ring
 (or exit to the host) rather than a reverse P/Invoke on the TCG call stack.
 
+Measured on the 100M-step self-loop: **246.9 Msteps/s from C** (0.405 s) and
+**247.5 Msteps/s from C#** (0.404 s), 4.05 ns/step (~0.34x guest time on this
+trivial loop). This is 3.4x the current raw JIT (73 Msteps/s) and the first
+engine rate in the xemu class; a real title workload adds x87/SSE, TB churn and
+devices, so 0.5x (365 Msteps/s) is the next measured gate.
+
 None of these changes guest behaviour. A release ships the patches and the
 corresponding QEMU source (or a written offer).

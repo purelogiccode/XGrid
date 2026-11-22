@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #ifdef _WIN32
 #include <malloc.h>
 #endif
@@ -131,6 +132,17 @@ int main(void)
            (unsigned long long)g_mmio_last, g_mmio_last_addr);
     printf("eax=0x%08X ecx=0x%08X eip=0x%08X eflags=0x%08X\n",
            regs.eax, regs.ecx, regs.eip, regs.eflags);
+
+    {
+        uint64_t perf = 0;
+        clock_t t0 = clock();
+        int prc = xgc_run(cpu, 100000000, &perf);
+        clock_t t1 = clock();
+        double sec = (double)(t1 - t0) / CLOCKS_PER_SEC;
+        printf("perf: rc=%d steps=%llu wall=%.3f s = %.1f Msteps/s\n",
+               prc, (unsigned long long)perf, sec,
+               sec > 0.0 ? (double)perf / sec / 1e6 : 0.0);
+    }
 
     xgc_destroy(cpu);
     free_ram(ram);

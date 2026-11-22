@@ -126,6 +126,13 @@ no-op `create_vcpu_thread`/`handle_interrupt` -> `accel_init_machine()` ->
 - `tools/xcn0-probe` (C#): vCPU, RAM, registers and the 100,000-step budget
   from managed code; the 0xF0000000 window is RAM in this leg.
 
+**Measured engine rate:** a 100M-step self-loop runs at **246.9 Msteps/s from
+C** (0.405 s) and **247.5 Msteps/s from C#** (0.404 s) — 4.05 ns/step, ~0.34x
+guest time on this trivial loop. That is 3.4x the current raw JIT
+(73 Msteps/s) and in the xemu engine class; a title workload will be slower
+(x87/SSE, TB churn and devices), and 0.5x is 365 Msteps/s. The next measurement
+is the 007 boot leg once the MMIO ring and the machine seam exist.
+
 **Deferred to XCN1 (the first slice): the managed MMIO callback.** A C#
 `UnmanagedCallersOnly`/delegate callback invoked synchronously from QEMU's
 softmmu during `cpu_exec` fails fast in this host/runtime (`0xC0000409`). The
