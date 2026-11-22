@@ -393,17 +393,23 @@ public sealed class Nv2ARemainingModesTests
     private const uint DepthProjectFormat =
         (0x30u << 8) | (1u << 16) | (2u << 6);
 
+    private const uint Depth24ProjectFormat =
+        (0x2Eu << 8) | (1u << 16) | (2u << 6);
+
     private static void PushShadowDraw(
         Nv2AMmio nv2A,
         ArrayMemory memory,
-        uint shadowFunc)
+        uint shadowFunc,
+        uint depthFormat = DepthProjectFormat,
+        uint depthWord = 0u)
     {
         WriteTriangle(memory);
+        memory.WritePhysical(0x5000u, depthWord);
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
         PushSurface(pushes);
         PushTexcoordProgram(pushes);
         PushTexcoordArray(pushes, memory, 1, 0x2200u, 0.25f, 0.25f, 0f, 1.0f);
-        PushFormatTextureSlot(pushes, 3, 0x5000u, DepthProjectFormat, 0x00010101u, 512u, 512u);
+        PushFormatTextureSlot(pushes, 3, 0x5000u, depthFormat, 0x00010101u, 512u, 512u);
         pushes.Add((0x1E6Cu, shadowFunc));
         PushStagePassTexel(pushes, 3, 0x02u);
         pushes.Add((0x026Cu, 0x1B200000u));
@@ -433,12 +439,46 @@ public sealed class Nv2ARemainingModesTests
     }
 
     [Fact]
-    public void Draw_ShadowCompareFuncKeepsMissAccounting()
+    public void Draw_ShadowCompareFuncResolvesTheDepthTexel()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
-        PushShadowDraw(nv2A, memory, 3u);
-        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
-        Assert.True(nv2A.TextureFormatMisses.TryGetValue(0x30u, out long misses) && misses > 0);
+        PushShadowDraw(nv2A, memory, 3u); // LEQUAL
+        // The stored depth is zero and the projected z is zero, so
+        // 0 <= 0 passes and the texel is vec4(1.0). The old placeholder
+        // counted a format miss and produced vec4(0,0,0,1).
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+        Assert.False(nv2A.TextureFormatMisses.TryGetValue(0x30u, out long misses) && misses > 0);
+        Assert.Equal(0uL, nv2A.TexModeFallbacks);
+    }
+
+    [Fact]
+    public void Draw_ShadowCompareFuncReadsTheStoredDepth()
+    {
+        // The stored depth is the far plane (0xFFFF = 65535 device units) and
+        // the projected z is zero: LEQUAL fails, GEQUAL passes. This can only
+        // distinguish the two if the depth word is actually sampled.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushShadowDraw(nv2A, memory, 3u, DepthProjectFormat, 0x0000FFFFu);
+        Assert.Equal(0x00000000u, ReadPixel(memory, 2, 2));
+
+        (Nv2AMmio gequal, ArrayMemory gequalMemory) = CreateChannel();
+        PushShadowDraw(gequal, gequalMemory, 6u, DepthProjectFormat, 0x0000FFFFu);
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(gequalMemory, 2, 2));
+    }
+
+    [Fact]
+    public void Draw_ShadowCompareFuncUsesTheTwentyFourBitDepthHighBits()
+    {
+        // LU_IMAGE_DEPTH_X8_Y24_FIXED: the depth is the high 24 bits and the
+        // low byte is the stencil. A stencil byte alone must not fail the
+        // compare, and the far depth must fail LEQUAL.
+        (Nv2AMmio stencilOnly, ArrayMemory stencilMemory) = CreateChannel();
+        PushShadowDraw(stencilOnly, stencilMemory, 3u, Depth24ProjectFormat, 0x000000FFu);
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(stencilMemory, 2, 2));
+
+        (Nv2AMmio far, ArrayMemory farMemory) = CreateChannel();
+        PushShadowDraw(far, farMemory, 3u, Depth24ProjectFormat, 0x00FFFFFFu);
+        Assert.Equal(0x00000000u, ReadPixel(farMemory, 2, 2));
     }
 
     [Fact]

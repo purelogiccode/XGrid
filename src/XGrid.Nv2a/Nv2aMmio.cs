@@ -7258,10 +7258,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// Gets whether a texture color format is a depth (shadow-map) format.
     /// Depths sample through the shadow path (xemu <c>psh_append_shadowmap</c>,
     /// selected by <c>f.depth</c> in <c>texture.c</c>), not the color decoder.
+    /// The id table lives on <see cref="TextureFormats.IsDepth"/>.
     /// </summary>
     public static bool IsDepthTextureFormat(uint color)
     {
-        return color is 0x2Cu or 0x2Eu or 0x2Fu or 0x30u or 0x31u;
+        return TextureFormats.IsDepth(color);
     }
 
     /// <summary>
@@ -8448,16 +8449,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
-    /// Resolves a depth (shadow-map) texture for the PROJECT2D/PROJECT3D
-    /// stages. Depth formats sample through xemu
-    /// <c>psh_append_shadowmap</c>, not the color decoder: NEVER yields
-    /// <c>vec4(0.0)</c>, ALWAYS yields <c>vec4(1.0)</c>. Other depth
-    /// functions need the depth-compare path (open) and keep the
-    /// format-miss accounting. Returns true when the texel was resolved
-    /// here (the caller produces no texture sample). Disabled textures
-    /// fall through to the normal disabled path.
+    /// Resolves a depth (shadow-map) texture for a PROJECT2D/PROJECT3D stage.
+    /// Depth formats sample through xemu <c>psh_append_shadowmap</c>, not the
+    /// color decoder: NEVER yields <c>vec4(0.0)</c> and ALWAYS yields
+    /// <c>vec4(1.0)</c> without touching memory; every other function samples
+    /// the depth texel at <c>textureProj(pT.xyw)</c> and compares it with the
+    /// reference depth - the projected z for PROJECT3D, zero for PROJECT2D.
+    /// Returns true when the texel was resolved here (the caller produces no
+    /// color texture sample).
     /// </summary>
-    private bool TryResolveShadow(int stage, float[] texel)
+    private bool TryResolveShadow(int stage, int mode, float[] coord, float[] texel)
     {
         if (GpuMemory is null || (_textureControl0[stage] & TextureControl0Enable) == 0)
         {
@@ -8485,10 +8486,99 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return true;
         }
 
-        _textureFormatAttempts[color]++;
-        _textureFormatMisses[color]++;
-        _textureStateMisses[_currentTextureState]++;
-        SetTexelNone(texel);
+        ref readonly SamplerPlan plan = ref _samplerPlans[stage];
+        if (plan.Width <= 0 || plan.Height <= 0 ||
+            !TextureFormats.TryDecodeDepthTexel(color, 0u, out _, out float maxDepth))
+        {
+            _textureFormatAttempts[color]++;
+            _textureFormatMisses[color]++;
+            _textureStateMisses[_currentTextureState]++;
+            SetTexelNone(texel);
+            return true;
+        }
+
+        // textureProj(pT.xyw): the sample coordinates are divided by w. A zero
+        // w keeps the undivided coordinates, the same rule the color
+        // PROJECT2D path uses (GLSL leaves it undefined; no stream does it).
+        float w = coord[3];
+        float u = coord[0];
+        float v = coord[1];
+        if (w != 0f)
+        {
+            u /= w;
+            v /= w;
+        }
+
+        // psh_append_shadowmap: the sampled depth is scaled back to device
+        // units, then compared with the projected z (PROJECT3D) or zero
+        // (PROJECT2D); the result is splatted across the texel.
+        float reference = 0f;
+        if (mode == PshCombiner.TexModeProject3D)
+        {
+            float z = coord[2];
+            if (w != 0f)
+            {
+                z /= w;
+            }
+
+            reference = Math.Clamp(z, 0f, maxDepth);
+        }
+
+        int rawX = (int)MathF.Floor(plan.Linear ? u : u * plan.Width);
+        int rawY = (int)MathF.Floor(plan.Linear ? v : v * plan.Height);
+        int x = WrapCoordinatePlanned(rawX, plan.Width, plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
+        int y = WrapCoordinatePlanned(rawY, plan.Height, plan.WrapModeV, plan.WrapMaskV, plan.MirrorMaskV);
+        RecordSamplerTap(plan, rawX, rawY, wrapped: true);
+        TrackTextureCoords(x, y);
+
+        // A border-axis sample outside [0,size) returns the border color; a
+        // depth sampler takes its first component as the depth value.
+        if (plan.UAddr == (int)TextureAddressBorder || plan.VAddr == (int)TextureAddressBorder)
+        {
+            bool outU = plan.UAddr == (int)TextureAddressBorder && (rawX < 0 || rawX >= plan.Width);
+            bool outV = plan.VAddr == (int)TextureAddressBorder && (rawY < 0 || rawY >= plan.Height);
+            if (outU || outV)
+            {
+                float borderDepth = ((_textureBorderColor[stage] >> 16) & 0xFFu) / 255f;
+                texel[0] = texel[1] = texel[2] = texel[3] =
+                    TextureFormats.CompareShadowDepth(_shadowDepthFunc, borderDepth * maxDepth, reference)
+                        ? 1f
+                        : 0f;
+                return true;
+            }
+        }
+
+        uint bytesPerTexel = TextureFormats.DepthBytesPerTexel(color);
+        int pitch = plan.Pitch > 0 ? plan.Pitch : (int)(plan.Width * bytesPerTexel);
+        uint address = plan.Offset;
+        if (plan.Linear)
+        {
+            address += (uint)((y * pitch) + (x * (int)bytesPerTexel));
+        }
+        else if (plan.MortonMasks)
+        {
+            uint swizzled = (SpreadMortonBits((uint)x) & plan.SwizzleMaskX)
+                          | ((SpreadMortonBits((uint)y) << 1) & plan.SwizzleMaskY);
+            address += swizzled * bytesPerTexel;
+        }
+        else
+        {
+            address += (InterleaveBits((uint)x, plan.SwizzleMaskX) |
+                        InterleaveBits((uint)y, plan.SwizzleMaskY)) * bytesPerTexel;
+        }
+
+        uint word = bytesPerTexel == 2u ? ReadGpu(address) & 0xFFFFu : ReadGpu(address);
+        if (!TextureFormats.TryDecodeDepthTexel(color, word, out float depth, out _))
+        {
+            _textureFormatAttempts[color]++;
+            _textureFormatMisses[color]++;
+            _textureStateMisses[_currentTextureState]++;
+            SetTexelNone(texel);
+            return true;
+        }
+
+        texel[0] = texel[1] = texel[2] = texel[3] =
+            TextureFormats.CompareShadowDepth(_shadowDepthFunc, depth * maxDepth, reference) ? 1f : 0f;
         return true;
     }
 
@@ -8530,7 +8620,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     return TrySampleCubeDirection(stage, 1f, tv / coord[3], -tu / coord[3], texel);
                 }
 
-                if (TryResolveShadow(stage, texel))
+                if (TryResolveShadow(stage, PshCombiner.TexModeProject2D, coord, texel))
                 {
                     return false;
                 }
@@ -8552,7 +8642,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 return SampleInto(stage, tu, tv, texel);
             case PshCombiner.TexModeProject3D:
                 {
-                    if (TryResolveShadow(stage, texel))
+                    if (TryResolveShadow(stage, PshCombiner.TexModeProject3D, coord, texel))
                     {
                         return false;
                     }

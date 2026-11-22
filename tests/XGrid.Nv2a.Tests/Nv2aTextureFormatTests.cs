@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Xunit;
 
 namespace XGrid.Nv2a.Tests;
@@ -35,6 +36,142 @@ public sealed class Nv2aTextureFormatTests
         }
 
         public void WriteByte(uint address, byte value) => Bytes[address] = value;
+    }
+
+    /// <summary>
+    /// XFP4: every texture format the reference declares is deliberately
+    /// classified - word-decodable colour, paletted, compressed, YUV, or the
+    /// depth-as-texture set that the sampler declines.
+    /// </summary>
+    [Fact]
+    public void EveryReferenceTextureFormatIsClassified()
+    {
+        uint[] wordDecodable =
+        [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x10, 0x11, 0x12, 0x13, 0x17,
+            0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20,
+            0x27, 0x28, 0x29, 0x32, 0x35,
+            0x3A, 0x3B, 0x3C, 0x3F, 0x40, 0x41,
+        ];
+        uint[] paletted = [0x0B];
+        uint[] compressed = [0x0C, 0x0E, 0x0F];
+        uint[] yuv = [0x24, 0x25];
+        uint[] depth = [0x2C, 0x2E, 0x2F, 0x30, 0x31];
+
+        foreach (uint color in wordDecodable)
+        {
+            Assert.True(TextureFormats.IsWordDecodable(color), $"0x{color:X2} should be word-decodable");
+        }
+
+        foreach (uint color in paletted)
+        {
+            Assert.True(TextureFormats.IsPaletted(color), $"0x{color:X2} should be paletted");
+        }
+
+        foreach (uint color in compressed)
+        {
+            Assert.True(TextureFormats.IsCompressed(color), $"0x{color:X2} should be compressed");
+        }
+
+        foreach (uint color in yuv)
+        {
+            Assert.True(TextureFormats.IsYuv(color), $"0x{color:X2} should be YUV");
+        }
+
+        foreach (uint color in depth)
+        {
+            Assert.True(TextureFormats.IsDepth(color), $"0x{color:X2} should be a depth format");
+            Assert.False(TextureFormats.IsWordDecodable(color), $"0x{color:X2} is a depth texture and must be declined");
+            Assert.False(TextureFormats.IsYuv(color), $"0x{color:X2} is not YUV");
+            Assert.False(TextureFormats.IsPaletted(color), $"0x{color:X2} is not paletted");
+            Assert.False(TextureFormats.IsCompressed(color), $"0x{color:X2} is not compressed");
+        }
+
+        foreach (uint color in wordDecodable.Concat(paletted).Concat(compressed).Concat(yuv))
+        {
+            Assert.False(TextureFormats.IsDepth(color), $"0x{color:X2} is not a depth format");
+        }
+
+        Assert.Empty(wordDecodable.Intersect(paletted));
+        Assert.Empty(wordDecodable.Intersect(compressed));
+        Assert.Empty(wordDecodable.Intersect(yuv));
+        Assert.Empty(paletted.Intersect(compressed));
+    }
+
+    [Fact]
+    public void DepthTexelDecode_MatchesTheReferenceSampler()
+    {
+        // The Y16 formats return the normalized 16-bit depth and the shader's
+        // 0xFFFF scale (the reference swizzle's green = 0).
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x30u, 0x0000u, out float d, out float m));
+        Assert.Equal(0f, d);
+        Assert.Equal(65535f, m);
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x2Cu, 0xFFFFu, out d, out m));
+        Assert.Equal(1f, d);
+        Assert.Equal(65535f, m);
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x30u, 0x8000u, out d, out m));
+        Assert.Equal(32768f / 65535f, d);
+
+        // The X8/Y24 pair: the depth is the high 24 bits (the low byte is the
+        // stencil) and the scale is 0xFFFFFF. The reference maps the FLOAT id
+        // through the same fixed-point entry ("surface format hack").
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x2Eu, 0x12345678u, out d, out m));
+        Assert.Equal(0x123456u / 16777215f, d);
+        Assert.Equal(16777215f, m);
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x2Fu, 0x12345678u, out d, out m));
+        Assert.Equal(0x123456u / 16777215f, d);
+        Assert.Equal(16777215f, m);
+
+        // LU_IMAGE_DEPTH_Y16_FLOAT: the GL upload converts the half float to
+        // the normalized fixed-point depth, clamping outside [0,1].
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x31u, 0x3800u, out d, out m));
+        Assert.Equal(0.5f, d);
+        Assert.Equal(511.9375f, m);
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x31u, 0x4000u, out d, out m));
+        Assert.Equal(1f, d);
+        Assert.True(TextureFormats.TryDecodeDepthTexel(0x31u, 0xBC00u, out d, out m));
+        Assert.Equal(0f, d);
+
+        Assert.False(TextureFormats.TryDecodeDepthTexel(0x06u, 0xFFFFFFFFu, out _, out _));
+        Assert.Equal(2u, TextureFormats.DepthBytesPerTexel(0x2Cu));
+        Assert.Equal(2u, TextureFormats.DepthBytesPerTexel(0x30u));
+        Assert.Equal(4u, TextureFormats.DepthBytesPerTexel(0x2Eu));
+        Assert.Equal(4u, TextureFormats.DepthBytesPerTexel(0x2Fu));
+        Assert.Equal(0u, TextureFormats.DepthBytesPerTexel(0x06u));
+    }
+
+    [Fact]
+    public void ShadowDepthCompare_MatchesTheGlslOperators()
+    {
+        // LESS/EQUAL/LEQUAL/GREATER/NOTEQUAL/GEQUAL over a three-value matrix.
+        Assert.True(TextureFormats.CompareShadowDepth(1u, 1f, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(1u, 2f, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(2u, 2f, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(2u, 1f, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(3u, 2f, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(3u, 1f, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(3u, 3f, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(4u, 3f, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(4u, 2f, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(5u, 2f, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(5u, 1f, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(6u, 2f, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(6u, 3f, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(6u, 1f, 2f));
+
+        // NaN follows GLSL: only != is true.
+        float nan = float.NaN;
+        Assert.False(TextureFormats.CompareShadowDepth(1u, nan, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(2u, nan, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(3u, nan, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(4u, nan, 2f));
+        Assert.True(TextureFormats.CompareShadowDepth(5u, nan, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(6u, nan, 2f));
+
+        // NEVER (0) and ALWAYS (7) are resolved before the compare.
+        Assert.False(TextureFormats.CompareShadowDepth(0u, 1f, 2f));
+        Assert.False(TextureFormats.CompareShadowDepth(7u, 1f, 2f));
     }
 
     [Theory]

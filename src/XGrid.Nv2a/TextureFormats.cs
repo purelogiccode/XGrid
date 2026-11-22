@@ -51,6 +51,21 @@ public static class TextureFormats
     /// <summary>NV097 <c>LC_IMAGE_YB8CR8YA8CB8</c> (UYVY).</summary>
     public const uint Uyvy = 0x25u;
 
+    /// <summary>NV097 <c>SZ_DEPTH_Y16_FIXED</c>: swizzled 16-bit depth.</summary>
+    public const uint SzDepthY16Fixed = 0x2Cu;
+
+    /// <summary>NV097 <c>LU_IMAGE_DEPTH_X8_Y24_FIXED</c>: linear X8/Y24 depth.</summary>
+    public const uint LuImageDepthX8Y24Fixed = 0x2Eu;
+
+    /// <summary>NV097 <c>LU_IMAGE_DEPTH_X8_Y24_FLOAT</c>: linear X8/Y24 depth.</summary>
+    public const uint LuImageDepthX8Y24Float = 0x2Fu;
+
+    /// <summary>NV097 <c>LU_IMAGE_DEPTH_Y16_FIXED</c>: linear 16-bit depth.</summary>
+    public const uint LuImageDepthY16Fixed = 0x30u;
+
+    /// <summary>NV097 <c>LU_IMAGE_DEPTH_Y16_FLOAT</c>: linear 16-bit float depth.</summary>
+    public const uint LuImageDepthY16Float = 0x31u;
+
     /// <summary>Gets whether a color format is the paletted I8 format.</summary>
     /// <param name="color">Texture color-format id (FORMAT bits 8-15).</param>
     /// <returns>True for <c>SZ_I8_A8R8G8B8</c>.</returns>
@@ -76,15 +91,47 @@ public static class TextureFormats
     }
 
     /// <summary>
+    /// Gets whether a color format is a depth (shadow-map) format. The
+    /// reference table carries a <c>depth</c> flag for these ids
+    /// (<c>kelvin_color_format_info_map</c>) and the pixel shader samples them
+    /// through <c>psh_append_shadowmap</c>, never the colour decoder.
+    /// </summary>
+    /// <param name="color">Texture color-format id.</param>
+    /// <returns>True for the five depth-texture ids.</returns>
+    public static bool IsDepth(uint color)
+    {
+        return color is SzDepthY16Fixed or LuImageDepthX8Y24Fixed or LuImageDepthX8Y24Float
+            or LuImageDepthY16Fixed or LuImageDepthY16Float;
+    }
+
+    /// <summary>
     /// Gets whether a texel is decoded from the 1/2/4-byte word at its address
-    /// (the generic sampler's word lane) rather than a block, palette or YUV
-    /// neighbour read.
+    /// (the generic sampler's word lane) rather than a block, palette, YUV
+    /// neighbour read or the depth (shadow-map) path.
     /// </summary>
     /// <param name="color">Texture color-format id.</param>
     /// <returns>True when the word lane can decode the format.</returns>
     public static bool IsWordDecodable(uint color)
     {
-        return !IsPaletted(color) && !IsCompressed(color) && !IsYuv(color);
+        return !IsPaletted(color) && !IsCompressed(color) && !IsYuv(color) && !IsDepth(color);
+    }
+
+    /// <summary>
+    /// Bytes per texel for a depth (shadow-map) format, from the reference
+    /// table: 2 for the two Y16 formats, 4 for the X8/Y24 pair. Zero for
+    /// every other id. The colour lane's <see cref="BytesPerTexel"/> stays
+    /// zero for depth formats on purpose - they never take the word sampler.
+    /// </summary>
+    /// <param name="color">Texture color-format id.</param>
+    /// <returns>2, 4 or 0.</returns>
+    public static uint DepthBytesPerTexel(uint color)
+    {
+        return color switch
+        {
+            SzDepthY16Fixed or LuImageDepthY16Fixed or LuImageDepthY16Float => 2u,
+            LuImageDepthX8Y24Fixed or LuImageDepthX8Y24Float => 4u,
+            _ => 0u,
+        };
     }
 
     /// <summary>
@@ -194,6 +241,81 @@ public static class TextureFormats
                 a = 0f;
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Decodes a depth-texture word the way the reference's GL side presents
+    /// it to <c>psh_append_shadowmap</c>. <paramref name="depth"/> is the
+    /// normalized depth in [0,1] a depth sampler returns and
+    /// <paramref name="maxDepth"/> is the scale the pixel shader multiplies it
+    /// by; the reference format's channel swizzle encodes the scale's class
+    /// (16-bit fixed 0xFFFF, 24-bit 0xFFFFFF, 16-bit float 511.9375).
+    /// </summary>
+    /// <remarks>
+    /// <c>LU_IMAGE_DEPTH_X8_Y24_FLOAT</c> is presented exactly like the FIXED
+    /// id: the reference map carries the same entry for both
+    /// ("FIXME: Uses fixed-point format to match surface format hack below"),
+    /// so this port follows the reference rather than inventing a float depth
+    /// surface. The 16-bit float word is converted by the GL upload to the
+    /// normalized fixed-point depth texture: clamped to [0,1], NaN to 0.
+    /// </remarks>
+    /// <param name="color">Texture color-format id.</param>
+    /// <param name="texel">Raw 2- or 4-byte depth texel word.</param>
+    /// <param name="depth">Normalized sampled depth.</param>
+    /// <param name="maxDepth">The shader's depth scale for the format.</param>
+    /// <returns>True for a depth format.</returns>
+    public static bool TryDecodeDepthTexel(uint color, uint texel, out float depth, out float maxDepth)
+    {
+        switch (color)
+        {
+            case SzDepthY16Fixed:
+            case LuImageDepthY16Fixed:
+                depth = (texel & 0xFFFFu) / 65535f;
+                maxDepth = 65535f;
+                return true;
+            case LuImageDepthX8Y24Fixed:
+            case LuImageDepthX8Y24Float:
+                // GL_UNSIGNED_INT_24_8: the depth is the high 24 bits.
+                depth = (texel >> 8) / 16777215f;
+                maxDepth = 16777215f;
+                return true;
+            case LuImageDepthY16Float:
+                {
+                    float half = (float)BitConverter.UInt16BitsToHalf((ushort)(texel & 0xFFFFu));
+                    depth = half > 0f ? (half < 1f ? half : 1f) : 0f;
+                    maxDepth = 511.9375f;
+                    return true;
+                }
+            default:
+                depth = 0f;
+                maxDepth = 0f;
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Evaluates the reference's <c>shadow_comparison_map</c> for the six
+    /// comparable <c>NV097_SET_SHADOW_DEPTH_FUNC</c> values (NEVER = 0 and
+    /// ALWAYS = 7 are handled by the caller). The operators are the GLSL
+    /// ones the generated shader interpolates, so a NaN operand follows GLSL
+    /// (only <c>!=</c> is true).
+    /// </summary>
+    /// <param name="func">Shadow depth function, 1-6.</param>
+    /// <param name="lhs">Sampled depth in device units.</param>
+    /// <param name="rhs">Reference depth in device units.</param>
+    /// <returns>True when the comparison passes.</returns>
+    public static bool CompareShadowDepth(uint func, float lhs, float rhs)
+    {
+        return func switch
+        {
+            1u => lhs < rhs, // LESS
+            2u => lhs == rhs, // EQUAL
+            3u => lhs <= rhs, // LEQUAL
+            4u => lhs > rhs, // GREATER
+            5u => lhs != rhs, // NOTEQUAL
+            6u => lhs >= rhs, // GEQUAL
+            _ => false,
+        };
     }
 
     /// <summary>
