@@ -85,17 +85,64 @@ dotnet run --project tools/xcn0-probe -c Release
 
 The native shadow+ring path passes in C, and the **native host process**
 (`xgridcpu-host.exe` + `tools/xcn1-host-probe`) passes end-to-end: shared
-guest RAM, a shared read shadow, a write ring, 100,000-step correctness and
-235.5 Msteps/s on a 100M self-loop. C# never calls the DLL, so the .NET
-Control Flow Guard boundary is gone. The .NET-hosted DLL MMIO path remains a
-documented CFG-blocked diagnostic; the native host is the product
-architecture. The C# vCPU/RAM/step DLL probe still passes for reference.
+guest RAM, a shared read shadow, a write ring, an injected hardware vector,
+100,000-step correctness and 235.5 Msteps/s on a 100M self-loop. C# never
+calls the DLL, so the .NET Control Flow Guard boundary is gone. The
+.NET-hosted DLL MMIO path remains a documented CFG-blocked diagnostic; the
+native host is the product architecture. The C# vCPU/RAM/step DLL probe still
+passes for reference.
+
+## Host control block (XCN1)
+
+The section is `1 MB guest RAM + 0x2000` of control data. The CPU runs in
+`xgridcpu-host.exe`; C# owns the section, the read shadow and the write ring.
+
+| Offset | Field |
+|---|---|
+| 0 | `magic` (`'XGCH'`) |
+| 4 | `version` (1) |
+| 8 | `ready` (host sets 1 after RAM/ring mapping) |
+| 12 | `quit` |
+| 16 | `status` (1 = run requested, 2 = stopped) |
+| 20 | `run_budget` (instructions) |
+| 24 | `executed` (u64, this slice) |
+| 32 | `rc` |
+| 36 | `ring_count` |
+| 40 | `irq_pending` (C# sets 1) |
+| 44 | `irq_vector` (0-255) |
+| 48 | `reset` (1 = re-seat the CPU at 0x1000:0x8000) |
+| 64 | `shadow[0x1000]` - the `0xF0000000` read window |
+| 4160 | `ring[64]` - queued `XgcMmioAccess` writes |
+| 5696 | `XgcRegs` (13 x u32) |
+
+Between slices the host drains the write ring into the shared array, copies
+the architectural registers and sets `status = 2`. A slice is one `xgc_run`
+call, so the C# device model observes every write in order.
+
+### Interrupts
+
+`xgc_set_irq(cpu, vector)` ORs `CPU_INTERRUPT_HARD` into the vCPU's request
+word and stores the vector for `pic_read_irq()`. Two constraints found on the
+way:
+
+- Do **not** call QEMU's `cpu_interrupt()` from the embedder: it asserts that
+  the BQL is held and then kicks a vCPU thread that does not exist (aborts).
+  The request word is the whole contract in a single-threaded host.
+- The CPU must **not** own a local APIC. `x86_cpu_realizefn()` creates one
+  when CPUID_APIC is set (Pentium III does), and `cpu_get_pic_interrupt()`
+  asks the LAPIC first, so every vector is consumed before `pic_read_irq()`
+  and delivery faults. The shim clears `CPUID_APIC` before realize, which is
+  also what the Xbox has: the interrupt controller is the MCPX 8259 pair.
+
+`XGRID_CPU_TRACE=1` prints the slice trace (icount, EIP, request word,
+pending vector, EFLAGS/hflags, exception) and enables QEMU's `int` log.
 
 Measured on the 100M-step self-loop: **246.9 Msteps/s from C** (0.405 s) and
-**247.5 Msteps/s from C#** (0.404 s), 4.05 ns/step (~0.34x guest time on this
-trivial loop). This is 3.4x the current raw JIT (73 Msteps/s) and the first
-engine rate in the xemu class; a real title workload adds x87/SSE, TB churn and
-devices, so 0.5x (365 Msteps/s) is the next measured gate.
+**235.5 Msteps/s across the process boundary** (0.425 s), ~4 ns/step
+(~0.32x guest time on this trivial loop). This is 3.2x the current raw JIT
+(73 Msteps/s) and the first engine rate in the xemu class; a real title
+workload adds x87/SSE, TB churn and devices, so 0.5x (365 Msteps/s) is the
+next measured gate.
 
 None of these changes guest behaviour. A release ships the patches and the
 corresponding QEMU source (or a written offer).

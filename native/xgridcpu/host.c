@@ -30,7 +30,10 @@ typedef struct XgcHostControl {
     uint64_t executed;
     int32_t rc;
     uint32_t ring_count;
-    uint32_t reserved[6];
+    volatile uint32_t irq_pending;
+    uint32_t irq_vector;
+    volatile uint32_t reset;
+    uint32_t reserved[3];
     uint8_t shadow[0x1000];
     XgcMmioAccess ring[64];
     XgcRegs regs;
@@ -38,6 +41,9 @@ typedef struct XgcHostControl {
 
 _Static_assert(offsetof(XgcHostControl, executed) == 24, "executed offset");
 _Static_assert(offsetof(XgcHostControl, rc) == 32, "rc offset");
+_Static_assert(offsetof(XgcHostControl, irq_pending) == 40, "irq offset");
+_Static_assert(offsetof(XgcHostControl, irq_vector) == 44, "vector offset");
+_Static_assert(offsetof(XgcHostControl, reset) == 48, "reset offset");
 _Static_assert(offsetof(XgcHostControl, shadow) == 64, "shadow offset");
 _Static_assert(offsetof(XgcHostControl, ring) == 4160, "ring offset");
 _Static_assert(offsetof(XgcHostControl, regs) == 5696, "regs offset");
@@ -104,7 +110,19 @@ int main(int argc, char **argv)
 
         {
             uint64_t executed = 0;
-            int rc = xgc_run(cpu, ctl->run_budget, &executed);
+            int rc;
+
+            if (ctl->reset) {
+                xgc_reset_real(cpu, 0x1000, 0x8000);
+                ctl->reset = 0;
+            }
+            if (ctl->irq_pending) {
+                xgc_set_irq(cpu, ctl->irq_vector);
+                ctl->irq_pending = 0;
+            }
+
+
+            rc = xgc_run(cpu, ctl->run_budget, &executed);
             int n = 0;
             XgcMmioAccess access;
 

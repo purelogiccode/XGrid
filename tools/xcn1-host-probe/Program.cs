@@ -28,6 +28,9 @@ namespace XGrid.Xcn1HostProbe
         private const int OffExecuted = 24;
         private const int OffRc = 32;
         private const int OffRingCount = 36;
+        private const int OffIrqPending = 40;
+        private const int OffIrqVector = 44;
+        private const int OffReset = 48;
         private const int OffShadow = 64;
         private const int OffRing = 4160;
         private const int OffRegs = 5696;
@@ -91,9 +94,22 @@ namespace XGrid.Xcn1HostProbe
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
+                    RedirectStandardError = true,
                 };
+                var hostLog = new System.Text.StringBuilder();
                 using Process process = Process.Start(psi)
                     ?? throw new InvalidOperationException("host did not start");
+                process.ErrorDataReceived += (_, e) =>
+                {
+                    if (e.Data is not null)
+                    {
+                        lock (hostLog)
+                        {
+                            hostLog.AppendLine(e.Data);
+                        }
+                    }
+                };
+                process.BeginErrorReadLine();
 
                 DateTime deadline = DateTime.UtcNow.AddSeconds(20);
                 while (Read32(ctl + OffReady) == 0)
@@ -169,6 +185,75 @@ namespace XGrid.Xcn1HostProbe
                 double mps = perfSteps / sw.Elapsed.TotalSeconds / 1e6;
                 Console.WriteLine($"perf: steps={perfSteps} wall={sw.Elapsed.TotalSeconds:F3} s = {mps:F1} Msteps/s");
 
+                // IRQ phase: real-mode IVT 0x20 -> 0x3000:0, sti, wait for a flag.
+                //   mov word [0x0080], 0x3000
+                //   mov word [0x0082], 0
+                //   sti
+                // loop:
+                //   cmp byte [0x2004], 1
+                //   jne loop
+                //   jmp $
+                // 0x3000: mov byte [0x2004], 1; iret
+                ReadOnlySpan<byte> irqCode = new byte[]
+                {
+                    0xC7, 0x06, 0x80, 0x00, 0x00, 0x30,
+                    0xC7, 0x06, 0x82, 0x00, 0x00, 0x00,
+                    0xFB,
+                    0x80, 0x3E, 0x04, 0x20, 0x01,
+                    0x75, 0xF9,
+                    0xEB, 0xFE,
+                };
+                ReadOnlySpan<byte> irqHandler = new byte[]
+                {
+                    0xC6, 0x06, 0x04, 0x20, 0x01,
+                    0xCF,
+                };
+                irqCode.CopyTo(new Span<byte>(basePtr + 0x1000, irqCode.Length));
+                irqHandler.CopyTo(new Span<byte>(basePtr + 0x3000, irqHandler.Length));
+                *(uint*)(basePtr + 0x2004) = 0;
+
+                Write32(ctl + OffReset, 1);
+                Write32(ctl + OffRunBudget, 10_000);
+                Write32(ctl + OffStatus, 1);
+                while (Read32(ctl + OffStatus) != 2)
+                {
+                    if (process.HasExited)
+                    {
+                        Console.Error.WriteLine($"host exited during irq setup: {process.ExitCode}");
+                        return 1;
+                    }
+                    Thread.Sleep(1);
+                }
+                {
+                    ulong setupExecuted = Read64(ctl + OffExecuted);
+                    int setupRc = (int)Read32(ctl + OffRc);
+                    uint setupEip = Read32(ctl + OffRegs + 32);
+                    uint setupFlag = *(uint*)(basePtr + 0x2004);
+                    Console.WriteLine($"irq setup: rc={setupRc} executed={setupExecuted} " +
+                        $"eip=0x{setupEip:X8} flag=0x{setupFlag:X8}");
+                }
+
+                Write32(ctl + OffIrqVector, 0x20);
+                Write32(ctl + OffIrqPending, 1);
+                Write32(ctl + OffRunBudget, 100_000);
+                Write32(ctl + OffStatus, 1);
+                while (Read32(ctl + OffStatus) != 2)
+                {
+                    if (process.HasExited)
+                    {
+                        Console.Error.WriteLine($"host exited during irq delivery: {process.ExitCode}");
+                        return 1;
+                    }
+                    Thread.Sleep(1);
+                }
+
+                byte irqFlag = *(basePtr + 0x2004);
+                Console.WriteLine($"irq: flag={irqFlag}");
+                if (hostLog.Length > 0)
+                {
+                    Console.Error.WriteLine(hostLog.ToString());
+                }
+
                 Write32(ctl + OffQuit, 1);
                 Write32(ctl + OffStatus, 1);
                 if (!process.WaitForExit(5000))
@@ -180,7 +265,7 @@ namespace XGrid.Xcn1HostProbe
                     writeGpa != 0xF0000004u || writeSize != 4 ||
                     writeValue != 0xCAFEBABEul || ramWord != 0x12345678u ||
                     eax != 0xCAFEBABEu || ecx != 0 || eip != 0x1021u ||
-                    perfSteps != 100_000_000u)
+                    perfSteps != 100_000_000u || irqFlag != 1)
                 {
                     Console.Error.WriteLine("XCN1 NATIVE HOST FAIL");
                     return 1;

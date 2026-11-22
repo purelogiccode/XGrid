@@ -12,6 +12,7 @@
 #include "qemu/module.h"
 #include "qemu/cacheinfo.h"
 #include "qemu/seqlock.h"
+#include "qemu/log.h"
 #include "qemu/accel.h"
 #include "accel/accel-ops.h"
 #include "accel/accel-cpu-ops.h"
@@ -194,6 +195,9 @@ int xgc_init(void)
     }
 
     XGC_TRACE("xgc_init: enter\n");
+    if (getenv("XGRID_CPU_TRACE")) {
+        qemu_loglevel |= CPU_LOG_INT;
+    }
 
     /* QEMU's normal init order: locks, RCU, BQL, the trace/QOM/migration
      * module lists and the runstate. qemu_init() itself is not called. */
@@ -289,6 +293,10 @@ static void xgc_set_real_mode(XgcCpu *c, uint32_t eip, uint32_t esp)
     env->segs[R_DS].flags = 0x93;
     env->segs[R_ES].flags = 0x93;
 
+    XGC_TRACE("real mode: eip=%x ds=%x cs=%x ss=%x\n", eip,
+              env->segs[R_DS].base, env->segs[R_CS].base,
+              env->segs[R_SS].base);
+
     xgc_flush_tb(c);
 }
 
@@ -316,6 +324,11 @@ XgcCpu *xgc_create(void)
     {
         Error *err = NULL;
         CPUState *cpu = CPU(object_new(type));
+        /* The Xbox has no local APIC: its interrupt controller is the MCPX
+         * 8259 pair, reached through pic_read_irq(). Clearing CPUID_APIC
+         * keeps x86_cpu_realizefn() from creating an in-CPU LAPIC that would
+         * swallow every hardware vector before the PIC sees it. */
+        X86_CPU(cpu)->env.features[FEAT_1_EDX] &= ~CPUID_APIC;
         if (!object_property_set_int(OBJECT(cpu), "apic-id", 0, &err)) {
             error_report_err(err);
             object_unref(OBJECT(cpu));
@@ -482,6 +495,31 @@ void xgc_mmio_set_read(XgcCpu *c, uint32_t gpa, uint32_t size, uint64_t value)
     }
 }
 
+int xgc_irq_vector = -1;
+
+int xgc_set_irq(XgcCpu *c, uint32_t vector)
+{
+    if (!c || vector > 255) {
+        return XGC_ERR_ARG;
+    }
+    xgc_irq_vector = (int)vector;
+    /* Single-threaded embedder: there is no vCPU thread to kick and no BQL
+     * hand-off to do, so raise the request word directly. The TCG exec loop
+     * checks it at the next translation-block boundary and the stubbed
+     * pic_read_irq() hands over the queued vector. */
+    qatomic_or(&c->cpu->interrupt_request, CPU_INTERRUPT_HARD);
+    {
+        CPUX86State *env = cpu_env(c->cpu);
+        XGC_TRACE("xgc_set_irq vector=%u irq=%x eflags=%x hf=%x hf2=%x eip=%x "
+                  "idt=%llx/%x apic=%p\n",
+                  vector, c->cpu->interrupt_request, env->eflags, env->hflags,
+                  env->hflags2, env->eip,
+                  (unsigned long long)env->idt.base, (unsigned)env->idt.limit,
+                  (void *)X86_CPU(c->cpu)->apic_state);
+    }
+    return XGC_OK;
+}
+
 int xgc_reset_real(XgcCpu *c, uint32_t eip, uint32_t esp)
 {
     if (!c) {
@@ -521,24 +559,31 @@ int xgc_run(XgcCpu *c, uint32_t max_insns, uint64_t *executed)
         c->cpu->icount_budget = chunk;
         c->cpu->exception_index = -1;
 
-        ret = cpu_exec(c->cpu);
-        icount_update(c->cpu);
-        after = icount_get_raw();
-
         {
+            uint32_t irq_before = c->cpu->interrupt_request;
             static int dbg;
-            if (getenv("XGRID_CPU_TRACE") &&
-                (dbg < 3 || ret == EXCP_HALTED)) {
+            int print;
+
+            ret = cpu_exec(c->cpu);
+            icount_update(c->cpu);
+            after = icount_get_raw();
+
+            print = dbg < 3 || irq_before != 0 || ret == EXCP_HALTED;
+            if (getenv("XGRID_CPU_TRACE") && print) {
                 CPUX86State *env = cpu_env(c->cpu);
                 XGC_TRACE("chunk before=%lld after=%lld low=%u extra=%d "
-                          "budget=%lld ret=%d eip=%x ecx=%x\n",
+                          "budget=%lld ret=%d eip=%x ecx=%x irq=%x->%x vec=%d "
+                          "eflags=%x hf=%x hf2=%x exc=%d\n",
                           (long long)before, (long long)after,
                           c->cpu->neg.icount_decr.u16.low,
                           (int)c->cpu->icount_extra,
                           (long long)c->cpu->icount_budget, ret,
-                          env->eip, env->regs[R_ECX]);
-                dbg++;
+                          env->eip, env->regs[R_ECX],
+                          irq_before, c->cpu->interrupt_request, xgc_irq_vector,
+                          env->eflags, env->hflags, env->hflags2,
+                          c->cpu->exception_index);
             }
+            dbg++;
         }
 
         n = (after > before) ? (uint64_t)(after - before) : 0;

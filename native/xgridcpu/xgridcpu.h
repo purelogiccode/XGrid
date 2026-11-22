@@ -72,6 +72,10 @@ XGC_API int xgc_mmio_take(XgcCpu *cpu, XgcMmioAccess *access);
 XGC_API void xgc_mmio_set_read(XgcCpu *cpu, uint32_t gpa, uint32_t size,
                                uint64_t value);
 
+/* Inject one hardware interrupt vector (0-255); the x86 CPU takes it at the
+ * next instruction boundary when IF=1. */
+XGC_API int xgc_set_irq(XgcCpu *cpu, uint32_t vector);
+
 XGC_API int xgc_reset_real(XgcCpu *cpu, uint32_t eip, uint32_t esp);
 XGC_API int xgc_run(XgcCpu *cpu, uint32_t max_insns, uint64_t *executed);
 

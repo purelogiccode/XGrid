@@ -34,12 +34,17 @@ system/memory) -- no QEMU machine, devices, block, ui, audio or net
 - Guest RAM is one pinned buffer mapped at GPA 0 (64/128 MB); the C# devices
   read it through the existing `IGpuMemory`/`IGuestMemory` adapters with no
   copy. The NV2A pushbuffer stays in RAM and is parsed by the C# pusher.
-- MMIO/PIO regions are QEMU `MemoryRegionOps` whose callbacks are
-  `[UnmanagedCallersOnly]` C# delegates (reverse P/Invoke, table-dispatched by
-  GPA range). The measured 007 leg has ~1M device accesses per 30B steps, so
-  the callback cost is a small share of the wall.
-- Interrupts: `Pic8259` (the existing ELCR/level model) drives
-  `xgridcpu_set_irq`; EOI/IMR writes come back through the PIO callbacks.
+- The vCPU runs in a **native host process** against a named shared section.
+  MMIO is a QEMU `MemoryRegionOps` whose read handler returns bytes from a
+  shared **read shadow** and whose write handler queues an `XgcMmioAccess` in a
+  ring; the C# device model services the ring and refreshes the shadow between
+  run slices. No managed code is called from the TCG/softmmu stack (the
+  .NET-hosted DLL path is blocked by Control Flow Guard).
+- Interrupts: `Pic8259` (the existing ELCR/level model) drives the host's
+  `irq_pending`/`irq_vector` fields; `xgc_set_irq` raises `CPU_INTERRUPT_HARD`
+  and `pic_read_irq()` returns the queued vector at the next instruction
+  boundary when IF=1. The CPU has **no local APIC** (CPUID_APIC cleared), as on
+  the console.
 - Timing: `--cpu native` advances devices by the executed-instruction count
   (or the icount virtual clock). `--cpu managed` keeps the exact step model.
 - Snapshots: a native profile stores the `CPUX86State` architectural fields
@@ -146,12 +151,29 @@ across the process boundary (0.425 s). C# never calls the DLL, so the .NET
 Control Flow Guard boundary is gone. The .NET-hosted DLL MMIO path remains the
 documented CFG-blocked diagnostic; the host is the product architecture.
 
-**Next (XCN1):** extend the control block with IRQ lines, device write
-dispatch and read-shadow updates; the custom meson target; then the machine
-seam (PIC/PIT/APU/NV2A) and the 007 boot.
+**XCN1 interrupt line (2026-11-22).** The shared control block now carries
+`irq_pending`/`irq_vector` and `reset`. The probe loads a real-mode IVT
+handler, sets `sti`, waits for a flag, injects vector `0x20` from C# and checks
+that the handler ran: **PASS** (flag=1, EIP past the wait loop, EFLAGS restored
+by `iret`). Two findings made it work:
 
-**Next (XCN1):** the native MMIO ring + host-side dispatch, the custom meson
-target, then the machine seam (PIC/PIT/APU/NV2A) and the 007 boot.
+- QEMU's `cpu_interrupt()` asserts `bql_locked()` and then kicks a vCPU thread.
+  A single-threaded embedder must OR `CPU_INTERRUPT_HARD` into the request word
+  itself and never kick (the first attempt `abort()`ed at the assert).
+- `x86_cpu_realizefn()` creates a local APIC whenever CPUID_APIC is set, and
+  `cpu_get_pic_interrupt()` returns from the LAPIC before `pic_read_irq()`, so
+  the injected vector was consumed by an uninitialised LAPIC and real-mode
+  delivery raised `#GP` (`exc=13`, zero instructions executed). Clearing
+  `CPUID_APIC` before `qdev_realize` both fixes delivery and matches the
+  console, whose interrupt controller is the MCPX 8259 pair.
+
+The 100M self-loop still measures 235-245 Msteps/s across the boundary with
+the IRQ slice in place.
+
+**Next (XCN1):** synchronous MMIO reads (a request/response slot the native
+handler spins on while C# services it) or a per-window shadow refresh policy;
+map every Xbox window (NV2A, APU/ACI, PCI config, ROM/flash) and the PIO
+space; then the machine seam (PIC/PIT/APU/NV2A) and the 007 boot.
 
 ## Risks / open questions
 

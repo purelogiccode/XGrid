@@ -14,11 +14,13 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* hw/intc/i8259.c */
 int pic_read_irq(void *s);
 int pic_get_output(void *s);
 void *isa_pic;
+extern int xgc_irq_vector;
 
 /* accel/kvm + hw/i386/vapic.c */
 void kvm_report_irq_delivered(int delivered);
@@ -180,6 +182,15 @@ void qemu_mutex_unlock_main_loop(void);
 int pic_read_irq(void *s)
 {
     (void)s;
+    if (getenv("XGRID_CPU_TRACE")) {
+        fprintf(stderr, "pic_read_irq queued=%d\n", xgc_irq_vector);
+        fflush(stderr);
+    }
+    if (xgc_irq_vector >= 0) {
+        int vector = xgc_irq_vector;
+        xgc_irq_vector = -1;
+        return vector;
+    }
     return -1;
 }
 
