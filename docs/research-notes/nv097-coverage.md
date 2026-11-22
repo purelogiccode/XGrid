@@ -504,3 +504,24 @@ are address arithmetic just outside a defined method (`0x1D84` is +8 from
 `SET_ANTI_ALIASING_CONTROL` at `0x1D7C`; `0x1710` is -0x10 from
 `SET_VERTEX_DATA_ARRAY_OFFSET` at `0x1720`), which the reference does not define
 and therefore ignores; the guest's own stream remains reproducible bit for bit.
+### Seven-title differential (XFP1 acceptance, 2026-11-22)
+
+Each title resumed at its TM7 anchor (`--load-state`, 10M steps, fast engine,
+`XGRID_NV2A_UNKNOWN=1`) to measure the method surface the title itself writes:
+
+| Title | Anchor EIP | Outside-surface writes | Offsets |
+|---|---|---:|---|
+| 007 Agent Under Fire | `0x0001FC9E` | 0 | - |
+| Halo CE | `0x00063487` | 0 | - |
+| 50 Cent: Bulletproof | `0x00132FEF` | 3 | `0x1710` |
+| Bad Boys II | `0x001A3DEA` | 0 | - |
+| Destroy All Humans! | `0x00218674` | 0 | - |
+| Ninja Gaiden Black | `0x8001B047` | 0 | - |
+| Tak: The Great Juju Challenge | `0x800198AE` | 0 | - |
+
+**Every method the seven titles write is either in the verified NV097 surface
+(handled or explicitly declined) or an offset outside the reference surface that
+xemu ignores as a guest error.** No valid-surface gap. The accurate triangle 1B
+anchor is exact after the state-type refactor (`E58AE5D7` / `C43D5B49`), and the
+fast gate legs are byte-identical (`F9945E16`/`8836C7EB`,
+`5C0CF968`/`E2B4D327`).

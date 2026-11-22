@@ -500,10 +500,11 @@ Reference: `tcg/i386/tcg-target.c.inc`; the existing `RawBlockEmitter` (Iced).
 Reference: `hw/xbox/nv2a/pgraph/pgraph.c`, `pgraph.h`, `psh_regs.h`,
 `vsh_regs.h`, `nv2a_regs.h`, `methods.h.inc`, `pgraph_state` accessors.
 
-- [ ] Port the method table: every NV097 method with its latch and behavior -
-  `SET_*` state registers, transform constants/programs, `SET_VERTEX_DATA*`,
-  `SET_BEGIN_END`, `DRAW_ARRAYS`, `INLINE_ARRAY`, surface/clear/flip, semaphore
-  and notification paths.
+- [x] Method table port (2026-11-22): every NV097 method is in the verified
+  surface and either latched or explicitly declined (`nv097-coverage.md`,
+  `Nv097MethodTable.cs`, the `nv097-coverage.ps1` check); the seven-title
+  differential at the TM7 anchors reads zero valid-surface gaps (only 3
+  reference-gap writes at `0x1710` on 50 Cent).
 - [ ] Port the PGRAPH state into a state type `Nv2aMmio` owns. First section
   landed: `PgraphTextureState` owns the four texture slots (offset, format,
   address, control0/1, filter, image rect, border, palette) and the
@@ -523,9 +524,9 @@ Reference: `hw/xbox/nv2a/pgraph/pgraph.c`, `pgraph.h`, `psh_regs.h`,
   methods (0.002%)**, anchors identical (`F9945E16`/`8836C7EB`). The 18 residual
   alias offsets are listed in the note; the `--pgraph-port` state-type switch is
   the remaining XFP1 work.
-- [ ] Differential: every method the seven titles write is handled or
-  explicitly declined (the counter and the 1B probe are the instrument; the
-  residual alias groups are the list).
+- [x] Differential: every method the seven titles write is handled or
+  explicitly declined (the counter, the 1B gate probes and the seven TM7
+  anchors; the residual offsets are outside the reference surface).
 - [ ] Gates: four accurate 1B goldens + ktest byte-identical (or the measured
   re-baseline recorded in `docs/status.json`).
 
