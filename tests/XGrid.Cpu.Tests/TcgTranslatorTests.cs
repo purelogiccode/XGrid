@@ -280,14 +280,19 @@ public sealed class TcgTranslatorTests
     }
 
     [Fact]
-    public void Unsupported16BitAddress_ReturnsFalse()
+    public void Mov16BitAddress()
     {
-        // 8B 00 = mov eax, [bx+si] with a 0x67 address-size override in 32-bit mode:
-        // the decoder marks Is16Bit; the translator declines it.
-        DecodedInstruction decoded = Decoder.Decode([0x67, 0x8B, 0x00]);
-        var builder = new TcgBuilder(0x1000);
-        Assert.False(I386Translator.TryTranslate(decoded, 0x1000, builder, out _, out string? reason));
-        Assert.NotNull(reason);
+        AssertMatches(
+            [0x67, 0x8B, 0x00],
+            cpu => { Set(cpu, Gpr.Ebx, 0x10); Set(cpu, Gpr.Esi, 0x2000); Memory32(cpu, 0x2010, 0x11223344); });
+    }
+
+    [Fact]
+    public void Mov16BitAddressBpRelative()
+    {
+        AssertMatches(
+            [0x67, 0x8B, 0x46, 0x04],
+            cpu => { Set(cpu, Gpr.Ebp, 0x1000); Set(cpu, Gpr.Esi, 0x2000); Memory32(cpu, 0x3004, 0x55667788); });
     }
 
     [Fact]

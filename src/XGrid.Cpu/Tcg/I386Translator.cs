@@ -939,12 +939,6 @@ public static class I386Translator
     {
         address = 0;
         reason = null;
-        if (memory.Is16Bit)
-        {
-            reason = "16-bit addressing";
-            return false;
-        }
-
         SegmentRegister segment = memory.SegmentOverride ?? DefaultSegment(memory);
         address = builder.NewTemp();
         builder.Lea(address, memory, segment);
@@ -953,6 +947,12 @@ public static class I386Translator
 
     private static SegmentRegister DefaultSegment(in MemoryOperand memory)
     {
+        if (memory.Is16Bit)
+        {
+            // 16-bit addressing: BP-based forms default to SS, the rest to DS.
+            return memory.HasBase && memory.Base == Gpr.Ebp ? SegmentRegister.Ss : SegmentRegister.Ds;
+        }
+
         return memory.HasBase && (memory.Base == Gpr.Esp || memory.Base == Gpr.Ebp)
             ? SegmentRegister.Ss
             : SegmentRegister.Ds;

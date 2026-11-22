@@ -702,12 +702,18 @@ public static class TcgInterpreter
         uint address = op.Immediate;
         if (op.HasBase)
         {
-            address += gprs[op.GuestRegister];
+            address += op.Address16 ? gprs[op.GuestRegister] & 0xFFFFu : gprs[op.GuestRegister];
         }
 
         if (op.HasIndex)
         {
-            address += gprs[op.GuestRegister2] * (uint)op.Scale;
+            uint index = op.Address16 ? gprs[op.GuestRegister2] & 0xFFFFu : gprs[op.GuestRegister2];
+            address += index * (uint)op.Scale;
+        }
+
+        if (op.Address16)
+        {
+            address &= 0xFFFFu;
         }
 
         if (op.Segment >= 0 && op.Segment < segmentBases.Length)
@@ -715,7 +721,7 @@ public static class TcgInterpreter
             address += segmentBases[op.Segment];
         }
 
-        return op.Address16 ? address & 0xFFFFu : address;
+        return address;
     }
 
     private static uint Load(ITcgMemory? memory, uint address, int size)
