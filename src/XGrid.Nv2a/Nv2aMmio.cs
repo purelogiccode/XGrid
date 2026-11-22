@@ -3481,6 +3481,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ZpassReports++;
     }
 
+    /// <summary>Gets how many executed draws targeted a SWIZZLE-type surface (XFP5 diagnostic).</summary>
+    public long SwizzledTargetDraws { get; private set; }
+
     /// <summary>Gets how many ZPASS_PIXEL_CNT report blocks were written (XFP5).</summary>
     public long ZpassReports { get; private set; }
 
@@ -8842,6 +8845,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         LoadSurfaceGeometry();
+        if (_surfaceSwizzleTarget)
+        {
+            SwizzledTargetDraws++;
+        }
+
         NoteSurfaceWrite();
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
@@ -10501,6 +10509,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         LoadSurfaceGeometry();
+        if (_surfaceSwizzleTarget)
+        {
+            SwizzledTargetDraws++;
+        }
+
         NoteSurfaceWrite();
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;

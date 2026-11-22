@@ -775,16 +775,24 @@ program cache, buffer objects.
   Differential: `SwizzledTargetLiveTests` (2 live rows) - a 4x4 swizzled
   target draw lands pixel (2,0) at Morton word 4 while index 12 (pixel (0,3)'s
   PITCH word, not a covered Morton word) stays zero, so a pitch walk would
-  fail the test; a pitch target never enters the swizzle path. Gates: both
-  accurate 1B goldens byte-identical and the ktest log `CA5D3867` (the gate
-  titles draw no swizzled targets at 1B: `rtSwizzleSeen=0`). The NGB 10B + 10M
-  window also draws only pitch targets (`rtSwizzleSeen=0`) - its recorded
-  swizzle surface sets there are clears - so the retail render-target window
-  is still to locate; probe later steps for the first `seen>0` frame.
-- [ ] Slice 2b - the NGB swizzled-target window: find the step range where the
-  256x256 `0x08080228` targets are drawn (probe `rtSwizzleSeen` over later
-  anchors), then compare the GL replace frame with the software frame and add
-  the zeta download if the frame shows a depth-driven difference.
+  fail the test; a pitch target never enters the swizzle path.
+  **Seam bug found and fixed:** `PgraphDrawInfo.WithTriangle` rebuilds the
+  per-triangle record from the batch template and dropped the new fields, so
+  the backend saw `ColorSwizzle=false` while the draws existed (the 10M probe
+  read `seen=0`); the frame-level `swizzledTargetDraws` counter proved the
+  draws run (NGB 10B+20M: **1,470**) and the backend then read **1,470** with
+  `rtDownloads=735`, `unsupported=0`, no fault (that window's display frame is
+  black in both legs - a transition - so the visual RT comparison is still
+  open). The gate titles **do** draw swizzled targets (`rtSwizzleSeen=27071`
+  on both 1B legs), and the fast triangle `gl+replace` 1B frame is
+  **`79142DE4` byte-identical** to the recorded GL anchor with
+  `rtDownloads=1978`, `unsupported=0`, `composedFrames=0`: the download is
+  exercised and frame-neutral on the gates. Both accurate 1B goldens are
+  byte-identical and the ktest log is `CA5D3867`; 2,258 tests.
+- [ ] Slice 2b - the retail render-target frame: run NGB at a non-black
+  window (the TM7 row's 10B+2B) with `rtDownloads>0` and compare GL replace vs
+  software; add the zeta download only if the frame shows a depth-driven
+  difference.
   NGB at the 10B anchor + 10M steps in `--gpu gl --gpu-replace`: the backend
   reports **`draws=0 programs=0 presentUploads=1`** while the software leg
   executes 3,040 draws, and the recorded stream sets `0x08080228` /

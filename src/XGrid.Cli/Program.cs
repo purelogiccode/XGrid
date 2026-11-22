@@ -2289,6 +2289,7 @@ internal static class Program
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
             $"inlineElements={machine.Nv2A.InlineElementCount} " +
                 $"zpassReports={machine.Nv2A.ZpassReports} zpassTypeMisses={machine.Nv2A.ZpassReportTypeMisses} " +
+                $"swizzledTargetDraws={machine.Nv2A.SwizzledTargetDraws} " +
             $"fixedFn={machine.Nv2A.FixedFunctionDraws} fixedFnLit={machine.Nv2A.FixedFunctionLitDraws} " +
             $"fixedFnLights={machine.Nv2A.FixedFunctionLightedDraws}");
         if (XGrid.Nv2a.Nv2AMmio.TrackingUnknownMethods)

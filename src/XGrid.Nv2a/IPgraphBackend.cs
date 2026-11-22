@@ -813,7 +813,10 @@ public readonly struct PgraphDrawInfo(
             EyeY,
             EyeZ,
             guestTexels,
-            Bump);
+            Bump,
+            ColorSwizzle,
+            ColorSwizzleWidth,
+            ColorSwizzleHeight);
     }
 }
 
