@@ -44,8 +44,9 @@ internal static unsafe partial class XemuWindowLocator
 
     /// <summary>Returns the largest visible top-level window owned by a process.</summary>
     /// <param name="processId">Core process id.</param>
-    /// <returns>The window handle, or zero when the process owns no visible window.</returns>
-    internal static IntPtr Find(int processId)
+    /// <param name="requireVisible">False to accept a hidden window (the embedding case).</param>
+    /// <returns>The window handle, or zero when the process owns no candidate window.</returns>
+    internal static IntPtr Find(int processId, bool requireVisible = true)
     {
         var candidates = new List<IntPtr>(4);
         GCHandle state = GCHandle.Alloc(candidates);
@@ -69,7 +70,8 @@ internal static unsafe partial class XemuWindowLocator
             }
 
             int style = Win32Window.GetWindowLongW(handle, Win32Window.GwlStyle);
-            if (!Win32Window.IsEmbeddable(unchecked((uint)style)))
+            if (!Win32Window.IsEmbeddable(unchecked((uint)style))
+                || (requireVisible && !Win32Window.IsWindowVisible(handle)))
             {
                 continue;
             }
