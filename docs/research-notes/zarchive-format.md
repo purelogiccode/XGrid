@@ -165,3 +165,8 @@ result does not depend on which window has focus (window screenshots on this hos
 capture whatever is in front, which invalidated two earlier attempts).
 Pass criteria: the 007 intro/main menu renders from the archive with no file
 written to disk besides the archive itself.
+**Result (2026-11-23): PASS.** A 1.72 GB 007 ISO packed to `007-entry.zar`
+(1.18 GB, level 1) boots and renders: 27,394 frames, 9,734 colours, 30.0% black,
+`window=0` (the core ran with the display sink, no visible window at all). The
+guest read the title's XBE and scene data straight out of the archive through the
+`xgridzar` driver and the `format=xgridzar` mount added by patch 0006.

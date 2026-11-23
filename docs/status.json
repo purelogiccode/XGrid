@@ -10,7 +10,7 @@
     "status": "active",
     "started": "2026-11-23",
     "attempts": 0,
-    "acceptance": "Entry-form archives play today (qemu-img reports xgridzar, qemu-io reads the XDVDFS descriptor, xemu mounts it with format=xgridzar). The remaining half: an --iso archive (file tree, no .iso entry) boots without extraction via an in-memory XDVDFS volume.",
+    "acceptance": "Entry-form archives are boot-proven: a 1.72 GB 007 ISO packed to a 1.18 GB .zar renders the game (27,394 frames, 9,734 colours) with no extraction, qemu-img/qemu-io agree on geometry and the XDVDFS descriptor, and the library launches .zar with format=xgridzar. The remaining half: an --iso archive (file tree, no .iso entry) needs an in-memory XDVDFS volume synthesizer.",
     "price": "4-6 days."
   },
   "position": {
@@ -466,7 +466,7 @@
       ],
       "plan": "E2",
       "bar": "correctness",
-      "acceptance": "Entry-form archives play today (qemu-img reports xgridzar, qemu-io reads the XDVDFS descriptor, xemu mounts it with format=xgridzar). The remaining half: an --iso archive (file tree, no .iso entry) boots without extraction via an in-memory XDVDFS volume.",
+      "acceptance": "Entry-form archives are boot-proven: a 1.72 GB 007 ISO packed to a 1.18 GB .zar renders the game (27,394 frames, 9,734 colours) with no extraction, qemu-img/qemu-io agree on geometry and the XDVDFS descriptor, and the library launches .zar with format=xgridzar. The remaining half: an --iso archive (file tree, no .iso entry) needs an in-memory XDVDFS volume synthesizer.",
       "price": "4-6 days."
     },
     {
