@@ -59,6 +59,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _hasFrame;
 
+    /// <summary>The shell window, kept for window screenshots.</summary>
+    private Window? _window;
+
     [ObservableProperty]
     private GameEntry? _currentGame;
 
@@ -249,6 +252,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public void Attach(Window window)
     {
         ArgumentNullException.ThrowIfNull(window);
+        _window = window;
         Dialogs.Window = window;
         window.Closing += OnWindowClosing;
 
@@ -496,15 +500,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Public command: writes the presented frame to the <c>screenshots</c>
-    /// folder as a PNG at the frame's own resolution.
+    /// Public command: writes the whole shell window to the <c>screenshots</c>
+    /// folder as a PNG, whether or not the console is powered on.
     /// </summary>
     [RelayCommand]
     private void SaveScreenshot()
     {
-        if (FrameBitmap is null)
+        if (_window is null)
         {
-            ShowToast(IsRunning ? "No frame captured yet." : "Power on the console first.");
+            ShowToast("The window is not ready yet.");
             return;
         }
 
@@ -513,13 +517,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             string directory = Path.Combine(SettingsStore.ResolveDirectory(), "screenshots");
             _ = Directory.CreateDirectory(directory);
             string path = ScreenshotNaming.NextPath(directory, DateTimeOffset.Now);
-            FrameBitmap.Save(path, PngBitmapEncoderOptions.Default);
+
+            // Render the window's own visual tree, so the capture does not depend
+            // on the window being unobstructed and matches the display scaling.
+            double scaling = _window.RenderScaling > 0 ? _window.RenderScaling : 1.0;
+            var size = new PixelSize(
+                Math.Max(1, (int)Math.Ceiling(_window.ClientSize.Width * scaling)),
+                Math.Max(1, (int)Math.Ceiling(_window.ClientSize.Height * scaling)));
+            using (var target = new RenderTargetBitmap(size, new Vector(96 * scaling, 96 * scaling)))
+            {
+                target.Render(_window);
+                target.Save(path, PngBitmapEncoderOptions.Default);
+            }
+
             AddLog(LogLevel.Info, "Screenshot saved to " + path);
             ShowToast("Screenshot saved: " + Path.GetFileName(path));
         }
         catch (Exception exception) when (exception is IOException
                                               or UnauthorizedAccessException
-                                              or NotSupportedException)
+                                              or NotSupportedException
+                                              or InvalidOperationException)
         {
             AddLog(LogLevel.Error, "Could not save the screenshot: " + exception.Message);
             ShowToast("Could not save the screenshot.");

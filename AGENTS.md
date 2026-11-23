@@ -956,6 +956,20 @@ fault is closed and one process hosts the shell and the emulator).**
 - **Next.** Flip the release packaging to ship `xgrid_core.dll` beside the shell
   and keep `xemu.exe` as the fallback; then the input/graphics settings audit.
 
+**Session 2026-11-23 (sixty-fifth; F8 captures the whole window, console or
+not).**
+
+- **Correction to the sixty-fourth note.** F8 first saved the presented frame and
+  refused when nothing was powered on. It now renders the shell window itself
+  (`RenderTargetBitmap.Render(_window)` at the window's `RenderScaling`), so the
+  capture includes the menu, sidebar, display area and status bar, works with
+  the console off, and does not depend on the window being unobstructed.
+- **Evidence.** Console off: `screenshot-20261123-174502.png`, 2240x1540 (the
+  client area at 150% scaling), 1,026 distinct colours. Console on:
+  `screenshot-20261123-174548.png`, 2240x1540, display region 16,630 colours and
+  100% non-black, so the game picture is inside the capture.
+- The folder and naming are unchanged: `<data>/screenshots/screenshot-YYYYMMDD-HHMMSS.png`.
+
 **Session 2026-11-23 (sixty-fourth; F8 writes a screenshot next to the
 configuration).**
 
