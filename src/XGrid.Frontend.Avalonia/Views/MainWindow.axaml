@@ -1,10 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
+        xmlns:models="using:XGrid.Frontend.Avalonia.Models"
         xmlns:local="using:XGrid.Frontend.Avalonia"
         x:Class="XGrid.Frontend.Avalonia.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Title="XGrid — Xbox Emulator"
+        Title="XGrid - Xbox Emulator"
         Icon="/Assets/xgrid-icon.png"
         Width="1280"
         Height="880"
@@ -12,154 +13,198 @@
         MinHeight="680"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource XgBackgroundBrush}">
-  <Grid ColumnDefinitions="Auto,*">
-    <!-- ===================== Sidebar ===================== -->
-    <Border Grid.Column="0"
-            Width="252"
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+
+    <!-- ===================== Menu bar ===================== -->
+    <Menu Grid.Row="0" IsVisible="{Binding !IsFullscreen}">
+      <MenuItem Header="File" ToolTip.Tip="Choose a disc image or leave XGrid.">
+        <MenuItem Header="Open Disc..." InputGesture="Ctrl+O" Click="OnMenuOpenDisc"
+                  ToolTip.Tip="Choose an ISO or CHD image and power the console on." />
+        <MenuItem Header="Choose Disc Image..." Click="OnMenuChooseDisc"
+                  ToolTip.Tip="Select the disc that the power button will boot." />
+        <Separator />
+        <MenuItem Header="Exit" Click="OnMenuExit" ToolTip.Tip="Close XGrid." />
+      </MenuItem>
+      <MenuItem Header="Emulation" ToolTip.Tip="Power, pause, save states and stop.">
+        <MenuItem Header="Power On / Off" InputGesture="F5" Click="OnMenuPower" />
+        <MenuItem Header="Pause / Resume" InputGesture="F6" Click="OnMenuPause" />
+        <MenuItem Header="Stop" Click="OnMenuStop" />
+        <Separator />
+        <MenuItem Header="Save State" InputGesture="F8" Click="OnMenuSaveState" />
+        <MenuItem Header="Load State" InputGesture="F9" Click="OnMenuLoadState" />
+        <Separator />
+        <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen" />
+      </MenuItem>
+      <MenuItem Header="View" ToolTip.Tip="Switch pages, the log dock and the layout.">
+        <MenuItem Header="Console" Click="OnMenuHome" />
+        <MenuItem Header="Library" Click="OnMenuLibrary" />
+        <MenuItem Header="Settings" Click="OnMenuSettings" />
+        <MenuItem Header="Activity" Click="OnMenuLogs" />
+        <Separator />
+        <MenuItem Header="Show Log Dock" ToggleType="CheckBox" IsChecked="{Binding ShowLogDock}"
+                  Click="OnMenuToggleLogDock" />
+        <Separator />
+        <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen" />
+      </MenuItem>
+      <MenuItem Header="Help" ToolTip.Tip="About this build and the emulation core.">
+        <MenuItem Header="About XGrid" Click="OnMenuAbout" />
+      </MenuItem>
+    </Menu>
+
+    <!-- ===================== Toolbar ===================== -->
+    <Border Grid.Row="1"
+            Padding="8,4"
             IsVisible="{Binding !IsFullscreen}"
-            Background="{DynamicResource XgSidebarBrush}"
+            Background="{DynamicResource XgToolbarBrush}"
             BorderBrush="{DynamicResource XgBorderBrush}"
-            BorderThickness="0,0,1,0">
-      <Grid Margin="16,22,16,16" RowDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="6,0,6,28">
-          <Grid Width="38" Height="38" VerticalAlignment="Center">
-            <Ellipse Stroke="{DynamicResource XgAccentBrush}" StrokeThickness="2" />
-            <Path Data="M12 12 L26 26 M26 12 L12 26"
-                  Stroke="{DynamicResource XgAccentBrush}"
-                  StrokeThickness="2.4"
-                  StrokeLineCap="Round" />
-          </Grid>
-          <StackPanel Spacing="1" VerticalAlignment="Center">
-            <TextBlock Text="XGRID" FontSize="18" FontWeight="Bold" LetterSpacing="2.4" />
-            <TextBlock Text="XBOX EMULATOR" Classes="caption" FontSize="9.5" />
-          </StackPanel>
+            BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Classes="toolbar" Click="OnMenuChooseDisc" ToolTip.Tip="Choose the disc image to boot">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Disc}" />
+              <TextBlock Text="Open" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="toolbar" Click="OnMenuPower" ToolTip.Tip="Power the console on or off (F5)">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Power}" />
+              <TextBlock Text="Power" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="toolbar" Click="OnMenuStop" ToolTip.Tip="Stop emulation">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Stop}" />
+              <TextBlock Text="Stop" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+
+          <Border Width="1" Margin="7,6" Background="{DynamicResource XgBorderBrush}" />
+
+          <Button Classes="toolbar" Click="OnMenuLibrary" ToolTip.Tip="Game library">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Library}" />
+              <TextBlock Text="Library" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="toolbar" Click="OnMenuSettings" ToolTip.Tip="Settings">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Settings}" />
+              <TextBlock Text="Config" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+
+          <Border Width="1" Margin="7,6" Background="{DynamicResource XgBorderBrush}" />
+
+          <Button Classes="toolbar" Click="OnMenuSaveState" ToolTip.Tip="Save a snapshot (F8)">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Save}" />
+              <TextBlock Text="Save" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="toolbar" Click="OnMenuLoadState" ToolTip.Tip="Load a snapshot (F9)">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Refresh}" />
+              <TextBlock Text="Load" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="toolbar" Click="OnMenuToggleLogDock" ToolTip.Tip="Show or hide the log dock">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Logs}" />
+              <TextBlock Text="Logs" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
         </StackPanel>
 
-        <ListBox Grid.Row="1"
-                 Classes="nav"
-                 ItemsSource="{Binding NavigationItems}"
-                 SelectedItem="{Binding SelectedNavigationItem, Mode=TwoWay}">
-          <ListBox.ItemTemplate>
-            <DataTemplate DataType="vm:NavigationItem">
-              <Grid ColumnDefinitions="Auto,*">
-                <PathIcon Data="{Binding Icon}"
-                          Width="18"
-                          Height="18"
-                          Margin="0,0,12,0"
-                          VerticalAlignment="Center"
-                          Foreground="{Binding $parent[ListBoxItem].Foreground}" />
-                <StackPanel Grid.Column="1" Spacing="1">
-                  <TextBlock Text="{Binding Title}"
-                             FontSize="13"
-                             FontWeight="Medium"
-                             Foreground="{Binding $parent[ListBoxItem].Foreground}" />
-                  <TextBlock Text="{Binding Subtitle}" Classes="caption" FontSize="10" />
-                </StackPanel>
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-
-        <StackPanel Grid.Row="2" Spacing="12">
-          <Border Classes="inset" Padding="12">
-            <StackPanel Spacing="8">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                         Fill="{DynamicResource XgAccentBrush}" />
-                <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" FontSize="12" />
-              </StackPanel>
-              <TextBlock Text="{Binding StatusDetail}"
-                         Classes="caption"
-                         TextTrimming="CharacterEllipsis" />
-              <Border Classes="divider" />
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="Guest steps" Classes="caption" />
-                <TextBlock Grid.Column="1"
-                           Text="{Binding Steps, StringFormat={}{0:N0}}"
-                           Classes="mono"
-                           FontSize="11" />
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="Frames" Classes="caption" />
-                <TextBlock Grid.Column="1"
-                           Text="{Binding Frames, StringFormat={}{0:N0}}"
-                           Classes="mono"
-                           FontSize="11" />
-              </Grid>
-            </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
+          <Border Classes="badge" VerticalAlignment="Center" ToolTip.Tip="Active emulation core">
+            <TextBlock Text="{Binding CoreLabel}" />
           </Border>
-          <TextBlock Text="Avalonia · cross-platform"
-                     Classes="caption"
-                     FontSize="10"
-                     HorizontalAlignment="Center" />
+          <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+            <Ellipse Width="7" Height="7" VerticalAlignment="Center" Fill="{DynamicResource XgAccentBrush}" />
+            <TextBlock Text="{Binding RunStateLabel}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
         </StackPanel>
       </Grid>
     </Border>
 
-    <!-- ===================== Main content ===================== -->
-    <Grid Grid.Column="1" RowDefinitions="Auto,*">
-      <Border Grid.Row="0"
-              BorderBrush="{DynamicResource XgBorderBrush}"
-              BorderThickness="0,0,0,1"
-              Padding="28,0"
-              Height="72"
-              IsVisible="{Binding !IsFullscreen}">
-        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-          <StackPanel Spacing="2">
-            <TextBlock Text="{Binding PageTitle}" Classes="h2" FontSize="18" />
-            <TextBlock Text="{Binding PageCaption}" Classes="caption" />
-          </StackPanel>
+    <!-- ===================== Content ===================== -->
+    <ContentControl Grid.Row="2"
+                    Content="{Binding SelectedNavigationItem.Page, FallbackValue={x:Null}}"
+                    Margin="16,14,16,14" />
 
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-            <Border Classes="pill" VerticalAlignment="Center">
-              <StackPanel Orientation="Horizontal" Spacing="7">
-                <Ellipse Width="7" Height="7" VerticalAlignment="Center"
-                         Fill="{DynamicResource XgAccentBrush}" />
-                <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold" />
-              </StackPanel>
-            </Border>
-            <Button Classes="ghost icon"
-                    Command="{Binding TogglePauseCommand}"
-                    IsEnabled="{Binding IsRunning}"
-                    ToolTip.Tip="Pause or resume (F6)">
-              <Panel>
-                <PathIcon Data="{x:Static local:AppIcons.Pause}"
-                          Width="15"
-                          Height="15"
-                          IsVisible="{Binding !IsPaused}" />
-                <PathIcon Data="{x:Static local:AppIcons.Play}"
-                          Width="15"
-                          Height="15"
-                          IsVisible="{Binding IsPaused}" />
-              </Panel>
-            </Button>
-            <Button Classes="primary" Command="{Binding TogglePowerCommand}" ToolTip.Tip="Power on or off (F5)">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <PathIcon Data="{x:Static local:AppIcons.Power}"
-                          Width="15"
-                          Height="15"
-                          Foreground="{DynamicResource XgAccentTextBrush}" />
-                <TextBlock Text="{Binding PowerButtonText}"
-                           Foreground="{DynamicResource XgAccentTextBrush}"
-                           FontWeight="SemiBold" />
-              </StackPanel>
-            </Button>
-          </StackPanel>
-        </Grid>
-      </Border>
+    <!-- ===================== Log dock ===================== -->
+    <Border Grid.Row="3"
+            Height="180"
+            IsVisible="{Binding ShowLogDock}"
+            Background="{DynamicResource XgSurfaceBrush}"
+            BorderBrush="{DynamicResource XgBorderBrush}"
+            BorderThickness="0,1,0,0">
+      <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0" Padding="10,3" Background="{DynamicResource XgSurfaceAltBrush}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <PathIcon Width="12" Height="12" Data="{x:Static local:AppIcons.Logs}"
+                        Foreground="{DynamicResource XgTextMutedBrush}" />
+              <TextBlock Text="Log" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Classes="caption" Margin="12,0" VerticalAlignment="Center"
+                       Text="{Binding LogEntries.Count, StringFormat={}{0:N0} entries}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+              <Button Classes="chrome" Content="Activity" Click="OnMenuLogs" ToolTip.Tip="Open the full activity page" />
+              <Button Classes="chrome" Padding="6,4" Click="OnMenuToggleLogDock" ToolTip.Tip="Hide the log dock">
+                <PathIcon Width="11" Height="11" Data="{x:Static local:AppIcons.Close}" />
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+        <ListBox x:Name="LogDockList" Grid.Row="1" Classes="log"
+                 ItemsSource="{Binding LogEntries}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ToolTip.Tip="Recent diagnostic messages">
+          <ListBox.ItemTemplate>
+            <DataTemplate DataType="models:LogEntry">
+              <Grid ColumnDefinitions="Auto,Auto,*">
+                <TextBlock Text="{Binding TimeText}" Classes="mono" FontSize="11"
+                           Foreground="{DynamicResource XgTextMutedBrush}" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="1" Text="{Binding LevelText}" Classes="mono" FontSize="11"
+                           Width="46" Margin="0,0,6,0" />
+                <TextBlock Grid.Column="2" Text="{Binding Message}" Classes="mono" FontSize="11"
+                           TextTrimming="CharacterEllipsis" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Border>
 
-      <ContentControl Grid.Row="1"
-                      Content="{Binding SelectedNavigationItem.Page, FallbackValue={x:Null}}"
-                      Margin="28,20,28,24" />
-    </Grid>
+    <!-- ===================== Status bar ===================== -->
+    <Border Grid.Row="4"
+            Padding="10,4"
+            Background="{DynamicResource XgStatusBarBrush}"
+            BorderBrush="{DynamicResource XgBorderBrush}"
+            BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+        <Ellipse Width="6" Height="6" Margin="0,0,7,0" VerticalAlignment="Center"
+                 Fill="{DynamicResource XgAccentBrush}" />
+        <TextBlock Grid.Column="1" Classes="status" Text="{Binding StatusDetail}"
+                   TextTrimming="CharacterEllipsis" ToolTip.Tip="Current status" />
+        <TextBlock Grid.Column="2" Classes="status" Margin="12,0" Text="{Binding RendererLabel}" />
+        <TextBlock Grid.Column="3" Classes="status" Margin="12,0"
+                   Text="{Binding Steps, StringFormat={}{0:N0} steps}" />
+        <TextBlock Grid.Column="4" Classes="statusStrong" MinWidth="60" TextAlignment="Right"
+                   Text="{Binding FpsText}" />
+      </Grid>
+    </Border>
 
     <!-- ===================== Toast ===================== -->
-    <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+    <Border Grid.Row="0" Grid.RowSpan="5"
             Classes="toast"
             IsVisible="{Binding IsToastVisible}"
             HorizontalAlignment="Right"
             VerticalAlignment="Bottom"
-            Margin="0,0,28,24">
+            Margin="0,0,24,24">
       <StackPanel Orientation="Horizontal" Spacing="10">
         <PathIcon Data="{x:Static local:AppIcons.Check}"
                   Width="15"

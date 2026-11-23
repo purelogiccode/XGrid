@@ -98,7 +98,7 @@ public sealed class EmulatorSettings
     public bool NetworkLinkUp { get; init; } = true;
 
     /// <summary>Gets or sets the accent palette key.</summary>
-    public string Accent { get; set; } = "Emerald";
+    public string Accent { get; set; } = "Blue";
 
     /// <summary>
     /// Gets or sets the emulation core: <see cref="CoreManaged"/> (the C#
@@ -318,7 +318,7 @@ public sealed class EmulatorSettings
             : "loopback";
         if (string.IsNullOrWhiteSpace(Accent))
         {
-            Accent = "Emerald";
+            Accent = "Blue";
         }
 
         LibraryFolders.RemoveAll(string.IsNullOrWhiteSpace);
