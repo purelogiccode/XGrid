@@ -135,6 +135,30 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Build_BindsTheKeyboardControllerToPortOneWhenTheShellSuppliesThePad()
+    {
+        XemuLaunchSettings settings = CreateSettings() with { InputSinkName = "xgrid-input-test" };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        // The core binds a controller only when the port's device id matches, so
+        // the binding is `port1`; `port1_driver` is the USB device type and keeps
+        // its Duke default. Writing the driver instead left port 1 unbound, and
+        // the shell's pad was never read.
+        Assert.Contains("[input.bindings]", toml, StringComparison.Ordinal);
+        Assert.Contains("port1 = 'keyboard'", toml, StringComparison.Ordinal);
+        Assert.DoesNotContain("port1_driver", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_OmitsTheInputBindingWithoutAnInputSink()
+    {
+        string toml = XemuTomlWriter.Build(CreateSettings());
+
+        Assert.DoesNotContain("[input.bindings]", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_WritesApostrophesAndNewlinesAsBasicStrings()
     {
         XemuLaunchSettings settings = CreateSettings() with

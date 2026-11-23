@@ -64,13 +64,14 @@ public static class XemuTomlWriter
         text.Append("aspect_ratio = '").Append(settings.AspectRatio).Append("'\n");
         text.Append('\n');
 
-        // Only when the shell supplies port 1: bind the keyboard controller so a
-        // controller exists without a gamepad. Otherwise the core keeps its own
-        // bindings, so a connected Xbox gamepad works as usual.
-        if (settings.UseHostInput)
+        // Bind the core's keyboard controller to port 1 when the shell supplies
+        // the pad. The core only binds a controller whose device id matches the
+        // port's binding (`port1`), and the shell's sink then replaces that
+        // controller's state; `port1_driver` stays at its Duke default.
+        if (!string.IsNullOrWhiteSpace(settings.InputSinkName))
         {
             text.Append("[input.bindings]\n");
-            text.Append("port1_driver = 'keyboard'\n");
+            text.Append("port1 = 'keyboard'\n");
             text.Append('\n');
         }
 

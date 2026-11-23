@@ -956,6 +956,33 @@ fault is closed and one process hosts the shell and the emulator).**
 - **Next.** Flip the release packaging to ship `xgrid_core.dll` beside the shell
   and keep `xemu.exe` as the fallback; then the input/graphics settings audit.
 
+**Session 2026-11-23 (sixty-third; the shell owns the picture and the pad - the
+frame/input sink is on, and port 1 is actually bound).**
+
+- **The gap.** `EmulatorSettings.DisplaySink` defaulted to false and nothing set
+  it, so the shell never created the shared sections: the core showed its own
+  window and read its own SDL input, and the shell's input mapping was
+  decorative.
+- **The sink is on.** `DisplaySink` now defaults to true, which makes
+  `XemuLaunchPlan` create the display and input sink names. The shell presents
+  the frames itself (`core frame 1280x960 #1`) and the embedded core window is
+  detached on the first frame. This is the same path for in-process and
+  separate-process hosting.
+- **Port 1 was never bound.** `XemuTomlWriter` wrote `port1_driver = 'keyboard'`,
+  but `port1_driver` is the USB device type (`usb-xbox-gamepad`,
+  `usb-xbox-gamepad-s`) and an unknown value falls back to Duke;
+  `xemu_input_get_controller_default_bind_port` matches the port's *device id*
+  (`input.bindings.port1`) against the controller's GUID, so the keyboard
+  controller was created but never bound. With no bound controller the sink
+  override (`state == bound_controllers[0]`) never ran. The writer now emits
+  `port1 = 'keyboard'` when the shell supplies the pad, and two tests pin it.
+- **Evidence.** Shell with `--autostart` on a corpus ISO:
+  `sink='Local\XGridDisplay-...' setting=True`, `core frame 1280x960 #1`,
+  `xgrid input: port 1 reads the shell pad`. Both hostings still work:
+  in-process `childCoreProcesses=0` / 24.8 s CPU, separate process
+  `childCoreProcesses=1` / 21.7 s in the child. Suite 2,249 -> 2,251 green,
+  build 0 warnings, format clean.
+
 **Session 2026-11-23 (sixty-second; the release archive now carries the
 emulator, and the packaged frontend boots from it).**
 
