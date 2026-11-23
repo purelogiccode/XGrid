@@ -1,7 +1,7 @@
 /*
  * XGrid ZArchive (.zar) block driver for the xemu core.
  *
- * SPDX-License-Identifier: GPL-2.0
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Exposes the disc image stored in a ZArchive as the guest's DVD, decoding
  * 64 KiB zstd blocks on demand: nothing is extracted. The format facts are in

@@ -1,7 +1,7 @@
 /*
  * XGrid host display sink.
  *
- * SPDX-License-Identifier: GPL-2.0
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * See display/xgrid-display.h. Windows only for now: the shell and the core are
  * Windows processes, and a named file mapping is the cheapest lossless path.

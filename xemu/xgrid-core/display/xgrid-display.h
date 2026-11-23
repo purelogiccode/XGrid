@@ -1,7 +1,7 @@
 /*
  * XGrid host display sink.
  *
- * SPDX-License-Identifier: GPL-2.0
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * When XGRID_DISPLAY_SHM is set, the core publishes every presented frame into
  * a named shared section instead of (or as well as) showing its own window. The
