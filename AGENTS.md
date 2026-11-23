@@ -79,6 +79,11 @@ host APIs or OS facilities and every edge is inventoried in
 > **Layout (2026-11-23):** the maintained core is the tracked `xemu/` tree.
 > `native/xemu`, `native/xgrid-core` and `native/xemu-patches` in older notes
 > describe the pre-vendoring layout; those files now live in `xemu/`.
+>
+> **Vendored-tree rules:** `xemu/AGENTS.md` governs edits inside `xemu/` - one
+> purpose per commit, `<subsystem>: <description>` messages, compile
+> verification and `clang-format` for new C. XGrid's own additions live in
+> `xemu/xgrid-core/`; upstream files change only through `xemu/xemu-patches/`.
 
 **Porting policy (2026-10-23; amended 2026-11-23).** XGrid's own code is
 GPL-2.0-or-later and may port code from xemu, QEMU, Cxbx, xqemu, envytools and
