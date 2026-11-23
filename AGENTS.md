@@ -919,6 +919,20 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
 
+**Session 2026-11-23 (sixty-ninth; DirectX is in the plan as a renderer port).**
+
+- **C6 in `ImplementationPlan.md`.** A D3D11 backend is scoped as six
+  milestones: device and surfaces, textures and samplers, HLSL shaders from the
+  same NV2A state the GLSL generators read, present into the shell's BGRA sink,
+  the shell option (`GraphicsSettings`, validation, hint, the tests that treat
+  `directx` as unknown today) and corpus parity. D3D12 is explicitly out of
+  scope.
+- **Why a port.** xemu has no DirectX backend; the combiner and vertex programs
+  are GLSL (`psh.c`, `vsh-prog.c`, `vsh-ff.c`). Cxbx-Reloaded's
+  `src/core/hle/D3D8/Direct3D9/` is named as the HLSL reference, with xemu
+  still the behaviour oracle.
+- The plan's phase-11 row and the suggested order mention C6; the status gate
+  stays green.
 **Session 2026-11-23 (sixty-eighth; the implementation plan is a checklist of
 what is missing).**
 
