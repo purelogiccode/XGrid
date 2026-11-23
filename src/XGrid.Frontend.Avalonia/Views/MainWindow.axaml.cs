@@ -94,6 +94,16 @@ public partial class MainWindow : Window
         ExecuteShellCommand(static viewModel => viewModel.SaveScreenshotCommand.Execute(null));
     }
 
+    private void OnMenuOpenConfigFolder(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.OpenConfigFolderCommand.Execute(null));
+    }
+
+    private void OnMenuOpenScreenshotsFolder(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.OpenScreenshotsFolderCommand.Execute(null));
+    }
+
     private void OnMenuToggleLogDock(object? sender, RoutedEventArgs e)
     {
         ExecuteShellCommand(static viewModel => viewModel.ToggleLogDockCommand.Execute(null));
