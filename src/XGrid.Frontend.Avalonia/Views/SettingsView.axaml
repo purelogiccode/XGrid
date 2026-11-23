@@ -197,6 +197,47 @@
           </StackPanel>
           <Border Classes="divider" />
 
+          <StackPanel Spacing="7">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="Emulation core" Classes="label" />
+                <TextBlock Text="The managed C# core is the behavioural oracle. The xemu 0.8.139 core runs its own renderer and devices at full speed and is embedded in this window."
+                           Classes="hint"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <ComboBox Grid.Column="1"
+                        Width="220"
+                        ItemsSource="{Binding CoreOptions}"
+                        SelectedItem="{Binding SelectedCore, Mode=TwoWay}"
+                        VerticalAlignment="Center">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate DataType="vm:KeyedOption">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Text="{Binding Label}" />
+                      <TextBlock Text="{Binding Hint}"
+                                 FontSize="10.5"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource XgTextMutedBrush}" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Spacing="7">
+            <StackPanel Spacing="2">
+              <TextBlock Text="xemu core executable" Classes="label" />
+              <TextBlock Text="Optional. Empty resolves core/xemu/xemu.exe beside the app, then data/xemu/xemu.exe in the repository."
+                         Classes="hint" />
+            </StackPanel>
+            <TextBox Classes="path"
+                     Text="{Binding XemuCorePath, Mode=TwoWay}"
+                     PlaceholderText="Auto-detect" />
+          </StackPanel>
+
+          <Border Classes="divider" />
+
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Guest memory" Classes="label" />

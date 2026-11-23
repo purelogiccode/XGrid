@@ -56,7 +56,7 @@ runs/
 # Wave tooling
 node_modules/
 
-# Native CPU core (vendored QEMU build tree; patches, shim and scripts are tracked)
+# Native cores (vendored source/build trees; patches, shims and scripts are tracked)
 native/qemu/
 native/xgridcpu/*.dll
 native/**/build/
@@ -71,3 +71,4 @@ tri-golden-gl.bmp
 # Python tooling caches
 __pycache__/
 *.pyc
+native/xemu/

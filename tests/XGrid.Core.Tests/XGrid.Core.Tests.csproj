@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\..\src\XGrid.Core.Xemu\XGrid.Core.Xemu.csproj" />
   </ItemGroup>
 
 </Project>

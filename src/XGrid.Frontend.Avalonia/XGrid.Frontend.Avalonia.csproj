@@ -8,6 +8,8 @@
     <!-- UI types are not a public API surface; XAML is the documentation. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Required by Avalonia's Win32 native-control host (the embedded core display). -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- UI code must resume on the Avalonia dispatcher after awaits. -->
     <NoWarn>$(NoWarn);MA0004</NoWarn>
   </PropertyGroup>
@@ -26,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Core.Xemu\XGrid.Core.Xemu.csproj" />
     <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
     <ProjectReference Include="..\XGrid.GpuGl\XGrid.GpuGl.csproj" />
     <ProjectReference Include="..\XGrid.Graphics\XGrid.Graphics.csproj" />
