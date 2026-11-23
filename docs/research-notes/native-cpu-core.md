@@ -1,0 +1,371 @@
+# Native CPU core (XCN0-XCN3)
+
+Status: **2026-11-22, XCN0 active.** Operator decision: the product CPU is the
+vendored xemu 0.8.139 / QEMU 10.2.0 TCG i386 core behind `libxgridcpu`; every
+other emulator component stays managed C#. This note records the architecture,
+the build, the spike and the measured risks. The plan is `ImplementationPlan.md`
+E0N; the status is `docs/status.json`.
+
+## Why
+
+- 007 at 30B steps is 99.5% CPU: 413.254 s wall, GL 1.724 s, devices 0.481 s.
+- The raw JIT is 13.7 ns/step (0.100x); 0.5x needs 2.7 ns/step; the managed
+  TCG port reached 66-90 ns/step (0% of the required speedup, P1S5).
+- The reference TCG is the only measured engine at ~1.2 ns/step and it is
+  portable. Embedding it buys xemu-class CPU speed while the C# GPU, APU,
+  devices, frontend and tests stay.
+- It is **not** native 5-10x; WHP/KVM is out of scope. The target is ~1x on
+  007 and xemu-class behaviour.
+
+## Architecture
+
+```
+C# machine (XboxMachine, AddressSpace, devices, NV2A, APU, frontend)
+        |  ICpuCore  (src/XGrid.Cpu.Native)
+        v
+libxgridcpu (native/xgridcpu)  -- C ABI --
+        |   xgridcpu_create / map_ram / map_mmio / run(n) / set_irq
+        |   get_state / set_state / flush_tb
+        v
+vendored xemu 0.8.139 = QEMU 10.2.0 (target/i386, accel/tcg, tcg/, exec/,
+system/memory) -- no QEMU machine, devices, block, ui, audio or net
+```
+
+- Guest RAM is one pinned buffer mapped at GPA 0 (64/128 MB); the C# devices
+  read it through the existing `IGpuMemory`/`IGuestMemory` adapters with no
+  copy. The NV2A pushbuffer stays in RAM and is parsed by the C# pusher.
+- The vCPU runs in a **native host process** against a named shared section.
+  MMIO is a QEMU `MemoryRegionOps` whose read handler returns bytes from a
+  shared **read shadow** and whose write handler queues an `XgcMmioAccess` in a
+  ring; the C# device model services the ring and refreshes the shadow between
+  run slices. No managed code is called from the TCG/softmmu stack (the
+  .NET-hosted DLL path is blocked by Control Flow Guard).
+- Interrupts: `Pic8259` (the existing ELCR/level model) drives the host's
+  `irq_pending`/`irq_vector` fields; `xgc_set_irq` raises `CPU_INTERRUPT_HARD`
+  and `pic_read_irq()` returns the queued vector at the next instruction
+  boundary when IF=1. The CPU has **no local APIC** (CPUID_APIC cleared), as on
+  the console.
+- Timing: `--cpu native` advances devices by the executed-instruction count
+  (or the icount virtual clock). `--cpu managed` keeps the exact step model.
+- Snapshots: a native profile stores the `CPUX86State` architectural fields
+  (GPRs, segments, FPU/SSE/MMX, MSRs, TSC) plus the C# device state; TBs are
+  flushed on load. The exact `.xgs` remains the managed profile.
+
+## Build (H1)
+
+Toolchain: MSYS2 **MINGW64** (`C:\msys64\mingw64`): gcc 16.1.0, meson 1.12.1,
+ninja 1.13.2, python 3.14.10, glib 2.88.1, pixman 0.46.4, zlib 1.4, libepoxy,
+xxhash, diffutils, PyYAML. `C:\mingw64`, `C:\ninja`, `C:\cmake`, `C:\Qt` are
+standalone fallbacks. Build in a `MSYSTEM=MINGW64` shell.
+
+```
+cp -r References2/xemu-0.8.139 native/qemu   # git-ignored; never edit References2
+cd native/qemu
+./configure --target-list=i386-softmmu --without-default-features --enable-tcg \
+  --disable-werror --disable-docs --disable-tools --disable-sdl --disable-opengl \
+  --disable-curl --disable-slirp
+ninja -C build qemu-system-i386.exe
+```
+
+Local patches (recorded in `native/qemu-patches/`; all build-tooling only):
+
+1. `configure`: MSYS2 `ensurepip` is broken, so use the system Python and
+   `/mingw64/bin/meson` instead of a `pyvenv`.
+2. `subprojects/dsp56300/meson.build`: create the extraction directory and use
+   `tar --force-local -xzf` (GNU tar treats `D:` as a remote host).
+3. `ui/meson.build`: do not build xemu's UI.
+4. `hw/9pfs/meson.build`: no 9p backend (MinGW has no `sys/resource.h`).
+5. `hw/meson.build`: `hw/core` only (no QEMU device models).
+6. `hw/core/meson.build`: no EIF/libcbor/libfdt (device tree).
+7. `tests/meson.build`: skip the xemu test tree.
+
+The CPU/memory subset comes from the normal QEMU archives, not a full
+executable: `libqemu-i386-softmmu.a` (target/TCG), `libsystem.a`
+(system/memory/core), `libqemuutil.a`, `libqom.a`, `libio.a`, `libcrypto.a`.
+`libxgridcpu` links them plus the shim; the full QEMU tree (and its devices)
+is never shipped. The `hw/core` dependency is only `cpu_create`,
+`qdev_realize` and the `none` machine; XCN1 should replace patch 5 with a
+custom meson target.
+
+The spike's standalone init sequence (no `qemu_init`, no machine run) is:
+`qemu_init_cpu_list()` -> `module_call_init(MODULE_INIT_QOM)` -> create a
+`none-machine` object and publish it as `root/machine` (so `qdev_get_machine()`
+resolves) -> `cpu_exec_init_all()` -> `tcg_allowed = true` ->
+`page_init()` -> `tb_htable_init()` -> `tcg_init(32 MiB, 0, 1)` ->
+`tcg_prologue_init()` -> `use_icount = ICOUNT_PRECISE` with
+`timers_state.icount_time_shift = 0`. `cpu_create("pentium3")` then works and
+`cpu_exec()` runs on the icount budget.
+
+## Spike (XCN0) acceptance
+
+From C#: create a vCPU; map 64 MB at GPA 0 and a 4 KB MMIO region with
+callbacks; run a real-mode stub that writes RAM, reads and writes the MMIO
+word; enter protected mode and run a loop; inject an IRQ and observe the
+handler; return on a step budget and resume. Measure steps/s and callback
+cost; project the 007 leg. **Stop** if the CPU cannot be driven standalone
+without the QEMU machine/main loop, or if the projection cannot reach
+2.7 ns/step on 007.
+
+## XCN0 result (2026-11-22)
+
+The host toolchain is MSYS2 MINGW64 (`C:\msys64\mingw64`); `C:\mingw64`,
+`C:\ninja`, `C:\cmake` and `C:\Qt` are fallbacks. The vendored tree configures
+and builds with the thirteen recorded patches (configure venv, dsp56300 tar,
+UI, 9pfs, `hw` scoping, EIF/FDT, tests, backends, Vulkan/GLSL/imgui/implot/VMA,
+the x86-only `none` machine, and the single-threaded `qemu_init_vcpu`). The
+CPU/memory/TCG archives build; `libxgridcpu` links filtered copies plus the
+explicit QOM/machine/CPU objects.
+
+The standalone init path is: `qemu_init_subsystems()` (locks, BQL, RCU, QOM
+module list, runstate) -> a `none-machine` object with the `unattached` /
+`peripheral` / `peripheral-anon` containers -> a dummy `AccelOpsClass` with
+no-op `create_vcpu_thread`/`handle_interrupt` -> `accel_init_machine()` ->
+`cpu_address_space_init(cpu, 0, ...)` -> `cpu_reset()`. `CF_USE_ICOUNT` and
+`cpu->icount_budget = chunk` make the TB prologue count guest instructions;
+`xgc_run()` returns at the budget or at `EXCP_HALTED`.
+
+**Both smoke tests pass:**
+
+- `native/xgridcpu/xgc_test.exe`: 100,000-step budget, RAM store, **real MMIO
+  read/write callbacks** (0xCAFEBABE at 0xF0000004), EAX/ECX/EIP exact.
+- `native/xgridcpu/xgc_ring_test.exe`: the XCN1 shadow+ring path — reads from
+  a native shadow window, writes queued and drained by the host, 0xCAFEBABE at
+  0xF0000004, 100,000-step budget.
+- `tools/xcn0-probe` (C#): vCPU, RAM, registers and the 100,000-step budget
+  from managed code; the 0xF0000000 window is RAM in this leg.
+
+**Measured engine rate:** a 100M-step self-loop runs at **246.9 Msteps/s from
+C** (0.405 s) and **247.5 Msteps/s from C#** (0.404 s) — 4.05 ns/step, ~0.34x
+guest time on this trivial loop. That is 3.4x the current raw JIT
+(73 Msteps/s) and in the xemu engine class; a title workload will be slower
+(x87/SSE, TB churn and devices), and 0.5x is 365 Msteps/s. The next measurement
+is the 007 boot leg once the MMIO ring and the machine seam exist.
+
+**XCN1 native host PASS (2026-11-22).** The CPU now runs in a native process
+(`native/xgridcpu/xgridcpu-host.exe`) attached to a named shared section: 1 MB
+guest RAM plus a control block (read shadow, write ring, budget/status and
+registers). `tools/xcn1-host-probe` creates the section, starts the host, sets
+the read shadow, signals a 100,000-step slice, drains the write ring and
+checks the registers; a following 100M self-loop measures **235.5 Msteps/s**
+across the process boundary (0.425 s). C# never calls the DLL, so the .NET
+Control Flow Guard boundary is gone. The .NET-hosted DLL MMIO path remains the
+documented CFG-blocked diagnostic; the host is the product architecture.
+
+**XCN1 interrupt line (2026-11-22).** The shared control block now carries
+`irq_pending`/`irq_vector` and `reset`. The probe loads a real-mode IVT
+handler, sets `sti`, waits for a flag, injects vector `0x20` from C# and checks
+that the handler ran: **PASS** (flag=1, EIP past the wait loop, EFLAGS restored
+by `iret`). Two findings made it work:
+
+- QEMU's `cpu_interrupt()` asserts `bql_locked()` and then kicks a vCPU thread.
+  A single-threaded embedder must OR `CPU_INTERRUPT_HARD` into the request word
+  itself and never kick (the first attempt `abort()`ed at the assert).
+- `x86_cpu_realizefn()` creates a local APIC whenever CPUID_APIC is set, and
+  `cpu_get_pic_interrupt()` returns from the LAPIC before `pic_read_irq()`, so
+  the injected vector was consumed by an uninitialised LAPIC and real-mode
+  delivery raised `#GP` (`exc=13`, zero instructions executed). Clearing
+  `CPUID_APIC` before `qdev_realize` both fixes delivery and matches the
+  console, whose interrupt controller is the MCPX 8259 pair.
+
+The 100M self-loop still measures 235-245 Msteps/s across the boundary with
+the IRQ slice in place.
+
+**XCN1 device seam: live reads and port I/O (2026-11-22).** The control block
+is version 2: a window table (base/size/flags/shadow), a 64 KB shadow area, the
+write ring and a live-read request slot (`io_state`, `io_flags`, `io_addr`,
+`io_size`, `io_value`, `io_icount`). Each window is either **shadow** (reads
+from the section, refreshed between slices) or **live** (the host spins while
+C# drains the ring in order and answers; the request carries the instruction
+count so the device clock is exact at the access). Port I/O windows are mapped
+in QEMU's `system_io` address space, so the guest's `in`/`out` use the same
+path. The probe exercises all of it: shadow read/write, two live MMIO reads,
+a live MMIO write, `in eax, 0x60`, `out 0x60, eax`, the IRQ handler and a 100M
+self-loop, checking each value and the write-ring order: **PASS**.
+
+Measured costs (100,000-access real-mode loops, H1):
+
+| Path | Cost |
+|---|---|
+| RAM load | 25 ns |
+| MMIO write (queued) | 1843 ns |
+| MMIO read (shadow) | 1850 ns |
+| MMIO read (live) | 3943 ns |
+| C# answer inside a live read | 27 ns |
+| self-loop | 241.8 Msteps/s |
+
+The ~1.85 us is QEMU's I/O path, not the boundary: every MMIO instruction runs
+in a dedicated `CF_MEMI_ONLY` TB via `cpu_io_recompile()` because TCG marks
+`can_do_io` false until the last instruction of a TB. xemu pays the same. The
+process boundary adds ~2 us per live read; shadow windows avoid it and the C#
+service is ~27 ns. At the recorded ~1M device accesses per 30B 007 steps, the
+live path is ~2 s per 30B (~6% of guest time at 1x).
+
+**XCN2 boot ROM probe (2026-11-22).** The shim gained an architectural reset
+(`xgc_reset`, CS.base `0xFFFF0000`, EIP `0xFFF0`) and direct windows
+(`memory_region_init_ram_ptr`, no callback, priority-ordered overlaps), and the
+host now takes the control offset as an argument so C# owns the whole layout.
+`tools/xcn1-boot-probe` maps 64 MB RAM, the 1 MB BIOS at `0xF0000000`, its
+16 MB alias at `0xFF000000` and the overlay at `0xFFF00000` (BIOS + the
+512-byte MCPX ROM at the top), then runs from the reset vector. The 1BL
+executes: it enters protected mode (`CS=0x0008`), runs the BIOS **xcode
+interpreter** from `0xFF000080` through the mirror (`ESI=0xFF00025D`), programs
+the chipset over PCI config space and reaches the **AMD756 SMBus handshake at
+I/O ports `0xC000`-`0xC00A`**, polling `in al, 0xC000` for status `0x10` (the
+SMC). With no device window mapped it retries forever: the expected stop, and
+the exact device the C# machine already models (`Amd756Smbus` + `SmcDevice`).
+200M steps ran in 0.797 s = **251 Msteps/s**.
+
+**Next (XCN2):** back the machine's RAM with the section, map every
+`AddressSpace` region as a live window and every `IoSpace` region as a live
+port window (dispatch to the existing C# devices), drive the PIC from
+`irq_pending` and advance the timers by the executed count. The 1BL's first
+blocker is already identified: `Amd756Smbus` at ports `0xC000`-`0xC00F` and the
+SMC at SMBus address `0x10`.
+
+**XCN2 machine seam PASS (2026-11-22).** Two more findings made the boot chain
+run:
+
+- **RDTSC needs the virtual clock.** `cpu_get_tsc` (xemu's XBOX path) reads
+  `qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)`, which routes to
+  `cpus_accel->get_virtual_clock`. Our dummy `AccelOpsClass` left it NULL, so
+  RDTSC returned 0 forever and the MCPX ROM's RDTSC delay loop spun 2B steps.
+  Setting `get_virtual_clock`/`get_elapsed_ticks = icount_get` (what
+  `tcg_accel_ops_init` does) and calling `cpu_exec_start/end` around
+  `cpu_exec` makes the 733 MHz TSC follow the instruction count.
+- **Interrupt acknowledge needs the device model.** `xgc_set_irq_callback`
+  asks C# for the vector at delivery time (another live request,
+  `io_flags = 0x80000000`), so a masked line or `IF=0` never acknowledges the
+  PIC. `tools/xcn2-smc-probe` runs the whole boot with the real `XboxBus`
+  behind a 64 KB live I/O window (PCI config, AMD756 SMBus + SMC, PIC, PIT,
+  RTC) and `Bus.Advance(executed)` per slice: at 1B steps the guest reaches the
+  **kernel idle loop at `EIP=0x8001B02E`** (the managed engine's idle address)
+  with **194 interrupts delivered** through the C# PIC, at 188.7 Msteps/s on
+  the I/O-heavy leg.
+
+**Next (XCN2):** back `PhysicalMemory` with the section (a pointer-backed
+mode), map every `AddressSpace` region as a window, run the full
+`XboxMachine` (HDD/IDE, NV2A, APU), and drive snapshots and the display.
+
+**XCN3 machine seam (2026-11-22).** `PhysicalMemory` now has a host-backed
+mode (`new PhysicalMemory(size, IntPtr)`): the accessors and spans go through
+`Bytes`, `RawBytes` throws for host RAM, and `TryGetRamBytes` returns false so
+the GPU fast paths fall back. `IImmutableImageDevice` exposes `Image` and
+`AddressRegion` exposes `BaseAddress`/`Size`, so the host client can turn the
+machine's memory map into windows: RAM aliases become QEMU region aliases,
+flash/mirror/overlay become direct memory copied from the image, everything
+else is live. Control block v5 carries 24 windows, a 1024-entry ring and a
+`dropped` counter.
+
+**A real run-loop bug was fixed:** `xgc_run` cleared `exception_index` before
+every chunk, so an exception raised at a chunk boundary was discarded and the
+faulting instruction re-executed forever. The run surfaced it as an `fldz`
+(`D9 EE`) at `0x80052E1C` faulting `#NM` (`CR0.TS=1`) every ~86 instructions
+for 200M steps at 0.5 Msteps/s. With the fix the machine runs at
+**160 Msteps/s** on the full boot workload.
+
+A second bug in the same loop: QEMU's `cpu_exec` returns after delivering
+**one** exception (the handler runs on the next call), so the harness's
+`n == 0` bailout turned every exception into a permanent stall at the faulting
+instruction. `xgc_run` now retries zero-instruction chunks and only gives up
+after a thousand consecutive ones.
+
+**The real cause of both was the link stubs:** `replay_exception()` returned
+false, and `cpu_handle_exception()` only calls `do_interrupt()` when it returns
+true. Every exception - `#PF`, `#NM`, `#UD` - was therefore converted into a
+zero-step "interrupt exit": guests never saw their own handlers. With
+`replay_exception`/`replay_interrupt` returning true when not replaying, the
+full machine runs the whole boot (HDD attached, 32 IDE bus-master starts,
+`EIP=0x800422B0`, 214k I/O reads, 711 interrupts) instead of stalling at the
+first `fldz`.
+
+**The write ring is now lossless.** `xgc_set_mmio_sink()` hands every device
+write to the host synchronously; the host publishes it into a shared SPSC ring
+(`ring_count` = consumer head, `ring_tail` = producer tail) and spins while the
+consumer is behind, and C# drains the ring continuously in its poll loop. A
+saturated ring therefore slows the vCPU instead of losing commands. Result on
+the full machine: **`dropped=0`**, the IDE completes (32 bus-master starts) and
+the **NV2A comes alive: 2599 draws, 158,966 methods, 8 clears, 1 frame** - the
+native CPU is driving the C# GPU.
+
+**What the 2.5 Msteps/s leg actually is (measured, not a fault).** After the
+first frame the guest sits in `KeStallExecutionProcessor` (`0x800153D0`,
+`sub eax,1; jne`) called from `0x800151EE`, i.e. a **device timeout loop**, not a
+panic and not an illegal instruction (the earlier `0x800151EF` reading was the
+caller). The attribution is `drain 3719 ms`, `service 285 ms`, `advance 9 ms`,
+`spin 44072 ms` of 159 s; the remaining ~111 s is the vCPU itself running the
+delay loop. Attaching a DVD (`args[6]`) does not change the outcome, so the
+wait is not the ATAPI probe. The captured stall state is precise: `PIC
+req=0x20` (IRQ5, the APU), `imr=0xD2` (IRQ5 unmasked), **`isr=0x00`** - the line
+is latched and deliverable but was never acknowledged - while the NV2A reports
+`notify=8`, `stalls=1`, `frames=1` and the IDE's last command is `0xC8` (READ
+DMA) with no DMA pending. The **end state** resolves it: `pic req=0x09 isr=0x20 imr=0xD2 elcr=0x68`.
+`isr=0x20` means IRQ5 *was* delivered and is still in service - the APU handler
+never EOI'd - and `req` then holds IRQ0 (PIT) and IRQ3 (NV2A), both
+higher-priority and unmasked. The guest never takes them because it faults
+inside the APU handler and lands in the kernel panic path, which disables
+interrupts and loops in `KeStallExecutionProcessor`. So the blocker is not the
+delivery path (across the whole run 499 of the raised requests were acked and
+`Pic8259.Acknowledge()` refused none - the ack-failure logger never fired);
+it is an **exception inside the IRQ5 handler** after the first presented frame,
+most likely the `#UD` the managed-engine notes recorded at this same panic
+entry (`EAX=0x1E`, `ECX=0xC000001D`). `pic_read_irq()` also
+stopped returning -1: a withdrawn INT now answers spurious IRQ7 like the 8259,
+because QEMU passed -1 straight to `do_interrupt_x86_hardirq` and indexed the
+IDT with a negative vector. The next differential is why the raised
+`CPU_INTERRUPT_HARD` is not consumed: `HF_SMM_MASK` is clear, IF is set at the
+sampled EIP, so the remaining candidates are the request word being cleared by
+another path (`cpu_reset_interrupt` on a poll) or the guest masking at a moment
+the sample misses. Because a slice is up to 200k instructions, a device that
+pulses its line is gone by the time the CPU acks; the PIC's latched `req=0x20`
+at the dump says the request survives, so the next differential is `Acknowledge()`
+right after an injection vs the request word before it (a level-line pulse
+timing question, or `HighestPending` returning -1 because of the in-service
+register).
+
+The full machine now reaches the kernel: 12 regions / 13 windows, the HDD
+attached, the SMC handshake and 19 SMBus transactions, PIT/PIC interrupts and
+IDE command traffic. It parks at `EIP=0x80052E1C` (`hlt` after masking the
+interrupts) with the IDE at 434 accesses - the next blocker is the interrupt
+timing model: devices advance **once per slice**, so timer delivery is batched
+and a slice-size-dependent boot (1M steps idles, 200k steps progresses) is the
+symptom. The fix is a per-slice **deadline**: the C# side computes the next
+timer expiry and the host stops the slice there.
+
+**Next (XCN3):** the slice deadline + interrupt-wake path, then the full boot
+to the dashboard (NV2A first method, first frame).
+## Risks / open questions
+
+1. **Standalone init.** QEMU has no system-mode library target. The shim must
+   call the QOM type init, the TCG init, the TB-cache init and `cpu_create`
+   without `qemu_init`/the machine. This is the spike's main unknown.
+2. **Step budget.** `cpu_exec()` has no public "run N instructions" parameter;
+   the icount decrementer or a small `cpu_exec` patch is the candidate. The
+   spike measures both.
+3. **PIC vector hook.** QEMU's x86 CPU fetches the vector through its PIC
+   interface; the C# PIC needs a small hook (or QEMU's i8259 with C# IRQ
+   lines). The spike uses a synthetic vector first.
+4. **Determinism.** xemu's TCG is host-clock based and not bit-exact run to
+   run. The product's gates are xemu parity + the device/GPU corpus; the
+   managed engine keeps the four accurate 1B goldens and the ktest log.
+   A deterministic native mode (icount/TSC patch) is optional and priced
+   separately.
+5. **Fork maintenance.** Pinned to xemu 0.8.139 / QEMU 10.2.0; upgrades are a
+   deliberate rebase of `native/qemu-patches/`, not a rolling dependency.
+6. **Security.** Native code now executes untrusted guest behaviour. QEMU is
+   designed for that, but the managed-only memory-safety posture changes; the
+   release notes must say so.
+
+## Licence
+
+GPL-2.0 stays. QEMU and xemu are GPL-2.0, so embedding is compatible; a
+permissive relicense is not. The release must ship the corresponding QEMU
+source (or a written offer), the build patches and the notices
+(`THIRD_PARTY_NOTICES.md`, `docs/open-source.md`).
+
+## Gates
+
+- `--cpu managed`: the four accurate 1B goldens, the ktest byte-identical log,
+  the cpu-oracle and the existing corpus. Unchanged.
+- `--cpu native`: xemu parity (007 frame policy, boot-to-gameplay, live audio,
+  input, save/load), the device/GPU corpus, no fault, and a recorded one-time
+  re-baseline of any CPU-dependent anchors with the measured reason.

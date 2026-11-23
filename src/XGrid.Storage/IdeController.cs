@@ -1,0 +1,615 @@
+using System;
+using System.IO;
+using XGrid.Bus.Io;
+using XGrid.Bus.Pci;
+
+namespace XGrid.Storage;
+
+/// <summary>Xbox IDE controller (nForce 10DE:01BC at PCI 0:9.0, IRQ 14) with one primary channel.</summary>
+public sealed class IdeController : PciDevice
+{
+    private const int BusMasterBar = 4;
+    private const uint BmStatusActive = 0x01;
+    private const uint BmStatusError = 0x02;
+    private const uint BmStatusInterrupt = 0x04;
+    private const uint BmCommandStart = 0x01;
+
+    /// <summary>Maximum bytes moved per bus-master start (runaway PRDT guard).</summary>
+    private const uint MaxDmaBytes = 4u * 1024 * 1024;
+
+    private readonly System.Collections.Generic.List<string> _commandLog = [];
+    private readonly System.Collections.Generic.List<string> _accessLog = [];
+    private readonly BusMasterChannel _busMaster = new();
+    private IoSpace? _io;
+    private IDisposable? _busMasterRegistration;
+    private int _selected;
+
+    /// <summary>Creates the controller and defines its PCI header.</summary>
+    public IdeController()
+        : base("nForce IDE", 9, 0, 0x10DE, 0x01BC, 0xB1, 0x01, 0x01, 0x80)
+    {
+        DefineBar(0, 8, isIo: true);
+        DefineBar(1, 4, isIo: true);
+        DefineBar(2, 8, isIo: true);
+        DefineBar(3, 4, isIo: true);
+        DefineBar(4, 16, isIo: true);
+        PrimaryMaster.Interrupt += RaiseInterrupt;
+        PrimarySlave.Interrupt += RaiseInterrupt;
+        PrimaryMaster.InterruptAcknowledged += LowerInterrupt;
+        PrimarySlave.InterruptAcknowledged += LowerInterrupt;
+    }
+
+    /// <summary>Gets the primary master drive (HDD).</summary>
+    public AtaDevice PrimaryMaster { get; } = new();
+
+    /// <summary>Gets the primary slave drive (ATAPI DVD, empty).</summary>
+    public AtaDevice PrimarySlave { get; } = new(atapi: true);
+
+    /// <summary>Gets the recent command history (M/S + command byte, diagnostics).</summary>
+    public System.Collections.Generic.IReadOnlyList<string> CommandLog => _commandLog;
+
+    /// <summary>Gets the recent IDE register access history (diagnostics).</summary>
+    public System.Collections.Generic.IReadOnlyList<string> AccessLog => _accessLog;
+
+    private void LogAccess(string entry)
+    {
+        _accessLog.Add(entry);
+        if (_accessLog.Count > 64)
+        {
+            _accessLog.RemoveAt(0);
+        }
+    }
+
+    /// <summary>Gets the total taskfile/control accesses seen on both drives (diagnostics).</summary>
+    public int AccessCount => PrimaryMaster.AccessCount + PrimarySlave.AccessCount;
+
+    /// <summary>Gets the last command byte issued to the selected drive (diagnostics).</summary>
+    public byte LastCommand => SelectedDrive.LastCommand;
+
+    /// <summary>Gets the bus-master status register (diagnostics).</summary>
+    public uint BusMasterStatus => _busMaster.Status;
+
+    /// <summary>Gets the bus-master PRDT address (diagnostics).</summary>
+    public uint BusMasterPrdt => _busMaster.PrdtAddress;
+
+    /// <summary>Gets the cumulative bus-master START count (diagnostics).</summary>
+    public int BusMasterStarts => _busMaster.Starts;
+
+    /// <summary>Gets or sets the guest-physical memory used for bus-master DMA.</summary>
+    public IGuestMemory? DmaMemory { get; set; }
+
+    private AtaDevice SelectedDrive => _selected == 0 ? PrimaryMaster : PrimarySlave;
+
+    private void LogCommand(byte command)
+    {
+        AtaDevice drive = SelectedDrive;
+        string detail = command is 0x20 or 0x24 or 0xC8 or 0xC4 or 0x30 or 0x34 or 0xCA or 0xCB
+            ? $"/n{drive.SectorCount:X2}l{drive.LbaLow:X2}{drive.LbaMid:X2}{drive.LbaHigh:X2}"
+            : string.Empty;
+        _commandLog.Add($"{(_selected == 0 ? 'M' : 'S')}{command:X2}/F{drive.Features:X2}{detail}");
+        if (_commandLog.Count > 32)
+        {
+            _commandLog.RemoveAt(0);
+        }
+    }
+
+    /// <summary>Attaches media to the primary master drive.</summary>
+    public void AttachPrimaryMaster(IDiskImage disk)
+    {
+        PrimaryMaster.Attach(disk);
+    }
+
+    /// <summary>Attaches DVD media to the ATAPI slave drive.</summary>
+    public void AttachDvd(IDvdImage dvd)
+    {
+        PrimarySlave.AttachDvd(dvd);
+    }
+
+    /// <summary>Registers the legacy compatibility ports (0x1F0 and 0x3F6).</summary>
+    public void RegisterPorts(IoSpace io)
+    {
+        ArgumentNullException.ThrowIfNull(io);
+        _io = io;
+        io.Register(0x1F0, 8, new TaskfileWindow(this));
+        io.Register(0x3F6, 2, new ControlWindow(this));
+    }
+
+    /// <inheritdoc />
+    public override void Reset()
+    {
+        base.Reset();
+        _selected = 0;
+        PrimaryMaster.Reset();
+        PrimarySlave.Reset();
+        _busMaster.Reset();
+    }
+
+    /// <summary>Saves PCI config/BARs, drive select, bus-master DMA, both drives, and logs.</summary>
+    /// <remarks>Quiesce: save only when no DMA is in flight on either drive. The guest-memory
+    /// adapter and IO windows are host wiring and are not serialized. Media paths are
+    /// caller-owned (XboxMachine re-attaches the same HDD/DVD paths before load); the drives
+    /// validate presence and sector counts and fail loudly on mismatch. Optional
+    /// <see cref="HddPath"/>/<see cref="DvdPath"/> record the re-attach parameters.</remarks>
+    public override void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        base.SaveState(writer);
+        writer.Write(IdeSnapshotVersion);
+        writer.Write(_selected);
+        writer.Write(_busMaster.Command);
+        writer.Write(_busMaster.Status);
+        writer.Write(_busMaster.PrdtAddress);
+        writer.Write(_busMaster.Starts);
+        PrimaryMaster.SaveState(writer);
+        PrimarySlave.SaveState(writer);
+        writer.Write(_commandLog.Count);
+        foreach (string entry in _commandLog)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_accessLog.Count);
+        foreach (string entry in _accessLog)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(HddPath is not null);
+        if (HddPath is not null)
+        {
+            writer.Write(HddPath);
+        }
+
+        writer.Write(DvdPath is not null);
+        if (DvdPath is not null)
+        {
+            writer.Write(DvdPath);
+        }
+    }
+
+    /// <summary>Restores PCI config/BARs, drive select, bus-master DMA, both drives, and logs.</summary>
+    public override void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        base.LoadState(reader);
+        int version = reader.ReadInt32();
+        if (version != IdeSnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported IDE snapshot version {version}.");
+        }
+
+        _selected = reader.ReadInt32();
+        _busMaster.Command = reader.ReadUInt32();
+        _busMaster.Status = reader.ReadUInt32();
+        _busMaster.PrdtAddress = reader.ReadUInt32();
+        _busMaster.Starts = reader.ReadInt32();
+        PrimaryMaster.LoadState(reader);
+        PrimarySlave.LoadState(reader);
+        int commands = reader.ReadInt32();
+        if (commands < 0 || commands > 32)
+        {
+            throw new InvalidDataException("Bad IDE command-log snapshot.");
+        }
+
+        _commandLog.Clear();
+        for (int i = 0; i < commands; i++)
+        {
+            _commandLog.Add(reader.ReadString());
+        }
+
+        int accesses = reader.ReadInt32();
+        if (accesses < 0 || accesses > 64)
+        {
+            throw new InvalidDataException("Bad IDE access-log snapshot.");
+        }
+
+        _accessLog.Clear();
+        for (int i = 0; i < accesses; i++)
+        {
+            _accessLog.Add(reader.ReadString());
+        }
+
+        if (reader.ReadBoolean())
+        {
+            string snapshotHdd = reader.ReadString();
+            if (HddPath is not null && !string.Equals(HddPath, snapshotHdd, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"IDE HDD path mismatch on snapshot load (snapshot='{snapshotHdd}', live='{HddPath}').");
+            }
+
+            HddPath ??= snapshotHdd;
+        }
+
+        if (reader.ReadBoolean())
+        {
+            string snapshotDvd = reader.ReadString();
+            if (DvdPath is not null && !string.Equals(DvdPath, snapshotDvd, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"IDE DVD path mismatch on snapshot load (snapshot='{snapshotDvd}', live='{DvdPath}').");
+            }
+
+            DvdPath ??= snapshotDvd;
+        }
+    }
+
+    private const int IdeSnapshotVersion = 1;
+
+    /// <summary>Gets or sets the HDD re-attach path (set by the machine on attach; validated on load).</summary>
+    public string? HddPath { get; set; }
+
+    /// <summary>Gets or sets the DVD re-attach path (set by the machine on attach; validated on load).</summary>
+    public string? DvdPath { get; set; }
+
+    /// <inheritdoc />
+    protected override void OnBarWritten(int index, uint baseAddress)
+    {
+        if (index != BusMasterBar || _io is null)
+        {
+            return;
+        }
+
+        _busMasterRegistration?.Dispose();
+        _busMasterRegistration = null;
+        if (baseAddress != 0)
+        {
+            _busMasterRegistration = _io.Register((ushort)(baseAddress & 0xFFFEu), 16, new BusMasterWindow(this));
+        }
+    }
+
+    private void SelectDrive(uint driveHead)
+    {
+        _selected = ((driveHead >> 4) & 1) == 0 ? 0 : 1;
+        PrimaryMaster.WriteTaskfile(6, 8, driveHead);
+        PrimarySlave.WriteTaskfile(6, 8, driveHead);
+    }
+
+    /// <summary>Runs a pending DMA transfer when the bus master is started (synchronous v1).</summary>
+    private void TryRunDma()
+    {
+        if ((_busMaster.Command & BmCommandStart) == 0 || DmaMemory is null)
+        {
+            return;
+        }
+
+        AtaDevice? drive = PrimaryMaster.DmaPending ? PrimaryMaster
+            : PrimarySlave.DmaPending ? PrimarySlave
+            : null;
+        if (drive is null)
+        {
+            // No DMA work staged: if a packet just errored, the driver still
+            // started the bus master and waits for its interrupt. Complete it
+            // (the drive already reported the packet error with its own IRQ).
+            if (PrimaryMaster.ConsumePacketError() || PrimarySlave.ConsumePacketError())
+            {
+                FinishDma(ok: true);
+            }
+
+            return;
+        }
+
+        var stream = new PrdtStream(DmaMemory, _busMaster.PrdtAddress);
+        if (drive.DmaSectorPending)
+        {
+            bool toMemory = drive.DmaIsRead;
+            while (drive.DmaSectorPending)
+            {
+                if (toMemory)
+                {
+                    drive.FetchDmaSector();
+                    stream.Write(drive.DmaBuffer);
+                }
+                else
+                {
+                    stream.Read(drive.DmaBuffer);
+                    drive.CommitDmaSector();
+                }
+
+                if (stream.Failed || stream.BytesMoved > MaxDmaBytes)
+                {
+                    break;
+                }
+
+                drive.AdvanceDma();
+            }
+
+            FinishDma(!stream.Failed && !drive.DmaSectorPending);
+            return;
+        }
+
+        // ATAPI DMA: the 12-byte command block arrives first through the PRDT
+        // stream, then a staged packet response (if any) goes back out on it.
+        if (!drive.DmaResponseReady)
+        {
+            byte[] packet = new byte[AtaDevice.PacketSize];
+            stream.Read(packet);
+            if (stream.Failed)
+            {
+                FinishDma(false);
+                return;
+            }
+
+            drive.ReceiveDmaPacket(packet);
+        }
+
+        if (drive.DmaResponseReady)
+        {
+            stream.Write(drive.DmaResponse.ToArray());
+            drive.FinishDmaResponse();
+        }
+
+        FinishDma(!stream.Failed);
+    }
+
+    private void FinishDma(bool ok)
+    {
+        _busMaster.Status &= ~BmStatusActive;
+        if (ok)
+        {
+            _busMaster.Status |= BmStatusInterrupt;
+        }
+        else
+        {
+            _busMaster.Status |= BmStatusError | BmStatusInterrupt;
+        }
+
+        RaiseInterrupt();
+    }
+
+    /// <summary>Walks a Physical Region Descriptor Table in guest memory.</summary>
+    private sealed class PrdtStream
+    {
+        private readonly IGuestMemory _memory;
+        private uint _entry;
+        private uint _base;
+        private uint _left;
+        private bool _end;
+
+        public PrdtStream(IGuestMemory memory, uint prdtAddress)
+        {
+            _memory = memory;
+            _entry = prdtAddress & 0xFFFFFFFCu;
+            LoadEntry();
+        }
+
+        public uint BytesMoved { get; private set; }
+
+        public bool Failed { get; private set; }
+
+        public void Read(byte[] destination)
+        {
+            Read(destination.AsSpan());
+        }
+
+        private void Read(Span<byte> destination)
+        {
+            for (int i = 0; i < destination.Length; i++)
+            {
+                if (!EnsureByte())
+                {
+                    return;
+                }
+
+                destination[i] = _memory.ReadPhysical(_base);
+                Advance();
+            }
+        }
+
+        public void Write(byte[] source)
+        {
+            Write(source.AsSpan());
+        }
+
+        private void Write(ReadOnlySpan<byte> source)
+        {
+            for (int i = 0; i < source.Length; i++)
+            {
+                if (!EnsureByte())
+                {
+                    return;
+                }
+
+                _memory.WritePhysical(_base, source[i]);
+                Advance();
+            }
+        }
+
+        private void LoadEntry()
+        {
+            uint low = Read32(_entry);
+            uint high = Read32(_entry + 4);
+            _entry += 8;
+            _base = low & 0xFFFFFFFEu;
+            uint count = high & 0xFFFFu;
+            _left = count == 0 ? 65536u : count;
+            _end = (high & 0x80000000u) != 0;
+        }
+
+        private bool EnsureByte()
+        {
+            if (Failed)
+            {
+                return false;
+            }
+
+            if (_left == 0)
+            {
+                if (_end)
+                {
+                    Failed = true;
+                    return false;
+                }
+
+                LoadEntry();
+            }
+
+            return true;
+        }
+
+        private void Advance()
+        {
+            _base++;
+            _left--;
+            BytesMoved++;
+        }
+
+        private uint Read32(uint address)
+        {
+            return (uint)(_memory.ReadPhysical(address)
+                          | (_memory.ReadPhysical(address + 1) << 8)
+                          | (_memory.ReadPhysical(address + 2) << 16)
+                          | (_memory.ReadPhysical(address + 3) << 24));
+        }
+    }
+
+    private sealed class BusMasterChannel
+    {
+        public uint Command { get; set; }
+
+        public uint Status { get; set; }
+
+        public uint PrdtAddress { get; set; }
+
+        public int Starts { get; set; }
+
+        public void Reset()
+        {
+            Command = 0;
+            Status = 0;
+            PrdtAddress = 0;
+        }
+    }
+
+    private sealed class BusMasterWindow(IdeController controller) : IIoPortDevice
+    {
+
+        public uint Read(ushort offset, int size)
+        {
+            uint result = (offset & 8) == 0 ? ReadPrimary((ushort)(offset & 7)) : 0;
+            controller.LogAccess($"BR{offset:X}:{result:X}");
+            return size switch
+            {
+                8 => result & 0xFFu,
+                16 => result & 0xFFFFu,
+                _ => result,
+            };
+        }
+
+        public void Write(ushort offset, int size, uint value)
+        {
+            if ((offset & 8) != 0)
+            {
+                return;
+            }
+
+            controller.LogAccess($"BW{offset & 7:X}:{value:X}:{size}");
+            var bm = controller._busMaster;
+            switch (offset & 7)
+            {
+                case 0:
+                    bm.Command = size == 8 ? (byte)value : value;
+                    if ((bm.Command & BmCommandStart) != 0)
+                    {
+                        bm.Starts++;
+                        bm.Status |= BmStatusActive;
+                        controller.TryRunDma();
+                    }
+                    else
+                    {
+                        bm.Status &= ~BmStatusActive;
+                    }
+
+                    break;
+                case 2:
+                    // Writing 1 to ERROR/INTERRUPT clears them.
+                    bm.Status &= ~(value & (BmStatusError | BmStatusInterrupt));
+                    break;
+                case 4:
+                    uint width = size switch
+                    {
+                        8 => 0xFFu,
+                        16 => 0xFFFFu,
+                        _ => 0xFFFFFFFFu,
+                    };
+                    int shift = (offset & 3) * 8;
+                    bm.PrdtAddress = ((bm.PrdtAddress & ~(width << shift)) | ((value & width) << shift)) & 0xFFFFFFFEu;
+                    break;
+            }
+        }
+
+        private uint ReadPrimary(ushort offset)
+        {
+            var bm = controller._busMaster;
+            return offset switch
+            {
+                0 => bm.Command,
+                2 => bm.Status,
+                4 => bm.PrdtAddress,
+                _ => 0,
+            };
+        }
+    }
+
+    private sealed class TaskfileWindow(IdeController controller) : IIoPortDevice
+    {
+
+        public uint Read(ushort offset, int size)
+        {
+            uint result = controller.SelectedDrive.ReadTaskfile(offset, size);
+            if (offset == 7)
+            {
+                controller.LogAccess($"T{(controller._selected == 0 ? 'M' : 'S')}R7:{result:X}:{size}");
+            }
+
+            return result;
+        }
+
+        public void Write(ushort offset, int size, uint value)
+        {
+            if (offset == 6)
+            {
+                controller.SelectDrive(value);
+                return;
+            }
+
+            if (offset is 1 or 2 or 3 or 4 or 5)
+            {
+                // Shared bus: taskfile setup writes land on both drives (QEMU ide_ioport_write).
+                controller.PrimaryMaster.WriteTaskfile(offset, size, value);
+                controller.PrimarySlave.WriteTaskfile(offset, size, value);
+                return;
+            }
+
+            controller.SelectedDrive.WriteTaskfile(offset, size, value);
+            if (offset == 7)
+            {
+                controller.LogCommand((byte)value);
+            }
+
+            controller.LogAccess($"T{(controller._selected == 0 ? 'M' : 'S')}W{offset:X}:{value:X}:{size}");
+
+            if (offset is 0 or 7)
+            {
+                // Drive-initiated kick: covers START-then-command order (the bus
+                // master may already be armed when the drive stages DMA work).
+                controller.TryRunDma();
+            }
+        }
+    }
+
+    private sealed class ControlWindow(IdeController controller) : IIoPortDevice
+    {
+
+        public uint Read(ushort offset, int size)
+        {
+            return controller.SelectedDrive.ReadControl();
+        }
+
+        public void Write(ushort offset, int size, uint value)
+        {
+            controller.PrimaryMaster.WriteControl(value);
+            controller.PrimarySlave.WriteControl(value);
+        }
+    }
+}

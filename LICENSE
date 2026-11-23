@@ -1,0 +1,19 @@
+XGrid is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, version 2 of the License.
+
+XGrid is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+XGrid.  If not, see <https://www.gnu.org/licenses/>.  The full text is in
+COPYING.
+
+Ported or derived source files retain their original copyright and license
+notices.  The provenance and license of every reference project and every
+ported module is recorded in THIRD_PARTY_NOTICES.md and
+docs/research-notes/sources.md.  The project as a whole is distributed under
+GPL-2.0; some ported files are GPL-2.0-or-later and are included here under
+GPL-2.0.  Files ported from LGPL-2.0-or-later sources are included under the
+GNU GPL version 2 as permitted by LGPL-2.0 section 3.

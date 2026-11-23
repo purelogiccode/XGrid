@@ -1,0 +1,10 @@
+--- a/thirdparty/meson.build
++++ b/thirdparty/meson.build
+@@ -1,4 +1,6 @@
+-if vulkan.found()
++# XGRID SPIKE PATCH: no Vulkan VMA in a CPU-only library.
++vma = not_found
++if false
+ 
+ debug_vma = false
+ 

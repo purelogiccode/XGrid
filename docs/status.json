@@ -1,0 +1,872 @@
+{
+  "schema": 1,
+  "updated": "2026-11-22",
+  "objective": "At least one game playable and xemu-class speed: the product CPU is the vendored xemu 0.8.139 / QEMU 10.2.0 TCG i386 core behind a narrow C API (libxgridcpu); all devices, GPU, audio, host and frontend remain managed C#; the managed C# CPU (--cpu managed) is the reference-only engine. GPL-2.0; the C# GPU/APU/UI are kept; the repository stays private until P1",
+  "current": {
+    "milestone": "P1",
+    "id": "XCN0",
+    "title": "Native CPU extraction spike: QEMU TCG core behind libxgridcpu",
+    "plan": "E0N",
+    "status": "active",
+    "started": "2026-11-22",
+    "attempts": 0,
+    "acceptance": "From C#: create a vCPU, map 64 MB at GPA 0 and a 4 KB MMIO region with callbacks, run a real-mode stub (RAM write, MMIO read/write), enter protected mode, run a loop, inject an IRQ, and return on a step budget; measure steps/s and callback cost and project the 007 leg; stop if the CPU cannot be driven standalone or the projection cannot reach 2.7 ns/step.",
+    "price": "1-2 sessions (build + shim + test).",
+    "bar": "correctness"
+  },
+  "position": {
+    "host": "H1",
+    "steps": 1000000000,
+    "mode": "fast",
+    "legs": {
+      "triangle_gl_replace": {
+        "wall": "6.40 s",
+        "ram": "6CBBFE75",
+        "cpu": "AB39AEE9",
+        "frame": "79142DE4"
+      },
+      "triangle_sw": {
+        "wall": "11.10 s",
+        "ram": "457719AC",
+        "cpu": "AB39AEE9",
+        "pixels": 58123882,
+        "frame": "5B50373D"
+      },
+      "menu_gl_replace": {
+        "wall": "17.63 s",
+        "ram": "EF1BF776",
+        "cpu": "D726C97A",
+        "frame": "B6116DAE"
+      },
+      "menu_sw": {
+        "wall": "27.40 s",
+        "ram": "FD12563B",
+        "cpu": "D726C97A",
+        "pixels": 253998498,
+        "frame": "4EF1FBF6"
+      }
+    },
+    "accurate": {
+      "triangle_ram": "E58AE5D7",
+      "triangle_cpu": "C43D5B49",
+      "menu_ram": "5C0CF968",
+      "menu_cpu": "E2B4D327",
+      "triangle_frame": "5B50373D",
+      "triangle_gl_frame": "79142DE4",
+      "menu_frame": "4EF1FBF6",
+      "menu_gl_frame": "B6116DAE"
+    },
+    "gap": {
+      "triangle_x": 4.9,
+      "menu_x": 11.7
+    },
+    "ktest": {
+      "steps": 792800535,
+      "log_sha": "CA5D3867",
+      "log_bytes": 40797
+    },
+    "gameplay": {
+      "target": "H:\\Tests\\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black)",
+      "state": "P1 sprint (2026-11-22): the objective is at least one game playable; no title is playable yet. P1S0 measured 007 at 0.100x (30B gameplay 413.254 s; runner 53.5%, non-JIT 20.1%, b4 35.7%, GL 0.42%; N15: shape fixes top out at ~0.20x). P1S1 is done: the live WASAPI sink plays the EP FIFO PCM (state=Playing; WAV SHA 813CB8DE... = TM8). The operator chose the full xemu/QEMU CPU engine port; P1S2 is done (QEMU CPUTLBEntry as QemuTlb, 9 exact differential tests; probe 0.84 vs 0.64 ns, so the TLB is not the lever - N16). P1S3 (TCG IR + i386 translator) is done: slices 1-5 landed (managed TCG IR + IR interpreter + 77 exact translator differentials: MOV/ALU/INC/DEC/NOP/JMP/Jcc, the reference memory shape Lea/Load/Store with 1/2/4-byte accesses and segment bases, 8/16-bit and partial registers, shifts/rotates, SHLD/SHRD, NEG/NOT, MOVZX/MOVSX, LEA, XCHG, SAHF/LAHF, MUL/IMUL/DIV/IDIV, PUSH/POP, BT/BTS/BTR/BTC, CMPXCHG/CMPXCHG8B, XADD, 16-bit addressing, REP string ops (MOVS/CMPS/STOS/LODS/SCAS), the MMX register file and the packed integer family (padd/psub saturation, pmul*, pcmp/pack/unpck, shifts, moves, maskmovq, pinsrw/pextrw/pmovmskb/pshufw, EMMS); 828 CPU tests green; the MMX file is the real FpuState and the 641-case cpu-oracle corpus runs through the IR engine with counted fallback - exact against the independent oracle, translated=2501/fallback=2344 after the integer batch: ADC/SBB, TEST, SETcc, CMOVcc, BSWAP, BSF/BSR, ARPL, sign-extends, XLAT, flag ops, PUSHF/POPF, PUSHA/POPA, LEAVE, LOOP/JECXZ), x87 (TcgFpu: full arithmetic/compare/unary/BCD/stack set over the shared FpuState/Fpu80) and SSE (TcgSse: moves, packed/scalar arithmetic, logical, compares, shuffles, conversions, MXCSR) - corpus 4202 translated / 643 fallback (641 harness FXSAVE + 2 ENTER), 892 CPU tests); P1S3 (TCG IR + i386 translator) is done; the IR interpreter measures 14.80 ns/member vs the raw runner 6.30 (2.3x) on a hot loop, and at real scale it pays ~132 ns/instruction, so the engine is integrated first (block runner, ITcgMemory over the CPU MMU, interrupt poll, fallback); P1S4 slice 1 lands the engine seam and TB cache: XboxCpu implements ITcgMemory over its own MMU/MMIO path, RunTcg polls interrupts and TSC per instruction with the exact interpreter as fallback, and TcgBlockCache caches one translated instruction per EIP (15-byte head check, clears on MMU flush and decoded-code stores) - exact on the triangle leg's first 10M steps (RAM 97CA74AA, CPU FA4E4131) at 5.24 vs 11.70 Msteps/s (1.06 without cache); slice 2 adds TcgExecutionState (no per-instruction allocations) and skips Fetch on TB hits -> still exact at 7.59 Msteps/s (2.7x the uncached interpreter, 0.65x the default cached one); the corrected real-scale cost is ~132 ns/instruction, so replacing the non-JIT share saves ~10% wall, and the switch gate now needs multi-member TBs with a per-member poll contract plus the codegen; slice 3 adds the per-member poll contract (TcgOpKind.Poll advances TSC and checks the PIC between members; a pending interrupt publishes the live state, delivers with the next member EIP and abandons the block) and the member limit that makes the step budget exact - multi-member TBs (up to 16) are now exact at 100k/1M/10M and at both 1B accurate anchors (triangle E58AE5D7/C43D5B49, menu 5C0CF968/E2B4D327) at 15.51 msps (10M) / 11.06 (triangle 1B) / 10.34 (menu 1B); the engine is not switched because it is not yet faster than the fast raw engine, 895 CPU tests). P1S4 is done and P1S5 (parity and switchover) is done: the parity bundle is exact with the ported engine (four accurate 1B goldens incl. both frames, ktest log CA5D3867 byte-identical, ktest 100M workload, cpu-oracle), the product is NOT switched because the engine is 5-7x slower, and the speed ceiling is recorded - the product is at 0.100x (13.7 ns/step), 0.5x needs ~2.7 ns/step, and the ported engine reaches 66-90 ns/step, so the phase stops with 0% of the required speedup from this port. The 0.5x P1 gate still needs xemu-class ~1.2 ns/step. XFP2 is active: the attribute-decode differential pins all six array formats (UB_D3D/UB_OGL/S1/F/S32K/CMP), the (0,0,0,1) defaults, count 0/2 and stride 0/advance through the real fetch path (10 differentials, 490 Nv2a tests); the cull/degenerate/clip-window rejection predicates are pinned too (8 cull tests), and primitive assembly is pinned (DRAW_ARRAYS packed start/count, range coalescing vs separation, one draw command per BEGIN/END; 496 Nv2a tests), triangle 1B anchor unchanged; the recorded title rows reproduce - 007 134,004 draws/1,005,989,482 px/6,478 frames and NGB 4,251/187,315,817/238,137 with EIP 0x8001B047, and the fast engine's one-frame sensitivity to the host flag set is documented. XFP3 is active: the NGB colour-count differential was withdrawn after measurement - the stored XGrid/xemu pair differs in 89.1% of its luminance distribution (different storm moments; mean delta 12.3/14.7/16.2), both surfaces are A8R8G8B8+Z24S8 (0x08080228 swizzle / 0x08080128 pitch), and xemu cannot be driven to the same guest step - so XFP3 rests on the exact VshProgramPlan/corpus differentials and the live compile gate, which now also compiles the five unique gate-title combiner configurations at capacities 1/8/32 (the menu leg's four are a subset), 109 GpuGl tests. XFP4 is active and the texture-format surface is done: all 43 reference ids are classified and backed, and the five depth ids now run the reference shadow-map compare (TryDecodeDepthTexel/CompareShadowDepth for the six depth functions, sampled through the stage wrap/border/linear/swizzle state) instead of resolving only NEVER/ALWAYS; the clear rules now carry the reference per-channel and per-field masks (CLEAR_SURFACE_R/G/B/A and _Z/_STENCIL, format-forced alpha lanes, the GL backend programming the clear masks), swizzled render targets now follow the reference Morton layout in the clear and the software fill (color and zeta, 5 device differentials; the compiled fills and GL backend decline them and the pitch-walk word stays untouched), with AA surface scaling recorded as the remaining geometry gap, the texture-cache content identity is now the reference key (mip count/dimensionality/cube flag) plus a whole-range hash gated by a per-page guest-write stamp (raw store hook priced at +4.9%/+4.2% 1B fast wall, SHAs exact; a dedicated store-scratch slot fixed a push/call [mem] boot fault), so the remaining XFP4 acceptance is the 22-row corpus differential sweep. P1S6 is closed negative: 7 of the nine parts pass (own render, live input, save/load, xemu frame policy, live audio, product defaults, gates) and the speed floor fails (0.100x, and 10 minutes derives from it), so the repository stays private; reopen with an engine at <=2.7 ns/step or an operator re-scope. The full-port program continues at XFP0 (done) and XFP1: the NV097 method surface is now machine-verified (215 defines / 201 rows; generated 1031 handled + 280 declined offsets) and an opt-in unknown-method counter measures 361 unknown writes in 18.6M methods on the triangle 1B leg with identical anchors; the reference-surface expansion is exact (1042 handled + 280 declined offsets; case4 strides fixed), and the residual 226 writes are seven offsets outside the reference NV097 surface (0x17C4, 0x1D84, 0x1710, 0x380, 0x16BC, 0x1D80, 0x9F8) that xemu also ignores - valid-surface coverage gap zero; the pgraph state-type switch has its first section (PgraphTextureState owns the four texture slots and bump state; behavior and snapshot order unchanged, triangle F9945E16/8836C7EB and menu 5C0CF968/E2B4D327 exact, 480 Nv2a tests); PgraphState now also owns the transform-program rows, transform-constant contexts and the PshCombiner (same anchors/tests); the six surface/clip scalars now also live on the state (ref properties, zero call-site churn; same anchors/tests), so the state type is the storage and no --pgraph-port toggle is needed - the differential is the gate; the seven-title method differential and XFP2 are next. The reference map is docs/research-notes/cpu-engine-port.md. The repository stays private until P1 (docs/open-source.md) XCN0 (2026-11-22): the vendored QEMU TCG i386 core builds and runs; the C smoke test passes 100k steps with guest RAM and real MMIO callbacks; the C# probe passes the vCPU/RAM/step budget; a managed MMIO callback invoked synchronously from QEMU's softmmu fails fast (0xC0000409) while the same callback from a native test function works, the 100M-step self-loop measures 247 Msteps/s (C and C#); the XCN1 native host (xgridcpu-host.exe + shared shadow/write ring) passes 100k correctness and 235.5 Msteps/s across the process boundary, and its IRQ line delivers a real-mode vector (handler flag set, EIP past the wait loop) after clearing CPUID_APIC so the in-CPU LAPIC stops swallowing the PIC vector; the device seam maps shadow and live windows in both the memory and I/O spaces (a live read spins while C# drains the ring and answers, carrying the instruction count), measured at 3.9 us/live read, 1.85 us/shadow MMIO, 25 ns/RAM load and 27 ns/C# answer; the MCPX 1BL now runs natively from the reset vector (architectural reset + direct flash/mirror/overlay windows), enters protected mode and reaches the AMD756 SMBus handshake at I/O ports 0xC000-0xC00A in 200M steps at 251 Msteps/s, and with the real XboxBus behind a 64 KB live I/O window (PCI config, AMD756 SMBus/SMC, PIC, PIT, RTC) it reaches the kernel idle loop at EIP 0x8001B02E with 194 interrupts delivered through the C# PIC at 1B steps (188.7 Msteps/s); RDTSC needed the icount virtual clock wired into the accel ops; PhysicalMemory now has a host-backed mode and the full XboxMachine runs on the section (RAM is the shared buffer, RAM aliases are QEMU region aliases, flash/mirror/overlay direct, NV2A/APU/ACI/USB live) at 160 Msteps/s, and a run-loop bug that discarded any exception raised at a chunk boundary is fixed (it showed as an fldz #NM storm at 0.5 Msteps/s); the root cause was the link stub replay_exception() returning false, which turned every #PF/#NM/#UD into a zero-step interrupt exit so guest handlers never ran - fixed, the full machine now runs the whole boot (HDD, 32 IDE bus-master starts, 214k I/O reads, 711 interrupts, EIP 0x800422B0) and the write ring is now lossless (xgc_set_mmio_sink hands each write to the host synchronously, an SPSC shared ring with backpressure, C# drains continuously), so dropped=0 and the NV2A comes alive (2599 draws, 158,966 methods, 1 frame) - after the first frame the guest sits in the kernel's KeStallExecutionProcessor (0x800153D0) device-timeout loop, which is what the 2.5 Msteps/s leg is (drain 3.7 s, service 0.3 s, advance 9 ms, C# spin 44 s of 159 s; the rest is the vCPU running the delay loop), and attaching a DVD does not change it - the wait is an undelivered IRQ5 (APU): at the stall the PIC has req=0x20 and imr=0xD2 with isr=0x00 (latched, unmasked, never acknowledged), the NV2A has notify=8/stalls=1/frames=1 and the IDE's last command is 0xC8 with no DMA pending, the end state is req=0x09/isr=0x20/imr=0xD2/elcr=0x68: IRQ5 was delivered and its handler never EOI'd, then the guest faulted inside that handler and entered the panic path with interrupts disabled (which is why IRQ0/IRQ3 stay pending and the CPU sits in KeStallExecutionProcessor); the ack path is clean (499 acks, no ack failures), so the blocker is an exception inside the IRQ5 handler after the first frame, most likely the #UD the managed notes recorded at this same panic entry. pic_read_irq also answers a withdrawn INT with spurious IRQ7 instead of -1 (QEMU indexed the IDT with -1). The probe gained a DVD argument and per-slice drain/spin/service attribution. Operator decision 2026-11-22 (performance-first, binding): maximum performance is the primary objective and the plan may change to reach it; the target is one process with a native hot path (QEMU TCG CPU + NV2A FIFO/PGRAPH/renderer + IDE + APU/DSP) and a C# shell (UI/input/audio/snapshots/tests), superseding the all-devices-managed-C# rule where it costs speed - the operator then granted language freedom and chose Option A: XGrid becomes a C# shell and distribution over the xemu 0.8.139 core (xemu CPU/NV2A/IDE/APU/audio/input = the performance maximum; integration A0 window-embedding spike, then A1 product shell), superseding the porting ladder; plan in docs/research-notes/performance-strategy.md.",
+      "second": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs, XGrid-only compatibility media)",
+      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact",
+      "matrix": "44-title 1B sweep (7 oracle + 37 compat) in docs/research-notes/title-matrix.md: TM6 re-run (2026-10-25) 6 own-render / 38 dashboard / 0 fault / 0 timeout (unchanged counts, but Ninja Gaiden Black's row advanced 2,672 -> 12,800 draws and 41,995,882 -> 166,119,138 px at the same 6,475 frames, and the dashboard tuple moved 33,638/253,998,498 -> 34,339/268,744,098 because the 701 format-skipped inline draws now run the program - the accurate gate frames and RAM/CPU SHAs are byte-identical)."
+    }
+  },
+  "result": {
+    "points": 93.99,
+    "weight": 118,
+    "percent": 79.65
+  },
+  "phases": [
+    {
+      "p": 0,
+      "name": "Bootstrap",
+      "weight": 1,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 1,
+      "name": "Core",
+      "weight": 2,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 2,
+      "name": "Memory",
+      "weight": 3,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 3,
+      "name": "CPU (x86 PIII)",
+      "weight": 11,
+      "done": 97,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 4,
+      "name": "MMU",
+      "weight": 3,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 5,
+      "name": "Bus & IRQ",
+      "weight": 6,
+      "done": 90,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 6,
+      "name": "MCPX",
+      "weight": 6,
+      "done": 80,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 7,
+      "name": "Firmware & Boot",
+      "weight": 5,
+      "done": 90,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 8,
+      "name": "Storage",
+      "weight": 5,
+      "done": 86,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 9,
+      "name": "XBE Loader",
+      "weight": 3,
+      "done": 90,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 10,
+      "name": "Kernel Interface",
+      "weight": 2,
+      "done": 5,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 11,
+      "name": "NV2A (GPU)",
+      "weight": 15,
+      "done": 94,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 12,
+      "name": "APU (audio)",
+      "weight": 4,
+      "done": 95,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 13,
+      "name": "USB & Controllers",
+      "weight": 4,
+      "done": 70,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 14,
+      "name": "Networking",
+      "weight": 4,
+      "done": 70,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 15,
+      "name": "CPU JIT",
+      "weight": 11,
+      "done": 90,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 16,
+      "name": "CPU Optimization",
+      "weight": 3,
+      "done": 35,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 17,
+      "name": "Memory Optimization",
+      "weight": 2,
+      "done": 40,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 18,
+      "name": "GPU Optimization",
+      "weight": 4,
+      "done": 78,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 19,
+      "name": "Debugger",
+      "weight": 3,
+      "done": 30,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 20,
+      "name": "Automated Testing",
+      "weight": 3,
+      "done": 85,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 21,
+      "name": "CLI & Frontend",
+      "weight": 3,
+      "done": 75,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 22,
+      "name": "Save States & Replay",
+      "weight": 2,
+      "done": 40,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 23,
+      "name": "Release",
+      "weight": 3,
+      "done": 55,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 24,
+      "name": "Retail gameplay & xemu full port",
+      "weight": 10,
+      "done": 60,
+      "track": "Retail & port"
+    }
+  ],
+  "queue": [
+    {
+      "id": "XCN0",
+      "title": "Native CPU extraction spike: QEMU TCG core behind libxgridcpu",
+      "status": "active",
+      "depends": [],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "From C#: create a vCPU, map 64 MB at GPA 0 and a 4 KB MMIO region with callbacks, run a real-mode stub (RAM write, MMIO read/write), enter protected mode, run a loop, inject an IRQ, and return on a step budget; measure steps/s and callback cost and project the 007 leg; stop if the CPU cannot be driven standalone or the projection cannot reach 2.7 ns/step.",
+      "price": "1-2 sessions (build + shim + test)."
+    },
+    {
+      "id": "XCN1",
+      "title": "Native CPU host seam: zero-copy RAM, MMIO dispatch, IRQ and step budget",
+      "status": "queued",
+      "depends": [
+        "XCN0"
+      ],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "The dashboard and triangle boot on --cpu native; --cpu managed still produces the four accurate 1B goldens; the native re-baseline is recorded with measured reasons.",
+      "price": "2-4 sessions."
+    },
+    {
+      "id": "XCN2",
+      "title": "P1 on the native CPU: 007 playable",
+      "status": "queued",
+      "depends": [
+        "XCN1"
+      ],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "007 meets the nine P1 conditions on --cpu native (own render, live input, >=0.5x, 10 minutes, save/load, xemu frame policy, live audio, product defaults); the exact gates stay green on --cpu managed.",
+      "price": "2-4 sessions."
+    },
+    {
+      "id": "XCN3",
+      "title": "Native CPU release: four RIDs, GPL source offer, package gate",
+      "status": "queued",
+      "depends": [
+        "XCN2"
+      ],
+      "plan": "E0N",
+      "bar": "correctness",
+      "acceptance": "package-verify passes with the native core; the QEMU source offer and notices are present; win-x64/linux-x64/osx-x64/osx-arm64 archives build.",
+      "price": "1-2 sessions."
+    },
+    {
+      "id": "XFP5",
+      "title": "Ported GL renderer (pgraph/gl) behind IPgraphBackend",
+      "status": "parked",
+      "depends": [
+        "XFP4"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "The ported renderer runs under --gpu gl with no software composition on supported corpus rows, BackendUnsupported=0, the documented GL-vs-software policy, three titles render their own frames, and the speed checkpoint is measured.",
+      "price": "6-10 sessions; correctness bar."
+    },
+    {
+      "id": "XFP6",
+      "title": "AC'97 codec and APU front end (full)",
+      "status": "parked",
+      "depends": [
+        "XFP0"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "007 and Halo produce live host audio (not an offline WAV) in sync, the APU snapshot round-trips, and the P1 playability assessment (nine conditions, including >= 0.5x guest time) is recorded; the four accurate goldens and ktest stay byte-identical.",
+      "price": "3-5 sessions; correctness bar."
+    },
+    {
+      "id": "XFP7",
+      "title": "IDE/ATAPI and block-layer port",
+      "status": "parked",
+      "depends": [
+        "XFP0"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "The kernel ATA/ATAPI probe, the ktest media and DVD streaming reproduce the documented behavior; the Bad Boys II resource scan and Halo's D3D resource wait are re-probed and either narrowed or explicitly handed to XFP1/XFP5.",
+      "price": "4-6 sessions; correctness bar."
+    },
+    {
+      "id": "XFP8",
+      "title": "SMBus/SMC/EEPROM and nvnet port",
+      "status": "parked",
+      "depends": [
+        "XFP7"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "SMC command/reply vectors, the EEPROM image and DHCP/ARP frames match the reference; the dashboard and ktest are exact.",
+      "price": "3-5 sessions; correctness bar."
+    },
+    {
+      "id": "XFP9",
+      "title": "USB OHCI, hub and XID port",
+      "status": "parked",
+      "depends": [
+        "XFP7"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "Enumeration and port-status vectors match the reference and every title's scripted pad edge advances guest state; the gates stay exact.",
+      "price": "3-5 sessions; correctness bar."
+    },
+    {
+      "id": "XFP10",
+      "title": "Machine and chipset assembly (xbox.c, PCI, MCPX, i8259/PIT/RTC/LPC)",
+      "status": "parked",
+      "depends": [
+        "XFP5",
+        "XFP6",
+        "XFP8",
+        "XFP9"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "The machine is assembled from ported devices with a 1B RAM/CPU/frame/counter differential against the pre-port build; P4 (seven of seven oracle titles playable) is assessed and every remaining wait has a named blocker.",
+      "price": "4-6 sessions; correctness bar."
+    },
+    {
+      "id": "XFP11",
+      "title": "CPU core port: softmmu, TCG and target/i386",
+      "status": "parked",
+      "depends": [
+        "XFP10"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "tools/cpu-oracle and the ktest log are exact, the four 1B anchors are exact, and the ported core is not slower than the current raw engine on the 1B/ktest workloads; if it is slower, keep the raw engine and record the scope exception with the measurement.",
+      "price": "20-40 sessions; correctness bar plus not-slower."
+    },
+    {
+      "id": "XFP12",
+      "title": "Host integration port (ui, audio, input backends)",
+      "status": "parked",
+      "depends": [
+        "XFP10"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "tools/frontend-smoke, the live window, the audio device and the pad are unchanged or better; settings, renderer choice and save states still work.",
+      "price": "4-6 sessions; correctness bar."
+    },
+    {
+      "id": "XFP13",
+      "title": "Snapshot/migration parity",
+      "status": "parked",
+      "depends": [
+        "XFP12"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "A save/load round trip at 1B and at a title anchor resumes to the same next-step SHA across the ported machine.",
+      "price": "3-5 sessions; correctness bar."
+    },
+    {
+      "id": "XFP14",
+      "title": "Parity close: ledger, seven titles, release",
+      "status": "parked",
+      "depends": [
+        "XFP11",
+        "XFP13"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "The ledger is 100% verified/out-of-scope, seven oracle titles are playable (own render, input, 10 minutes, save/load, xemu frame policy, audible), and the full corpus, four accurate goldens, ktest and PACKAGE PASS gates are green.",
+      "price": "2-4 sessions; correctness bar."
+    },
+    {
+      "id": "TM9",
+      "title": "Ninja Gaiden Black colour depth: stop the fragment-path dither the TM7 row measured",
+      "status": "superseded",
+      "depends": [
+        "TM7"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "Superseded by XFP3: the ported fragment path is the fix; the row acceptance (colour count inside 25% of xemu, |dmean| <= 25, black within 2 points) is XFP3's acceptance.",
+      "price": "Folded into XFP3; no separate session."
+    }
+  ],
+  "done": [
+    {
+      "id": "P1.0",
+      "title": "GPL-2.0 relicense + porting policy + xemu 0.8.139 menu oracle + DSP state/arithmetic/DMA port",
+      "date": "2026-10-23",
+      "evidence": "COPYING/LICENSE/THIRD_PARTY_NOTICES/docs/porting-policy; xemu 0.8.139 boots the XBMC dashboard from data/xemu (screenshot data/xemu/xemu-0.8.139-oracle.png; docs/research-notes/xemu-menu-oracle.md); Dsp56300State/Dsp56300Core/Dsp56300Arithmetic/DspDma ported from xemu 0.8.139; solution build 0 warnings, solution 1884 tests green (6 new Dsp56300PortTests), format clean",
+      "commits": [],
+      "commitMessage": "license: adopt GPL-2.0 and port the xemu 0.8.139 DSP foundation (P1.0)"
+    },
+    {
+      "id": "C6.1",
+      "title": "A 32-bit surface clear fills rows through Span<uint>.Fill",
+      "date": "2026-10-22",
+      "evidence": "device time 1,306 -> 816 ms; triangle gl+replace 5.61/5.74/5.73 s (-10.6%, 3/3); menu 19.98/18.82 s; every 1B SHA/counter/frame exact",
+      "commits": [
+        "e955b64",
+        "42e161b"
+      ]
+    },
+    {
+      "id": "C5.1",
+      "title": "C5 slice 1: lazy IL runner + in-frame chain entry",
+      "date": "2026-10-22",
+      "evidence": "triangle -4.2% / menu -3.0% (3/3); all four fast anchors and both accurate goldens byte-identical",
+      "commits": [
+        "8dc8429",
+        "1ef1b8d",
+        "de652dd"
+      ]
+    },
+    {
+      "id": "C4b.1",
+      "title": "Image-window decode class: fetch and block flash/BIOS/mirror/overlay",
+      "date": "2026-10-22",
+      "evidence": "nonRamSkips 359,476 -> 0; nonJitCalls 523k -> 169k; triangle -6.4%; exact 1B anchors",
+      "commits": [
+        "415d87a",
+        "5355e2d"
+      ]
+    },
+    {
+      "id": "B3.1",
+      "title": "Gap 12 closed: a cube stage samples a host 2D-array texture",
+      "date": "2026-10-22",
+      "evidence": "the corpus row agrees with software within 2 pixels of 307,200 at both anchors; the word-pool code is deleted",
+      "commits": [
+        "766c28d",
+        "bfb2933"
+      ]
+    },
+    {
+      "id": "D1",
+      "title": "C6 draw-flush half: compile or cache the active transform program",
+      "date": "2026-10-23",
+      "evidence": "price: the interpreted transform program is 422-506 ms (triangle, 7.3-8.2% of 5.8-6.1 s) and 7,134-7,336 ms (menu, 33.8-34.9% of 20.9-21.9 s); the 100M leg cannot price it (1 draw there). VshProgramPlan predecodes the active program once per (version,start,length) and runs it with a plan-owned register file and scratch (no per-vertex allocation, the interpreter's own float helpers): transform stage 422->202 ms / 7,134->2,600 ms. Menu gl+replace 1B 3 pairs -24.8/-30.4/-32.8% wall and outerMs -25/-31/-34%; triangle 10 pairs -4.02% median (5/10 signs, host noise; nonJitMs -11/-23/-12%). Exact anchors tri sw B45254CA/7DAB63EB 57,663,082 px, tri gl 4F1FCBC0/7DAB63EB, menu sw 34973510/F5D61C94 253,998,498 px, menu gl B06BA6E5/F5D61C94; accurate goldens menu 4EF1FBF6/B6116DAE (diff 2602 violations 0) and triangle A1740DE0/7A860ED7 (diff 27849); BackendUnsupported=0 composedFrames=0; ktest PASS 7/7 at 792,800,535 steps log CA5D3867 byte-identical; corpus vp_lighting 3B 162DAFF1/0380C502 and bump_cubemap_reflect 3.6B 5ACD06FF/C848610E; suite 1865->1874",
+      "commitMessage": "nv2a: compile the transform program once per draw (D1)"
+    },
+    {
+      "id": "D2",
+      "title": "C7 engine-shape decision",
+      "date": "2026-10-23",
+      "evidence": "decision (a): keep the raw engine and take the device/draw-flush path; re-read at 1B gl+replace on the post-D1 build: triangle 5.839 s (runner 3,425 ms = 58.7%, 6.26 ns/member, formation+chain 991, nonJit 1,400; ram 4F1FCBC0/cpu 7DAB63EB, 2706/6455/68/34) and menu 16.448 s (runner 12,801 ms = 77.8%, 14.77 ns/member, formation+chain 1,716, nonJit 1,882; ram B06BA6E5/cpu F5D61C94, 33638/686/686); gap 4.87x/12.1x; prices: encoder 415.4 vs 122.2 ns/instruction (3.4x) = 8.0% triangle / 4.9% menu, trace boundary population 352.6/716.2 ms = 6.04%/4.35%, code volume 0% wall, device stage ~596 ms triangle (10.2%) and >=2,600 ms menu (>=15.8%, >=22% with the measured GL submission); only (a) is at or above the bar, C's engine-shape program is closed on its own kill criterion, D3 promoted, D4 stays conditional on a per-member probe showing >=20% engine (two iterations, then stop); no code changed; suite 1874 green, build and format clean; decisions 242",
+      "commitMessage": "docs: decide C7 keeps the raw engine and takes the device path (D2)"
+    },
+    {
+      "id": "D5",
+      "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
+      "date": "2026-10-23",
+      "evidence": "1B menu gl+replace interleaved pairs vs stashed 520c9d2: -10.33 / -17.20 / -10.29% wall (median -10.33%, 3/3 >= 10%; outerMs -10.6/-17.0/-11.4%); 3 more pairs -11.21/-8.52/-10.20% (6-pair median -10.31%, 6/6 negative). Triangle gl+replace -0.70/-2.27/-2.02% (no regression). Fast 1B anchors byte-identical: menu gl B06BA6E5/F5D61C94 33638/1402/696/686/686 culled 41035, triangle gl 4F1FCBC0/7DAB63EB, menu sw 34973510 (253,998,498 px), triangle sw B45254CA (57,663,082 px). Accurate 1B goldens byte-identical to base on all four legs: menu sw 4EF1FBF6 / gl 6BE6325F, triangle sw A1740DE0 / gl 3FC4B419 (diff=1852 violations=0 maxDelta=1). ktest 4E03A park at 792,800,535 steps, log CA5D3867 (40,797 B) byte-identical, ktest_diff SMOKE PASS 7/7. Suite 1874 -> 1878, build 0 warnings, format clean. No snapshot change.",
+      "commitMessage": "nv2a: hoist the fill path and share the draw-command record (D5)"
+    },
+    {
+      "id": "P1.2",
+      "title": "Port the DSP56300 instruction decoder and handlers (dsp_cpu.c + dsp_emu.c.inc)",
+      "date": "2026-10-23",
+      "evidence": "port: the xemu 0.8.139 interpreter is now managed C# - Dsp56300Core.Execution (fetch/decode, PC, DO/REP, stack, interrupt pipeline, effective address, condition codes), .Alu (ALU + MAC/MPY families, 24-bit read/limit), .Instructions (104 non-parallel handlers), .ParallelMove (pm_0..pm_8), Dsp56300Opcodes (187-row decode table + 256-entry ALU dispatch + MatchMMMRRR); Step/Run execute. Differential: tools/dsp-oracle compiles the reference interpreter from References2 (read-only) with out-of-range guards and generates 929 vectors (3 per decode entry, 2 per defined ALU opcode, 240 random 8-word programs, 24 interrupt-pipeline cases) into tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt; 9 new tests replay them (state + registers + memory hash), 51 Audio tests green, suite 1884 -> 1893, build 0 warnings, format clean. Reference quirks reproduced and documented: emu_pm_1's unconditional registers[numreg1] store (also writes the virtual A/B register) and emu_macr_p_x1_y0_b rounding before the accumulator load (behaves as mac). No gate moved (the interpreter is not wired to the machine yet): triangle gl+replace 1B ramSha256 4F1FCBC0/cpu 7DAB63EB, menu gl+replace 1B B06BA6E5/F5D61C94, BackendUnsupported=0.",
+      "commitMessage": "audio: port the DSP56300 instruction decoder and handlers (P1.2)"
+    },
+    {
+      "id": "P1",
+      "title": "Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)",
+      "date": "2026-10-23",
+      "evidence": "port: McpxApuDsp/McpxApuDspPair port xemu 0.8.139 gp_ep.c (64 KB GP/EP sub-windows, proc_rst_write reset/bootstrap, scatter/gather scratch + FIFO rings over the guest SGE tables, peripheral halt/interrupt/DMA at 0xFFFFC4-C5/D4-D7, the GP/EP frame loop with a 1M-cycle safety ceiling, float_to_24b), wired behind the opt-in ApuDspCore option; APU snapshot v4 appends a length-prefixed DSP payload (v2/v3 still load). P1.4: IAudioBackend + WaveAudioBackend (48 kHz 16-bit stereo, patched RIFF header), EP output FIFO 0 sunk with silence written back to the guest ring (ep_sink_samples), CLI --apu-dsp and --audio-out (implies --apu-dsp). Real-microcode bug found and fixed: InvalidateOpcodeCache cleared the 0xFFFFFFFF nop tag sentinel (274,495 undefined instructions and 28 cycle-limit hits -> 0/0; regression test fails pre-fix). Evidence: --apu-dsp is guest-identical on both 1B gates (menu gl B06BA6E5/F5D61C94, 29 GP frames; triangle gl 4F1FCBC0/7DAB63EB, 26 GP frames; 0 undefined, 0 ceiling hits, no fault); default path exact fast anchors (triangle gl 4F1FCBC0/7DAB63EB, menu gl B06BA6E5/F5D61C94, triangle sw B45254CA/7DAB63EB 57,663,082 px, menu sw 34973510/F5D61C94 253,998,498 px), accurate goldens A1740DE0/3FC4B419 (2706/68/34) and 4EF1FBF6/6BE6325F (33632/686/686) GOLDEN PASS with violations 0, ktest log CA5D3867 (40,797 B) byte-identical at 792,800,535 steps, SMOKE PASS 7/7. Suite 1893 -> 1922, build 0 warnings, format clean; frontend smoke 306,817 non-black px, 71.7 MB save/load round trip, faulted=False. Phase 12 (APU) 55 -> 75%, score 78.2 -> 78.9% (85.23 of 108). Remaining host-audio gap: the VP mixer (vp.c) and the AC97 codec path; the sink path is proven by a 16-sample stereo voice through the real EP FIFO/DMA ring.",
+      "commitMessage": "audio: port the APU GP/EP frame glue and the PCM sink (P1.3, P1.4)"
+    },
+    {
+      "id": "R1",
+      "title": "Release: packaging, installer, licensing review",
+      "date": "2026-10-23",
+      "evidence": "release tree: scripts/package.ps1 publishes the CLI and frontend self-contained for win-x64/linux-x64/osx-x64/osx-arm64 (8 archives, 32.7-47.7 MB) at 0.1.0 with COPYING (GPL-2.0, 17,880 B) + LICENSE + THIRD_PARTY_NOTICES.md + RELEASE-NOTES.md + VERSION, sorted fixed-timestamp archives, SHA256SUMS-<rid>.txt, SHA256SUMS.txt and package-manifest.json; reproducibility: two independent runs of the same commit produced 8/8 byte-identical archives, and the recipe was re-run on the reviewed tree with the same result (the binaries embed 0.1.0+<commit> in InformationalVersion by design, so a new commit changes every archive; each run writes per-archive SHA-256 into SHA256SUMS-<rid>.txt, SHA256SUMS.txt and package-manifest.json); acceptance gate scripts/package-verify.ps1 fails the pre-fix recipe with 22 problems (no COPYING/THIRD_PARTY_NOTICES/RELEASE-NOTES/manifest/checksums, VERSION v0.1.0 vs 0.1.0, XML docs shipped) and passes the new tree (17 ported files recorded, per-RID MZ/ELF/Mach-O magic, checksum+manifest cross-check, packaged CLI --version = XGrid 0.1.0); license review docs/release-licensing-review.md findings F1-F6: F1 the full license set now ships in every archive (release.yml was LICENSE+README only), F2 one version source in Directory.Build.props (the CLI printed 0.1.0 while assemblies were 1.0.0) plus VERSION/manifest/checksums, F3 six NV2A transcriptions (PshCombiner, VshProgram, VshProgramPlan, FixedFunctionVertex, FixedFunctionVertexState, SpecularPowerCurve) gain SPDX + original copyright + notices rows and the gate now fails any src file declaring Ported from/Derived from without both, F4 0.8.137 citations made version-accurate, F5 OS installer deferred by scope decision (portable archives, no install-time state), F6 unsigned/notarized status and the macOS quarantine command documented; release notes docs/release-notes/v0.1.0.md; release.yml, docs/ci.md and README aligned; build 0 warnings, 1922 tests green, format clean; no emulator path changed so the 1B anchors are carried (triangle gl 4F1FCBC0/7DAB63EB, menu gl B06BA6E5/F5D61C94, accurate 4EF1FBF6/B6116DAE and A1740DE0/7A860ED7, ktest 792,800,535 steps log CA5D3867); phase 23 Release 18 -> 55%, score 78.9 -> 79.9% (86.34 of 108)",
+      "commitMessage": "release: package the CLI and frontend for four RIDs with a licensing gate (R1)"
+    },
+    {
+      "id": "G1",
+      "title": "NV2A PGRAPH core port (xemu 0.8.139 pgraph/)",
+      "date": "2026-10-24",
+      "evidence": "73 recorded methods audited (1 handled: SET_TEXTURE_PALETTE + paletted lane; 72 declined with measured writes/values, nv097-coverage.md G1 audit); DXT1/3/5 + paletted I8 + Y8/AY8/A8/A8Y8/Y16/R6G5B5 + YUY2/UYVY + mip-chain layout ported (S3tcDecoder/TextureFormats, 16 reference block vectors, 40 tests); fast 1B gl+replace triangle 4F1FCBC0/7DAB63EB 5.707 s, menu B06BA6E5/F5D61C94 14.199 s; fast 1B sw triangle B45254CA/7DAB63EB 57,663,082 px, menu 34973510/F5D61C94 253,998,498 px; accurate goldens triangle A1740DE0/7A860ED7, menu 4EF1FBF6/B6116DAE violations=0; ktest 792,800,535 steps, 40,797 B CA5D3867 log byte-identical, SMOKE PASS 7/7; suite 1965 green; snapshot v10",
+      "commitMessage": "nv2a: audit the 73 recorded methods and port the texture-format table (G1)"
+    },
+    {
+      "id": "G3",
+      "title": "Consolidated gate re-baseline for the ported NV2A",
+      "date": "2026-10-24",
+      "evidence": "price: G3 is a verification bundle, not a wall gate (it implements nothing), so the 10%/20% stage rule does not apply; measured outcome one session. One full Release build (0 warnings) + 1965 tests + format clean, then every leg from those binaries (no mixed engine). Fast 1B anchors exact: triangle gl 4F1FCBC0/7DAB63EB (6.311 s), menu gl B06BA6E5/F5D61C94 (14.706 s), triangle sw B45254CA/7DAB63EB 57,663,082 px (10.808 s), menu sw 34973510/F5D61C94 253,998,498 px (25.630 s). Accurate 1B goldens PASS: menu 4EF1FBF6/B6116DAE diff=2602 violations=0 maxDelta=1 counters 33632/686/686, triangle A1740DE0/7A860ED7 diff=27849 2706/68/34; accurate RAM/CPU 6AB39AB0/3D2740B8 and 812EA159/2F632483. All 22 corpus rows PASS at their documented anchors; six stale values re-baselined with the measurement that moved each: cubemap 3B GL frame 5174B1EB -> 673477F7 (now 1 px of 307,200 from software), cubemap 4.4B 18,980 -> 19,042 colours / mean (57.1, 89.0, 34.4) (pair 2 px maxDelta 3) and 3.6B pair 1 px maxDelta 4 (21,041 both), cubemap 3B software 13,925 colours (21,041 is the 3.6B anchor), alpha_blending 4.6B mean (22.7, 18.7, 230.4) within 2.8/255 (3B 2,952 draws at 40081D03/1C5C575D), dashboard 2B 16.94 msps / 217,622 draws / frame 535C48FA (RAM 7DF2F343 CPU B912C955), ktest BTFF RAM F708B07D/7D667575. ktest smoke: park 4E03A at 792,800,535 steps, 40,797 B CA5D3867 suite log byte-identical, ktest_diff SMOKE PASS 7/7 (071/319/344 both, 224/231 XGrid-ahead). PACKAGE PASS: 8 archives, version 0.1.0, 4 RIDs, licenses complete (19 ported files; win-x64 cli 126f1b53..., frontend 408675a7..., CLI smoke XGrid 0.1.0). No code and no snapshot change (Nv2a v10, audio v3); phase score unchanged 79.9% (86.34 of 108).",
+      "commitMessage": "gates: re-baseline every gate, the 22-row corpus, ktest and the package tree (G3)"
+    },
+    {
+      "id": "TM0",
+      "title": "Title matrix harness + first sweep",
+      "date": "2026-10-24",
+      "evidence": "matrix: 39 ISO rows at 1B (36 shared dashboard menu 33,638/253,998,498/686; optimized 007 boot animation 2,672/41,995,882/55; Arx Fatalis boot animation 35 frames; Halo fast-mode #UD at 604M, accurate mode clean); 007 reaches its own Harrier/carrier intro at 20B (frame 2666CFBC..., 38,350 colours, 7.8% black) and stalls at 30B/50B in EIP 0x1C4787 with APU ISTS 0x79/InterruptAsserted=True and PIC req=0; xemu 0.8.139 reaches 007 gameplay in 15 s; no emulator source or gate anchor changed",
+      "commitMessage": "matrix: build the title matrix harness and sweep 39 retail ISOs (TM0)"
+    },
+    {
+      "id": "TM1",
+      "title": "Blocker probe for the top 3 closest titles",
+      "date": "2026-10-24",
+      "evidence": "TM1 probe: top 3 = 007 (own render at 20B; stalls at 30B/50B at EIP 0x1C4787 with 79,581 draws / 603,250,282 px / 2,594 frames and a black display; APU ISTS 0x79 asserted=True while PIC req=0x00; 30B save state + method histogram in wt-data/title-probe-007-30b), Halo (optimized ISO; fast-mode #UD vec=6 at 604M EIP 0x180AEC, accurate mode clean; xemu 0.8.139 reaches its beach gameplay in 50 s, wt-data/xemu-halo-test.png), Redump group (36 rows on the shared dashboard at 1B, park at EIP 0x800422B0 with NV2A asserted=True and PIC req=0x00). One shared blocker selected: level-triggered PCI interrupts are lost after the first acknowledge - the guest programs ELCR 0x4D0=0x68 / 0x4D1=0x18 (IRQ3/5/6/11/12 level) and XGrid had no ELCR (the writes were unmapped) and cleared the request on every acknowledge; xemu 0.8.139 hw/intc/i8259.c owns the semantics (pic_set_irq keeps irr for ltim/elcr lines, pic_intack only clears edge lines). Report in docs/research-notes/real-game-probes.md; no emulator source change in TM1.",
+      "commitMessage": "matrix: probe the 007 APU stall and the Halo fast-mode fault (TM1)"
+    },
+    {
+      "id": "TM2",
+      "title": "Fix shared blocker #1 and re-run the matrix",
+      "date": "2026-10-24",
+      "evidence": "TM2: reproduced the blocker (007 at 30B/50B with the A press parks at EIP 0x1C4787, APU ISTS 0x79 asserted while PIC req=0x00; 30B save state + method histogram in wt-data/title-probe-007-30b) and found the mechanism with a temporary unmapped-port trace: the guest programs the 8259 edge/level register (4D0=0x68 = NV2A IRQ3 / APU IRQ5 / ACI IRQ6 level, 4D1=0x18 = USB IRQ11/12 level) and XGrid had nothing mapped at 0x4D0/0x4D1. Fixed in the current engine: Pic8259 gains the ELCR ports (PIIX3 masks 0xF8/0xDE), the xemu 0.8.139 hw/intc/i8259.c level semantics (an acknowledge does not clear a level line's request, so the EOI re-presents it), the slave INT re-driven into IR2 on every state change, ICW1 keeping the level requests, and snapshot v2 (v1 states load as edge-only - verified on the 30B 007 state). New Pic8259LevelTests (8; 3 fail with the pre-fix IsLevel) and the XGRID_PIC_TRACE=1 diagnostic. Titles advanced: 007 at 50B with the dashboard pad script presents its own Agent Under Fire title screen (21,186 colours, 49.7% black, EIP 0x1FD0E, 1,914 flips, no fault) where TM1 saw a frozen black transition, and with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) before faulting at 26.5B at EIP 0x1C386E (#PF, CR2=0xE4) inside the APU ISR (the TM3 blocker); GTA: San Andreas (Redump) at 5B now presents the disc's own Xbox boot screen (27,543 colours, EIP 0x2DC4F, 17,410 flips) where the pre-fix 5B sweep showed the dashboard. Interrupts delivered +5 (menu) / +10 (triangle), no storm. The matrix was re-run: 44 titles (7 oracle + 37 compat, the operator added five optimized ISOs): 2 own-render, 39 dashboard, 3 fault, 0 timeout; the three faults are one fast-mode #UD on 3 of the 7 oracle titles (Halo 0x180AEC, Tak 0x33C810, Ninja Gaiden Black 0x30D63D) - the TM3 lead candidate. Gates: the ktest log is byte-identical (CA5D3867, 40,797 B, 792,800,535 steps, 7/7); the four accurate goldens are re-baselined with the measured reason - the menu frame and its 33,632/686/686 counters are unchanged (4EF1FBF6 / B6116DAE, RAM 5C0CF968 / E2B4D327), the triangle moves A1740DE0 -> 5B50373D (2,706/68/34 -> 2,707/69/34) and gl 7A860ED7 -> 79142DE4 (RAM E58AE5D7 / C43D5B49), and the pre-fix build reproduces the old values exactly; fast anchors re-recorded (triangle gl 6CBBFE75/AB39AEE9 frame 79142DE4, menu gl EF1BF776/D726C97A frame B6116DAE, triangle sw 457719AC/AB39AEE9 58,123,882 px frame 5B50373D, menu sw FD12563B/D726C97A 253,998,498 px frame 4EF1FBF6). Suite 1965 -> 1973, build 0 warnings, format clean; P5 Bus & IRQ 85 -> 90, P24 Retail 0 -> 10 = 74.3% (87.64 of 118).",
+      "commitMessage": "bus: model the 8259 edge/level register and level interrupt delivery (TM2)"
+    },
+    {
+      "id": "TM3",
+      "title": "Fix shared blocker #2 and re-run the matrix",
+      "date": "2026-10-24",
+      "evidence": "TM3: the second shared blocker was the missing SAHF/LAHF one-byte opcodes (0x9E/0x9F), not a JIT bug. The Halo repro (H:\\Tests\\XBOXReady\\Halo ... v1.09) faults at exactly 604,260,882 steps, vec=6, EIP=0x00180AEC with --jit-raw, WITHOUT --jit-raw (IL), with --jit-exact and in accurate mode (604,264,734) - so every engine raises it. --break/--break-log show a single visit to 0x180AEC and --dumpv shows the byte is 0x9E = SAHF, the tail of the retail x87 loop fprem; fnstsw ax; sahf; jp (0x180AE6 FPREM -> 0x180AE9 FNSTSW AX -> 0x180AEC SAHF -> 0x180AED jp 0x180AE6); the decoder had no case for 0x9E/0x9F, so it raised #UD and the kernel's handler (EAX=0x1E exception number, ECX=0xC000001D STATUS_ILLEGAL_INSTRUCTION, EBX/EDX = fault EIP) halted at 0x800151EF - the shared 'last EIP' in the matrix rows. Fix (xemu 0.8.139 target/i386/tcg/emit.c.inc gen_SAHF/gen_LAHF): Decoder 0x9E->Mnemonic.Sahf, 0x9F->Mnemonic.Lahf; XboxCpu Sahf = (Eflags & ~ConditionMask) | (AH & ConditionMask) with ConditionMask=CF|PF|AF|ZF|SF (0xD5, OF and every non-condition bit kept), Lahf = AH = (Eflags & ConditionMask) | Reserved1; SpecSahf/SpecLahf verbatim bodies + DecodedBlockCache.Terminates whitelist so the hot FPREM loop stays JIT-served. Evidence: FlagTransferTests (decode, six AH patterns, LAHF five-flag+bit-1 store, the sahf;jp FPREM branch both ways, round trip), JitTests.SahfLahfLoop (IL+raw vs interpreter, block served), SpecExecutionTests flag-transfer shapes - 15 tests, pre-fix build throws 'Unsupported instruction 0x9E'; tools/cpu-oracle gained 12 SAHF/LAHF cases and was regenerated against QEMU TCG (Unicorn 2.1.4), corpus 629 -> 641 all green (the reference confirms sahf_00 0xCD7->0xC02, sahf_d5 unchanged, lahf_8d5 AH=0xD7; a mask mutation fails the oracle). Titles: Halo 0xAC3AC fast / 0xAC543 accurate, Tak 0x39CE8B, Ninja Gaiden Black 0x37DC15 - 1B steps, LastFault vec=0. Matrix re-run (44 titles at 1B, serial): 2 own-render, 42 dashboard, 0 fault, 0 timeout (was 2/39/3/0); Tak is now the second own-render row (unique 2,675 draws / 41,995,882 px / 42 frames, EIP 0x39CE8B), Halo/NGB execute their own XBE code with no fault. Gates: no anchor moved - the four accurate 1B goldens are byte-identical (menu sw 4EF1FBF6 / gl B6116DAE, RAM 5C0CF968 / CPU E2B4D327, 33,632/686/686; triangle sw 5B50373D / gl 79142DE4, RAM E58AE5D7 / CPU C43D5B49, 2,707/69/34), the four fast 1B continuity anchors are exact (menu sw FD12563B/D726C97A 253,998,498 px, menu gl EF1BF776/D726C97A, triangle sw 457719AC/AB39AEE9 58,123,882 px, triangle gl 6CBBFE75/AB39AEE9), the ktest log is CA5D3867 (40,797 B) byte-identical at 792,800,535 steps, suite 1973 -> 1988, build 0 warnings, format clean, no snapshot change. Filed: the remaining one-byte decoder holes (27 2F 37 3F DAA/DAS/AAA/AAS, 62 BOUND, 82 group-1 alias, C4 C5 LES/LDS, D6 SALC, F1 INT1 - all accepted by the reference in 32-bit mode, none executed by a measured row). Score P3 CPU 96->97, P24 Retail 10->15 = 74.8% (88.25 of 118).",
+      "commitMessage": "cpu: decode SAHF/LAHF so the FPREM loop tail runs (TM3)"
+    },
+    {
+      "id": "TM4",
+      "title": "007 playability gate",
+      "date": "2026-10-25",
+      "evidence": "007 Agent Under Fire is playable: 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); xemu 0.8.139 on the same ISO reaches the same scene at 150 s (63,994 colours, 6.8% black, mean (96.8,85.5,58.8); frame-compare --crop-top 0.25 dmean=(18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF (EIP 0x1C386E, CR2=0xE4) was our own duplicate SE2FE_IDLE_VOICE: McpxApuDevice.VoiceOff queued one on top of the VP frame walk (xemu voice_off sends none, mcpx_apu_vp_frame is the only sender), so the guest freed the voice on the first trap and dereferenced null on the second; the queue is gone and APU snapshot v5 keeps v2-v4 loadable. Scripted input from the 100B snapshot: 50M steps gives RAM 68E22299 (none) / 0FFAF650 (stick right) / 946C590A (stick left); at 300M the display is the plane-crash cinematic (13,754 colours) with no input or a held D-pad and black with a held A (cutscene skipped); across the boot the 20B no-pad frame is the Harrier intro and the A edge is what reaches gameplay. Save/load round-trips through the real EmulatorSession (72,110,280 B at 1.6B steps, faulted=False, tools/frontend-smoke) and the 100B snapshot resumes. Audio is a measured silence: --apu-dsp --audio-out writes 877,568 bytes / 219,392 frames of zero PCM (the VP mixer vp.c + AC97 are TM8). Gates byte-identical: accurate menu 4EF1FBF6/B6116DAE (5C0CF968/E2B4D327, 33,632/686/686), accurate triangle 5B50373D/79142DE4 (E58AE5D7/C43D5B49, 2,707/69/34), ktest CA5D3867 (40,797 B) at 792,800,535 steps; 44-row 1B matrix re-run unchanged (2 own-render / 42 dashboard / 0 fault / 0 timeout); suite 1988 -> 1990, build 0 warnings, format clean. Tooling: scripts/xemu-oracle.ps1 selects the disc through -config_path and captures a DPI-aware client area; tools/frontend-smoke falls back to data/xemu firmware.",
+      "commitMessage": "audio: the idle-voice trap belongs to the VP frame walk, so 007 reaches gameplay (TM4)"
+    },
+    {
+      "id": "TM5",
+      "title": "Halo playability gate (or documented wait)",
+      "date": "2026-10-25",
+      "evidence": "TM5: Halo launches and renders its own main menu; gameplay is a documented wait, and the same fix moved the 1B matrix to 6 own-render / 38 dashboard. Blocker: McpxApuDevice absorbed the XDK DirectSound mixer state word at the hard-coded physical 0x03924810 (007's block); Halo posts the same six-dword descriptor at 0x02034800 (state word 0x02034810, value 3), so the submission was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B (2B steps, 99.99% of samples, no fault, frames frozen at 35). Fix: TryGetMixerStateWord discovers the block from the guest's own GP scratch (GPSADDR) SGE table (16 entries, page + 0x810, state 2/3 absorbed); the per-title constant is gone. Differential: the pre-fix build spins forever from wt-data/tm5/halo-10b.xgs and reproduces Ninja Gaiden Black's old 1B row exactly (2,672 / 41,995,882 / 35 frames, EIP 0x37DC15); the fixed build logs dsp-absorb 3->0 / 2->0 / 3->0 and leaves the spin at once (frames 35 -> 56 in 500M steps, NGB 6,475 frames EIP 0x21A97D). Two of three new DspBridgeTests fail pre-fix. Title: loading screen at 15B (251 frames), main menu at 35B (516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black, wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. Gameplay is a DOCUMENTED WAIT: guest-side D3D resource retry loop at EIP 0x1810F0 (caller 0x6348B) - table [0x192390]=0x18F800, buckets +0x48C, bucket 0 = 0x80060000, slot field -1, handle 0 on every call (--break-log arg=00000000) -> D3DERR_NOTFOUND 0x88760828 retried forever; 99.99% of 280M samples are its 23 EIPs; last device I/O IDE READ DMA 0xC8 (32,216 accesses), APU reads/writes 14.17M, NV2A 538 notifications, 165,903 interrupts by 100B. xemu 0.8.139 on the same ISO shows the same menu at 70 s (wt-data/tm5/xemu-halo-70s.png) and in-game gameplay at 150 s (wt-data/tm5/xemu-halo-150s.png); the menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is NOT met. Audio: --apu-dsp --audio-out writes a 44-byte WAV and 0 PCM frames (gpFrames=0). Matrix re-run (44 rows, 1B): 6 own-render / 38 dashboard / 0 fault / 0 timeout (NGB 35->6,475 frames, Tak 42->1,068 frames / 3,701 draws, 50 Cent 98 frames / 100,987,370 px, Bad Boys II 42,303,082 px, Destroy All Humans! off the dashboard menu; 007 and Halo unchanged at 1B). Gates byte-identical: accurate menu 4EF1FBF6/B6116DAE (5C0CF968/E2B4D327, 33,632/686/686), accurate triangle 5B50373D/79142DE4 (E58AE5D7/C43D5B49, 2,707/69/34), ktest CA5D3867 (40,797 B) at 792,800,535 steps; suite 1990 -> 1993, build 0 warnings, format clean. Tools: scripts/xemu-oracle.ps1 captures through PrintWindow (client-only) with a screen-copy fallback; the PIC state line prints elcr=.",
+      "commitMessage": "audio: discover the DirectSound mixer block from the guest's scratch mapping, so Halo launches (TM5)"
+    },
+    {
+      "id": "TM6",
+      "title": "Second-tier titles: the next 5 from the matrix",
+      "date": "2026-10-25",
+      "evidence": "NV097_INLINE_ARRAY now decodes through the array formats and runs the resident vertex program (BuildInlineArrayLayout + FetchInlineArrayAttribute + VertexFetchMode.InlineArray, legacy path kept as fallback): Ninja Gaiden Black renders its own animated stormy-sea intro (720x480, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, LastFault vec=0, kernel idle 0x8001B02E, a held A changes the scene) instead of a black screen (1,073,213 skipped draws at 10B); 1B matrix row 2,672 -> 12,800 draws / 41,995,882 -> 166,119,138 px at 6,475 frames. 50 Cent renders its own 3D scene (18,638 colours, 3,534 draws / 299,139,810 px, EIP 0x1455BA); Tak renders its own scene then a ~910-draw/frame one where the rasterizer is the wall (0.8 msps); Bad Boys II is a documented wait (own-code resource scan 0x1A3C80 -> 0x1A2250, no device traffic); Destroy All Humans! renders its Pandemic logo card then spins in KeStallExecutionProcessor 0x800153D0 (25% of samples). Matrix re-run: 44 rows, 6 own-render / 38 dashboard / 0 fault / 0 timeout. Gates byte-identical: accurate menu 4EF1FBF6/B6116DAE (5C0CF968/E2B4D327), accurate triangle 5B50373D/79142DE4 (E58AE5D7/C43D5B49), fast triangle 457719AC/AB39AEE9 58,123,882 px, fast menu FD12563B/D726C97A, ktest CA5D3867 40,797 B at 792,800,535 steps. Suite 1993 -> 1996 (3 new tests fail pre-fix), build 0 warnings, format clean. xemu capture blocked this session (desktop owned by another agent); no xemu frame claimed.",
+      "commitMessage": "nv2a: decode the inline array through the array formats and the vertex program, so Ninja Gaiden Black renders (TM6)"
+    },
+    {
+      "id": "TM7",
+      "title": "Publish the compatibility table + one-command probe harness",
+      "date": "2026-10-25",
+      "evidence": "TM7: scripts/retail-game-probe.ps1 <iso> runs both legs and publishes the seven-title table, and the xemu oracle is live again (no src/ change; scripts + docs only). Harness: wraps title-probe.ps1 (extended with -LoadState/-FramePath/-StatePath), xemu-oracle.ps1 and frame-compare.py; writes <slug>.bmp/.png, the xemu frame, <slug>.json (stage/EIP/fault/counters/RAM/CPU/step anchor/command/xemu cell/comparison), <slug>.md, <slug>-xgrid.json/.md, the log and a .xgs anchor, and prints one PROBE line; fails soft (xemu: blocked - <reason>, exit 0, no fabricated comparison). Two traps encoded: a .xgs records its HDD path and the loader compares it as a string (IDE HDD path mismatch), so the harness reads it out of the snapshot (8 MB tail chunks) and passes it unchanged; --load-state resets the step counter so -Steps means steps after the anchor. Capture guard: PrintWindow retried 5x and the screen copy used ONLY when GetForegroundWindow() is xemu, else capture contended is thrown - the first NGB 45 s attempt photographed a Chrome window (PrintWindow black while the GL surface started) and was rejected; blank captures (<=2 colours or >=99% black) are rejected by the harness. Rows (all re-run from their anchors, LastFault vec=0 everywhere): 007 PASS dmean=(18.0, 22.6, 14.6) (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x0001FC9E, the TM4 numbers exactly); Halo FAIL (101.6, 100.4, 113.1) (3,247 / 191,496,512 / 516, 0x00063487, TM5 fail reproduced); Ninja Gaiden Black matches xemu's stormy-sea intro within 11/255 on the means and FAILS only on colour count (12,913 vs 1,351, native 13,266 vs 1,356) - the dither pattern is the next named rendering defect (4,251 / 187,315,817 / 238,137, 0x8001B047); Bad Boys II FAIL 100% vs 20.5% black (2,695 / 49,061,482 / 57, 0x001A3DEA) - the documented wait quantified; 50 Cent n/a different cinematic shot (dmean 28.4/20.7/18.7, 3,534 / 299,139,810 / 721, 0x00132FEF); Tak n/a xemu on the title screen (13,691 / 42,516,749 / 14,503, 0x800198AE); Destroy All Humans! n/a title screen vs the Pandemic logo card (6,785 / 81,580,491 / 651, 0x00218674). xemu cannot be driven on this host (SDL-gamepad input only), so those rows are n/a, never pass/fail; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact; the step anchor is part of the row (007 at 102B reads 33.0/32.6/20.2, the same scene at a different moment). Gates: no src/ change, and the four accurate 1B legs + ktest were still re-run and are byte-identical - menu sw 4EF1FBF6 / gl B6116DAE (5C0CF968/E2B4D327, vec=0), triangle sw 5B50373D / gl 79142DE4 (E58AE5D7/C43D5B49, vec=0), ktest park 4E03A at 792,800,535 steps with the 40,797 B CA5D3867 log byte-identical; suite 1996 green (unchanged), build 0 warnings, format clean. Score 78.4 -> 78.89% (93.09 of 118: P20 82->85, P24 50->55). Decisions 258.",
+      "commitMessage": "docs: publish the seven-title retail table and the one-command probe harness (TM7)"
+    },
+    {
+      "id": "TM8",
+      "title": "First targeted xemu port: the APU VP mixer (vp.c)",
+      "date": "2026-10-26",
+      "evidence": "TM8: hw/xbox/mcpx/apu/vp/vp.c is ported to managed C# behind the existing ApuDspCore seam and the APU produces real audio. Port: McpxApuDevice.Vp.cs (the per-frame voice-list walk with the idle-voice trap, both envelopes, PCM/ADPCM buffer and stream fetch through the SSL/SGE tables, resampling, the 8-tap volume/headroom mix into the 32 mix bins, multipass), Vp/ApuVpAdpcm.cs (adpcm_decode_block, BSD-3), Vp/ApuVpFilters.cs (svf.h + hrtf.h), Vp/ApuVpFrame.cs (geometry + fpconv.h); the front end gained SET_CURRENT_HRTF_ENTRY, SET_HRIR..SET_HRIR_X, SET_HRTF_SUBMIXES, SET_HRTF_HEADROOM, SET_SUBMIX_HEADROOM, and VOICE_ON now stores the ENVA/ENVF start phase and resets the voice filters. Cadence: one XGrid APU frame is 256 samples = eight of the reference's 32-sample frames (apu.c EP_FRAME_US), so the VP and the GP now run eight times per XGrid frame and the EP once (its ep_frame_div % 8 == 0 over 32-sample frames) - the old path ran the GP 8x too slow in guest time, which is why TM4's 6914 GP frames were 4.6 s of microcode spread over 38 s of guest time. Audio evidence (007): before, --apu-dsp --audio-out at 28B steps wrote 877,568 bytes of PCM that were ALL ZERO; now 2B steps from boot writes 377,856 bytes / 94,464 frames with 80,148 non-zero samples (42.4%), peak 7,500, RMS 1,023 (wt-data/tm8/007-audio-boot-2b.wav), and the 26B anchor + 2B writes 381,952 bytes / 95,488 frames with 90,925 non-zero (47.6%), peak 5,547, RMS 767 (wt-data/tm8/007-audio-26b-2b.wav); gpFrames=3200, epFrames=371, gpUndefined=0, gpLimitHits=0, LastFault vec=0 on both. It is audio and not noise: the RMS envelope has quiet and loud sections (to 3,157 at 1.6 s), mean|dL|/mean|L| = 0.126 (a smooth waveform; noise is ~1), the channels differ, and a DFT of the gameplay leg peaks at 105.5/152.3/199.2/316.4/503.9 Hz (a bass note and harmonics). Snapshot trap found and fixed: the TM4/TM5/TM6 anchors were captured WITHOUT --apu-dsp, so their payload says 'no DSP state' and the engines come up with no program (the guest wrote GPRST/EPRST before the anchor and never again) - LoadState now derives the run state from the restored reset registers and bootstraps the GP/EP from the restored scratch window on the next frame, which is what makes the 26B anchor audible. APU snapshot v6 appends the mixer state (headroom, HRTF submixes, 128 HRIR entries, per-voice SVF/HRTF history, resampler position); v2-v5 still load, so no .xgs is invalidated. Tests: tests/XGrid.Audio.Tests/ApuVpMixerTests.cs (12 cases) pins the ADPCM vector (0x1000 then 4103, 4104), the invalid step index, a buffer voice landing in the GP mix buffer at 0x400000, zero volume, submix headroom (2 bits = 1/4), the pitch path (one octave up consumes two source frames per output frame plus two lookahead frames), the attack envelope (level 239 at counter 15, full scale and hold at 17), the HRTF submix redirect, a stream voice walking its SSL segment and notifying, the SSL segment register window, a paused voice and a mixer-state snapshot round trip; XGrid.Audio gained InternalsVisibleTo for the test project. Suite 1996 -> 2008, build 0 warnings, format clean. Gates: accurate menu sw 4EF1FBF6 / gl B6116DAE (counters 34333/686/686, diff=2602 violations=0 maxDelta=1) and accurate triangle sw 5B50373D / gl 79142DE4 (2707/69/34, diff=27849 violations=0) both PASS byte-identical; ktest parks at EIP 0x0004E03A after 792,800,535 steps with LastFault vec=0 (the suite-log SHA could not be re-extracted this session: the prepared HDD's C: root has no kernel_tests.log and the image mtime is unchanged, so that leg is reported unverified). Not an oracle on this host: xemu's -audiodev wav never opens because its APU monitor needs an SDL device ('SDL_OpenAudioDeviceStream failed: No default audio device available') and the EP sink bypasses QEMU's audio subsystem, so there is no xemu audio capture; libsamplerate is replaced by a linear interpolator that is bit-exact at rate 1.0 (pitch 0, the common case) per the reference's own 'it could just be linear' note. Score 78.89 -> 79.65% (93.99 of 118: P12 85->95, P24 55->60). Decisions 259.",
+      "commitMessage": "apu: port the xemu voice processor so the DSP mix bins carry real audio (TM8)"
+    },
+    {
+      "id": "P1S0",
+      "title": "Measure the playable gap on 007 (speed, stage split, audio)",
+      "date": "2026-11-22",
+      "evidence": "P1S0: 007 measured in the product config (GL replace + raw JIT). Boot->26B intro 353.796 s / 73.49 msps / 0.100x; boot->30B gameplay with A held 20B-20.1B 413.254 s / 72.59 msps / 0.100x (79,581 draws / 2,729 frames). Stage split at 30B: execute 412.745 s; runner 221.061 s (53.5%), non-JIT 83.124 s (20.1%), outer 310.440 s (75.1%), GL 1.724 s (0.42%, 28,934 triangles, BackendUnsupported=0), devices 0.481 s. Runner buckets: b4 (32+ members/invocation) 147.627 s / 32.1M = 35.7% of the wall. Snapshot anchors are static on resume (100B +1B: 134,004 -> 134,004 draws, GL 0; 26B +1B: zero pixels), so playability must be measured on a continuous boot. The gap is 5x to the 0.5x floor and the GPU is not the wall; P1S2 needs the operator decision (lower the floor vs fund XFP11). Logs: wt-data/p1s0/*.log; note: docs/research-notes/p1s0-playable-gap.md.",
+      "commitMessage": "p1s0: measure the 007 playable gap (P1S0)"
+    },
+    {
+      "id": "P1S1",
+      "title": "Live host audio sink (NAudio) for 007",
+      "date": "2026-11-22",
+      "evidence": "P1S1: NAudio 3.3.0 live WASAPI sink. WasapiAudioBackend (WasapiPlayerBuilder shared mode, 500 ms bounded BufferedWaveProvider with span AddSamples, state=Playing), TeeAudioBackend (live + WAV fan-out, a failing sink cannot stop the other), CLI --audio-live (implies --apu-dsp; --audio-live --audio-out records the same PCM), frontend ApuDsp/AudioOutput settings + EmulatorSession open/dispose (failed sink logs and stays silent), NAudio notices/licensing. Evidence: 007 2B boot with --apu-dsp --audio-live --audio-out => APU audio live bytes=377,856 frames=94,464 state=Playing, and the WAV SHA 813CB8DE80D923E213BF4EC9A094DBCB4D2729B12B52D3D702395A93170CF8 is byte-identical to TM8's verified 007-audio-boot-2b.wav; gpFrames=3200 epFrames=371 gpUndefined=0 gpLimitHits=0 LastFault vec=0. Gates: menu 4EF1FBF6/B6116DAE diff=2602 violations=0 counters 34,333/686/686; triangle 5B50373D/79142DE4 diff=27849 violations=0 counters 2,707/69/34; solution build 0 warnings, 2,011 tests green, format clean. The AC'97 codec register/file surface is scoped to XFP6 (the EP FIFO PCM is the audible source).",
+      "commitMessage": "audio: wire the live WASAPI sink for 007 (P1S1)"
+    },
+    {
+      "id": "P1S2",
+      "title": "CPU engine port A: softmmu/TLB and memory dispatch",
+      "date": "2026-11-22",
+      "evidence": "P1S2: ported the QEMU CPUTLBEntry shape as src/XGrid.Cpu/QemuTlb.cs (addr_read/addr_write/addr_code + addend, 1024 entries, 4 KB pages, per-access tags, flush page/all); 9 QemuTlbTests (differential vs Mmu.Translate, read-only write miss, non-executable code, addend offsets, collision, flush) all green; XGrid.Cpu.Tests 703/703; format clean. Probe micro-benchmark on H1: QemuTlb read 0.84 ns/lookup vs the current SoftTlb 0.64 ns -> the TLB shape is not the 2x lever (N16), the current TLB is already fast. The 5x is the block/translator shape; P1S3 (TCG IR + i386 translator) is next. No engine wiring: QemuTlb is the reference shape for the TCG port and the current SoftTlb stays the engine's TLB. No gate anchor moved (the type is unused by the machine path).",
+      "commitMessage": "cpu: port the QEMU CPUTLBEntry shape and measure the probe (P1S2)"
+    },
+    {
+      "id": "P1S3",
+      "title": "CPU engine port B: TCG IR and the i386 translator",
+      "date": "2026-11-22",
+      "evidence": "corpus exact through the IR engine (4202 translated / 643 fallback, 641 harness FXSAVE + 2 ENTER); real-leg translator coverage 007 1B 0.9231 (83 fallbacks: Call 56, Ret 20, Iret 2, MovCr 1), ktest 792,800,535 steps 0.8864 (Sti 181496, Cli 130146, Call/Ret ~20k), triangle 0.9229, menu 0.9216; 188 translator differentials and 892 CPU tests green, format clean; probe behavior-neutral by same-command A/B",
+      "commitMessage": "cpu: close P1S3 with the corpus gate and real-leg coverage (P1S3)"
+    },
+    {
+      "id": "P1S4",
+      "title": "CPU engine port C: host code generation",
+      "date": "2026-11-22",
+      "evidence": "IR engine exact on every gate: triangle 1B accurate RAM E58AE5D7/CPU C43D5B49, menu 1B RAM 5C0CF968/CPU E2B4D327; frames triangle sw 5B50373D / gl 79142DE4, menu sw 4EF1FBF6 / gl B6116DAE; ktest park 4E03A vec=0 with the 40797 B CA5D3867 log byte-identical and the 100M ktest workload RAM 1B558C8E/CPU 2631A7CF exact; cpu-oracle exact (P1S3). Speed 11.06-15.51 Msteps/s vs the fast raw engine 57-100, so NOT switched per the task contract (XGRID_TCG_ENGINE=1). 895 CPU tests, format clean.",
+      "commitMessage": "cpu: complete the P1S4 exactness gate, not switched (P1S4)"
+    },
+    {
+      "id": "P1S5",
+      "title": "CPU engine port D: parity and switchover",
+      "date": "2026-11-22",
+      "evidence": "parity bundle exact with the ported engine: four accurate 1B goldens (triangle RAM E58AE5D7/CPU C43D5B49/frames sw 5B50373D gl 79142DE4, menu RAM 5C0CF968/CPU E2B4D327/frames sw 4EF1FBF6 gl B6116DAE), ktest log 40797 B CA5D3867 byte-identical, ktest 100M RAM 1B558C8E/CPU 2631A7CF, cpu-oracle exact; NOT switched because 11.06-15.51 Msteps/s vs the fast raw engine 57-100; speed ceiling recorded: product 0.100x (13.7 ns/step), 0.5x needs ~2.7 ns/step, ported engine 66-90 ns/step = 0% of the required speedup; phase stops per the acceptance (no third engine variation)",
+      "commitMessage": "cpu: close P1S5 with parity met and the speed ceiling recorded (P1S5)"
+    },
+    {
+      "id": "XFP0",
+      "title": "Port ledger, module map and differential harness for the xemu full port",
+      "date": "2026-11-22",
+      "evidence": "port-manifest.ps1 -Check PASS: 170 hw/xbox files (111 in-scope) each with one appendix row; 27 verified (24.3%), 9 ported, 53 in-progress, 22 not-started, 23 out-of-scope, 36 n/a; targets exist for every ported/verified row, no orphan Ported from/Derived from header, every ported/verified reference file named in THIRD_PARTY_NOTICES.md (13 companion headers added); differential classes recorded (vector table / register pre-post / title-corpus row); docs/open-source.md already in the README index; status.ps1 -Check green; no emulator source change",
+      "commitMessage": "docs: close XFP0 with the port manifest gate (XFP0)"
+    },
+    {
+      "id": "XFP1",
+      "title": "PGRAPH method surface and state (pgraph.c, methods, registers)",
+      "date": "2026-11-22",
+      "evidence": "XFP1 method surface and state complete: nv097-coverage.ps1 -Check PASS (215 defines, 201 rows, 1042 handled + 280 declined offsets, real case4 strides); opt-in counter reads 226 outside-surface writes in 18.6M methods on triangle 1B and 16,514 on menu 1B, all at reference-gap offsets xemu ignores (valid-surface gap zero); seven-title differential at the TM7 anchors (10M steps each) is 0/0/3/0/0/0/0 with the 3 at 0x1710; PgraphState owns the texture register file, transform rows/constants, PshCombiner and the six surface/clip scalars (delegating/ref properties, zero call-site churn); anchors exact after every section (fast triangle F9945E16/8836C7EB, menu 5C0CF968/E2B4D327; accurate triangle E58AE5D7/C43D5B49); 480 Nv2a tests; --pgraph-port not needed (the state type is the storage)",
+      "commitMessage": "nv2a: close XFP1 with the method surface, state type and seven-title differential (XFP1)"
+    },
+    {
+      "id": "XFP2",
+      "title": "PGRAPH vertex fetch, primitive assembly and draw path",
+      "date": "2026-11-22",
+      "evidence": "XFP2 vertex fetch/assembly/draw verified: Nv2aVertexFormatTests pins all six array formats + defaults/count/stride (10 differentials); Nv2aCullFaceTests pins cull off/back/front/both, front-face CW/CCW, degenerate and clip-window rejections (8); Nv2aPrimitiveAssemblyTests pins DRAW_ARRAYS packed start/count, range coalescing vs separation and one command per BEGIN/END (4); 496 Nv2a tests. Title counter parity: 007 +1M from tm4/007-100b.xgs = 134,004 draws / 1,005,989,482 px / 6,478 frames / EIP 0x1FC9E / CPU 17C548A3; NGB +2B from tm6/ngb-10b.xgs = 4,251 draws / 1,073,213 skipped / 187,315,817 px / 238,137 frames / EIP 0x8001B047. Software fill kept as the oracle; four accurate 1B anchors, ktest log and triangle 1B anchor unchanged; fast-engine one-frame sensitivity to the host flag set documented. No re-baseline.",
+      "commitMessage": "nv2a: close XFP2 with the fetch, assembly and title parity (XFP2)"
+    },
+    {
+      "id": "XFP3",
+      "title": "PGRAPH shader pipeline (VSH, PSH, fixed-function, GLSL generators)",
+      "date": "2026-11-22",
+      "evidence": "XFP3 decode audit complete: vsh-prog.c -> VshProgram/VshProgramPlan (every MAC/ILU opcode, swizzles/negates, ARL-relative constants, fog, output masks, paired r1, 400-program fuzz exact); vsh-ff.c/vsh.c -> FixedFunctionVertex/State (fixed-function + lighting tests, xgu *_ffp rows); psh.c -> PshCombiner (combiner/reach tests); glsl/psh.c -> PshGlslGenerator (99 synthetic + the 5 gate-title configurations compiled+linked live at capacities 1/8/32, menu's 4 a subset); glsl/common.c/shaders.c -> generator prelude/BuildKey; glsl/geom.c n/a for the software path. NGB colour-count differential withdrawn (moment-mismatched pair, L1 89.1%). Full solution 2233 tests across 14 projects, format clean; four accurate 1B goldens, ktest log and triangle 1B anchor unchanged.",
+      "commitMessage": "gl: close XFP3 with the shader decode audit (XFP3)"
+    },
+    {
+      "id": "XFP4",
+      "title": "PGRAPH surface, texture and cache semantics",
+      "date": "2026-11-22",
+      "evidence": "XFP4 complete. Texture formats: all 43 reference ids classified; the five depth ids run the reference shadow path (TryDecodeDepthTexel for 16-bit/X8Y24/half-float, CompareShadowDepth for the six depth functions, sampled through textureProj + the stage wrap/border/linear/swizzle state). Clear rules: CLEAR_SURFACE_R/G/B/A per-channel masks with the format-forced alpha lanes, CLEAR_SURFACE_Z/_STENCIL per-field Z24S8 masks, and the GL backend programs the clear's own masks. Swizzled render targets: the SWIZZLE type's log-dimension Morton geometry drives the clear, the color fill and the zeta read/write (5 device differentials; the pitch-walk word stays untouched). Texture-cache identity: the complete key (mip count/dimensionality/cube flag), a per-page guest write stamp, and a whole-range FNV hash recomputed only when the stamp moves (2 live differentials incl. a change off the old 16-sample grid). Price: the raw inline stamp hook costs +4.9%/+4.2% 1B fast wall (triangle/menu medians of 3 interleaved pairs, SHAs exact); a dedicated F_STORE_SCRATCH slot fixed a push/call [mem] boot fault (CR2=0xA0A0A0A0). Corpus sweep: 14/14 staged samples PASS at 1B with zero faults, every documented frame/scanout/display SHA exact, RAM identical to the pre-task build. Gates: four accurate 1B goldens byte-identical (4EF1FBF6/B6116DAE, 5B50373D/79142DE4), ktest park 4E03A at 792,800,535 steps with the 40,797 B CA5D3867 log, 2252 tests across 14 projects, format clean, port-manifest PASS.",
+      "commitMessage": "xFP4: close with formats, clears, swizzled targets and texture identity (XFP4)"
+    }
+  ],
+  "negatives": [
+    {
+      "id": "N1",
+      "title": "C4 host-pointer translate probe",
+      "date": "2026-10-22",
+      "evidence": "menu runnerMs 15,872 -> 16,026; triangle 3,407 -> 3,382; walls within noise; SHAs exact; reverted",
+      "reopen": "only with a new measurement that shows the probe is the wall"
+    },
+    {
+      "id": "N2",
+      "title": "Read-only-ROM decode caching alone",
+      "date": "2026-10-22",
+      "evidence": "nonRamSkips -> 0 but the wall and nonJitMs flat; the win was block formation, not caching (237)",
+      "reopen": "only for a new cache question (for example store tracking), not a retry of the same path"
+    },
+    {
+      "id": "N3",
+      "title": "Full trace/superblock formation",
+      "date": "2026-10-22",
+      "evidence": "removes about 350 ms of boundary population = 3-5% of the wall (235), below the stage bar",
+      "reopen": "only if a new measurement shows the boundary population is larger"
+    },
+    {
+      "id": "N4",
+      "title": "Own the encoder (Assembler rewrite)",
+      "date": "2026-10-22",
+      "evidence": "390 ns vs 120 ns per instruction = about 7% triangle / 3% menu (234e), below the bar",
+      "reopen": "only with a new formation profile that makes it >10%"
+    },
+    {
+      "id": "N5",
+      "title": "Remove the raw emitter's per-member EIP/TSC/served",
+      "date": "2026-10-22",
+      "evidence": "-3% engine, 0% wall; the runner is latency-bound (239)",
+      "reopen": "only with an edge-removal design, not another instruction-count cut"
+    },
+    {
+      "id": "N6",
+      "title": "VshProgram.Execute allocations / scratch reuse",
+      "date": "2026-10-22",
+      "evidence": "about 3.5M allocations removed; 413 -> 426 ms; null (240)",
+      "reopen": "only with a new allocation profile"
+    },
+    {
+      "id": "N7",
+      "title": "The B3 word-pool design (uGuestWord[96])",
+      "date": "2026-10-22",
+      "evidence": "superseded by the host sampler2DArray; the pool code was deleted (236)",
+      "reopen": "never; use the 2D-array design"
+    },
+    {
+      "id": "N8",
+      "title": "Block fusion",
+      "date": "2026-10-20",
+      "evidence": "-82% invocations but +40% wall; disabled the spin skip (199d)",
+      "reopen": "only with a new fusion design that keeps the spin skip"
+    },
+    {
+      "id": "N9",
+      "title": "1024-slot data translate cache",
+      "date": "2026-10-20",
+      "evidence": "neutral, reverted (199o)",
+      "reopen": "only with a new TLB design"
+    },
+    {
+      "id": "N10",
+      "title": "JitSpecSlice below 64",
+      "date": "2026-10-22",
+      "evidence": "nonJitMs falls but formation eats it; 64 is the wall minimum (238)",
+      "reopen": "only with a cheaper formation path"
+    },
+    {
+      "id": "N11",
+      "title": "k1 constant fold / alpha-1 blend skip / AggressiveInlining",
+      "date": "2026-10-20",
+      "evidence": "neutral (202)",
+      "reopen": "only with a new profile"
+    },
+    {
+      "id": "N12",
+      "title": "Claiming a GPU shader slice landed without a live compile",
+      "date": "2026-10-22",
+      "evidence": "227 found the shaders never compiled; the live driver gate is mandatory",
+      "reopen": "never; the gate is a definition-of-done item"
+    },
+    {
+      "id": "N13",
+      "title": "Full corpus sweep after every slice",
+      "date": "2026-10-22",
+      "evidence": "two full sweeps in one day (c7f4825, 5355e2d); row-scoped re-verification is enough unless the change is global",
+      "reopen": "only at milestone close or when the change touches the shared sampler/decoder"
+    },
+    {
+      "id": "N14",
+      "title": "Docs-only status rewrites in five files",
+      "date": "2026-10-22",
+      "evidence": "next-session 24 touches, AGENTS 23, decisions 22 in one day; the same status rewritten",
+      "reopen": "never; status.json plus generated blocks"
+    },
+    {
+      "id": "D3",
+      "title": "Menu-only wall decomposition and the top menu item",
+      "date": "2026-10-23",
+      "evidence": "menu 1B gl+replace decomposed by temporary stage probes: wall 15.0-15.2 s (this window) = device 6.57 s (41.6%; flushes 6.15 = transform plan 2.2-2.5, fill 2.7-3.1, fetch 0.9-1.2, epilogue 0.3, setup 0.26; other writes 0.42; clears 0.07) + engine non-device 9.4 s (59%); raster 0 (replace), readback 0, boot 1.6-1.9 s shared. Menu-only mass +9.3 s = 57% device + 43% engine. Top item priced by building the draw-flush hoist (reject-before-setup, per-draw scratch, read-slot fetch mask, plan operand locals): 3 interleaved pairs 14.996->13.786 (-8.03%), 15.238->13.728 (-9.90%), 14.899->13.729 (-7.87%), executeMs -7.6%, runnerMs 12,604->10,617 (-15.8%); menu RAM B06BA6E5/CPU F5D61C94, 33638/1402/696/686/686, culled 41035, GL 2733736 tris, BackendUnsupported=0 exact; VshProgramPlanTests 8/8. Below the 10% wall / 20% engine bar -> reverted; triangle 1B 4F1FCBC0/7DAB63EB 5.669 s exact.",
+      "reopen": "a combined draw-flush slice (this measured price + the per-draw PgraphDrawInfo state cache, ~0.3-0.4 s = 2.5%, priced ~-10.5%) measures >=10% wall on 3/3 interleaved pairs with exact 1B anchors - D5's first step"
+    },
+    {
+      "id": "D4",
+      "title": "Conditional: implement the engine shape chosen in D2",
+      "date": "2026-10-23",
+      "evidence": "D2 chose (a): keep the raw engine and take the device/draw-flush path. D4's condition (one engine-shape candidate at >=20% engine on a per-member probe) was not met: encoder 3.4x = 8.0% triangle / 4.9% menu, trace boundary 6.04% / 4.35%, code volume 0% wall, C4 host-pointer probe null, register-liveness edge inexact. Parked, not a failed experiment; no code changed.",
+      "reopen": "a per-member probe of ONE candidate transformation shows >=20% engine; two iterations, each gated, then stop and record"
+    },
+    {
+      "id": "D8",
+      "title": "Engine-shape decision v2: the per-member/edge and boot probe",
+      "date": "2026-10-24",
+      "evidence": "D8 measured the fast engine on both gate titles at 100M and 1B (permanent --jit-timing instrumentation): runner 8.47 ns/served member triangle / 17.51 menu, UNIFORM across member classes (load 8.93, store 7.74, alu 9.92, branch 7.44; other 24.76 on 3.7% of the mix), 78.0/75.3 emitted host instructions per member, 4.4/5.3 members per chain edge, 783k/3.0M entries against 124.6M/160.2M in-frame chain edges. Edge census: exit publish+probe is 12.52B/16.32B emitted instructions; XGRID_RAW_CHAIN=0 ablation says an entry costs 33.5 ns (triangle) / 35.2 ns (menu) more than a chain edge (runner 4,628->8,804 ms and 15,177->20,822 ms, both 1B anchors exact), and XGRID_RAW_SELFLOOP says 76.8%/67.8% of edges are self-loops. Boot split 0-100M: triangle 1.833 s = runner 752 + formation 518 (Iced Assemble 386, 321 us/block) + non-JIT 489 + lookup/loop 74 (device 39 inclusive); menu 1.550 s = 623 + 407 (292) + 454 + 66 (38). Steady state 1B-100M: triangle 5.396 s (6.0 ns/step) = runner 3,876 + formation 509 + non-JIT 892 + device 616 (inclusive); menu 17.556 s (19.5 ns/step) = runner 14,554 + formation 1,056 + non-JIT 1,482 + device 7,266 (inclusive, 41%). Option (a) self-loop/edge elimination PRICED BY BUILDING IT: the fast edge re-entered the body with budget/IRQ/generation re-checked, measured 16% SLOWER runner (5,390 vs 4,628 ms) and 8% slower wall on the one completing 1B leg, plus two 0xC0000005 crashes in three runs -> reverted, ceiling <=0%. (b) trace/fusion N8/N3 binding 3-5%; (c) memory-probe N1/N9 null and the class table explains why (no class-specific cost); (d) the reference shape is the compatibility path (the raw engine already beats TCG on CPU-bound ktest 2B 9-10 s vs xemu 15 s). No engine-shape option clears >=10% wall / >=20% engine, so D8 selects option (e): target restated to ns per served member outside the device stage + wall per presented frame (decisions S247). Gates: fast 1B triangle 4F1FCBC0/7DAB63EB frame 7A860ED7, menu B06BA6E5/F5D61C94 frame B6116DAE, triangle sw B45254CA 57,663,082 px, menu sw 34973510 253,998,498 px; accurate goldens A1740DE0/7A860ED7 (2706/68/34) and 4EF1FBF6/B6116DAE (33632/686/686) PASS violations 0; suite 1922 green, build 0 warnings, format clean.",
+      "reopen": "one engine candidate measures >=20% engine on this attribution (today's ceilings: (a) <=0% built+reverted, (b) 3-5%, (c) null, encoder ~8%, device 10-41% but owned by D6/G1-G2), or a new xemu 1B oracle shows the gap is in the CPU engine rather than the device"
+    },
+    {
+      "id": "D6",
+      "title": "Device remainder: compiled transform execution and the fill path",
+      "date": "2026-10-24",
+      "evidence": "D6 priced by building it: the compiled transform evaluator (one DynamicMethod per plan emitted from the plan's own decode, flat constant/input/output files, the reference zero rule/dots/masks/oFog prefix/ARL-relative constants, the interpreter kept as the fallback) is differentially EXACT - VshProgramPlanTests 10/10 comparing VshProgram vs kernel vs interpreter incl. the 400-program fuzz - and 3.2x SLOWER than the interpreter: 1,028 ns/vertex (11,762 ms / 11,439,040 calls, unconditional) vs 330 ns, so menu 1B gl+replace 19.237 -> 31.242 s (+62.4%) and 19.585 -> 29.548/30.938 s (+51/+58%) in same-window pairs, device writes 7.39 -> 18.60 s, runnerMs 15,395 -> 25,287, GL drawMs 999 -> 941 ms (unchanged), triangle 7.084 -> 6.778 s (no regression; 3% item). Every anchor exact: menu RAM B06BA6E5/CPU F5D61C94, triangle 4F1FCBC0/7DAB63EB, counters 33,638/1,402/696/686/686 culled 41,035, GL 2,733,736 tris, BackendUnsupported=0 composedFrames=0. Cause: the per-instruction unrolled emission costs ~150-250 host instructions per VS instruction (bounds-checked flat-array loads/stores plus the per-component zero-rule branches) = 7-15 KB of straight-line code per plan, so the body cannot stay uop-cache resident (IPC ~0.6 against the interpreter's ~2.5). Ceiling: the menu transform is 3.72 s = 19.3% of a 19.24 s wall, so the bar needs >=2.4x the interpreter (<=135 ns/vertex); this design is 3.2x slower -> ceiling <=0%, and S243's 9.5-10.7% is repriced to a negative. Reverted; no snapshot change (host-side only, Nv2a v9 / audio v3).",
+      "reopen": "a different transform emission priced by building it and measuring <=135 ns/vertex (>=2.4x the interpreter's 325 ns); the only candidate with a plausible ceiling is a 4-component Vector128 emission (~12 host instructions per VS instruction) with the dots and the zero rule kept scalar because the reference accumulation order is not associative"
+    },
+    {
+      "id": "D7",
+      "title": "Boot path: make the first 100M steps cheaper",
+      "date": "2026-10-24",
+      "evidence": "D7 price measured (decisions 249). Boot 0-100M is 1.87-1.91 s triangle (31% of a 6.1 s wall) = runner 760-856 ms (41-45%) + formation 465-522 (25%, Iced Assemble 347-400) + non-JIT 479-525 (26%) + lookup/loop 70-80 (4%); menu 1.62 s = 691+413+445+66. New permanent --jit-timing census (JitBlockCache records each head's fetch source at first sight; JitAttribution prints pending heads/visits bySource with formMsPerBlock and buildAllMs; JitAttributionTests): pending heads triangle 34,197 at 100M / 55,005 at 1B, menu 31,720 / 31,257; by source triangle 1B ram 54,854 / image 151 / other 0, 100M ram 34,046 / image 151, menu 100M ram 31,569 / image 151 -> the image share is the MCPX ROM whose blocks already form, so a prebuilt/plan cache for immutable image code is worth 0.9-1.4%. Building all pending heads costs 19.4 s (triangle) / 5.1 s (menu) at the measured 0.16-0.39 ms per block against non-JIT cells of 1.26 / 1.71 s = 15x / 3x negative. Non-JIT split (temporary probe, removed before the commit): 34% Step (133,499 calls at 3.21 us, 150 ms of it the 15-byte byte-at-a-time fetch) / 66% spec body (2.49M members at 358 ns: handler 671 ms + cursor loop 219 ms); decoded-block Form is 43 ms over 293k calls. Ceiling: Step fast fetch 2.5% of the triangle wall, spec loop 1.8%, image plan cache 0.9-1.4% = 5.7% of new levers; encoder (N4) 9.4% and below its own >10% reopen bar, trace (N3) 3-5%, runner (D8) uniform -> no 10% wall. Gates: fast 1B triangle gl 4F1FCBC0/7DAB63EB frame 7A860ED7, menu gl B06BA6E5/F5D61C94 frame B6116DAE, triangle sw B45254CA/7DAB63EB 57,663,082 px (2706/68/34, culled 41,035), menu sw 34973510/F5D61C94 253,998,498 px (33638/1402/696/686/686); ktest parks at 4E03A after 792,800,535 steps with the 40,797 B log CA5D3867 byte-identical and SMOKE PASS 7/7 against the stored xemu oracle log; suite 1922 -> 1925, build 0 warnings, format clean; no snapshot change.",
+      "reopen": "a boot/engine lever measured at >=10% of the triangle wall or >=20% engine. The first candidate is the Step fast fetch (2.5%, exact by construction - the JIT's own TryFillDecodeEntry fetch, one translate + span instead of 15 bus reads), then the spec-run cursor loop (1.8%). N4 (encoder) reopens only with a formation profile where a 3.2x encoder saves >=10% of the wall (Assemble >= 900 ms at a 6.1 s wall; this profile reads 827 ms = 9.4%), and N3 (trace) only if the boundary population grows."
+    },
+    {
+      "id": "G2",
+      "title": "GL renderer port (xemu pgraph/gl + the glsl pieces it needs)",
+      "date": "2026-10-24",
+      "evidence": "Device stage split by site (temporary Stopwatch probes, sampled 1-in-16 flushes, stripped before commit; H1, 1B fast gl+replace, two runs each). Triangle: wall 5.786/5.866 s, device 0.576/0.594 s (9.9-10.1%), flush 0.589/0.628 = fetch 0.031 + transform 0.225/0.238 + epilogue 0.008 + fill 0.036 (backend 0.029) + other 0.289/0.310, clears 0.012. Menu: wall 14.817/14.621 s, device 5.261/5.202 s (35.5%), flush 5.417/5.410 = fetch 0.650 + transform 2.317/2.332 + epilogue 0.311 + fill 1.073 (backend 0.770) + other 1.066/1.050, clears 0.043. The removable CPU vertex stage (the only part a GPU vertex program takes) is 0.233-0.246 s triangle = 4.0-4.2% wall / 5.0-5.3% engine (10% needs 0.58 s, 2.4x) and 2.63-2.64 s menu = 17.7-18.1% wall / 20.3% engine; the whole device stage is 10.0% of the triangle wall, so clears/fetch/predicates/assembly are not renderer work. The reference design submits per draw command with no instancing, and the repo's own A/B for giving up 205 batching (XGRID_GL_NO_BATCH=1) measured +7.843 s menu (+52.9%) / +0.456 s triangle (+7.9%) - 3x the menu's gross saving. Anchors exact on every probed run: triangle 4F1FCBC0/7DAB63EB, menu B06BA6E5/F5D61C94. Tree byte-identical to da1bf43; four fast 1B anchors exact on the clean build (tri gl 4F1FCBC0/7DAB63EB 5.948 s, menu gl B06BA6E5/F5D61C94 14.727 s, tri sw B45254CA/7DAB63EB 57,663,082 px, menu sw 34973510/F5D61C94 253,998,498 px); ktest 792,800,535 steps with the 40,797 B CA5D3867 log byte-identical; suite 1965 green.",
+      "reopen": "bounded GPU vertex-program slice that keeps the instanced per-draw-command submission and removes >=10% of the triangle wall (>=0.58 s, 2.4x today's 0.246 s) with the four fast 1B anchors and both accurate goldens exact; or an operator re-scope of G2 as a compatibility task (22-row acceptance, not the 10% wall bar) with G3 as the vehicle"
+    },
+    {
+      "id": "N15",
+      "title": "Shape fixes alone reach 0.5x on 007",
+      "date": "2026-11-22",
+      "evidence": "30B gameplay 413.254 s / 72.59 msps / 0.100x; runner 53.5%, non-JIT 20.1%, b4 (32+ members) 35.7%, GL 0.42%; halving b4 gives 0.12x and halving every CPU stage gives 0.20x; the profile top shapes are the x87/SSE wait loop (Fnstsw 457,831, Fild 367,260, Fistp 366,997, Movntps 330,596, Movups 330,488) - no single fix is 5x.",
+      "reopen": "a measured engine change (not a shape/bookkeeping fix) reaches >= 0.5x on the 30B leg, or the operator lowers the P1 floor"
+    },
+    {
+      "id": "N16",
+      "title": "QEMU TLB shape alone is a 2x probe win",
+      "date": "2026-11-22",
+      "evidence": "QemuTlb 0.84 ns/lookup vs the current SoftTlb 0.64 ns (9 exact differential tests); the current TLB is already the fast shape",
+      "reopen": "only with a measurement where the TLB probe is the bottleneck (the current cost is block/translator shape)"
+    },
+    {
+      "id": "P1S6",
+      "title": "P1 gate: at least one game playable",
+      "date": "2026-11-22",
+      "evidence": "nine-part P1 check on 007: own render PASS (100B steps, 48208 colours, vec=0), live input PASS, save/load PASS, xemu frame policy PASS (dmean 18.0/22.6/14.6, TM7), live audio PASS (P1S1 WASAPI sink, TM8 PCM), product defaults PASS, gates PASS (four accurate 1B goldens, ktest log CA5D3867, cpu-oracle). FAIL: >=0.5x - 30B gameplay 413.254 s = 0.100x (P1S0); 10 minutes is ~100 minutes wall at 0.100x. Blocker: the CPU engine port (P1S3-S5) is exact but 5-7x slower than the current raw runner (11.06-15.51 vs 57-100 Msteps/s), so it contributes 0% of the required speedup; N1-N16 measured below the bar, GL 0.42% of the wall, b4 35.7%; 0.5x needs ~2.7 ns/step (xemu-class ~1.2 ns/step).",
+      "reopen": "a CPU engine at <=2.7 ns/step (>=365 Msteps/s on 007) that keeps the four accurate 1B goldens, the ktest log and the cpu-oracle exact, or an operator re-scope of the 0.5x floor"
+    }
+  ],
+  "rules": {
+    "wip": 1,
+    "maxAttempts": 2,
+    "price_before_build": true,
+    "acceptance_test_first": true,
+    "definition_of_done": true,
+    "no_redo_without_new_measurement": true,
+    "single_status_file": "docs/status.json",
+    "generated_status_block": true,
+    "one_task_per_commit": true,
+    "no_generic_commit_messages": true,
+    "row_scoped_corpus": true,
+    "full_sweep_at_milestone_only": true,
+    "stop_after_two_failed_iterations": true,
+    "perf_bar": "applies to performance tasks only; XFP port tasks are correctness tasks priced by the module differential and the session budget, and XFP11 is gated on not-slower than the current engine",
+    "port_rule": "port the reference in scope: every hw/xbox module plus the QEMU modules the machine uses, with a differential and the old path as fallback; the CPU is in scope but sequenced last and gated on not-slower; docs/xemu-port-manifest.md is the ledger and scripts/port-manifest.ps1 -Check enforces it",
+    "operator_order_2026_11_22": "P1 sprint: measure (P1S0, done) -> live audio (P1S1, done) -> port the xemu/QEMU CPU engine in four phases (P1S2 softmmu/TLB, P1S3 TCG IR + i386 translator, P1S4 host codegen, P1S5 parity/switchover) -> P1 gate (P1S6). P1 = at least one game playable (own render, live input, >= 0.5x guest time, 10 minutes, save/load, xemu frame policy, live host audio, product defaults, gates exact). Then the full xemu 0.8.139 port (XFP0-XFP14) for breadth",
+    "operator_order_2026_11_22_native": "P1 + performance: the product CPU is the vendored xemu/QEMU TCG core behind libxgridcpu; all other emulator code stays managed C#; the managed C# CPU is reference-only; XCN0 (extraction spike) -> XCN1 (host seam) -> XCN2 (007 P1) -> XCN3 (release); the XFP program is parked for breadth after P1",
+    "native_cpu_rule": "The QEMU TCG i386 CPU core is the single native exception. It is vendored from the pinned xemu 0.8.139 tree, built with the recorded patches, and linked behind libxgridcpu; no QEMU machine, device, block layer or UI is shipped. The GPL-2.0 source offer is part of every release."
+  }
+}

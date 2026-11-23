@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XGrid.Cli</RootNamespace>
+    <AssemblyName>XGrid.Cli</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Graphics\XGrid.Graphics.csproj" />
+    <ProjectReference Include="..\XGrid.GpuGl\XGrid.GpuGl.csproj" />
+    <ProjectReference Include="..\XGrid.Host\XGrid.Host.csproj" />
+    <ProjectReference Include="..\XGrid.Storage\XGrid.Storage.csproj" />
+    <ProjectReference Include="..\XGrid.Xbe\XGrid.Xbe.csproj" />
+    <ProjectReference Include="..\XGrid.XboxFs\XGrid.XboxFs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Meziantou.Analyzer">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Roslynator.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

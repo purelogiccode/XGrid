@@ -1,0 +1,54 @@
+namespace XGrid.Nv2a;
+
+/// <summary>
+/// Optional direct-RAM view for host-side consumers that read guest RAM
+/// outside the CPU (the GL backend's texture fingerprint and upload paths).
+/// The address space is the authority: a consumer must reproduce the same
+/// bounds check <see cref="TryGetRamBytes"/> describes and
+/// fall back to <see cref="IGpuMemory.ReadPhysical"/> for anything else.
+/// </summary>
+public interface IGpuMemoryRamView
+{
+    /// <summary>
+    /// Exposes the RAM backing store so a consumer can index it directly after
+    /// one bounds check per access instead of one interface dispatch.
+    /// <paramref name="size"/> is the same RAM size the adapter bounds-checks
+    /// against. False means no direct view.
+    /// </summary>
+    bool TryGetRamBytes(out byte[] bytes, out uint size);
+}
+
+/// <summary>
+/// Optional fast lane for the software rasterizer's per-pixel RAM traffic
+/// (rasterizer inventory O2). The plain <see cref="IGpuMemory"/> adapter path
+/// pays an interface dispatch, two address-space bounds layers, a region scan
+/// fallback and a per-write GPU-writer suppression pair; a draw can instead
+/// open one batch and use the direct word accessors for RAM addresses.
+///
+/// <para><b>Contract.</b> <see cref="TryReadPhysical"/> and
+/// <see cref="TryWritePhysical"/> return false for any address the adapter
+/// cannot serve exactly (non-RAM, a diagnostic bus-watch overlap, a write
+/// outside an open batch); the caller must then fall back to
+/// <see cref="IGpuMemory"/>. A batch opens the GPU-writer suppression scope
+/// and resets the decode-page memo: inside a draw the CPU does not run, so a
+/// page needs at most one decode-cache drop, and the suppression counter must
+/// not be re-balanced per pixel.</para>
+/// </summary>
+public interface IGpuMemoryFast : IGpuMemoryRamView
+{
+    /// <summary>Opens a draw-wide GPU-write batch (suppression + page memo).</summary>
+    // ReSharper disable once UnusedMember.Global
+    void BeginGpuBatch();
+
+    /// <summary>Closes the batch opened by <see cref="BeginGpuBatch"/>.</summary>
+    // ReSharper disable once UnusedMember.Global
+    void EndGpuBatch();
+
+    /// <summary>Tries a direct 32-bit RAM read; false means use the legacy adapter.</summary>
+    // ReSharper disable once UnusedMember.Global
+    bool TryReadPhysical(uint address, out uint value);
+
+    /// <summary>Tries a direct 32-bit RAM write inside a batch; false means use the legacy adapter.</summary>
+    // ReSharper disable once UnusedMember.Global
+    bool TryWritePhysical(uint address, uint value);
+}

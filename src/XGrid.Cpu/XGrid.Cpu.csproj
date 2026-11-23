@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>XGrid.Cpu</RootNamespace>
+    <AssemblyName>XGrid.Cpu</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The CPU engine port (P1S2) is internal until its differential lands;
+         the unit suite drives the reference types directly. -->
+    <InternalsVisibleTo Include="XGrid.Cpu.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Iced" />
+    <PackageReference Include="Meziantou.Analyzer">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Roslynator.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

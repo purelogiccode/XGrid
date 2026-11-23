@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>XGrid.Frontend.Avalonia</RootNamespace>
+    <AssemblyName>XGrid.Frontend.Avalonia</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- UI types are not a public API surface; XAML is the documentation. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- UI code must resume on the Avalonia dispatcher after awaits. -->
+    <NoWarn>$(NoWarn);MA0004</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" VersionOverride="12.1.6" />
+    <PackageReference Include="Avalonia.Desktop" VersionOverride="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" VersionOverride="12.1.6" />
+    <PackageReference Include="Avalonia.Fonts.Inter" VersionOverride="12.1.6" />
+    <PackageReference Include="CommunityToolkit.Mvvm" VersionOverride="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
+    <ProjectReference Include="..\XGrid.GpuGl\XGrid.GpuGl.csproj" />
+    <ProjectReference Include="..\XGrid.Graphics\XGrid.Graphics.csproj" />
+    <ProjectReference Include="..\XGrid.GpuGl\XGrid.GpuGl.csproj" />
+    <ProjectReference Include="..\XGrid.Host\XGrid.Host.csproj" />
+    <ProjectReference Include="..\XGrid.Input\XGrid.Input.csproj" />
+    <ProjectReference Include="..\XGrid.Xbe\XGrid.Xbe.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Meziantou.Analyzer">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Roslynator.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

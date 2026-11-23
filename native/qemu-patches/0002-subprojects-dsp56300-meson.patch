@@ -1,0 +1,14 @@
+--- a/subprojects/dsp56300/meson.build
++++ b/subprojects/dsp56300/meson.build
+@@ -28,7 +28,10 @@
+     message('Downloading dsp56300 @0@ for @1@...'.format(ver, rust_target))
+     run_command(find_program('curl'), '-fsSL', url, '-o', src_archive, check: true)
+   endif
+-  run_command('tar', 'xzf', src_archive, '-C', meson.current_build_dir(), check: true)
++  # XGRID SPIKE PATCH: meson does not create this directory before tar, and
++  # GNU tar treats the D: in a Windows path as a remote host (use --force-local).
++  run_command('mkdir', '-p', meson.current_build_dir(), check: true)
++  run_command('tar', '--force-local', '-xzf', src_archive, '-C', meson.current_build_dir(), check: true)
+ endif
+ 
+ link_args = []

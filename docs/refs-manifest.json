@@ -1,0 +1,68 @@
+{
+  "generatedUtc": "2026-10-23T15:44:17Z",
+  "host": "CONSULTORIO2",
+  "contentHash": true,
+  "root": "References2",
+  "sets": [
+    {
+      "name": "CopettiDocumentation",
+      "files": 74,
+      "bytes": 8610162,
+      "sha256": "349c067ddff6cf4de62e1420db28371bfdd330dbb31034fdb6298b1a142029ea"
+    },
+    {
+      "name": "Cxbx-Reloaded-master",
+      "files": 672,
+      "bytes": 31115294,
+      "sha256": "bd99f868d8940258abdddf84a4f014844fa74a6ebb187240fa2e6a60701d4164"
+    },
+    {
+      "name": "envytools-master",
+      "files": 784,
+      "bytes": 8634644,
+      "sha256": "ce2139e9fdbc33657f50d55774b2bf1b8e2e9eec90e2ae5638346532602334f9"
+    },
+    {
+      "name": "nv2a-trace-master",
+      "files": 18,
+      "bytes": 82629,
+      "sha256": "7adf537147df62cd1eac818ff48d60a7acaad079f0cda1a9e8799dd065e35fa5"
+    },
+    {
+      "name": "XboxDevWiki",
+      "files": 440,
+      "bytes": 73693156,
+      "sha256": "fcef7d2bd864df5b3e9ae3adcead392560baea6a6c0f94dd4f1da18530f2af91"
+    },
+    {
+      "name": "xemu-0.8.136",
+      "files": 11343,
+      "bytes": 148646073,
+      "sha256": "52fa9f9280145cdf3874f6ed2eab56becbf6bd96faf368e5f724887b200c5ef6"
+    },
+    {
+      "name": "xemu-0.8.137",
+      "files": 11352,
+      "bytes": 148748248,
+      "sha256": "e1c1c927ae3402af5cc6cf785fdb31ba71e0e14f9418c7df4dc388d91a6e53a1"
+    },
+    {
+      "name": "xemu-0.8.139",
+      "files": 11362,
+      "bytes": 197652378,
+      "sha256": "d0855eb4263be52e618dce5a20b4d627df19cd3ff52d0fc2cabd146047f01bc6"
+    },
+    {
+      "name": "xemu-Playtest-v2",
+      "files": 11675,
+      "bytes": 157194783,
+      "sha256": "750eaa4e8966e3c4ec5ba7e7b4023fcd69055d0a5d79918854d7e06ee07c79af"
+    },
+    {
+      "name": "xqemu-master",
+      "files": 6795,
+      "bytes": 87581817,
+      "sha256": "2b019eb58f4197f1f9826338359585ff1f3e3a1cbbd257297bde6fb294849612"
+    }
+  ]
+}

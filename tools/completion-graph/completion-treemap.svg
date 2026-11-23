@@ -1,0 +1,293 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1680' height='1060' viewBox='0 0 1680 1060' font-family='Segoe UI, Segoe UI Emoji, sans-serif'>
+<rect width='1680' height='1060' fill='#0B1220'/>
+<text x='22' y='34' font-size='25' font-weight='700' fill='#F8FAFC'>XGrid - code completion by phase</text>
+<text x='22' y='55' font-size='13.5' fill='#94A3B8'>Tile size = phase weight (share of remaining effort). Tile color = percent done. Refreshed 2026-11-22 - ImplementationPlan assessment (118 weight pts).</text>
+<text x='30' y='106' font-size='14' font-weight='700' fill='#CBD5E1'>LLE core (real console chain)</text>
+<text x='1056' y='106' font-size='14' font-weight='700' fill='#CBD5E1'>Performance &amp; finish</text>
+<text x='1056' y='799.9' font-size='14' font-weight='700' fill='#CBD5E1'>Retail &amp; port</text>
+<g class='tile' data-p='11' data-name='NV2A (GPU)' data-done='94' data-weight='15'>
+<rect x='28' y='120' width='356.3' height='496.2' rx='10' fill='#32C455' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='37' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='50.2' y='147' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P11</text>
+<text x='37' y='185.4' font-size='24' font-weight='700' fill='#111827'>NV2A (GPU)</text>
+<text x='37' y='226.1' font-size='17.3' opacity='0.94' fill='#111827'>94% done &#183; weight 15</text>
+</g>
+<g class='tile' data-p='3' data-name='CPU (x86 PIII)' data-done='97' data-weight='11'>
+<rect x='28' y='616.2' width='356.3' height='363.8' rx='10' fill='#28C658' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='37' y='625.2' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='50.2' y='643.1' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P3</text>
+<text x='37' y='681.6' font-size='24' font-weight='700' fill='#111827'>CPU (x86 PIII)</text>
+<text x='37' y='722.2' font-size='17.3' opacity='0.94' fill='#111827'>97% done &#183; weight 11</text>
+</g>
+<g class='tile' data-p='5' data-name='Bus &amp; IRQ' data-done='90' data-weight='6'>
+<rect x='384.3' y='120' width='328.9' height='215' rx='10' fill='#40C152' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='393.3' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='406.5' y='147' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P5</text>
+<text x='393.3' y='185.4' font-size='24' font-weight='700' fill='#111827'>Bus &amp; IRQ</text>
+<text x='393.3' y='226.1' font-size='17.3' opacity='0.94' fill='#111827'>90% done &#183; weight 6</text>
+</g>
+<g class='tile' data-p='6' data-name='MCPX' data-done='80' data-weight='6'>
+<rect x='713.1' y='120' width='328.9' height='215' rx='10' fill='#61BA4A' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='722.1' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='735.3' y='147' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P6</text>
+<text x='722.1' y='185.4' font-size='24' font-weight='700' fill='#111827'>MCPX</text>
+<text x='722.1' y='226.1' font-size='17.3' opacity='0.94' fill='#111827'>80% done &#183; weight 6</text>
+</g>
+<g class='tile' data-p='7' data-name='Firmware &amp; Boot' data-done='90' data-weight='5'>
+<rect x='384.3' y='335' width='255.8' height='230.4' rx='10' fill='#40C152' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='393.3' y='344' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='406.5' y='362' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P7</text>
+<text x='393.3' y='400.4' font-size='24' font-weight='700' fill='#111827'>Firmware &amp; Boot</text>
+<text x='393.3' y='441.1' font-size='17.3' opacity='0.94' fill='#111827'>90% done &#183; weight 5</text>
+</g>
+<g class='tile' data-p='8' data-name='Storage' data-done='86' data-weight='5'>
+<rect x='384.3' y='565.4' width='255.8' height='230.4' rx='10' fill='#4DBE4F' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='393.3' y='574.4' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='406.5' y='592.3' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P8</text>
+<text x='393.3' y='630.8' font-size='24' font-weight='700' fill='#111827'>Storage</text>
+<text x='393.3' y='671.4' font-size='17.3' opacity='0.94' fill='#111827'>86% done &#183; weight 5</text>
+</g>
+<g class='tile' data-p='12' data-name='APU (audio)' data-done='95' data-weight='4'>
+<rect x='384.3' y='795.7' width='255.8' height='184.3' rx='10' fill='#2FC456' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='393.3' y='804.7' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='406.5' y='822.7' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P12</text>
+<text x='393.3' y='861.1' font-size='24' font-weight='700' fill='#111827'>APU (audio)</text>
+<text x='393.3' y='901.8' font-size='17.3' opacity='0.94' fill='#111827'>95% done &#183; weight 4</text>
+</g>
+<g class='tile' data-p='13' data-name='USB &amp; Controllers' data-done='70' data-weight='4'>
+<rect x='640' y='335' width='201' height='234.5' rx='10' fill='#83B342' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='649' y='344' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='662.2' y='362' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P13</text>
+<text x='649' y='400.4' font-size='24' font-weight='700' fill='#111827'>USB &amp;</text>
+<text x='649' y='428.7' font-size='24' font-weight='700' fill='#111827'>Controllers</text>
+<text x='649' y='469.4' font-size='17.3' opacity='0.94' fill='#111827'>70% done &#183; weight 4</text>
+</g>
+<g class='tile' data-p='14' data-name='Networking' data-done='70' data-weight='4'>
+<rect x='841' y='335' width='201' height='234.5' rx='10' fill='#83B342' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='850' y='344' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='863.2' y='362' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P14</text>
+<text x='850' y='400.4' font-size='24' font-weight='700' fill='#111827'>Networking</text>
+<text x='850' y='441.1' font-size='17.3' opacity='0.94' fill='#111827'>70% done &#183; weight 4</text>
+</g>
+<g class='tile' data-p='2' data-name='Memory' data-done='100' data-weight='3'>
+<rect x='640' y='569.5' width='201' height='175.9' rx='10' fill='#1EC85A' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='649' y='578.5' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='662.2' y='596.5' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P2</text>
+<text x='649' y='634.9' font-size='24' font-weight='700' fill='#111827'>Memory</text>
+<text x='649' y='675.6' font-size='17.3' opacity='0.94' fill='#111827'>100% done &#183; weight 3</text>
+</g>
+<g class='tile' data-p='4' data-name='MMU' data-done='100' data-weight='3'>
+<rect x='841' y='569.5' width='201' height='175.9' rx='10' fill='#1EC85A' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='850' y='578.5' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='863.2' y='596.5' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P4</text>
+<text x='850' y='634.9' font-size='24' font-weight='700' fill='#111827'>MMU</text>
+<text x='850' y='675.6' font-size='17.3' opacity='0.94' fill='#111827'>100% done &#183; weight 3</text>
+</g>
+<g class='tile' data-p='9' data-name='XBE Loader' data-done='90' data-weight='3'>
+<rect x='640' y='745.5' width='150.7' height='234.5' rx='10' fill='#40C152' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='649' y='754.5' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='662.2' y='772.4' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P9</text>
+<text x='649' y='810.9' font-size='24' font-weight='700' fill='#111827'>XBE Loader</text>
+</g>
+<g class='tile' data-p='1' data-name='Core' data-done='100' data-weight='2'>
+<rect x='790.8' y='745.5' width='201' height='117.3' rx='10' fill='#1EC85A' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='799.8' y='754.5' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='813' y='772.4' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P1</text>
+<text x='799.8' y='810.9' font-size='24' font-weight='700' fill='#111827'>Core</text>
+<text x='799.8' y='851.5' font-size='17.3' opacity='0.94' fill='#111827'>100% done &#183; weight 2</text>
+</g>
+<g class='tile' data-p='10' data-name='Kernel Interface' data-done='5' data-weight='2'>
+<rect x='790.8' y='862.7' width='201' height='117.3' rx='10' fill='#E86728' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='799.8' y='871.7' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.20)'/>
+<text x='813' y='889.7' font-size='13.7' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P10</text>
+<text x='799.8' y='928.1' font-size='24' font-weight='700' fill='#FFFFFF'>Kernel</text>
+<text x='799.8' y='956.4' font-size='24' font-weight='700' fill='#FFFFFF'>Interface</text>
+</g>
+<g class='tile' data-p='0' data-name='Bootstrap' data-done='100' data-weight='1'>
+<rect x='991.7' y='745.5' width='50.2' height='234.5' rx='10' fill='#1EC85A' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1000.7' y='754.5' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='1013.9' y='772.4' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P0</text>
+<text x='1000.7' y='810.9' font-size='24' font-weight='700' fill='#111827'>Bo…</text>
+</g>
+<g class='tile' data-p='15' data-name='CPU JIT' data-done='90' data-weight='11'>
+<rect x='1054' y='120' width='438.6' height='289.4' rx='10' fill='#40C152' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1063' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='1076.2' y='147' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P15</text>
+<text x='1063' y='185.4' font-size='24' font-weight='700' fill='#111827'>CPU JIT</text>
+<text x='1063' y='226.1' font-size='17.3' opacity='0.94' fill='#111827'>90% done &#183; weight 11</text>
+</g>
+<g class='tile' data-p='18' data-name='GPU Optimization' data-done='78' data-weight='4'>
+<rect x='1492.5' y='120' width='159.5' height='289.4' rx='10' fill='#68B948' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1501.5' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='1514.7' y='147' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P18</text>
+<text x='1501.5' y='185.4' font-size='24' font-weight='700' fill='#111827'>GPU</text>
+<text x='1501.5' y='213.7' font-size='24' font-weight='700' fill='#111827'>Optimizat…</text>
+</g>
+<g class='tile' data-p='16' data-name='CPU Optimization' data-done='35' data-weight='3'>
+<rect x='1054' y='409.4' width='188.9' height='183.3' rx='10' fill='#E8A628' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1063' y='418.4' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.20)'/>
+<text x='1076.2' y='436.3' font-size='13.7' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P16</text>
+<text x='1063' y='474.8' font-size='24' font-weight='700' fill='#FFFFFF'>CPU</text>
+<text x='1063' y='503.1' font-size='24' font-weight='700' fill='#FFFFFF'>Optimization</text>
+<text x='1063' y='543.8' font-size='17.3' opacity='0.94' fill='#FFFFFF'>35% done &#183; weight 3</text>
+</g>
+<g class='tile' data-p='19' data-name='Debugger' data-done='30' data-weight='3'>
+<rect x='1054' y='592.6' width='188.9' height='183.3' rx='10' fill='#E89C28' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1063' y='601.6' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.20)'/>
+<text x='1076.2' y='619.6' font-size='13.7' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P19</text>
+<text x='1063' y='658' font-size='24' font-weight='700' fill='#FFFFFF'>Debugger</text>
+<text x='1063' y='698.7' font-size='17.3' opacity='0.94' fill='#FFFFFF'>30% done &#183; weight 3</text>
+</g>
+<g class='tile' data-p='20' data-name='Automated Testing' data-done='85' data-weight='3'>
+<rect x='1242.8' y='409.4' width='188.9' height='183.3' rx='10' fill='#50BE4E' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1251.8' y='418.4' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='1265' y='436.3' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P20</text>
+<text x='1251.8' y='474.8' font-size='24' font-weight='700' fill='#111827'>Automated</text>
+<text x='1251.8' y='503.1' font-size='24' font-weight='700' fill='#111827'>Testing</text>
+<text x='1251.8' y='543.8' font-size='17.3' opacity='0.94' fill='#111827'>85% done &#183; weight 3</text>
+</g>
+<g class='tile' data-p='21' data-name='CLI &amp; Frontend' data-done='75' data-weight='3'>
+<rect x='1242.8' y='592.6' width='188.9' height='183.3' rx='10' fill='#72B646' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1251.8' y='601.6' width='26.4' height='26.4' rx='6.6' fill='rgba(17,24,39,0.16)'/>
+<text x='1265' y='619.6' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P21</text>
+<text x='1251.8' y='658' font-size='24' font-weight='700' fill='#111827'>CLI &amp;</text>
+<text x='1251.8' y='686.4' font-size='24' font-weight='700' fill='#111827'>Frontend</text>
+<text x='1251.8' y='727' font-size='17.3' opacity='0.94' fill='#111827'>75% done &#183; weight 3</text>
+</g>
+<g class='tile' data-p='23' data-name='Release' data-done='55' data-weight='3'>
+<rect x='1431.7' y='409.4' width='220.3' height='157.1' rx='10' fill='#B5A836' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1440.7' y='418.4' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.20)'/>
+<text x='1453.9' y='436.3' font-size='13.7' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P23</text>
+<text x='1440.7' y='474.8' font-size='24' font-weight='700' fill='#FFFFFF'>Release</text>
+<text x='1440.7' y='515.5' font-size='17.3' opacity='0.94' fill='#FFFFFF'>55% done &#183; weight 3</text>
+</g>
+<g class='tile' data-p='17' data-name='Memory Optimization' data-done='40' data-weight='2'>
+<rect x='1431.7' y='566.5' width='110.2' height='209.4' rx='10' fill='#E8B128' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1440.7' y='575.5' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.20)'/>
+<text x='1453.9' y='593.4' font-size='13.7' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P17</text>
+<text x='1440.7' y='631.9' font-size='24' font-weight='700' fill='#FFFFFF'>Memory</text>
+<text x='1440.7' y='660.2' font-size='24' font-weight='700' fill='#FFFFFF'>Optimi…</text>
+</g>
+<g class='tile' data-p='22' data-name='Save States &amp; Replay' data-done='40' data-weight='2'>
+<rect x='1541.8' y='566.5' width='110.2' height='209.4' rx='10' fill='#E8B128' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1550.8' y='575.5' width='23.1' height='23.1' rx='5.8' fill='rgba(255,255,255,0.20)'/>
+<text x='1562.4' y='591.2' font-size='12' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P22</text>
+<text x='1550.8' y='625.6' font-size='21' font-weight='700' fill='#FFFFFF'>Save</text>
+<text x='1550.8' y='650.3' font-size='21' font-weight='700' fill='#FFFFFF'>States &amp;</text>
+<text x='1550.8' y='675.1' font-size='21' font-weight='700' fill='#FFFFFF'>Replay</text>
+</g>
+<g class='tile' data-p='24' data-name='Retail gameplay &amp; xemu full port' data-done='60' data-weight='10'>
+<rect x='1054' y='813.9' width='598' height='166.1' rx='10' fill='#A4AC3A' stroke='#0B1220' stroke-width='1.5'/>
+<rect x='1063' y='822.9' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.20)'/>
+<text x='1076.2' y='840.9' font-size='13.7' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P24</text>
+<text x='1063' y='879.3' font-size='24' font-weight='700' fill='#FFFFFF'>Retail gameplay &amp; xemu full port</text>
+<text x='1063' y='920' font-size='17.3' opacity='0.94' fill='#FFFFFF'>60% done &#183; weight 10</text>
+</g>
+<text x='26' y='1000' font-size='12.5' fill='#94A3B8'>completion</text>
+<rect x='26' y='1008' width='4.2' height='13' fill='#E85D28'/>
+<rect x='30.2' y='1008' width='4.2' height='13' fill='#E85F28'/>
+<rect x='34.4' y='1008' width='4.2' height='13' fill='#E86128'/>
+<rect x='38.6' y='1008' width='4.2' height='13' fill='#E86328'/>
+<rect x='42.8' y='1008' width='4.2' height='13' fill='#E86628'/>
+<rect x='47' y='1008' width='4.2' height='13' fill='#E86828'/>
+<rect x='51.2' y='1008' width='4.2' height='13' fill='#E86A28'/>
+<rect x='55.4' y='1008' width='4.2' height='13' fill='#E86C28'/>
+<rect x='59.6' y='1008' width='4.2' height='13' fill='#E86E28'/>
+<rect x='63.8' y='1008' width='4.2' height='13' fill='#E87028'/>
+<rect x='68' y='1008' width='4.2' height='13' fill='#E87228'/>
+<rect x='72.2' y='1008' width='4.2' height='13' fill='#E87428'/>
+<rect x='76.4' y='1008' width='4.2' height='13' fill='#E87628'/>
+<rect x='80.6' y='1008' width='4.2' height='13' fill='#E87928'/>
+<rect x='84.8' y='1008' width='4.2' height='13' fill='#E87B28'/>
+<rect x='89' y='1008' width='4.2' height='13' fill='#E87D28'/>
+<rect x='93.2' y='1008' width='4.2' height='13' fill='#E87F28'/>
+<rect x='97.4' y='1008' width='4.2' height='13' fill='#E88128'/>
+<rect x='101.6' y='1008' width='4.2' height='13' fill='#E88328'/>
+<rect x='105.8' y='1008' width='4.2' height='13' fill='#E88528'/>
+<rect x='110' y='1008' width='4.2' height='13' fill='#E88728'/>
+<rect x='114.2' y='1008' width='4.2' height='13' fill='#E88A28'/>
+<rect x='118.4' y='1008' width='4.2' height='13' fill='#E88C28'/>
+<rect x='122.6' y='1008' width='4.2' height='13' fill='#E88E28'/>
+<rect x='126.8' y='1008' width='4.2' height='13' fill='#E89028'/>
+<rect x='131' y='1008' width='4.2' height='13' fill='#E89228'/>
+<rect x='135.2' y='1008' width='4.2' height='13' fill='#E89428'/>
+<rect x='139.4' y='1008' width='4.2' height='13' fill='#E89628'/>
+<rect x='143.6' y='1008' width='4.2' height='13' fill='#E89828'/>
+<rect x='147.8' y='1008' width='4.2' height='13' fill='#E89B28'/>
+<rect x='152' y='1008' width='4.2' height='13' fill='#E89D28'/>
+<rect x='156.2' y='1008' width='4.2' height='13' fill='#E89F28'/>
+<rect x='160.4' y='1008' width='4.2' height='13' fill='#E8A128'/>
+<rect x='164.6' y='1008' width='4.2' height='13' fill='#E8A328'/>
+<rect x='168.8' y='1008' width='4.2' height='13' fill='#E8A528'/>
+<rect x='173' y='1008' width='4.2' height='13' fill='#E8A728'/>
+<rect x='177.2' y='1008' width='4.2' height='13' fill='#E8A928'/>
+<rect x='181.4' y='1008' width='4.2' height='13' fill='#E8AC28'/>
+<rect x='185.6' y='1008' width='4.2' height='13' fill='#E8AE28'/>
+<rect x='189.8' y='1008' width='4.2' height='13' fill='#E8B028'/>
+<rect x='194' y='1008' width='4.2' height='13' fill='#E8B228'/>
+<rect x='198.2' y='1008' width='4.2' height='13' fill='#E8B428'/>
+<rect x='202.4' y='1008' width='4.2' height='13' fill='#E8B628'/>
+<rect x='206.6' y='1008' width='4.2' height='13' fill='#E8B828'/>
+<rect x='210.8' y='1008' width='4.2' height='13' fill='#E8BA28'/>
+<rect x='215' y='1008' width='4.2' height='13' fill='#E8BC28'/>
+<rect x='219.2' y='1008' width='4.2' height='13' fill='#E8BF28'/>
+<rect x='223.4' y='1008' width='4.2' height='13' fill='#E8C128'/>
+<rect x='227.6' y='1008' width='4.2' height='13' fill='#E8C328'/>
+<rect x='231.8' y='1008' width='4.2' height='13' fill='#E8C528'/>
+<rect x='236' y='1008' width='4.2' height='13' fill='#C4A532'/>
+<rect x='240.2' y='1008' width='4.2' height='13' fill='#C1A633'/>
+<rect x='244.4' y='1008' width='4.2' height='13' fill='#BEA734'/>
+<rect x='248.6' y='1008' width='4.2' height='13' fill='#BAA735'/>
+<rect x='252.8' y='1008' width='4.2' height='13' fill='#B7A836'/>
+<rect x='257' y='1008' width='4.2' height='13' fill='#B4A936'/>
+<rect x='261.2' y='1008' width='4.2' height='13' fill='#B0AA37'/>
+<rect x='265.4' y='1008' width='4.2' height='13' fill='#ADAA38'/>
+<rect x='269.6' y='1008' width='4.2' height='13' fill='#A9AB39'/>
+<rect x='273.8' y='1008' width='4.2' height='13' fill='#A6AC3A'/>
+<rect x='278' y='1008' width='4.2' height='13' fill='#A3AC3A'/>
+<rect x='282.2' y='1008' width='4.2' height='13' fill='#9FAD3B'/>
+<rect x='286.4' y='1008' width='4.2' height='13' fill='#9CAE3C'/>
+<rect x='290.6' y='1008' width='4.2' height='13' fill='#99AE3D'/>
+<rect x='294.8' y='1008' width='4.2' height='13' fill='#95AF3E'/>
+<rect x='299' y='1008' width='4.2' height='13' fill='#92B03E'/>
+<rect x='303.2' y='1008' width='4.2' height='13' fill='#8FB13F'/>
+<rect x='307.4' y='1008' width='4.2' height='13' fill='#8BB140'/>
+<rect x='311.6' y='1008' width='4.2' height='13' fill='#88B241'/>
+<rect x='315.8' y='1008' width='4.2' height='13' fill='#84B342'/>
+<rect x='320' y='1008' width='4.2' height='13' fill='#81B342'/>
+<rect x='324.2' y='1008' width='4.2' height='13' fill='#7EB443'/>
+<rect x='328.4' y='1008' width='4.2' height='13' fill='#7AB544'/>
+<rect x='332.6' y='1008' width='4.2' height='13' fill='#77B545'/>
+<rect x='336.8' y='1008' width='4.2' height='13' fill='#74B646'/>
+<rect x='341' y='1008' width='4.2' height='13' fill='#70B746'/>
+<rect x='345.2' y='1008' width='4.2' height='13' fill='#6DB847'/>
+<rect x='349.4' y='1008' width='4.2' height='13' fill='#6AB848'/>
+<rect x='353.6' y='1008' width='4.2' height='13' fill='#66B949'/>
+<rect x='357.8' y='1008' width='4.2' height='13' fill='#63BA4A'/>
+<rect x='362' y='1008' width='4.2' height='13' fill='#60BA4A'/>
+<rect x='366.2' y='1008' width='4.2' height='13' fill='#5CBB4B'/>
+<rect x='370.4' y='1008' width='4.2' height='13' fill='#59BC4C'/>
+<rect x='374.6' y='1008' width='4.2' height='13' fill='#55BC4D'/>
+<rect x='378.8' y='1008' width='4.2' height='13' fill='#52BD4E'/>
+<rect x='383' y='1008' width='4.2' height='13' fill='#4FBE4E'/>
+<rect x='387.2' y='1008' width='4.2' height='13' fill='#4BBF4F'/>
+<rect x='391.4' y='1008' width='4.2' height='13' fill='#48BF50'/>
+<rect x='395.6' y='1008' width='4.2' height='13' fill='#45C051'/>
+<rect x='399.8' y='1008' width='4.2' height='13' fill='#41C152'/>
+<rect x='404' y='1008' width='4.2' height='13' fill='#3EC152'/>
+<rect x='408.2' y='1008' width='4.2' height='13' fill='#3BC253'/>
+<rect x='412.4' y='1008' width='4.2' height='13' fill='#37C354'/>
+<rect x='416.6' y='1008' width='4.2' height='13' fill='#34C355'/>
+<rect x='420.8' y='1008' width='4.2' height='13' fill='#30C456'/>
+<rect x='425' y='1008' width='4.2' height='13' fill='#2DC556'/>
+<rect x='429.2' y='1008' width='4.2' height='13' fill='#2AC657'/>
+<rect x='433.4' y='1008' width='4.2' height='13' fill='#26C658'/>
+<rect x='437.6' y='1008' width='4.2' height='13' fill='#23C759'/>
+<rect x='441.8' y='1008' width='4.2' height='13' fill='#20C85A'/>
+<text x='28' y='1035' font-size='11.5' fill='#94A3B8'>0%</text>
+<text x='236' y='1035' font-size='11.5' fill='#94A3B8'>50%</text>
+<text x='438' y='1035' font-size='11.5' fill='#94A3B8'>100%</text>
+<circle cx='1578' cy='1018' r='9' fill='none' stroke='#F8FAFC' stroke-width='3' stroke-dasharray='45.1 11.5' transform='rotate(-90 1578 1018)'/>
+<text x='1658' y='1023' font-size='17' font-weight='700' fill='#F8FAFC' text-anchor='end'>79.7%</text>
+<text x='1658' y='1035' font-size='11.5' fill='#94A3B8' text-anchor='end'>weighted overall</text>
+</svg>

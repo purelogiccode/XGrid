@@ -1,0 +1,138 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
+             xmlns:local="using:XGrid.Frontend.Avalonia"
+             x:Class="XGrid.Frontend.Avalonia.Views.AboutView"
+             x:DataType="vm:AboutViewModel">
+  <ScrollViewer Name="PageScroll">
+    <StackPanel Spacing="16" MaxWidth="920" HorizontalAlignment="Stretch">
+      <!-- ===================== Hero ===================== -->
+      <Border CornerRadius="18"
+              BorderBrush="{DynamicResource XgBorderBrush}"
+              BorderThickness="1"
+              Padding="26">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#13212E" Offset="0" />
+            <GradientStop Color="#0E1620" Offset="0.6" />
+            <GradientStop Color="#12291D" Offset="1" />
+          </LinearGradientBrush>
+        </Border.Background>
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
+          <Grid Width="72" Height="72" VerticalAlignment="Center">
+            <Ellipse Stroke="{DynamicResource XgAccentBrush}" StrokeThickness="2.5" />
+            <Path Data="M23 23 L49 49 M49 23 L23 49"
+                  Stroke="{DynamicResource XgAccentBrush}"
+                  StrokeThickness="4"
+                  StrokeLineCap="Round" />
+          </Grid>
+          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <TextBlock Text="XGrid" Classes="h1" />
+              <Border Classes="pill" VerticalAlignment="Center">
+                <TextBlock Text="{Binding AppVersion}"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource XgAccentBrush}" />
+              </Border>
+            </StackPanel>
+            <TextBlock Classes="body"
+                       TextWrapping="Wrap"
+                       Text="A cross-platform original Xbox emulator written in C#/.NET — a clean-room reimplementation of documented hardware behavior." />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- ===================== Build ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <TextBlock Text="This build" Classes="h3" />
+          <Border Classes="divider" />
+          <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+            <TextBlock Text="Frontend" Classes="caption" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding AppVersion}" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Emulator core" Classes="caption" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CoreVersion}" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Runtime" Classes="caption" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding RuntimeText}" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Platform" Classes="caption" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OperatingSystemText}" Classes="mono" FontSize="11.5" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Project ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <TextBlock Text="Project" Classes="h3" />
+          <Border Classes="divider" />
+          <StackPanel Spacing="3">
+            <TextBlock Text="Configuration" Classes="label" />
+            <TextBlock Text="{Binding SettingsPath}" Classes="mono" FontSize="11" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Classes="primary" Command="{Binding OpenRepositoryCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Info}"
+                          Width="13"
+                          Height="13"
+                          Foreground="{DynamicResource XgAccentTextBrush}" />
+                <TextBlock Text="Open repository"
+                           Foreground="{DynamicResource XgAccentTextBrush}"
+                           FontWeight="SemiBold" />
+              </StackPanel>
+            </Button>
+            <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                <TextBlock Text="Open settings folder" />
+              </StackPanel>
+            </Button>
+            <Button Classes="ghost" Command="{Binding OpenSettingsCommand}" Content="Edit settings" />
+          </StackPanel>
+          <TextBlock Classes="hint"
+                     Text="XGrid does not ship copyrighted firmware, EEPROMs, or game data. Users must supply their own legally obtained files." />
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Shortcuts ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <TextBlock Text="Shortcuts" Classes="h3" />
+          <Border Classes="divider" />
+          <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="9">
+            <TextBlock Text="Power on / off" Classes="caption" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="F5" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Pause / resume" Classes="caption" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="F6" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Frame step / 1M step" Classes="caption" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="F7  ·  Shift + F7" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Full screen" Classes="caption" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="F11  ·  Esc to exit" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Open disc" Classes="caption" />
+            <TextBlock Grid.Row="4" Grid.Column="1" Text="Ctrl + O" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="5" Grid.Column="0" Text="Save settings" Classes="caption" />
+            <TextBlock Grid.Row="5" Grid.Column="1" Text="Ctrl + S  (Settings page)" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="6" Grid.Column="0" Text="Controller" Classes="caption" />
+            <TextBlock Grid.Row="6"
+                       Grid.Column="1"
+                       Text="Arrows · Enter · Backspace · A S D F · Q E · Z C"
+                       Classes="mono"
+                       FontSize="11.5" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Third party ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Built with" Classes="h3" />
+          <Border Classes="divider" />
+          <TextBlock Classes="hint"
+                     TextWrapping="Wrap"
+                     Text="Avalonia (MIT) · CommunityToolkit.Mvvm (MIT) · SkiaSharp (MIT) · Iced (MIT) · XISOSharp (MIT) · CHDSharp. Hardware behavior is documented from the xemu, Cxbx-Reloaded, XboxDevWiki, envytools, and nv2a-trace references." />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
