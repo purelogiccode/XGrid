@@ -50,6 +50,7 @@ public static class XemuLaunchPlan
             WindowHeight = Math.Max(64, height),
             DisplaySinkName = settings.DisplaySink ? XemuDisplaySink.CreateName() : string.Empty,
             InputSinkName = settings.DisplaySink ? XemuInputSink.CreateName() : string.Empty,
+            UseHostInput = settings.DisplaySink,
             WorkingDirectory = workingDirectory,
         };
     }

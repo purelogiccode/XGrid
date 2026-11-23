@@ -80,6 +80,12 @@ public sealed record XemuLaunchSettings
     /// </summary>
     public string InputSinkName { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Gets a value indicating whether the shell supplies port 1. When false,
+    /// the core keeps its own input bindings (a physical gamepad keeps working).
+    /// </summary>
+    public bool UseHostInput { get; init; }
+
     /// <summary>Gets the directory that holds the generated config and the core log.</summary>
     public string WorkingDirectory { get; init; } = string.Empty;
 
