@@ -24,16 +24,31 @@ XGrid build and is not redistributed with XGrid.
 | XboxDevWiki | offline dump 2026-10-12 | https://xboxdevwiki.net | No license declared | Facts only. |
 | Copetti, "Xbox Architecture" | local snapshot | https://www.copetti.org/writings/consoles/xbox/ | CC BY 4.0 (attribution required) | Documentation orientation only. |
 
+## The emulation core (decision A, 2026-11-23)
+
+XGrid runs the **xemu 0.8.139 codebase** (QEMU 10.2.0 base, GPL-2.0) as its
+emulation core. The baseline is not committed; `native/xemu/` is recreated from
+`References2/xemu-0.8.139` by `scripts/sync-native-xemu.ps1`. XGrid's own core
+additions live in `native/xgrid-core/` and the edits to upstream files live in
+`native/xemu-patches/` - both tracked in this repository, which is **not a
+GitHub fork**. The release ships the core source (or a written offer), the
+additions and the patches.
+
+Vendored inside the core additions:
+
+| Package | Version | License | Use |
+|---|---|---|---|
+| libchdr | 0.3.0 | BSD-3-Clause (Copyright Romain Tisserand) | CHD hunk decoding behind `block/xgridchd.c`; ships its LZMA decoder, zlib/zstd come from the host. |
+
 ## Native CPU core (`libxgridcpu`)
 
-The product CPU is the TCG i386 core from the pinned xemu 0.8.139 tree
-(QEMU 10.2.0 base), GPL-2.0. It is the single native emulator component in the
-XGrid build (`docs/porting-policy.md` §2b). The vendored source is not
-committed; the build reproduces it from `References2/xemu-0.8.139` plus
-`native/qemu-patches/` (configure/venv and subproject extraction fixes only),
-and the release ships the corresponding source or a written offer together with
-the patches. No QEMU machine, device model, block layer, UI, audio or network
-backend is shipped.
+The TCG i386 core from the pinned xemu 0.8.139 tree (QEMU 10.2.0 base),
+GPL-2.0, was the first native component (XCN0-XCN3). With decision A the whole
+core is the product engine; this section records the earlier bounded extraction.
+The vendored source is not committed; the build reproduces it from
+`References2/xemu-0.8.139` plus `native/qemu-patches/` (configure/venv and
+subproject extraction fixes only), and the release ships the corresponding
+source or a written offer together with the patches.
 
 ## Runtime and build dependencies
 

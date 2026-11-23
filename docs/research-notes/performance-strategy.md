@@ -207,6 +207,53 @@ file (a user-mode filesystem such as Dokan, MIT; WinFsp is GPLv3, which does not
 combine with this GPL-2.0 project). That adds a signed kernel driver to the
 product, so the patch set is the cheaper and cleaner route.
 
+**Operator confirmation (2026-11-23): patching the xemu codebase for CHD and ZAR
+is approved.** The patch set in this repository is the implementation path; no
+GitHub fork is created.
+
+## XGrid as an enhanced frontend for xemu (2026-11-23)
+
+The product statement, in the operator's words: **"XGrid will be an enhanced
+frontend for xemu. We maintain our own version of xemu and evolve it from 0.8.139,
+patching the existing codebase to provide all the functionality we want for the
+XGrid frontend."**
+
+That fixes the repo model:
+
+| Layer | Where | Tracked | Contents |
+|---|---|---|---|
+| Upstream baseline | `native/xemu/` | no (recreated) | xemu 0.8.139, unmodified |
+| Our core additions | `native/xgrid-core/` | **yes** | new C files (display sink, input source, block drivers) and vendored deps (libchdr) |
+| Edits to upstream files | `native/xemu-patches/` | **yes** | small, rebasable hunks (meson wiring, registration, config keys) |
+| The shell | `src/XGrid.*` | **yes** | Avalonia UI, settings, library, filters viewport, orchestration |
+
+`scripts/sync-native-xemu.ps1` recreates the build tree from `References2/`,
+applies the patches and points meson at `native/xgrid-core/`. The "version of
+xemu we maintain" is therefore the triple (baseline, additions, patches) - fully
+in this repository, no GitHub fork, and rebasable onto a future upstream release.
+
+### Enhancement backlog (operator list)
+
+1. **Host display sink** (`-display xgrid`): frames to the shell over a named
+   section, no SDL window. Prerequisite for everything visual in the frontend.
+2. **Host input source**: pad state from the shell, no key injection.
+3. **CHD, real time** (`block/xgridchd.c`, vendored libchdr BSD-3): read the
+   disc on demand, no extraction. Same for HDD images.
+4. **ZAR, real time** (`block/xgridzar.c`, zstd already a QEMU dependency):
+   expose the archive's ISO entry (or XDVDFS tree) as the disc.
+5. **Graphic filters in the shell**: the frame arrives as pixels, so the
+   frontend owns the final image. Planned chain: nearest / bilinear /
+   sharp-bilinear / integer-scale, then scanline and CRT masks, with per-title
+   overrides and a live preview. Implemented in the shell's GL viewport (the
+   project already has a WGL context in `XGrid.GpuGl`) or in Skia for portable
+   builds.
+6. **More filters over time**: the filter list is data, not code - each entry is
+   a shader + parameters, so the set can grow without touching the core.
+7. Later candidates that need the same two hooks: audio latency/buffer options,
+   snapshot save/load through the core, per-title core settings, netplay toggles.
+
+Order: (1) display sink, (2) input, (3) CHD, (4) filters, (5) ZAR.
+
 **Evidence gathered before deciding.**
 
 - **No CHD driver exists in either reference tree.** `block/` in 0.8.139 and in

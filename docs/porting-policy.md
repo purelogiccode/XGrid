@@ -47,6 +47,24 @@ P/Invoke is **never** the way to embed QEMU/xemu or to call emulator code.
 | Executable memory + unmanaged block entry | `XGrid.Cpu/RawState`, `RawHelpers`, `RawBlockEmitter` (`kernel32` VirtualAlloc/Free, `[UnmanagedCallersOnly]`, `delegate* unmanaged`) | The opt-in raw JIT emits and runs x86-64 blocks. The managed IL JIT (`--jit`) is the pure-C# engine and the fallback. |
 | UI rendering | Avalonia (managed API, native Skia/HarfBuzz inside the package) | UI framework choice, not emulator semantics; **kept by operator decision 2026-11-22**. The CLI has no UI dependency. |
 | Host audio | `WaveAudioBackend` (WAV file, managed); a live sink via a NuGet package (P1 sprint: **NAudio**, MIT/WASAPI) | The emulator side (`IAudioBackend`) is managed; the sink is a host facility. |
+| Win32 window hosting | `XGrid.Core.Xemu` (`user32` SetParent/SetWindowPos/PostMessage) and `XemuDisplayHost` (`Avalonia.Controls.NativeControlHost`) | The shell embeds the core's window (A0). Window management is a host facility, not emulator semantics; `docs/research-notes/performance-strategy.md` records the shared-frame display that replaces it. |
+
+### 2c. The emulation core (decision A, 2026-11-23)
+
+The product emulator is the xemu 0.8.139 codebase, compiled from this repository:
+
+- `native/xemu/` is a disposable build tree recreated from
+  `References2/xemu-0.8.139` by `scripts/sync-native-xemu.ps1`.
+- `native/xgrid-core/` holds the C files XGrid adds (display sink, input source,
+  block drivers) plus vendored dependencies (libchdr, BSD-3).
+- `native/xemu-patches/` holds the edits to upstream files; they stay small and
+  rebasable.
+- The tree is **not a GitHub fork**; xemu is credited in `README.md` and
+  `THIRD_PARTY_NOTICES.md`.
+- Every addition is GPL-2.0 and ships with the release source offer.
+
+The managed emulator remains in the tree as the oracle: the four 1B goldens,
+the ktest log and the test suite validate the core.
 
 ### 2b. The native CPU core (XCN0-XCN3, 2026-11-22)
 
