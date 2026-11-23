@@ -40,6 +40,19 @@ public sealed class EmulatorSettings
     public bool DisplaySink { get; init; }
 
     /// <summary>
+    /// Gets or sets the core hosting mode: <c>in-process</c> (experimental;
+    /// the shell loads the core library) or <c>process</c> (the core runs
+    /// beside the shell, the stable default).
+    /// </summary>
+    public string CoreHosting { get; set; } = CoreHostingProcess;
+
+    /// <summary>Hosting mode that loads the core into the shell's process.</summary>
+    public const string CoreHostingInProcess = "in-process";
+
+    /// <summary>Hosting mode that runs the core as a separate process.</summary>
+    public const string CoreHostingProcess = "process";
+
+    /// <summary>
     /// Gets or sets the presentation filter (nearest, bilinear, scanline, crt).
     /// </summary>
     public string Filter { get; set; } = Services.FrameFilters.Nearest;
@@ -186,6 +199,7 @@ public sealed class EmulatorSettings
             Accent = Accent,
             XemuCorePath = XemuCorePath,
             DisplaySink = DisplaySink,
+            CoreHosting = CoreHosting,
             Filter = Filter,
             Input = Input?.Clone() ?? new InputSettings(),
             Graphics = Graphics?.Clone() ?? new GraphicsSettings(),
@@ -204,6 +218,9 @@ public sealed class EmulatorSettings
     public void Normalize()
     {
         RamMb = RamMb is 128 ? 128 : 64;
+        CoreHosting = string.Equals(CoreHosting, CoreHostingInProcess, StringComparison.OrdinalIgnoreCase)
+            ? CoreHostingInProcess
+            : CoreHostingProcess;
         Filter = Services.FrameFilters.Normalize(Filter);
         Input ??= new InputSettings();
         Graphics ??= new GraphicsSettings();

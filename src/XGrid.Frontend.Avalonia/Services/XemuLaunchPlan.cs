@@ -39,6 +39,7 @@ public static class XemuLaunchPlan
         return new XemuLaunchSettings
         {
             CorePath = core ?? string.Empty,
+            HostMode = settings.CoreHosting,
             BootRomPath = Resolve(settings.McpxRomPath, firmwareDirectory, "mcpx_1.0.bin"),
             FlashRomPath = settings.BiosPath,
             EepromPath = Resolve(settings.EepromPath, firmwareDirectory, "eeprom.bin"),

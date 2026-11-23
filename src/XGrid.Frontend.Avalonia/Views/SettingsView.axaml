@@ -222,6 +222,27 @@
                                 OffContent=""
                                 VerticalAlignment="Center" />
                 </Grid>
+
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Core hosting" Classes="label" />
+                    <TextBlock Text="Separate process runs the core beside the shell (the stable default). In-process loads the core library into the shell; it is experimental because the core's CPU loop is sensitive to the host runtime."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1"
+                            Width="220"
+                            ItemsSource="{Binding CoreHostingOptions}"
+                            SelectedItem="{Binding SelectedCoreHosting, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
               </StackPanel>
             </Border>
           </StackPanel>

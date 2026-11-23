@@ -14,7 +14,7 @@ namespace XGrid.Core.Xemu;
 /// MCPX/APU/ACI/IDE/USB devices, audio and input. XGrid owns the shell around
 /// it, which is why this type does not emulate anything.
 /// </remarks>
-public sealed class XemuCoreProcess : IDisposable
+public sealed class XemuCoreProcess : IXemuCoreRuntime
 {
     private readonly XemuLaunchSettings _settings;
     private Process? _process;
@@ -40,6 +40,56 @@ public sealed class XemuCoreProcess : IDisposable
     /// <summary>Gets the core's log path (<c>xemu.log</c> in its working directory).</summary>
     public string LogPath { get; }
 
+    /// <summary>
+    /// Validates the settings, creates the working directory and writes the
+    /// generated configuration. Shared by the process and in-process hosts.
+    /// </summary>
+    /// <param name="settings">Launch settings.</param>
+    /// <returns>The configuration path.</returns>
+    public static string WriteConfiguration(XemuLaunchSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings.EnsureValid();
+        Directory.CreateDirectory(settings.WorkingDirectory);
+        string path = Path.Combine(settings.WorkingDirectory, "xemu.toml");
+        File.WriteAllText(path, XemuTomlWriter.Build(settings));
+        return path;
+    }
+
+    /// <summary>
+    /// Returns the core arguments that are not part of the configuration file.
+    /// Shared by the process and in-process hosts.
+    /// </summary>
+    /// <param name="settings">Launch settings.</param>
+    public static System.Collections.Generic.IReadOnlyList<string> BuildExtraArguments(XemuLaunchSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var arguments = new System.Collections.Generic.List<string>();
+        switch (settings.AudioBackend)
+        {
+            case "dsound":
+                arguments.Add("-audiodev");
+                arguments.Add("dsound");
+                break;
+            case "none":
+                arguments.Add("-audiodev");
+                arguments.Add("none");
+                break;
+            case "wav":
+                arguments.Add("-audiodev");
+                arguments.Add("wav,path=" + settings.AudioWavPath);
+                break;
+        }
+
+        return arguments;
+    }
+
+    /// <summary>Asks the core to power off through its own shutdown path.</summary>
+    public void RequestStop()
+    {
+        RequestClose();
+    }
+
     /// <summary>Gets a value indicating whether the core process is alive.</summary>
     public bool IsRunning
     {
@@ -64,6 +114,9 @@ public sealed class XemuCoreProcess : IDisposable
 
     /// <summary>Gets the core process id, or 0 when it was never started.</summary>
     public int ProcessId => _process?.Id ?? 0;
+
+    /// <summary>Gets a value indicating whether the core shares the shell's process.</summary>
+    public bool IsInProcess => false;
 
     /// <summary>Gets the process exit code once it has exited, or -1 before then.</summary>
     public int ExitCode
@@ -122,22 +175,12 @@ public sealed class XemuCoreProcess : IDisposable
             throw new InvalidOperationException("The core process was already started.");
         }
 
-        _settings.EnsureValid();
-        Directory.CreateDirectory(_settings.WorkingDirectory);
-        File.WriteAllText(ConfigPath, XemuTomlWriter.Build(_settings));
+        _ = WriteConfiguration(_settings);
 
         string arguments = "-config_path " + Quote(ConfigPath);
-        switch (_settings.AudioBackend)
+        foreach (string argument in BuildExtraArguments(_settings))
         {
-            case "dsound":
-                arguments += " -audiodev dsound,id=xgrid";
-                break;
-            case "none":
-                arguments += " -audiodev none,id=xgrid";
-                break;
-            case "wav":
-                arguments += " -audiodev wav,id=xgrid,path=" + Quote(_settings.AudioWavPath);
-                break;
+            arguments += " " + Quote(argument);
         }
 
         var startInfo = new ProcessStartInfo
@@ -329,9 +372,9 @@ public sealed class XemuCoreProcess : IDisposable
     }
 
     /// <summary>Reads the tail of the core log for diagnostics.</summary>
-    /// <param name="maxCharacters">Maximum characters to return.</param>
+    /// <param name="maxChars">Maximum characters to return.</param>
     /// <returns>The log tail, or an empty string when no log exists yet.</returns>
-    public string ReadLogTail(int maxCharacters = 16 * 1024)
+    public string ReadLogTail(int maxChars)
     {
         try
         {
@@ -341,7 +384,7 @@ public sealed class XemuCoreProcess : IDisposable
             }
 
             using var stream = new FileStream(LogPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            long start = Math.Max(0, stream.Length - maxCharacters);
+            long start = Math.Max(0, stream.Length - maxChars);
             _ = stream.Seek(start, SeekOrigin.Begin);
             using var reader = new StreamReader(stream);
             return reader.ReadToEnd();

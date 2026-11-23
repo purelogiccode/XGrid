@@ -63,11 +63,14 @@ The product emulator is the xemu 0.8.139 codebase, committed in this repository:
   `scripts/build-native-xemu.ps1`. `References2/xemu-0.8.139` remains the
   pristine, read-only oracle.
 - `xemu/xgrid-core/` holds the C files XGrid adds (display sink, input source,
-  block drivers) plus vendored dependencies (libchdr, BSD-3).
+  block drivers, the in-process ABI) plus vendored dependencies (libchdr,
+  BSD-3).
 - `xemu/xemu-patches/` holds the edits to upstream files; they stay small and
   rebasable.
 - `xemu/XGrid.Xemu.Tree.csproj` is the solution build anchor; the native build
-  is opt-in (`dotnet build -p:BuildXemuCore=true`).
+  is opt-in (`dotnet build -p:BuildXemuCore=true`). The build produces
+  `xemu/dist/xemu.exe` and `xemu/dist/xgrid_core.dll`; the DLL is the shell's
+  in-process core and is built from the same objects.
 - The tree is credited in `README.md` and `THIRD_PARTY_NOTICES.md`.
 - Every addition is GPL-2.0-compatible and ships with the release source.
 

@@ -123,6 +123,27 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_CopiesTheCoreHostingMode()
+    {
+        EmulatorSettings settings = Settings();
+        settings.CoreHosting = EmulatorSettings.CoreHostingProcess;
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(EmulatorSettings.CoreHostingProcess, launch.HostMode);
+    }
+
+    [Fact]
+    public void Create_DefaultsToTheSeparateProcess()
+    {
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            Settings(), null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(EmulatorSettings.CoreHostingProcess, launch.HostMode);
+    }
+
+    [Fact]
     public void DescribeProblem_ReportsTheFirstBlockingReason()
     {
         string work = Path.Combine(_root, "work");

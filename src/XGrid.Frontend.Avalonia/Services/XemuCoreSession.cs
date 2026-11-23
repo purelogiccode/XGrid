@@ -28,7 +28,7 @@ public sealed class XemuCoreStoppedEventArgs(bool faulted, string message, int e
 public sealed class XemuCoreSession : IDisposable
 {
     private readonly Lock _gate = new();
-    private XemuCoreProcess? _process;
+    private IXemuCoreRuntime? _runtime;
     private XemuWindowEmbedder? _embedder;
     private XemuDisplaySink? _sink;
     private XemuInputSink? _input;
@@ -53,7 +53,10 @@ public sealed class XemuCoreSession : IDisposable
     public event EventHandler<XemuCoreStoppedEventArgs>? Stopped;
 
     /// <summary>Gets a value indicating whether the core process is alive.</summary>
-    public bool IsRunning => _process?.IsRunning == true;
+    public bool IsRunning => _runtime?.IsRunning == true;
+
+    /// <summary>Gets a value indicating whether the core shares the shell's process.</summary>
+    public bool IsInProcess => _runtime?.IsInProcess == true;
 
     /// <summary>Gets a value indicating whether the core window is embedded in the shell.</summary>
     public bool IsEmbedded => _embedder?.IsEmbedded == true;
@@ -61,11 +64,11 @@ public sealed class XemuCoreSession : IDisposable
     /// <summary>Gets a value indicating whether the shell is presenting core frames itself.</summary>
     public bool IsFrameSinkActive => _sink is not null && _lastFrameCounter != 0;
 
-    /// <summary>Gets the core process id, or 0.</summary>
-    public int ProcessId => _process?.ProcessId ?? 0;
+    /// <summary>Gets the process id that hosts the core, or 0.</summary>
+    public int ProcessId => _runtime?.ProcessId ?? 0;
 
     /// <summary>Gets how long the core has been running.</summary>
-    public TimeSpan Uptime => _process?.Uptime ?? TimeSpan.Zero;
+    public TimeSpan Uptime => _runtime?.Uptime ?? TimeSpan.Zero;
 
     /// <summary>
     /// Reports the shell control that owns the display area. Calling it before
@@ -141,19 +144,13 @@ public sealed class XemuCoreSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(launch);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_process is not null)
+        if (_runtime is not null)
         {
             throw new InvalidOperationException("The core is already running.");
         }
 
-        var process = new XemuCoreProcess(launch);
-        process.Start();
-        lock (_gate)
-        {
-            _process = process;
-            _stopping = false;
-        }
-
+        // Create the sinks first: an in-process core starts immediately, so a
+        // section created after it would miss the first frames and the first pad.
         if (!string.IsNullOrWhiteSpace(launch.DisplaySinkName))
         {
             _sink = new XemuDisplaySink(launch.DisplaySinkName);
@@ -165,12 +162,71 @@ public sealed class XemuCoreSession : IDisposable
             _input = new XemuInputSink(launch.InputSinkName);
             // Publish a neutral pad immediately so the core never reads garbage.
             _input.Write(0, 0, 0, 0, 0, 0, 0);
+        }
+
+        IXemuCoreRuntime runtime;
+        if (string.Equals(launch.HostMode, "in-process", StringComparison.OrdinalIgnoreCase))
+        {
+            XemuInProcessRuntime? inProcess = StartInProcess(launch);
+            if (inProcess is not null)
+            {
+                runtime = inProcess;
+            }
+            else
+            {
+                runtime = StartProcess(launch);
+            }
+        }
+        else
+        {
+            runtime = StartProcess(launch);
+        }
+
+        lock (_gate)
+        {
+            _runtime = runtime;
+            _stopping = false;
+        }
+
+        if (_input is not null)
+        {
             Log?.Invoke(this, "xemu core frames go to the shell surface.");
         }
 
-        Log?.Invoke(this, $"xemu core started (pid {process.ProcessId}).");
         _monitor = new Timer(_ => Poll(), null, 250, 250);
         TryEmbed();
+    }
+
+    private XemuInProcessRuntime? StartInProcess(XemuLaunchSettings launch)
+    {
+        XemuInProcessCore? core = XemuInProcessCore.TryLoad(launch.CorePath, out string libraryPath);
+        if (core is null)
+        {
+            Log?.Invoke(this, "The in-process core library is not available; starting a separate core process.");
+            return null;
+        }
+
+        try
+        {
+            var runtime = new XemuInProcessRuntime(launch, core);
+            runtime.Start();
+            Log?.Invoke(this, $"xemu core {runtime.Version} started in-process ({libraryPath}).");
+            return runtime;
+        }
+        catch (XemuConfigurationException exception)
+        {
+            core.Dispose();
+            Log?.Invoke(this, "The in-process core did not start: " + exception.Message);
+            return null;
+        }
+    }
+
+    private XemuCoreProcess StartProcess(XemuLaunchSettings launch)
+    {
+        var process = new XemuCoreProcess(launch);
+        process.Start();
+        Log?.Invoke(this, $"xemu core started (pid {process.ProcessId}).");
+        return process;
     }
 
     /// <summary>
@@ -180,8 +236,8 @@ public sealed class XemuCoreSession : IDisposable
     /// </summary>
     public void Stop()
     {
-        XemuCoreProcess? process = _process;
-        if (process is null)
+        IXemuCoreRuntime? runtime = _runtime;
+        if (runtime is null)
         {
             return;
         }
@@ -192,14 +248,14 @@ public sealed class XemuCoreSession : IDisposable
             _stopDeadline = Environment.TickCount64 + 8000;
         }
 
-        process.RequestClose();
+        runtime.RequestStop();
     }
 
     /// <summary>Writes the core's log tail into the shell log.</summary>
     public void LogTail()
     {
-        XemuCoreProcess? process = _process;
-        string tail = process?.ReadLogTail(2048) ?? string.Empty;
+        IXemuCoreRuntime? runtime = _runtime;
+        string tail = runtime?.ReadLogTail(2048) ?? string.Empty;
         if (tail.Length == 0)
         {
             return;
@@ -220,18 +276,29 @@ public sealed class XemuCoreSession : IDisposable
         }
 
         _disposed = true;
-        XemuCoreProcess? process = _process;
-        if (process is not null)
+        IXemuCoreRuntime? runtime = _runtime;
+        if (runtime is not null)
         {
             lock (_gate)
             {
                 _stopping = true;
             }
 
-            // Dispose is the one place a blocking wait is correct: the process
+            // Dispose is the one place a blocking wait is correct: the core
             // must not outlive the shell window.
-            _ = process.Stop(TimeSpan.FromSeconds(5));
-            Finish(process);
+            runtime.RequestStop();
+            long deadline = Environment.TickCount64 + 5000;
+            while (runtime.IsRunning && Environment.TickCount64 < deadline)
+            {
+                Thread.Sleep(50);
+            }
+
+            if (runtime.IsRunning)
+            {
+                runtime.Kill();
+            }
+
+            Finish(runtime);
         }
 
         _monitor?.Dispose();
@@ -244,8 +311,8 @@ public sealed class XemuCoreSession : IDisposable
         _input = null;
         _embedder?.Dispose();
         _embedder = null;
-        _process?.Dispose();
-        _process = null;
+        _runtime?.Dispose();
+        _runtime = null;
     }
 
     private void TryEmbed()
@@ -258,7 +325,7 @@ public sealed class XemuCoreSession : IDisposable
                 return;
             }
 
-            XemuCoreProcess? process = _process;
+            XemuCoreProcess? process = _runtime as XemuCoreProcess;
             if (process is null || _displayHost == IntPtr.Zero || _embedder?.IsEmbedded == true)
             {
                 return;
@@ -296,18 +363,20 @@ public sealed class XemuCoreSession : IDisposable
     {
         try
         {
-            XemuCoreProcess? process = _process;
-            if (process is null)
+            IXemuCoreRuntime? runtime = _runtime;
+            if (runtime is null)
             {
                 return;
             }
 
-            if (process.IsRunning)
+            if (runtime.IsRunning)
             {
                 if (_stopping && Environment.TickCount64 > _stopDeadline)
                 {
-                    Log?.Invoke(this, "The core did not close in time; terminating it.");
-                    process.Kill();
+                    Log?.Invoke(this, runtime.IsInProcess
+                        ? "The in-process core did not stop in time; it is still shutting down."
+                        : "The core did not close in time; terminating it.");
+                    runtime.Kill();
                     return;
                 }
 
@@ -315,7 +384,7 @@ public sealed class XemuCoreSession : IDisposable
                 return;
             }
 
-            Finish(process);
+            Finish(runtime);
         }
         catch (ObjectDisposedException)
         {
@@ -351,20 +420,20 @@ public sealed class XemuCoreSession : IDisposable
         }
     }
 
-    private void Finish(XemuCoreProcess process)
+    private void Finish(IXemuCoreRuntime runtime)
     {
         int exitCode;
         bool requested;
         lock (_gate)
         {
-            if (_process != process)
+            if (_runtime != runtime)
             {
                 return;
             }
 
-            _process = null;
+            _runtime = null;
             requested = _stopping;
-            exitCode = process.ExitCode;
+            exitCode = runtime.ExitCode;
             _monitor?.Dispose();
             _monitor = null;
             _embedder?.Detach();
@@ -372,13 +441,13 @@ public sealed class XemuCoreSession : IDisposable
 
         bool faulted = !requested && exitCode != 0;
         string message = requested
-            ? $"The xemu core stopped after {process.Uptime.TotalSeconds:F1} s."
+            ? $"The xemu core stopped after {runtime.Uptime.TotalSeconds:F1} s."
             : faulted
                 ? $"The xemu core exited unexpectedly (code {exitCode})."
                 : "The xemu core powered off.";
 
         LogTail();
         Stopped?.Invoke(this, new XemuCoreStoppedEventArgs(faulted, message, exitCode));
-        process.Dispose();
+        runtime.Dispose();
     }
 }
