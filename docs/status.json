@@ -494,6 +494,18 @@
       "bar": "release",
       "acceptance": "Package gate passes with the core source/patches shipped; the seven optimized ISOs launch and play.",
       "price": "1 week."
+    },
+    {
+      "id": "A6",
+      "title": "Core: XDVDFS synthesizer for --iso ZArchive (file tree to a real disc)",
+      "status": "queued",
+      "depends": [
+        "A3"
+      ],
+      "plan": "E2",
+      "bar": "correctness",
+      "acceptance": "An --iso .zar (game files only) boots with no extraction: the driver builds the descriptor and directory tables in memory from the archive tree and maps guest reads onto the archived extents. Differential: the synthesized metadata matches hello.iso structurally (descriptor at sector 32, root table entries, file extents) and the hello.zar boot presents the same frame as the hello.iso boot.",
+      "price": "3-5 days."
     }
   ],
   "done": [
