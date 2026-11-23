@@ -1,0 +1,13 @@
+--- a/meson.build
++++ b/meson.build
+@@ -4034,6 +4034,9 @@
+   subdir('nbd')
+   subdir('scsi')
+   subdir('block')
+ 
++  # XGrid core additions (CHD/ZAR block drivers, host display, host input).
++  subdir('xgrid-core')
++
+   blockdev_ss.add(files(
+     'blockdev.c',
+     'blockdev-nbd.c',
