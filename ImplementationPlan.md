@@ -161,6 +161,40 @@ The previous 6,695-line plan for the managed C# emulator is archived at
       **Done when:** the core's netplay session can be started and stopped from
       the shell and reports its state.
 
+- [ ] **C6. DirectX renderer (D3D11).** The core ships OpenGL, Vulkan and a null
+      renderer. A DirectX option is a **renderer port**, not a switch: the
+      combiner and the vertex programs are generated as GLSL today
+      (`hw/xbox/nv2a/pgraph/glsl/psh.c`, `vsh-prog.c`, `vsh-ff.c`), so a D3D11
+      backend needs HLSL from the same NV2A state. D3D11 first (it runs on
+      D3D12 via D3D11On12); D3D12 is a later option, not part of this item.
+      Reference for the shader half: Cxbx-Reloaded's
+      `src/core/hle/D3D8/Direct3D9/` generates HLSL from the same NV2A state
+      (`nv2a_psh.cpp`, `nv2a_vsh.cpp`, `VertexShader.cpp`), so it is the
+      oracle for the translation, while xemu stays the oracle for behaviour.
+      - [ ] **C6a. Device and surfaces.** D3D11 device, render targets for the
+            colour and zeta surfaces, the surface pitch/depth decodes and the
+            clear path, selected by `display.renderer = 'D3D11'`.
+      - [ ] **C6b. Textures and samplers.** Upload the guest's swizzled and
+            linear formats through the existing decoders, and map
+            TEXFILTER/TEXADDRESS (nearest, tent, the 1-2-1 convolution,
+            wrap/mirror/clamp/border) to sampler objects and shader code.
+      - [ ] **C6c. Shaders.** Emit HLSL for the combiner and the vertex
+            programs from the same intermediate state the GLSL generators read,
+            so the two backends cannot drift; transcribe the fixed-function
+            stage as the reference does.
+      - [ ] **C6d. Present into the shell.** The shell's sink expects BGRA
+            pixels in a shared section; the D3D11 backend must read back (or
+            share) the presented surface without changing the sink contract.
+      - [ ] **C6e. Shell option.** Add the renderer key to `GraphicsSettings`,
+            its validation (today `DIRECTX` is a rejected value), the Settings
+            hint and the tests that currently treat `directx` as unknown.
+      - [ ] **C6f. Parity.** The corpus rows (the `xgu` samples plus the
+            triangle and the dashboard) match the OpenGL leg under the
+            documented window-capture policy; no pixel-exact claim.
+      **Done when:** a Windows build with `CONFIG_D3D11` boots the dashboard and
+      the corpus rows with `display.renderer = 'D3D11'`, the shell offers the
+      option, and the build still works with Vulkan disabled.
+
 ---
 
 ## 5. Missing - packaging and distribution
@@ -275,7 +309,7 @@ The row number is the 0-based phase index in `docs/status.json`.
 | 8 Storage | 5 | 86% | - |
 | 9 XBE Loader | 3 | 90% | - |
 | 10 Kernel Interface | 2 | 5% | retired with the managed emulator |
-| 11 NV2A (GPU) | 15 | 94% | the shipped core owns this |
+| 11 NV2A (GPU) | 15 | 94% | the shipped core owns this; DirectX is C6 |
 | 12 APU (audio) | 4 | 95% | C3 verifies it end to end |
 | 13 USB & Controllers | 4 | 70% | P8 |
 | 14 Networking | 4 | 70% | P4 / C5 |
@@ -331,3 +365,7 @@ is in `docs/status.json`.
 5. **D1 + D2** - core in every archive and the dependency licences.
 6. **P2, P3, U2, U3, U4** - the rest of the everyday UX.
 7. **P4/P5/C5, P6, P7, P8, U6, U7, C1-C3, D3, D4, Q4-Q6** - breadth.
+8. **C6** - the DirectX (D3D11) renderer. The largest single item in this
+   plan; start it only after C1/C2 have settled how the renderers are built,
+   and land it milestone by milestone (surfaces, textures, shaders, present,
+   shell option, parity) so every step is testable.
