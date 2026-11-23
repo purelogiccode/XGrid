@@ -495,6 +495,37 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Public command: writes the presented frame to the <c>screenshots</c>
+    /// folder as a PNG at the frame's own resolution.
+    /// </summary>
+    [RelayCommand]
+    private void SaveScreenshot()
+    {
+        if (FrameBitmap is null)
+        {
+            ShowToast(IsRunning ? "No frame captured yet." : "Power on the console first.");
+            return;
+        }
+
+        try
+        {
+            string directory = Path.Combine(SettingsStore.ResolveDirectory(), "screenshots");
+            _ = Directory.CreateDirectory(directory);
+            string path = ScreenshotNaming.NextPath(directory, DateTimeOffset.Now);
+            FrameBitmap.Save(path, PngBitmapEncoderOptions.Default);
+            AddLog(LogLevel.Info, "Screenshot saved to " + path);
+            ShowToast("Screenshot saved: " + Path.GetFileName(path));
+        }
+        catch (Exception exception) when (exception is IOException
+                                              or UnauthorizedAccessException
+                                              or NotSupportedException)
+        {
+            AddLog(LogLevel.Error, "Could not save the screenshot: " + exception.Message);
+            ShowToast("Could not save the screenshot.");
+        }
+    }
+
     /// <summary>Public command: starts a specific disc entry (or the configured disc).</summary>
     [RelayCommand]
     private void StartGame(GameEntry? game)

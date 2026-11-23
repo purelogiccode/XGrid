@@ -89,6 +89,11 @@ public partial class MainWindow : Window
         ExecuteShellCommand(static viewModel => viewModel.StopSessionCommand.Execute(null));
     }
 
+    private void OnMenuScreenshot(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.SaveScreenshotCommand.Execute(null));
+    }
+
     private void OnMenuToggleLogDock(object? sender, RoutedEventArgs e)
     {
         ExecuteShellCommand(static viewModel => viewModel.ToggleLogDockCommand.Execute(null));
@@ -221,6 +226,10 @@ public partial class MainWindow : Window
                 return;
             case Key.F5:
                 ExecuteShellCommand(static viewModel => viewModel.TogglePowerCommand.Execute(null));
+                e.Handled = true;
+                return;
+            case Key.F8:
+                ExecuteShellCommand(static viewModel => viewModel.SaveScreenshotCommand.Execute(null));
                 e.Handled = true;
                 return;
         }

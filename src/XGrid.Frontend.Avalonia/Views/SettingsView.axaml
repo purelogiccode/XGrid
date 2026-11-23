@@ -179,7 +179,7 @@
             <Border Classes="card">
               <StackPanel Spacing="16">
                 <StackPanel Spacing="3">
-                  <TextBlock Text="xemu core" Classes="h3" />
+                  <TextBlock Text="core" Classes="h3" />
                   <TextBlock Text="XGrid is the shell: the vendored xemu 0.8.139 core runs the console, its renderer and its devices."
                              Classes="hint" TextWrapping="Wrap" />
                 </StackPanel>
