@@ -104,7 +104,11 @@ is the checked-in equivalent of the workflow's publish job: for every RID it
 publishes both applications self-contained, strips symbols/docs, adds
 `COPYING`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, the release notes and `VERSION`,
 archives with fixed timestamps and writes `SHA256SUMS-<rid>.txt`,
-`SHA256SUMS.txt` and `package-manifest.json`. It runs the acceptance gate
+`SHA256SUMS.txt` and `package-manifest.json`. The `win-x64` frontend archive
+also carries the emulator under `core/xemu/` (the standalone core, the
+in-process library and their runtime DLLs), so that RID needs
+`scripts/build-native-xemu.ps1` to have produced `xemu/dist` first; pass
+`-SkipCore` only for a development archive. It runs the acceptance gate
 (`scripts/package-verify.ps1`) at the end unless `-NoVerify` is passed.
 
 ```powershell

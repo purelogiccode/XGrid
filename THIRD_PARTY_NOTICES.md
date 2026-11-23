@@ -42,6 +42,47 @@ Vendored inside the core additions:
 |---|---|---|---|
 | libchdr | 0.3.0 | BSD-3-Clause (Copyright Romain Tisserand) | CHD hunk decoding behind `block/xgridchd.c`; ships its LZMA decoder, zlib/zstd come from the host. |
 
+## Runtime libraries redistributed with the Windows core package
+
+The `win-x64` frontend archive carries the built core under `core/xemu/`
+(`xemu.exe`, `xgrid_core.dll`) together with the DLLs they import, as produced
+by the MSYS2/MINGW64 build. Those binaries are redistributed, so their licenses
+are recorded here. The core is GPL-2.0; these are its dependencies, not
+separate programs invoked by it.
+
+| Library | Files | License |
+|---|---|---|
+| SDL3 | `SDL3.dll` | Zlib |
+| GLib | `libglib-2.0-0.dll` | LGPL-2.1-or-later |
+| gettext runtime | `libintl-8.dll` | LGPL-2.1-or-later |
+| libiconv | `libiconv-2.dll` | LGPL-2.1-or-later |
+| PCRE2 | `libpcre2-8-0.dll` | BSD-3-Clause |
+| libepoxy | `libepoxy-0.dll` | MIT |
+| libsamplerate | `libsamplerate-0.dll` | BSD-2-Clause |
+| OpenSSL | `libcrypto-3-x64.dll`, `libssl-3-x64.dll` | Apache-2.0 |
+| libcurl | `libcurl-4.dll` | curl license (MIT-like) |
+| libssh2 | `libssh2-1.dll` | BSD-3-Clause |
+| libslirp | `libslirp-0.dll` | BSD-3-Clause |
+| zlib | `zlib1.dll` | Zlib |
+| Zstandard | `libzstd.dll` | BSD-3-Clause (dual-licensed with GPL-2.0) |
+| nghttp2 / nghttp3 / ngtcp2 | `libnghttp2-14.dll`, `libnghttp3-9.dll`, `libngtcp2-16.dll`, `libngtcp2_crypto_ossl-0.dll` | MIT |
+| libidn2 | `libidn2-0.dll` | LGPL-3.0-or-later |
+| libunistring | `libunistring-5.dll` | LGPL-3.0-or-later |
+| libpsl | `libpsl-5.dll` | MIT |
+| Brotli | `libbrotlicommon.dll`, `libbrotlidec.dll` | MIT |
+| GCC runtime | `libgcc_s_seh-1.dll`, `libstdc++-6.dll` | GPL-3.0-or-later WITH GCC-exception-3.1 |
+| winpthreads (mingw-w64) | `libwinpthread-1.dll` | MIT / BSD-3-Clause |
+
+`libidn2` and `libunistring` are LGPL-3.0-or-later. They are compatible because
+XGrid's own code and the core additions are **GPL-2.0-or-later**: the combined
+work is distributed under GPL-3.0-or-later where those libraries are included.
+The core's GPL-2.0-only files (xemu/QEMU) are used under GPL-2.0, which the
+GPL-3.0-or-later combination permits.
+
+The MSYS2 packages that provide these DLLs carry their full license texts;
+`docs/release-licensing-review.md` section 6 records shipping them as an
+operator action before a public release.
+
 ## Earlier native CPU extraction (retired 2026-11-23)
 
 The TCG i386 core from the pinned xemu 0.8.139 tree (QEMU 10.2.0 base),
