@@ -1,0 +1,36 @@
+--- a/ui/xemu-input.c
++++ b/ui/xemu-input.c
+@@ -29,6 +29,7 @@
+ #include "qemu/config-file.h"
+ 
+ #include "xemu-input.h"
++#include "../xgrid-core/input/xgrid-input.h"
+ #include "xemu-notifications.h"
+ #include "xemu-settings.h"
+ #include <stdio.h>
+@@ -512,6 +513,25 @@
+         return;
+     }
+ 
++    /* XGrid: port 1 comes from the shell when the input sink is enabled. */
++    if (xgrid_input_enabled() && state == bound_controllers[0]) {
++        uint32_t xg_buttons = 0;
++        int32_t xg_lx = 0, xg_ly = 0, xg_rx = 0, xg_ry = 0, xg_lt = 0, xg_rt = 0;
++        if (xgrid_input_read(&xg_buttons, &xg_lx, &xg_ly, &xg_rx, &xg_ry,
++                             &xg_lt, &xg_rt)) {
++            state->buttons = xg_buttons;
++            memset(state->axis, 0, sizeof(state->axis));
++            state->axis[CONTROLLER_AXIS_LSTICK_X] = xg_lx;
++            state->axis[CONTROLLER_AXIS_LSTICK_Y] = xg_ly;
++            state->axis[CONTROLLER_AXIS_RSTICK_X] = xg_rx;
++            state->axis[CONTROLLER_AXIS_RSTICK_Y] = xg_ry;
++            state->axis[CONTROLLER_AXIS_LTRIG] = xg_lt;
++            state->axis[CONTROLLER_AXIS_RTRIG] = xg_rt;
++            state->last_input_updated_ts = now;
++            return;
++        }
++    }
++
+     if (state->type == INPUT_DEVICE_SDL_KEYBOARD) {
+         xemu_input_update_sdl_kbd_controller_state(state);
+     } else if (state->type == INPUT_DEVICE_SDL_GAMEPAD) {

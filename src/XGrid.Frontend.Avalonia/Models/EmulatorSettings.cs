@@ -101,7 +101,7 @@ public sealed class EmulatorSettings
     /// Gets or sets a value indicating whether the core publishes frames to the
     /// shell (shared section, shell presents) instead of showing its own window.
     /// </summary>
-    public bool DisplaySink { get; init; } = true;
+    public bool DisplaySink { get; init; }
 
     /// <summary>
     /// Gets or sets the presentation filter (nearest, bilinear, scanline, crt).

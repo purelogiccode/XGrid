@@ -434,7 +434,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (Config.UsesXemuCore)
         {
-            // The core window owns the keyboard and any XInput pad directly.
+            ForwardCorePad(buttons, analog, sticks);
             return;
         }
 
@@ -442,6 +442,35 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _session.SetPad(buttons, analog, sticks);
         }
+    }
+
+    /// <summary>Maps the shell pad onto xemu's XID mask and publishes it to the core.</summary>
+    private void ForwardCorePad(ushort buttons, ReadOnlySpan<byte> analog, ReadOnlySpan<short> sticks)
+    {
+        if (!IsRunning || analog.Length < 8 || sticks.Length < 4)
+        {
+            return;
+        }
+
+        uint mask = 0;
+        if (analog[0] > 64) { mask |= 1u << 0; }  // A
+        if (analog[1] > 64) { mask |= 1u << 1; }  // B
+        if (analog[2] > 64) { mask |= 1u << 2; }  // X
+        if (analog[3] > 64) { mask |= 1u << 3; }  // Y
+        if ((buttons & 0x0004) != 0) { mask |= 1u << 4; } // LEFT
+        if ((buttons & 0x0001) != 0) { mask |= 1u << 5; } // UP
+        if ((buttons & 0x0008) != 0) { mask |= 1u << 6; } // RIGHT
+        if ((buttons & 0x0002) != 0) { mask |= 1u << 7; } // DOWN
+        if ((buttons & 0x0020) != 0) { mask |= 1u << 8; } // BACK
+        if ((buttons & 0x0010) != 0) { mask |= 1u << 9; } // START
+        if (analog[5] > 64) { mask |= 1u << 10; } // WHITE
+        if (analog[4] > 64) { mask |= 1u << 11; } // BLACK
+        if ((buttons & 0x0040) != 0) { mask |= 1u << 12; } // LTHUMB
+        if ((buttons & 0x0080) != 0) { mask |= 1u << 13; } // RTHUMB
+
+        int lt = analog[6] * 32767 / 255;
+        int rt = analog[7] * 32767 / 255;
+        _core.SetPad(mask, sticks[0], sticks[1], sticks[2], sticks[3], lt, rt);
     }
 
     /// <summary>

@@ -143,6 +143,11 @@ public sealed class XemuCoreProcess : IDisposable
             startInfo.Environment["XGRID_DISPLAY_SHM"] = _settings.DisplaySinkName;
         }
 
+        if (!string.IsNullOrWhiteSpace(_settings.InputSinkName))
+        {
+            startInfo.Environment["XGRID_INPUT_SHM"] = _settings.InputSinkName;
+        }
+
         try
         {
             _process = Process.Start(startInfo)
@@ -171,6 +176,12 @@ public sealed class XemuCoreProcess : IDisposable
     /// <returns>The window handle, or <see cref="IntPtr.Zero"/>.</returns>
     public IntPtr TryFindWindow()
     {
+        if (_window != IntPtr.Zero && !Win32Window.IsWindow(_window))
+        {
+            // The core recreated its window during start-up; look again.
+            _window = IntPtr.Zero;
+        }
+
         if (_window == IntPtr.Zero && IsRunning)
         {
             _window = XemuWindowLocator.Find(ProcessId);

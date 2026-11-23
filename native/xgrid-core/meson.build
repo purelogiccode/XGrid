@@ -47,3 +47,6 @@ block_ss.add(files('block/xgridchd.c'))
 
 # Host display sink (frames to a named shared section; no SDL presentation).
 system_ss.add(files('display/xgrid-display.c'))
+
+# Host input source (port 1 pad from the shell).
+system_ss.add(files('input/xgrid-input.c'))

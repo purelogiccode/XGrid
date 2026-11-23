@@ -203,6 +203,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     private KeyedOption? _selectedRenderer;
 
     [ObservableProperty]
+    private bool _displaySink;
+
+    [ObservableProperty]
     private KeyedOption? _selectedFilter;
 
     [ObservableProperty]
@@ -336,6 +339,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             option => string.Equals(option.Key, settings.Core, StringComparison.Ordinal))
             ?? CoreOptions[0];
         XemuCorePath = settings.XemuCorePath;
+        DisplaySink = settings.DisplaySink;
         SelectedFilter = FilterOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Filter, StringComparison.Ordinal))
             ?? FilterOptions[0];
@@ -397,6 +401,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             Renderer = SelectedRenderer?.Key ?? EmulatorSettings.RendererSoftware,
             Core = SelectedCore?.Key ?? EmulatorSettings.CoreManaged,
             XemuCorePath = XemuCorePath.Trim(),
+            DisplaySink = DisplaySink,
             Filter = SelectedFilter?.Key ?? FrameFilters.Nearest,
             EosQuirk = EosQuirk,
             NetworkBackend = SelectedNetwork?.Key ?? "loopback",
