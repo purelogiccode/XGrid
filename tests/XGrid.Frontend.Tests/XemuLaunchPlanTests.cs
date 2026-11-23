@@ -135,12 +135,12 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
-    public void Create_DefaultsToTheSeparateProcess()
+    public void Create_DefaultsToTheInProcessCore()
     {
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
             Settings(), null, 640, 480, Path.Combine(_root, "work"));
 
-        Assert.Equal(EmulatorSettings.CoreHostingProcess, launch.HostMode);
+        Assert.Equal(EmulatorSettings.CoreHostingInProcess, launch.HostMode);
     }
 
     [Fact]

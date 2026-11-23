@@ -24,7 +24,6 @@ public sealed class XemuInProcessCore : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int StartDelegate(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string configPath,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string? logPath,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? displaySink,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? inputSink,
         IntPtr extraArgv,
@@ -127,14 +126,12 @@ public sealed class XemuInProcessCore : IDisposable
     /// Starts the machine on the core's own thread.
     /// </summary>
     /// <param name="configPath">Generated xemu settings file.</param>
-    /// <param name="logPath">File for the core's own stdout/stderr, or null.</param>
     /// <param name="displaySink">Shared-section name for presented frames.</param>
     /// <param name="inputSink">Shared-section name for port 1.</param>
     /// <param name="extraArguments">Additional command-line arguments.</param>
     /// <returns>0 on success; a negative ABI status otherwise.</returns>
     public int Start(
         string configPath,
-        string? logPath,
         string? displaySink,
         string? inputSink,
         IReadOnlyList<string> extraArguments)
@@ -160,7 +157,7 @@ public sealed class XemuInProcessCore : IDisposable
                 }
             }
 
-            int status = _start(configPath, logPath, displaySink, inputSink, argv, extraArguments.Count);
+            int status = _start(configPath, displaySink, inputSink, argv, extraArguments.Count);
             _started = status == 0;
             return status;
         }

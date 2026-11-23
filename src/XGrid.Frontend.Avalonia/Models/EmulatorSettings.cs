@@ -44,7 +44,7 @@ public sealed class EmulatorSettings
     /// the shell loads the core library) or <c>process</c> (the core runs
     /// beside the shell, the stable default).
     /// </summary>
-    public string CoreHosting { get; set; } = CoreHostingProcess;
+    public string CoreHosting { get; set; } = CoreHostingInProcess;
 
     /// <summary>Hosting mode that loads the core into the shell's process.</summary>
     public const string CoreHostingInProcess = "in-process";
@@ -218,9 +218,9 @@ public sealed class EmulatorSettings
     public void Normalize()
     {
         RamMb = RamMb is 128 ? 128 : 64;
-        CoreHosting = string.Equals(CoreHosting, CoreHostingInProcess, StringComparison.OrdinalIgnoreCase)
-            ? CoreHostingInProcess
-            : CoreHostingProcess;
+        CoreHosting = string.Equals(CoreHosting, CoreHostingProcess, StringComparison.OrdinalIgnoreCase)
+            ? CoreHostingProcess
+            : CoreHostingInProcess;
         Filter = Services.FrameFilters.Normalize(Filter);
         Input ??= new InputSettings();
         Graphics ??= new GraphicsSettings();

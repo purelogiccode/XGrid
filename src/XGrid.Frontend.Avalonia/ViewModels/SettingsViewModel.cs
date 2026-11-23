@@ -343,8 +343,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         FilterOptions = [.. FrameFilters.All.Select(item => new KeyedOption(item.Key, item.Label))];
         CoreHostingOptions =
         [
-            new KeyedOption(EmulatorSettings.CoreHostingProcess, "Separate process (recommended)"),
-            new KeyedOption(EmulatorSettings.CoreHostingInProcess, "In-process (experimental)"),
+            new KeyedOption(EmulatorSettings.CoreHostingInProcess, "In-process (recommended)"),
+            new KeyedOption(EmulatorSettings.CoreHostingProcess, "Separate process"),
         ];
         GamepadSourceOptions =
         [
@@ -581,7 +581,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             Audio = BuildAudioSettings(),
             XemuCorePath = XemuCorePath.Trim(),
             DisplaySink = DisplaySink,
-            CoreHosting = SelectedCoreHosting?.Key ?? EmulatorSettings.CoreHostingProcess,
+            CoreHosting = SelectedCoreHosting?.Key ?? EmulatorSettings.CoreHostingInProcess,
             Filter = SelectedFilter?.Key ?? FrameFilters.Nearest,
             Accent = SelectedAccent?.Key ?? "Emerald",
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],

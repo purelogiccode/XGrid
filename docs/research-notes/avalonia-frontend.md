@@ -309,11 +309,10 @@ Project-local usage notes and the shortcut table live in
 - The core is built twice from the same objects: `xemu/dist/xemu.exe` for the
   standalone path and `xemu/dist/xgrid_core.dll` for in-process hosting. The
   DLL exports the `xgrid_core_*` ABI in `xemu/xgrid-core/abi`.
-- Settings -> System -> Core hosting selects `Separate process (recommended)`
-  or `In-process (experimental)`. The default is the process; the in-process
-  library is built and loads, but the core's TCG `longjmp` path faults under the
-  managed runtime, so it is not the default yet. The shell falls back to the
-  process automatically when the DLL is missing or refuses to start.
+- Settings -> System -> Core hosting selects `In-process (recommended)` or
+  `Separate process`. In-process is the default: the emulator and the UI share
+  one process, and the shell falls back to the separate process automatically
+  when the DLL is missing or refuses to start.
 - The shell creates the display/input sections **before** starting the core,
   because an in-process core begins immediately. Sink names are passed to the
   ABI rather than through the environment: the DLL's CRT environment predates
@@ -323,7 +322,14 @@ Project-local usage notes and the shortcut table live in
   restarting the shell.
 - A DLL, not the EXE: the Windows loader initialises a DLL's CRT, which an EXE
   loaded with `LoadLibrary` does not do. The DLL links at a fixed image base
-  (0x150000000) with a 16 MB image stack and 8 MB QEMU threads. Its `_setjmp`
-  pair uses a NULL unwind frame so the CPU loop does not unwind through a
-  managed host's vectored exception handlers; that is necessary but not
-  sufficient, and the remaining TCG `longjmp` fault is the open item.
+  (0x150000000) with a 16 MB image stack and 8 MB QEMU threads.
+- The TCG `longjmp` fault is closed. msvcrt's `longjmp` rejected QEMU's jump
+  buffer inside a managed host (0xC0000409) although the buffer and stack were
+  valid, so `include/system/os-win32.h` now maps `sigsetjmp`/`siglongjmp` to
+  `RtlCaptureContext`/`RtlRestoreContext` and rewrites the captured `Rip`/`Rsp`
+  to the **caller's** frame — a setjmp-style call must resume in a frame that is
+  still alive. See `xemu/xgrid-core/README.md`.
+- `xgrid_core_start` does not redirect stdout/stderr: a loaded library shares
+  them with the shell, so the host owns the streams.
+- `--autostart` powers the console on as soon as the shell is ready, which is
+  how the shell's end-to-end checks drive it.

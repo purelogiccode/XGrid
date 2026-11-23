@@ -26,9 +26,8 @@ XGrid's core additions live in `xemu/xgrid-core/`, and the edits to upstream
 files are recorded in `xemu/xemu-patches/`. A new xemu release is a patch
 rebase rather than a re-port. The core is built twice from the same objects:
 `xemu/dist/xemu.exe` for the standalone path and `xemu/dist/xgrid_core.dll` for
-the shell's **in-process** hosting (Settings → System → Core hosting; the
-separate process remains the stable default while the in-process path is
-experimental). xemu and QEMU are credited here and in
+the shell's **in-process** hosting, the default (Settings → System → Core hosting; the
+separate process is the fallback and a setting). xemu and QEMU are credited here and in
 `THIRD_PARTY_NOTICES.md`; the release ships the core source and our patches.
 
 The earlier program — a **full source port of xemu to managed C#** — is now the

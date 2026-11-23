@@ -22,7 +22,7 @@ public sealed record XemuLaunchSettings
     /// Gets the hosting mode: <c>in-process</c> loads <c>xgrid_core.dll</c>
     /// beside the executable, <c>process</c> starts the executable.
     /// </summary>
-    public string HostMode { get; init; } = "process";
+    public string HostMode { get; init; } = "in-process";
 
     /// <summary>Gets the MCPX boot ROM image (512 bytes, <c>mcpx_1.0.bin</c>).</summary>
     public string BootRomPath { get; init; } = string.Empty;
