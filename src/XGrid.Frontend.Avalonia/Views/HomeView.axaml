@@ -5,390 +5,157 @@
              xmlns:views="using:XGrid.Frontend.Avalonia.Views"
              x:Class="XGrid.Frontend.Avalonia.Views.HomeView"
              x:DataType="vm:HomeViewModel">
-  <ScrollViewer Name="PageScroll">
-    <StackPanel Spacing="16">
-      <!-- ===================== Hero ===================== -->
-      <Border CornerRadius="18"
-              BorderBrush="{DynamicResource XgBorderBrush}"
-              BorderThickness="1"
-              Padding="24">
-        <Border.Background>
-          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-            <GradientStop Color="#13212E" Offset="0" />
-            <GradientStop Color="#0E1620" Offset="0.58" />
-            <GradientStop Color="#12291D" Offset="1" />
-          </LinearGradientBrush>
-        </Border.Background>
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="10" MaxWidth="620" HorizontalAlignment="Left">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Border Classes="pill">
-                <TextBlock Text="XBOX CONSOLE"
-                           FontSize="10"
-                           FontWeight="SemiBold"
-                           LetterSpacing="0.8"
-                           Foreground="{DynamicResource XgAccentBrush}" />
-              </Border>
-            </StackPanel>
+  <Grid Name="PageRoot" RowDefinitions="Auto,*,Auto" RowSpacing="10">
 
-            <TextBlock Text="{Binding Shell.HomeHeadline}" Classes="h1" />
-            <TextBlock Text="{Binding Shell.HomeDetail}"
-                       Classes="body"
-                       TextWrapping="Wrap"
-                       MaxWidth="540"
-                       HorizontalAlignment="Left" />
-
-            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
-              <Button Classes="primary" Command="{Binding TogglePowerCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <PathIcon Data="{x:Static local:AppIcons.Power}"
-                            Width="15"
-                            Height="15"
-                            Foreground="{DynamicResource XgAccentTextBrush}" />
-                  <TextBlock Text="{Binding Shell.PowerButtonText}"
-                             Foreground="{DynamicResource XgAccentTextBrush}"
-                             FontWeight="SemiBold" />
-                </StackPanel>
-              </Button>
-              <Button Classes="ghost" Command="{Binding ChooseDiscCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <PathIcon Data="{x:Static local:AppIcons.Disc}" Width="15" Height="15" />
-                  <TextBlock Text="Choose disc…" />
-                </StackPanel>
-              </Button>
-              <Button Classes="ghost"
-                      Command="{Binding SaveStateCommand}"
-                      IsVisible="{Binding Shell.IsRunning}"
-                      ToolTip.Tip="Save a .xgs snapshot (F8)">
-                <TextBlock Text="Save state" />
-              </Button>
-              <Button Classes="ghost"
-                      Command="{Binding LoadStateCommand}"
-                      IsVisible="{Binding Shell.IsRunning}"
-                      ToolTip.Tip="Load a .xgs snapshot (F9)">
-                <TextBlock Text="Load state" />
-              </Button>
-              <Button Classes="ghost"
-                      Command="{Binding OpenSettingsCommand}"
-                      IsVisible="{Binding ShowSetupWarning}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <PathIcon Data="{x:Static local:AppIcons.Settings}" Width="15" Height="15" />
-                  <TextBlock Text="Set up firmware" />
-                </StackPanel>
-              </Button>
-            </StackPanel>
+    <!-- ===================== Game view header ===================== -->
+    <Border Grid.Row="0" Background="{DynamicResource XgSurfaceBrush}"
+            BorderBrush="{DynamicResource XgBorderBrush}" BorderThickness="1"
+            CornerRadius="4" Padding="12,8">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="1" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Shell.CurrentGameTitle}" Classes="sectionTitle" FontSize="14" />
+          <TextBlock Text="{Binding Shell.HomeDetail}" Classes="caption" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <StackPanel Spacing="1" HorizontalAlignment="Right">
+            <TextBlock Text="SPEED" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
+            <TextBlock Text="{Binding Shell.Mips, StringFormat={}{0:0.0} MIPS}" Classes="mono" FontSize="11" />
           </StackPanel>
-
-          <StackPanel Grid.Column="1"
-                      Width="236"
-                      Spacing="7"
-                      Margin="28,0,0,0"
-                      VerticalAlignment="Center">
-            <TextBlock Text="SESSION" Classes="caption" />
-            <TextBlock Text="{Binding Shell.StatusText}" FontSize="22" FontWeight="SemiBold" />
-            <TextBlock Text="{Binding Shell.StatusDetail}"
-                       Classes="hint"
-                       MaxLines="2"
-                       TextTrimming="CharacterEllipsis" />
-            <Border Classes="divider" Margin="0,5" />
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="Speed" Classes="caption" />
-              <TextBlock Grid.Column="1"
-                         Text="{Binding Shell.Mips, StringFormat={}{0:0.0} MIPS}"
-                         Classes="mono" FontSize="11" />
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="Steps" Classes="caption" />
-              <TextBlock Grid.Column="1"
-                         Text="{Binding Shell.Steps, StringFormat={}{0:N0}}"
-                         Classes="mono" FontSize="11" />
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="Frames" Classes="caption" />
-              <TextBlock Grid.Column="1"
-                         Text="{Binding Shell.Frames, StringFormat={}{0:N0}}"
-                         Classes="mono" FontSize="11" />
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="FPS" Classes="caption" />
-              <TextBlock Grid.Column="1"
-                         Text="{Binding Shell.Fps, StringFormat={}{0:0.0}}"
-                         Classes="mono" FontSize="11" />
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="EIP" Classes="caption" />
-              <TextBlock Grid.Column="1" Text="{Binding Shell.Eip}" Classes="mono" FontSize="11" />
-            </Grid>
+          <StackPanel Spacing="1" HorizontalAlignment="Right">
+            <TextBlock Text="FRAMES" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
+            <TextBlock Text="{Binding Shell.Frames, StringFormat={}{0:N0}}" Classes="mono" FontSize="11" />
           </StackPanel>
-        </Grid>
-      </Border>
+          <StackPanel Spacing="1" HorizontalAlignment="Right">
+            <TextBlock Text="FPS" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
+            <TextBlock Text="{Binding Shell.Fps, StringFormat={}{0:0.0}}" Classes="mono" FontSize="11" />
+          </StackPanel>
+          <Border Classes="badge" VerticalAlignment="Center">
+            <TextBlock Text="{Binding Shell.StatusText}" />
+          </Border>
+        </StackPanel>
+      </Grid>
+    </Border>
 
-      <!-- ===================== Setup warning ===================== -->
+    <!-- ===================== The picture ===================== -->
+    <Border Grid.Row="1"
+            Background="#050608"
+            BorderBrush="{DynamicResource XgBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            ClipToBounds="True"
+            MinHeight="320">
+      <Grid>
+        <Image Source="{Binding Shell.FrameBitmap}"
+               Stretch="Uniform"
+               RenderOptions.BitmapInterpolationMode="HighQuality" />
+
+        <!-- The xemu core paints into this native surface with its own
+             swapchain; the shell never copies a frame. -->
+        <views:XemuDisplayHost x:Name="CoreDisplay"
+                               IsVisible="{Binding Shell.ShowCoreDisplay}" />
+
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="12"
+                    IsVisible="{Binding !Shell.HasFrame}">
+          <Grid Width="64" Height="64">
+            <Ellipse Stroke="{DynamicResource XgBorderStrongBrush}" StrokeThickness="1.5" />
+            <Ellipse Stroke="{DynamicResource XgAccentBrush}"
+                     StrokeThickness="1.5"
+                     Width="46"
+                     Height="46"
+                     Opacity="0.7" />
+            <Path Data="M27 27 L49 49 M49 27 L27 49"
+                  Stroke="{DynamicResource XgAccentBrush}"
+                  StrokeThickness="2.6"
+                  StrokeLineCap="Round" />
+          </Grid>
+          <TextBlock Text="{Binding Shell.FramePlaceholder}"
+                     Classes="muted"
+                     TextAlignment="Center"
+                     HorizontalAlignment="Center" />
+          <TextBlock Text="{Binding Shell.DisplayCaption}"
+                     Classes="caption"
+                     HorizontalAlignment="Center" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ===================== Transport strip ===================== -->
+    <StackPanel Grid.Row="2" Spacing="8">
       <Border Classes="warning" IsVisible="{Binding ShowSetupWarning}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <PathIcon Data="{x:Static local:AppIcons.Warning}"
-                    Width="18"
-                    Height="18"
-                    VerticalAlignment="Top"
+                    Width="16"
+                    Height="16"
+                    VerticalAlignment="Center"
                     Foreground="{DynamicResource XgWarningBrush}" />
-          <StackPanel Grid.Column="1" Margin="12,0" Spacing="2">
-            <TextBlock Text="Firmware not configured" FontWeight="SemiBold" />
-            <TextBlock Classes="hint"
-                       Text="XGrid does not ship Microsoft firmware. Choose your own Xbox BIOS image before powering on." />
-          </StackPanel>
+          <TextBlock Grid.Column="1"
+                     Margin="10,0"
+                     VerticalAlignment="Center"
+                     Text="XGrid does not ship Microsoft firmware. Choose your own Xbox BIOS image before powering on." />
           <Button Grid.Column="2" Classes="ghost" Command="{Binding OpenSettingsCommand}" Content="Open settings" />
         </Grid>
       </Border>
 
-      <!-- ===================== Display + side column ===================== -->
-      <Grid ColumnDefinitions="2.15*,1*" ColumnSpacing="16">
-        <StackPanel Spacing="16">
-          <Border Classes="card" Padding="14">
-            <Grid RowDefinitions="*,Auto">
-              <Border Background="#05080C"
-                      CornerRadius="11"
-                      ClipToBounds="True"
-                      MinHeight="300"
-                      MaxHeight="430">
-                <Grid>
-                  <Image Source="{Binding Shell.FrameBitmap}"
-                          Stretch="Uniform"
-                          RenderOptions.BitmapInterpolationMode="HighQuality" />
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <Button Classes="accent" Command="{Binding TogglePowerCommand}"
+                  ToolTip.Tip="Power on or off (F5)">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <PathIcon Data="{x:Static local:AppIcons.Power}" Width="14" Height="14"
+                        Foreground="{DynamicResource XgAccentTextBrush}" />
+              <TextBlock Text="{Binding Shell.PowerButtonText}"
+                         Foreground="{DynamicResource XgAccentTextBrush}" FontWeight="SemiBold" />
+            </StackPanel>
+          </Button>
+          <Button Classes="chrome" Command="{Binding TogglePauseCommand}"
+                  IsEnabled="{Binding Shell.IsRunning}"
+                  ToolTip.Tip="Pause or resume (F6)">
+            <Panel>
+              <PathIcon Data="{x:Static local:AppIcons.Pause}" Width="13" Height="13"
+                        IsVisible="{Binding !Shell.IsPaused}" />
+              <PathIcon Data="{x:Static local:AppIcons.Play}" Width="13" Height="13"
+                        IsVisible="{Binding Shell.IsPaused}" />
+            </Panel>
+          </Button>
+          <Button Classes="chrome" Command="{Binding StopCommand}"
+                  IsEnabled="{Binding Shell.IsRunning}"
+                  ToolTip.Tip="Stop the console">
+            <PathIcon Data="{x:Static local:AppIcons.Stop}" Width="13" Height="13" />
+          </Button>
+          <Button Classes="chrome" Command="{Binding StepFrameCommand}"
+                  IsEnabled="{Binding Shell.IsPaused}"
+                  ToolTip.Tip="Advance one frame">
+            <TextBlock Text="Frame step" FontSize="11.5" />
+          </Button>
 
-                  <!-- The xemu core paints into this native surface with its own
-                       swapchain; the shell never copies a frame. -->
-                  <views:XemuDisplayHost x:Name="CoreDisplay"
-                                         IsVisible="{Binding Shell.ShowCoreDisplay}" />
+          <Border Width="1" Margin="6,4" Background="{DynamicResource XgBorderBrush}" />
 
-                  <StackPanel HorizontalAlignment="Center"
-                              VerticalAlignment="Center"
-                              Spacing="14"
-                              IsVisible="{Binding !Shell.HasFrame}">
-                    <Grid Width="76" Height="76">
-                      <Ellipse Stroke="{DynamicResource XgBorderStrongBrush}" StrokeThickness="1.5" />
-                      <Ellipse Stroke="{DynamicResource XgAccentBrush}"
-                               StrokeThickness="1.5"
-                               Width="56"
-                               Height="56"
-                               Opacity="0.7" />
-                      <Path Data="M27 27 L49 49 M49 27 L27 49"
-                            Stroke="{DynamicResource XgAccentBrush}"
-                            StrokeThickness="3"
-                            StrokeLineCap="Round" />
-                    </Grid>
-                    <TextBlock Text="{Binding Shell.FramePlaceholder}"
-                               Classes="muted"
-                               TextAlignment="Center"
-                               HorizontalAlignment="Center" />
-                    <TextBlock Text="{Binding Shell.DisplayCaption}"
-                               Classes="caption"
-                               HorizontalAlignment="Center" />
-                  </StackPanel>
-                </Grid>
-              </Border>
-
-              <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,12,4,0">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Classes="ghost icon"
-                          Command="{Binding TogglePauseCommand}"
-                          IsEnabled="{Binding Shell.IsRunning}"
-                          ToolTip.Tip="Pause or resume (F6)">
-                    <Panel>
-                      <PathIcon Data="{x:Static local:AppIcons.Pause}"
-                                Width="14"
-                                Height="14"
-                                IsVisible="{Binding !Shell.IsPaused}" />
-                      <PathIcon Data="{x:Static local:AppIcons.Play}"
-                                Width="14"
-                                Height="14"
-                                IsVisible="{Binding Shell.IsPaused}" />
-                    </Panel>
-                  </Button>
-                  <Button Classes="ghost icon"
-                          Command="{Binding StopCommand}"
-                          IsEnabled="{Binding Shell.IsRunning}"
-                          ToolTip.Tip="Power off">
-                    <PathIcon Data="{x:Static local:AppIcons.Stop}" Width="14" Height="14" />
-                  </Button>
-                  <Button Classes="ghost"
-                          Command="{Binding StepFrameCommand}"
-                          IsEnabled="{Binding Shell.IsPaused}"
-                          ToolTip.Tip="Advance one frame while paused (F7)">
-                    <TextBlock Text="Frame step" />
-                  </Button>
-                  <Button Classes="ghost"
-                          Command="{Binding StepInstructionsCommand}"
-                          IsEnabled="{Binding Shell.IsPaused}"
-                          ToolTip.Tip="Advance 1,000,000 instructions while paused (Shift+F7)">
-                    <TextBlock Text="Step" />
-                  </Button>
-                  <Button Classes="subtle" Command="{Binding ChooseDiscCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                      <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
-                      <TextBlock Text="Open disc" />
-                    </StackPanel>
-                  </Button>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            Spacing="8"
-                            VerticalAlignment="Center">
-                  <Border Background="{DynamicResource XgSurfaceAltBrush}"
-                          CornerRadius="6"
-                          Padding="8,3"
-                          IsVisible="{Binding Shell.HasFrame}">
-                    <TextBlock Text="{Binding Shell.Eip}" Classes="mono" FontSize="10.5" />
-                  </Border>
-                  <Ellipse Width="7"
-                           Height="7"
-                           VerticalAlignment="Center"
-                           Fill="{DynamicResource XgAccentBrush}"
-                           IsVisible="{Binding Shell.IsRunning}" />
-                  <TextBlock Text="{Binding Shell.StatusDetail}"
-                             Classes="caption"
-                             MaxWidth="320"
-                             TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </Grid>
-            </Grid>
-          </Border>
+          <Button Classes="chrome" Command="{Binding ChooseDiscCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <PathIcon Data="{x:Static local:AppIcons.Disc}" Width="13" Height="13" />
+              <TextBlock Text="Open disc" FontSize="11.5" />
+            </StackPanel>
+          </Button>
+          <Button Classes="chrome" Command="{Binding SaveStateCommand}" IsEnabled="{Binding Shell.IsRunning}">
+            <TextBlock Text="Save state" FontSize="11.5" />
+          </Button>
+          <Button Classes="chrome" Command="{Binding LoadStateCommand}" IsEnabled="{Binding Shell.IsRunning}">
+            <TextBlock Text="Load state" FontSize="11.5" />
+          </Button>
         </StackPanel>
 
-        <StackPanel Grid.Column="1" Spacing="16">
-          <!-- Current disc -->
-          <Border Classes="card">
-            <StackPanel Spacing="12">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <PathIcon Data="{x:Static local:AppIcons.Disc}"
-                          Width="14"
-                          Height="14"
-                          Foreground="{DynamicResource XgTextMutedBrush}" />
-                <TextBlock Text="CURRENT DISC" Classes="caption" />
-              </StackPanel>
-
-              <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasCurrentGame}">
-                <Border Width="44"
-                        Height="44"
-                        CornerRadius="10"
-                        Background="{DynamicResource XgAccentSoftBrush}">
-                  <PathIcon Data="{x:Static local:AppIcons.Disc}"
-                            Width="22"
-                            Height="22"
-                            Foreground="{DynamicResource XgAccentBrush}" />
-                </Border>
-                <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="2" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Shell.CurrentGameTitle}"
-                             FontWeight="SemiBold"
-                             TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding Shell.CurrentGameFormat}" Classes="caption" />
-                  <TextBlock Text="{Binding Shell.CurrentGameSize}" Classes="caption" />
-                </StackPanel>
-              </Grid>
-
-              <StackPanel Spacing="5" IsVisible="{Binding NoCurrentGame}">
-                <TextBlock Text="No disc inserted" Classes="muted" />
-                <TextBlock Text="Open an ISO or CHD image, or power on to reach the dashboard."
-                           Classes="hint" />
-              </StackPanel>
-
-              <Button Classes="ghost"
-                      Command="{Binding ChooseDiscCommand}"
-                      HorizontalAlignment="Stretch"
-                      HorizontalContentAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
-                  <TextBlock Text="Browse disc images" />
-                </StackPanel>
-              </Button>
-            </StackPanel>
-          </Border>
-
-          <!-- Recent games -->
-          <Border Classes="card">
-            <StackPanel Spacing="12">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="Recent" Classes="h3" />
-                <TextBlock Grid.Column="1"
-                           Text="{Binding Recent.Count, StringFormat={}{0} saved}"
-                           Classes="caption"
-                           VerticalAlignment="Center" />
-              </Grid>
-
-              <ItemsControl ItemsSource="{Binding Recent}" IsVisible="{Binding HasRecent}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate DataType="vm:GameListItem">
-                    <Button Classes="subtle"
-                            Command="{Binding LaunchCommand}"
-                            HorizontalContentAlignment="Stretch"
-                            Padding="6"
-                            Margin="0,0,0,2">
-                      <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Border Width="34"
-                                Height="34"
-                                CornerRadius="8"
-                                Background="{DynamicResource XgAccentSoftBrush}">
-                          <PathIcon Data="{x:Static local:AppIcons.Disc}"
-                                    Width="17"
-                                    Height="17"
-                                    Foreground="{DynamicResource XgAccentBrush}" />
-                        </Border>
-                        <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Spacing="1">
-                          <TextBlock Text="{Binding Title}"
-                                     FontSize="12.5"
-                                     TextTrimming="CharacterEllipsis" />
-                          <TextBlock Text="{Binding FormatText}" Classes="caption" FontSize="10" />
-                        </StackPanel>
-                        <PathIcon Grid.Column="2"
-                                  Data="{x:Static local:AppIcons.Play}"
-                                  Width="13"
-                                  Height="13"
-                                  VerticalAlignment="Center"
-                                  Foreground="{DynamicResource XgTextMutedBrush}" />
-                      </Grid>
-                    </Button>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-
-              <TextBlock IsVisible="{Binding NoRecent}"
-                         Text="No recent games yet. Open a disc image to get started."
-                         Classes="hint" />
-            </StackPanel>
-          </Border>
-
-          <!-- Keyboard hint -->
-          <Border Classes="card tight">
-            <StackPanel Spacing="10">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <PathIcon Data="{x:Static local:AppIcons.Keyboard}"
-                          Width="14"
-                          Height="14"
-                          Foreground="{DynamicResource XgTextMutedBrush}" />
-                <TextBlock Text="KEYBOARD PAD" Classes="caption" />
-              </StackPanel>
-              <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
-                <Border Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
-                  <TextBlock Text="Arrows" Classes="keycap" />
-                </Border>
-                <TextBlock Grid.Row="0" Grid.Column="1" Text="D-pad" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
-                <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
-                  <TextBlock Text="A S D F" Classes="keycap" />
-                </Border>
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="A / B / X / Y" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
-                <Border Grid.Row="2" Grid.Column="0" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
-                  <TextBlock Text="Enter · Back" Classes="keycap" />
-                </Border>
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="Start · Back" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
-                <Border Grid.Row="3" Grid.Column="0" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
-                  <TextBlock Text="Q E · Z C" Classes="keycap" />
-                </Border>
-                <TextBlock Grid.Row="3" Grid.Column="1" Text="White / black · triggers" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
-              </Grid>
-            </StackPanel>
-          </Border>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="6"
+                      IsVisible="{Binding Shell.HasCurrentGame}">
+            <TextBlock Text="{Binding Shell.CurrentGameTitle}" FontSize="11.5" />
+            <TextBlock Text="{Binding Shell.CurrentGameFormat}" Classes="caption" VerticalAlignment="Center" />
+          </StackPanel>
+          <TextBlock Text="{Binding Shell.Eip}" Classes="mono" FontSize="10.5"
+                     ToolTip.Tip="Guest instruction pointer" />
         </StackPanel>
       </Grid>
     </StackPanel>
-  </ScrollViewer>
+  </Grid>
 </UserControl>

@@ -245,6 +245,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets the current game title (or a console default).</summary>
     public string CurrentGameTitle => CurrentGame?.Title ?? "Xbox dashboard";
 
+    /// <summary>Gets a value indicating whether a disc is selected.</summary>
+    public bool HasCurrentGame => CurrentGame is not null;
+
     /// <summary>Gets the current game format label.</summary>
     public string CurrentGameFormat => CurrentGame?.FormatText ?? "No disc";
 
@@ -816,6 +819,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CurrentGameTitle));
         OnPropertyChanged(nameof(CurrentGameFormat));
         OnPropertyChanged(nameof(CurrentGameSize));
+        OnPropertyChanged(nameof(HasCurrentGame));
         OnPropertyChanged(nameof(HomeHeadline));
         OnPropertyChanged(nameof(HomeDetail));
     }
