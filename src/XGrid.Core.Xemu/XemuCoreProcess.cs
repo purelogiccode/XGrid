@@ -68,15 +68,15 @@ public sealed class XemuCoreProcess : IXemuCoreRuntime
         switch (settings.AudioBackend)
         {
             case "dsound":
-                arguments.Add("-audiodev");
+                arguments.Add("-audio");
                 arguments.Add("dsound");
                 break;
             case "none":
-                arguments.Add("-audiodev");
+                arguments.Add("-audio");
                 arguments.Add("none");
                 break;
             case "wav":
-                arguments.Add("-audiodev");
+                arguments.Add("-audio");
                 arguments.Add("wav,path=" + settings.AudioWavPath);
                 break;
         }
