@@ -4,18 +4,14 @@ using XGrid.Frontend.Avalonia.ViewModels;
 
 namespace XGrid.Frontend.Avalonia.Views;
 
-/// <summary>Console home and live display.</summary>
+/// <summary>Console view: the game picture, the transport strip and the core display.</summary>
 public partial class HomeView : UserControl
 {
-    /// <summary>Creates the home view and wires the native core display.</summary>
+    /// <summary>Creates the view and wires the native core display.</summary>
     public HomeView()
     {
         InitializeComponent();
-        AttachedToVisualTree += (_, _) =>
-        {
-            PageScroll.ScrollToHome();
-            CoreDisplay.PublishGeometry();
-        };
+        AttachedToVisualTree += (_, _) => CoreDisplay.PublishGeometry();
         CoreDisplay.GeometryChanged += OnCoreDisplayGeometryChanged;
         CoreDisplay.GeometryLost += OnCoreDisplayGeometryLost;
     }
