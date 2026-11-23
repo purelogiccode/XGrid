@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Text;
 
 namespace XGrid.Core.Xemu;
 
@@ -16,7 +14,6 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
     private readonly XemuLaunchSettings _settings;
     private readonly XemuInProcessCore _core;
     private readonly string _configPath;
-    private readonly string _logPath;
     private long _startedAt;
     private long _stoppedAt;
     private int? _exitCode;
@@ -31,7 +28,6 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
         _settings = settings;
         _core = core;
         _configPath = XemuCoreProcess.WriteConfiguration(settings);
-        _logPath = Path.Combine(settings.WorkingDirectory, "xgrid-core.log");
     }
 
     /// <summary>Gets the core version string.</summary>
@@ -92,7 +88,6 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
         IReadOnlyList<string> extra = XemuCoreProcess.BuildExtraArguments(_settings);
         int status = _core.Start(
             _configPath,
-            _logPath,
             _settings.DisplaySinkName,
             _settings.InputSinkName,
             extra);
@@ -133,28 +128,10 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
     /// <inheritdoc />
     public string ReadLogTail(int maxChars)
     {
-        try
-        {
-            using var stream = new FileStream(
-                _logPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-            long length = stream.Length;
-            int take = (int)Math.Min(length, Math.Max(0, maxChars));
-            stream.Seek(-take, SeekOrigin.End);
-            byte[] buffer = new byte[take];
-            int read = stream.Read(buffer, 0, take);
-            return Encoding.UTF8.GetString(buffer, 0, read);
-        }
-        catch (IOException)
-        {
-            return string.Empty;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return string.Empty;
-        }
+        // The in-process core shares the shell's streams and keeps no log file
+        // of its own; the shell's activity log carries the session messages.
+        _ = maxChars;
+        return string.Empty;
     }
 
     /// <inheritdoc />

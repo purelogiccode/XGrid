@@ -228,7 +228,7 @@
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="2">
                     <TextBlock Text="Core hosting" Classes="label" />
-                    <TextBlock Text="Separate process runs the core beside the shell (the stable default). In-process loads the core library into the shell; it is experimental because the core's CPU loop is sensitive to the host runtime."
+                    <TextBlock Text="In-process loads the core library into the shell, so the emulator and the UI share one process. Separate process runs the core beside the shell; choose it if a crashing core must not take the shell down."
                                Classes="hint" TextWrapping="Wrap" />
                   </StackPanel>
                   <ComboBox Grid.Column="1"

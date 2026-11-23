@@ -919,6 +919,43 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
 
+**Session 2026-11-23 (sixty-first; the in-process core runs - the TCG `longjmp`
+fault is closed and one process hosts the shell and the emulator).**
+
+- **The fault.** In a .NET host the first `cpu_io_recompile` -> `cpu_loop_exit`
+  -> `siglongjmp` raised `0xC0000409` inside `msvcrt!longjmp`. Instrumentation
+  proved the jump buffer and the target stack were valid (`rip` in
+  `cpu_exec_setjmp`, `rsp` inside the thread's stack), so msvcrt was rejecting a
+  buffer it should accept. The native host never faulted.
+- **The fix (`xemu/include/system/os-win32.h` + `xemu/util/oslib-win32.c`).**
+  `sigsetjmp`/`siglongjmp` now map to `xgrid_sigsetjmp`/`xgrid_siglongjmp`, built
+  on `RtlCaptureContext`/`RtlRestoreContext`. The captured `Rip`/`Rsp` point
+  inside the shim, whose frame is reused as soon as it returns, so the shim
+  rewrites them to the **caller's** return address, stack pointer and frame
+  pointer and delivers the value in `Rax`. Two bugs on the way: a TLS-based
+  value still resumed in the dead frame (the caller overwrites the shadow
+  space), and the first version never returned non-zero from `sigsetjmp`, which
+  skipped `cpu_exec_longjmp_cleanup` and tripped the BQL assertion
+  (`bql_lock_impl: !bql_locked()`).
+- **The ABI no longer redirects the host's streams.** `xgrid_core_start` had
+  `freopen`'d stderr/stdout onto a log file; a loaded library shares them with
+  the shell, so the shell's own output landed in a 224 MB "core log". The
+  `log_path` parameter is gone from the ABI and the shell owns its streams.
+- **In-process is the default.** Settings -> System -> Core hosting offers
+  `In-process (recommended)` and `Separate process`; the shell falls back to the
+  process when the DLL is missing or refuses to start.
+- **`--autostart`** powers the console on when the shell is ready, which is how
+  the end-to-end checks drive the app without synthetic input.
+- **Evidence.** `xgrid_core.dll` under PowerShell: `frames=29 1280x960`,
+  `stopped running=0`, `join=0`. Through the real shell with
+  `data/test-samples/corpus/triangle.iso`: in-process `childCoreProcesses=0`,
+  37.2 s of CPU in the shell over 25 s; separate process
+  `childCoreProcesses=1`, 36.0 s in the child and 0.1 s in the shell.
+  `xemu/dist/xemu.exe` still boots. Solution build 0 warnings, suite 2,249
+  green, `dotnet format --verify-no-changes` clean.
+- **Next.** Flip the release packaging to ship `xgrid_core.dll` beside the shell
+  and keep `xemu.exe` as the fallback; then the input/graphics settings audit.
+
 **Session 2026-11-23 (sixtieth; the vendored core is one tree and one build, and
 the in-process DLL is built but not the default).**
 

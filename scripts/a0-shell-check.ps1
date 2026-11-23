@@ -27,7 +27,7 @@ $settings = [ordered]@{
     DvdPath      = $Iso
     RamMb        = 64
     Core         = 'xemu'
-    XemuCorePath = $(if (Test-Path (Join-Path $root 'native/xemu/dist/xemu.exe')) { Join-Path $root 'native/xemu/dist/xemu.exe' } else { Join-Path $firmware 'xemu.exe' })
+    XemuCorePath = (Join-Path $root 'xemu/dist/xemu.exe')
 }
 $settings | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $data 'settings.json')
 
