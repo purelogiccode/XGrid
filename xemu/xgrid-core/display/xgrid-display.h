@@ -29,6 +29,12 @@
 bool xgrid_embed_enabled(void);
 
 /**
+ * Selects the shared-section sink by name instead of the environment. Used by
+ * the in-process core, whose CRT environment predates the shell's settings.
+ */
+void xgrid_display_set_sink(const char *name);
+
+/**
  * Returns true when a shared-section sink was requested in the environment.
  */
 bool xgrid_display_enabled(void);

@@ -4666,6 +4666,27 @@ foreach target : target_dirs
                link_args: link_args,
                win_subsystem: exe['win_subsystem'])
 
+    # XGrid: the shell loads the core in-process. A shared library gets a
+    # proper CRT initialisation from the loader, which an EXE loaded with
+    # LoadLibrary does not. It links the same objects as the emulator.
+    if host_os == 'windows' and target == 'i386-softmmu' and exe['win_subsystem'] == 'windows'
+      # Keep SEH unwind data: a hosted DLL's longjmp unwinds through the
+      # host's exception machinery, unlike the standalone binary.
+      xgrid_core_link_args = []
+      foreach arg : link_args
+        if arg != '-Wl,--no-seh'
+          xgrid_core_link_args += arg
+        endif
+      endforeach
+      xgrid_core = shared_library('xgrid_core',
+                    objects: lib.extract_all_objects(recursive: true),
+                    dependencies: arch_deps + exe['dependencies'],
+                    link_depends: [block_syms, qemu_syms],
+                    link_args: xgrid_core_link_args + ['-Wl,--image-base,0x150000000', '-Wl,--stack,16777216'],
+                    c_args: c_args,
+                    name_prefix: '')
+    endif
+
     if host_os == 'darwin'
       icon = 'pc-bios/qemu.rsrc'
       build_input = [emulator, files(icon)]

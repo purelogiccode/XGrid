@@ -48,6 +48,7 @@
 #include "xemu-snapshots.h"
 #include "xemu-version.h"
 #include "xemu-os-utils.h"
+#include "xemu-run.h"
 
 #include "data/xemu_64x64.png.h"
 
@@ -124,6 +125,14 @@ static QEMUTimer *vblank_timer;
 static QemuThread vblank_thread;
 static bool qemu_exiting;
 static int exit_status;
+
+/*
+ * Set by xgrid_core_start(): the process owns the UI, so this run must not
+ * show modal dialogs and must report a startup failure to its caller instead
+ * of terminating the host.
+ */
+static bool xemu_library_mode;
+static bool xemu_stop_requested;
 
 void tcg_register_init_ctx(void); // tcg.c
 
@@ -1011,7 +1020,7 @@ static void poll_events(struct xemu_console *scon)
     xemu_main_loop_unlock();
 }
 
-static void display_very_early_init(DisplayOptions *o)
+static bool display_very_early_init(DisplayOptions *o)
 {
 #ifdef __linux__
     /* SDL3 falls back to XWayland on compositors without fifo-v1 [1],
@@ -1026,7 +1035,7 @@ static void display_very_early_init(DisplayOptions *o)
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fprintf(stderr, "Failed to initialize SDL video subsystem: %s\n",
                 SDL_GetError());
-        exit(1);
+        return false;
     }
 
 #ifdef SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR /* only available since SDL 2.0.8 */
@@ -1103,7 +1112,7 @@ static void display_very_early_init(DisplayOptions *o)
     if (m_window == NULL) {
         fprintf(stderr, "Failed to create main window: %s\n", SDL_GetError());
         SDL_Quit();
-        exit(1);
+        return false;
     }
     g_free(title);
     if (xgrid_embed_enabled()) {
@@ -1130,16 +1139,18 @@ static void display_very_early_init(DisplayOptions *o)
     }
 
     if (m_context == NULL) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-            "Unable to create OpenGL context",
-            "Unable to create OpenGL context. This usually means the\r\n"
-            "graphics device on this system does not support OpenGL 4.0.\r\n"
-            "\r\n"
-            "xemu cannot continue and will now exit.",
-            m_window);
+        if (!xemu_library_mode) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                "Unable to create OpenGL context",
+                "Unable to create OpenGL context. This usually means the\r\n"
+                "graphics device on this system does not support OpenGL 4.0.\r\n"
+                "\r\n"
+                "xemu cannot continue and will now exit.",
+                m_window);
+        }
         SDL_DestroyWindow(m_window);
         SDL_Quit();
-        exit(1);
+        return false;
     }
 
     int width, height, channels = 0;
@@ -1164,6 +1175,7 @@ static void display_very_early_init(DisplayOptions *o)
     // Initialize offscreen rendering context now
     nv2a_context_init();
     SDL_GL_MakeCurrent(NULL, NULL);
+    return true;
 }
 
 static void display_early_init(DisplayOptions *o)
@@ -1360,8 +1372,6 @@ static void init_sdl_app_metadata(void)
 
 int main(int argc, char **argv)
 {
-    QemuThread thread;
-
     setlocale(LC_NUMERIC, "C");
 
 #ifdef _WIN32
@@ -1388,6 +1398,21 @@ int main(int argc, char **argv)
     _set_error_mode(_OUT_TO_STDERR);
 #endif
 
+    return xemu_run(argc, argv, false);
+}
+
+/*
+ * Runs one machine to completion. `main` calls it for the standalone binary;
+ * xgrid_core_start() calls it from the shell's process. QEMU's global state is
+ * single-use, so a process may call this exactly once.
+ */
+int xemu_run(int argc, char **argv, bool library_mode)
+{
+    QemuThread thread;
+
+    setlocale(LC_NUMERIC, "C");
+    xemu_library_mode = library_mode;
+
     fprintf(stderr, "xemu_version: %s\n", xemu_version);
     fprintf(stderr, "xemu_commit: %s\n", xemu_commit);
     fprintf(stderr, "xemu_date: %s\n", xemu_date);
@@ -1411,11 +1436,13 @@ int main(int argc, char **argv)
     if (!xemu_settings_load()) {
         const char *err_msg = xemu_settings_get_error_message();
         fprintf(stderr, "%s", err_msg);
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-            "Failed to load xemu config file", err_msg,
-            m_window);
+        if (!library_mode) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                "Failed to load xemu config file", err_msg,
+                m_window);
+        }
         SDL_Quit();
-        exit(1);
+        return 1;
     }
     atexit(xemu_settings_save);
 
@@ -1425,13 +1452,16 @@ int main(int argc, char **argv)
     }
 #endif
 
-    display_very_early_init(NULL);
+    if (!display_very_early_init(NULL)) {
+        return 1;
+    }
 
     qemu_sem_init(&display_init_sem, 0);
     qemu_sem_init(&display_shutdown_sem, 0);
     qemu_thread_create(&thread, "qemu_main", qemu_main,
                        NULL, QEMU_THREAD_JOINABLE);
     qemu_sem_wait(&display_init_sem);
+    fprintf(stderr, "xgrid-core: machine ready\n");
 
     gui_grab = 0;
     if (gui_fullscreen) {
@@ -1451,7 +1481,12 @@ int main(int argc, char **argv)
     xemu_main_loop_unlock();
 
     struct xemu_console *scon = &scon_list[0];
+    bool stop_sent = false;
     while (!qatomic_read(&qemu_exiting)) {
+        if (!stop_sent && qatomic_read(&xemu_stop_requested)) {
+            stop_sent = true;
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
+        }
         poll_events(scon);
         gl_render_frame(scon);
     }
@@ -1459,6 +1494,11 @@ int main(int argc, char **argv)
     qemu_thread_join(&thread);
     display_finalize();
     return exit_status;
+}
+
+void xemu_request_shutdown(void)
+{
+    qatomic_set(&xemu_stop_requested, true);
 }
 
 void xemu_eject_disc(Error **errp)

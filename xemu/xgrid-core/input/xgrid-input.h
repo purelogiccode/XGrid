@@ -28,6 +28,12 @@
 bool xgrid_input_enabled(void);
 
 /**
+ * Selects the shared-section source by name instead of the environment. Used
+ * by the in-process core, whose CRT environment predates the shell's settings.
+ */
+void xgrid_input_set_sink(const char *name);
+
+/**
  * Reads the latest pad state. The pointer arguments may be NULL.
  * Returns false while the shell has not published a state yet.
  */

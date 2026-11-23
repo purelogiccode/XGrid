@@ -41,6 +41,15 @@ typedef struct QemuEvent {
 #define QEMU_THREAD_JOINABLE 0
 #define QEMU_THREAD_DETACHED 1
 
+#ifdef _WIN32
+/*
+ * Stack reserve for QEMU threads. Zero keeps the host executable's default;
+ * an embedding host can raise it before starting the machine when its own
+ * default is too small for TCG.
+ */
+extern size_t qemu_thread_stack_size;
+#endif
+
 void qemu_mutex_init(QemuMutex *mutex);
 void qemu_mutex_destroy(QemuMutex *mutex);
 int TSA_NO_TSA qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file,

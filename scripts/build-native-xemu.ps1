@@ -38,6 +38,13 @@ $cleanStep
   --disable-vnc --disable-spice --disable-gtk --disable-sdl-image \
   --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools --disable-curl > $rootPosix/wt-data/xemu-build.log 2>&1
 status=`$?
+# The shell loads the core as a DLL so the loader initialises its CRT.
+if [ `$status -eq 0 ]; then
+  ninja -C build xgrid_core.dll >> $rootPosix/wt-data/xemu-build.log 2>&1 || status=`$?
+fi
+if [ `$status -eq 0 ]; then
+  cp -f build/xgrid_core.dll dist/
+fi
 # The packaging step copies DLLs it finds under /mingw64/bin; the slirp
 # subproject builds its own, so ship it beside the executable.
 cp -f build/subprojects/slirp/libslirp-0.dll dist/ 2>/dev/null || true
@@ -50,7 +57,10 @@ copy_deps() {
 }
 for pass in 1 2 3; do
   copy_deps build/qemu-system-i386w.exe
-  for d in dist/*.dll; do copy_deps "`$d"; done
+  for d in dist/*.dll; do
+    case "`$d" in *xgrid_core.dll) continue;; esac
+    copy_deps "`$d"
+  done
 done
 echo "EXIT=`$status" >> $rootPosix/wt-data/xemu-build.log
 exit `$status
