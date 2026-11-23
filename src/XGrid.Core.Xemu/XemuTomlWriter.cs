@@ -51,12 +51,15 @@ public static class XemuTomlWriter
         text.Append("show_notifications = false\n");
         text.Append('\n');
 
-        // Port 1 uses the keyboard controller: without a physical gamepad SDL
-        // leaves the port unbound, and when XGrid supplies input it overrides
-        // this source anyway.
-        text.Append("[input.bindings]\n");
-        text.Append("port1_driver = 'keyboard'\n");
-        text.Append('\n');
+        // Only when the shell supplies port 1: bind the keyboard controller so a
+        // controller exists without a gamepad. Otherwise the core keeps its own
+        // bindings, so a connected Xbox gamepad works as usual.
+        if (settings.UseHostInput)
+        {
+            text.Append("[input.bindings]\n");
+            text.Append("port1_driver = 'keyboard'\n");
+            text.Append('\n');
+        }
 
         text.Append("[audio]\n");
         text.Append("use_dsp = ").Append(Bool(settings.AudioDsp)).Append('\n');
