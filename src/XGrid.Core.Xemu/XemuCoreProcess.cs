@@ -184,7 +184,13 @@ public sealed class XemuCoreProcess : IDisposable
 
         if (_window == IntPtr.Zero && IsRunning)
         {
-            _window = XemuWindowLocator.Find(ProcessId);
+            // The embedded core opens a hidden window titled XGridCore; fall
+            // back to the visible-window search for an unpatched core.
+            _window = XemuWindowLocator.FindTitled(ProcessId, "XGridCore");
+            if (_window == IntPtr.Zero)
+            {
+                _window = XemuWindowLocator.Find(ProcessId);
+            }
         }
 
         return _window;
