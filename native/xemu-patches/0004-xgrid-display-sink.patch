@@ -28,9 +28,26 @@
  #ifdef _WIN32
      if (win32_dxgi_present_is_active()) {
          win32_dxgi_present_end_frame(g_config.display.window.vsync);
-@@ -1087,6 +1101,10 @@
+@@ -1076,6 +1090,12 @@
+ 
+     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+ 
++    /* XGrid embeds this window: create it hidden and give it a title the
++     * shell can find, so it never flashes as a top-level window. */
++    if (xgrid_embed_enabled()) {
++        window_flags |= SDL_WINDOW_HIDDEN;
++    }
++
+     // Create main window
+     m_window = SDL_CreateWindow(
+         title, window_width, window_height,
+@@ -1086,7 +1106,14 @@
+         exit(1);
      }
      g_free(title);
++    if (xgrid_embed_enabled()) {
++        SDL_SetWindowTitle(m_window, "XGridCore");
++    }
      SDL_SetWindowMinimumSize(m_window, min_window_width, min_window_height);
 +    if (xgrid_display_enabled()) {
 +        /* The shell presents the picture; keep the context but hide the window. */
