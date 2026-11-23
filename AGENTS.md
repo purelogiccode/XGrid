@@ -933,6 +933,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   still the behaviour oracle.
 - The plan's phase-11 row and the suggested order mention C6; the status gate
   stays green.
+
 **Session 2026-11-23 (sixty-eighth; the implementation plan is a checklist of
 what is missing).**
 
