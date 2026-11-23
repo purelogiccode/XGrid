@@ -4,8 +4,9 @@ Date reviewed: 2026-10-08; extended 2026-10-13 (Copetti, envytools, nv2a-trace, 
 2026-10-20 xemu 0.8.137 adopted as the primary snapshot; **2026-10-23 xemu 0.8.139
 adopted as the primary snapshot and XGrid relicensed to GPL-2.0 with a porting
 policy.**
-Policy: XGrid is **GPL-2.0** and may port source code from GPL-compatible
-reference projects. These notes record both factual hardware/format knowledge and
+Policy: XGrid's own code is **GPL-2.0-or-later** and may port source code from
+GPL-compatible reference projects. The vendored xemu tree under `xemu/` keeps
+its own GPL-2.0/LGPL/MIT notices. These notes record both factual hardware/format knowledge and
 the provenance of ported code. Every ported file keeps its original copyright and
 license notice and is listed in `THIRD_PARTY_NOTICES.md`; the binding rules are in
 `docs/porting-policy.md`.
@@ -15,8 +16,9 @@ license notice and is listed in `THIRD_PARTY_NOTICES.md`; the binding rules are 
 | Project | Version/Snapshot | Upstream | License | Code copied? |
 |---|---|---|---|---|
 | xemu | **0.8.139 (primary since 2026-10-23)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | **Yes — ported/derived where noted** |
-| xemu (prior snapshot) | 0.8.137 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | **Yes — ported/derived where noted** |
-| xemu (prior snapshot) | 0.8.136 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks |
+| xemu (prior snapshot) | 0.8.137 (no longer present in References2, 2026-11-23) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Historical cross-checks only |
+| xemu (prior snapshot) | 0.8.136 (no longer present in References2, 2026-11-23) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Historical cross-checks only |
+| xbased | 1.2.3 | https://github.com/crazyriddler/xbased | **GPL-3.0** | **No code** - facts/UI-architecture cross-check only (GPL-3.0 is not GPL-2.0-compatible) |
 | QEMU (xemu base) | 10.2.0 | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | **Yes — ported/derived where noted**; not embedded as a native dependency |
 | xemu-Playtest-v2 | local snapshot 2026-09 (QEMU 10.2.0 base) | xemu in-development fork (Sega Chihiro arcade bring-up); no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | **Yes — ported/derived where noted** |
@@ -61,11 +63,14 @@ the workflow.
 
 ## Restoring the vendored set (References2/)
 
-Downloaded 2026-10-12 (extract into `References2/`; GitHub zips carry these
-root folder names):
+Current set (9 reference folders, recorded in `docs/refs-manifest.json`;
+extract into `References2/`; GitHub zips carry these root folder names):
 - xemu 0.8.139 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.139.zip (primary)
-- xemu 0.8.137 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.137.zip (prior snapshot)
-- xemu 0.8.136 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip (prior snapshot)
+- xbased 1.2.3 - https://github.com/crazyriddler/xbased/releases/tag/v1.2.3
+  (GPL-3.0; facts/UI cross-check only, never ported)
+- xemu 0.8.137 / 0.8.136 - prior snapshots no longer present (removed before
+  2026-11-23); the 0.8.139 tree is the primary and the manifest no longer lists
+  them. Their historical notes remain in `docs/research-notes/xemu-0.8.137.md`.
 - QEMU 10.2.0 - the QEMU base vendored inside `xemu-0.8.139/`; upstream
   https://www.qemu.org (GPL-2.0). Do not add it as a separate native dependency.
 - xemu-Playtest-v2 — no upstream URL recorded (operator-supplied local snapshot); ask the operator.
@@ -92,7 +97,9 @@ root folder names):
 ## Per-project license detail
 
 ### xemu 0.8.139 (primary snapshot, adopted 2026-10-23)
-- QEMU 10.2.0 base; the 0.8.137 and 0.8.136 trees stay vendored as prior snapshots.
+- QEMU 10.2.0 base; the 0.8.137 and 0.8.136 trees were removed from
+  `References2/` before 2026-11-23 and are no longer part of the vendored set.
+  Their catalogued deltas remain in `docs/research-notes/xemu-0.8.137.md`.
 - License split is unchanged: top-level `COPYING` = GPL-2.0; `hw/xbox/**` per-file LGPL-2+ /
   MIT / GPL-2+; the `mcpx/apu/dsp/**` subtree (including `dsp_jit.c` and `interp/`) is
   GPL-2+, as are the GLSL shader generators. XGrid is GPL-2.0 and may port these files
@@ -166,7 +173,18 @@ root folder names):
 - Verdict: facts and port source. Ported files keep the GPL-2.0/LGPL-2.1+
   notices.
 
-### Copetti — Xbox Architecture (local snapshot)
+### xbased 1.2.3 (GPL-3.0; facts and UI cross-check only)
+- `References2/xbased-1.2.3/xbased-1.2.3/`; upstream
+  https://github.com/crazyriddler/xbased. The vendored README describes a
+  Vulkan NV2A renderer, an MCPX audio core and a console-style input mapping
+  UI (`native/app/ui/input_map.h`).
+- **License: GPL-3.0.** XGrid's own code is GPL-2.0-or-later, but a binary
+  that also contains a GPL-2.0-only xemu/QEMU file cannot be GPL-3.0. xbased is
+  a design/UI and behavior cross-check until the build-scoped audit clears every
+  compiled file as "or later"; record any borrowed fact here, never a copied
+  file.
+
+### Copetti - Xbox Architecture (local snapshot)
 - `References2/CopettiDocumentation/xbox-architecture.md` (+ `.html`, `images/`).
 - **CC BY 4.0** — the article's own "Copyright and permissions" section requires
   attribution (link to the article + license, per its guidelines); commercial use

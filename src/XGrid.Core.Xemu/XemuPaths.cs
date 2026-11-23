@@ -20,6 +20,12 @@ public static class XemuPaths
         get { return Path.Combine("core", "xemu", OperatingSystem.IsWindows() ? "xemu.exe" : "xemu"); }
     }
 
+    /// <summary>Relative path of the core built from the tracked <c>xemu/</c> tree.</summary>
+    public static string BuiltCoreRelativePath
+    {
+        get { return Path.Combine("xemu", "dist", OperatingSystem.IsWindows() ? "xemu.exe" : "xemu"); }
+    }
+
     /// <summary>Relative path of the development core (repository layout).</summary>
     public static string DevelopmentCoreRelativePath
     {
@@ -51,6 +57,16 @@ public static class XemuPaths
         if (File.Exists(packaged))
         {
             return Path.GetFullPath(packaged);
+        }
+
+        // The maintained core is built from the tracked xemu/ tree; prefer it
+        // over the prebuilt reference so a development run exercises the tree
+        // the solution actually edits.
+        string? built = FindUpwards(AppContext.BaseDirectory, BuiltCoreRelativePath)
+                        ?? FindUpwards(Environment.CurrentDirectory, BuiltCoreRelativePath);
+        if (built is not null)
+        {
+            return built;
         }
 
         return FindUpwards(AppContext.BaseDirectory, DevelopmentCoreRelativePath)

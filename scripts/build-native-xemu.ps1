@@ -1,7 +1,8 @@
-# Build the XGrid core (patched xemu 0.8.139) with MSYS2 MINGW64.
+# Build the maintained xemu core from the vendored, tracked tree (xemu/).
 #
-# The build tree is native/xemu; the output is native/xemu/dist, which the
-# shell launches exactly like the prebuilt 0.8.139 binary.
+# The tree at xemu/ is the source of truth: xemu 0.8.139 plus the XGrid
+# additions in xemu/xgrid-core and the patch record in xemu/xemu-patches.
+# The output is xemu/dist, which the shell launches as its core.
 param(
     [int]$Jobs = 12,
     [switch]$Clean
@@ -9,26 +10,33 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$tree = Join-Path $root 'native/xemu'
+$tree = Join-Path $root 'xemu'
 $log = Join-Path $root 'wt-data/xemu-build.log'
 if (-not (Test-Path $tree)) {
-    throw "Missing $tree; run scripts/sync-native-xemu.ps1 first."
+    throw "Missing $tree; the vendored tree is part of this repository."
 }
 
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
-# Our additions live in native/xgrid-core; meson cannot subdir() outside its
-# project, so refresh the generated copy inside the build tree first.
-robocopy (Join-Path $root 'native/xgrid-core') (Join-Path $tree 'xgrid-core') /E /NFL /NDL /NJH /NJS /NP | Out-Null
-if ($LASTEXITCODE -ge 8) { throw "robocopy (xgrid-core) failed with $LASTEXITCODE" }
+
+# Convert D:\repo\CSharp_XGrid to /d/repo/CSharp_XGrid for the MSYS2 shell.
+$drive = $root.Substring(0, 1).ToLowerInvariant()
+$rest = $root.Substring(2).Replace('\', '/')
+$rootPosix = "/$drive$rest"
+
 $cleanStep = if ($Clean) { 'rm -rf build' } else { '' }
 $script = @"
 export MSYSTEM=MINGW64
-export PATH=/c/cmake/bin:/mingw64/bin:/usr/bin:`$PATH
-cd /d/repos/CSharp_XGrid/native/xemu
+# xemu's build.sh drives `make`; this host has ninja but no make, so provide a
+# repo-local shim that forwards the same targets/options to ninja.
+mkdir -p $rootPosix/wt-data/bin
+printf '#!/bin/sh\nexec /mingw64/bin/ninja -C build "`$@"\n' > $rootPosix/wt-data/bin/make
+chmod +x $rootPosix/wt-data/bin/make
+export PATH=$rootPosix/wt-data/bin:/c/cmake/bin:/mingw64/bin:/usr/bin:`$PATH
+cd $rootPosix/xemu
 $cleanStep
 ./build.sh -j$Jobs --disable-werror --disable-docs --disable-guest-agent \
   --disable-vnc --disable-spice --disable-gtk --disable-sdl-image \
-  --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools --disable-curl > /d/repos/CSharp_XGrid/wt-data/xemu-build.log 2>&1
+  --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools --disable-curl > $rootPosix/wt-data/xemu-build.log 2>&1
 status=`$?
 # The packaging step copies DLLs it finds under /mingw64/bin; the slirp
 # subproject builds its own, so ship it beside the executable.
@@ -44,12 +52,12 @@ for pass in 1 2 3; do
   copy_deps build/qemu-system-i386w.exe
   for d in dist/*.dll; do copy_deps "`$d"; done
 done
-echo "EXIT=`$status" >> /d/repos/CSharp_XGrid/wt-data/xemu-build.log
+echo "EXIT=`$status" >> $rootPosix/wt-data/xemu-build.log
 exit `$status
 "@
 $scriptPath = Join-Path $root 'wt-data/build-xemu.sh'
 Set-Content -Path $scriptPath -Value $script -NoNewline
-& 'C:\msys64\usr\bin\bash.exe' -lc "bash '/d/repos/CSharp_XGrid/wt-data/build-xemu.sh'"
+& 'C:\msys64\usr\bin\bash.exe' -lc "bash '$rootPosix/wt-data/build-xemu.sh'"
 if ($LASTEXITCODE -ne 0) {
     Get-Content $log -Tail 30
     throw "Core build failed (see $log)."

@@ -1,8 +1,10 @@
 # Third-party notices and porting provenance
 
-XGrid is distributed under the GNU General Public License, version 2
-(`COPYING`).  This file records the reference projects used for facts and for
-ported source code, and the license of each.  A ported file carries its own
+XGrid's own source is distributed under the GNU General Public License,
+version 2 or later (`COPYING`, `LICENSE`).  The vendored xemu tree under
+`xemu/` keeps its own per-file GPL-2.0, LGPL-2.0-or-later, LGPL-2.1-or-later
+and MIT notices.  This file records the reference projects used for facts and
+for ported source code, and the license of each.  A ported file carries its own
 SPDX identifier and the original copyright notice at the top of the file.
 
 `References2/` is a development-only reference tree.  It is not part of the
@@ -12,13 +14,12 @@ XGrid build and is not redistributed with XGrid.
 
 | Project | Version / snapshot | Upstream | License | Use in XGrid |
 |---|---|---|---|---|
-| xemu | **0.8.139 (primary)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and ported source. The APU DSP port is derived from `hw/xbox/mcpx/apu/dsp/` (GPL-2+). |
-| xemu | 0.8.137 (prior) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks. |
-| xemu | 0.8.136 (prior) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks. |
-| QEMU (xemu base) | 10.2.0 (via xemu 0.8.139) | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | The xemu codebase, including its QEMU 10.2.0 base, is the maintained emulation core and is built from `native/xemu` (baseline + patches). QEMU is not linked as a separate library. |
+| xemu | **0.8.139 (vendored at `xemu/`)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | The maintained emulation core, tracked in `xemu/`. XGrid additions are in `xemu/xgrid-core/`; upstream edits are recorded in `xemu/xemu-patches/`. The APU DSP port is derived from `hw/xbox/mcpx/apu/dsp/` (GPL-2+). |
+| QEMU (xemu base) | 10.2.0 (via xemu 0.8.139) | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | The xemu codebase, including its QEMU 10.2.0 base, is the maintained emulation core and is built from `xemu/`. QEMU is not linked as a separate library. |
 | xemu-Playtest-v2 | local snapshot, QEMU 10.2.0 base | no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks only. |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | Facts and, where useful, ported source. |
 | xqemu | master | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | Facts and, where useful, ported source. |
+| xbased | 1.2.3 | https://github.com/crazyriddler/xbased | **GPL-3.0** | Facts and UI/architecture cross-check. Code may be ported only when the combined build is GPL-3.0-compatible; the build-scoped audit is pending, so no code is ported yet. |
 | envytools | master | https://github.com/envytools/envytools | MIT | Facts, register/method tables, GPU docs. |
 | nv2a-trace | master | https://github.com/XboxDev/nv2a-trace | MIT | Facts, pushbuffer decoder, texture-format tables. |
 | XboxDevWiki | offline dump 2026-10-12 | https://xboxdevwiki.net | No license declared | Facts only. |
@@ -27,12 +28,13 @@ XGrid build and is not redistributed with XGrid.
 ## The emulation core (decision A, 2026-11-23)
 
 XGrid runs the **xemu 0.8.139 codebase** (QEMU 10.2.0 base, GPL-2.0) as its
-emulation core. The baseline is not committed; `native/xemu/` is recreated from
-`References2/xemu-0.8.139` by `scripts/sync-native-xemu.ps1`. XGrid's own core
-additions live in `native/xgrid-core/` and the edits to upstream files live in
-`native/xemu-patches/` - both tracked in this repository, which is **not a
-GitHub fork**. The release ships the core source (or a written offer), the
-additions and the patches.
+emulation core. The tree is committed under `xemu/`; XGrid's own core
+additions live in `xemu/xgrid-core/` and the edits to upstream files are
+recorded in `xemu/xemu-patches/`. `References2/xemu-0.8.139` remains the
+pristine, read-only oracle and is never modified. The tree builds through
+`xemu/build.sh` (MSYS2/meson), driven by `scripts/build-native-xemu.ps1`; the
+solution carries `xemu/XGrid.Xemu.Tree.csproj` as the build anchor. The
+release ships the core source and the patches.
 
 Vendored inside the core additions:
 

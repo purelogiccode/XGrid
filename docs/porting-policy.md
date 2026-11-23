@@ -1,6 +1,6 @@
-# XGrid porting policy (GPL-2.0, C# frontend + maintained core)
+# XGrid porting policy (GPL-2.0-or-later, C# frontend + vendored core)
 
-Status: **2026-11-23, decision A.**  XGrid is GPL-2.0. The product emulator is
+Status: **2026-11-23, decision A.**  XGrid's own code is GPL-2.0-or-later. The product emulator is
 the maintained xemu 0.8.139 codebase (section 2c); the managed C# emulator is
 the oracle. Ported C# code still follows the rules below. `AGENTS.md`,
 `README.md`, `docs/research-notes/sources.md` and `THIRD_PARTY_NOTICES.md` are
@@ -8,15 +8,19 @@ the binding records.
 
 ## 1. License
 
-- XGrid is distributed under **GPL-2.0**; the full text is `COPYING`.
+- XGrid's own code is distributed under **GPL-2.0-or-later**; the full text is
+  `COPYING`.
 - A ported file keeps its original copyright notice and license.  Add
   `// SPDX-License-Identifier: <original>` at the top and a
   `// Ported from <project> <version> <path>` line below it.
 - Files that are GPL-2.0-or-later may be included under GPL-2.0; files that are
-  GPL-2.0-only stay GPL-2.0-only.  Do not relicense a ported file.  LGPL-2.0-or-later
-  files are included under GPL-2.0 through LGPL-2.0 section 3, as `LICENSE` states.
-- The project as a whole is GPL-2.0.  A distribution that contains a
-  GPL-2.0-only file is therefore GPL-2.0, not GPL-3.0.
+  GPL-2.0-only stay GPL-2.0-only.  Do not relicense a ported file.
+  LGPL-2.0-or-later and LGPL-2.1-or-later files are included under the GPL
+  through their section 3 election, as `LICENSE` states.
+- A binary that includes a GPL-2.0-only file is distributed under GPL-2.0.  If
+  the build-scoped audit proves every compiled file is "or later", the binary
+  may be distributed under GPL-3.0.  That audit is the only condition under
+  which GPL-3.0 code (xbased) may be linked into the core.
 - Update `THIRD_PARTY_NOTICES.md` and `docs/research-notes/sources.md` in the
   same change as the port.
 
@@ -53,17 +57,19 @@ section 2c, not embedded as an opaque library.
 
 ### 2c. The emulation core (decision A, 2026-11-23)
 
-The product emulator is the xemu 0.8.139 codebase, compiled from this repository:
+The product emulator is the xemu 0.8.139 codebase, committed in this repository:
 
-- `native/xemu/` is a disposable build tree recreated from
-  `References2/xemu-0.8.139` by `scripts/sync-native-xemu.ps1`.
-- `native/xgrid-core/` holds the C files XGrid adds (display sink, input source,
+- `xemu/` is the tracked tree: the 0.8.139 baseline, built by
+  `scripts/build-native-xemu.ps1`. `References2/xemu-0.8.139` remains the
+  pristine, read-only oracle.
+- `xemu/xgrid-core/` holds the C files XGrid adds (display sink, input source,
   block drivers) plus vendored dependencies (libchdr, BSD-3).
-- `native/xemu-patches/` holds the edits to upstream files; they stay small and
+- `xemu/xemu-patches/` holds the edits to upstream files; they stay small and
   rebasable.
-- The tree is **not a GitHub fork**; xemu is credited in `README.md` and
-  `THIRD_PARTY_NOTICES.md`.
-- Every addition is GPL-2.0 and ships with the release source offer.
+- `xemu/XGrid.Xemu.Tree.csproj` is the solution build anchor; the native build
+  is opt-in (`dotnet build -p:BuildXemuCore=true`).
+- The tree is credited in `README.md` and `THIRD_PARTY_NOTICES.md`.
+- Every addition is GPL-2.0-compatible and ships with the release source.
 
 The managed emulator remains in the tree as the oracle: the four 1B goldens,
 the ktest log and the test suite validate the core.

@@ -1,13 +1,16 @@
 # XGrid
 
-> **CI is disabled.** This repository is currently private and the account's
-> GitHub Free plan has no GitHub Actions available for it, so
+> **CI is disabled.** This repository is currently private, with public
+> publication planned (`docs/open-source.md`), and the account's GitHub Free
+> plan has no GitHub Actions available for it, so
 > `.github/workflows/` is manual-only. Every gate still runs — locally: see
-> [Build and test](#build-and-test) and `docs/ci.md`. The **GPL-2.0 licence is
-> open source**; the repository publication checklist is `docs/open-source.md`.
+> [Build and test](#build-and-test) and `docs/ci.md`. The **GPL-2.0-or-later
+> licence is open source**; the repository publication checklist is
+> `docs/open-source.md`.
 
-XGrid is a cross-platform original Xbox emulator. It is licensed under the
-**GNU General Public License, version 2** (`COPYING`).
+XGrid is a cross-platform original Xbox emulator. XGrid's own source is
+licensed under the **GNU General Public License, version 2 or later**
+(`COPYING`, `LICENSE`).
 
 **Architecture (operator decision 2026-11-23, "A"): XGrid is the shell and the
 xemu 0.8.139 codebase is the emulation core.** The emulator itself — QEMU TCG
@@ -17,12 +20,12 @@ re-implemented. XGrid provides the application: the Avalonia frontend, settings,
 library, per-title overrides, input mapping, snapshot orchestration, the
 diagnostics/corpus tooling and the packaging pipeline.
 
-This repository is an **independent project, not a GitHub fork**: `CSharp_XGrid`
-is canonical, xemu is vendored under `native/xemu/` (GPL-2.0) with XGrid's
-changes tracked as a patch set in `native/xemu-patches/`, so a new xemu release
-is a patch rebase rather than a re-port. xemu and QEMU are credited here and in
-`THIRD_PARTY_NOTICES.md`; the release ships their source (or a written offer)
-and our patches, as GPL-2.0 requires.
+This repository is the **single codebase**: the maintained xemu 0.8.139 tree
+is tracked under `xemu/` with its original per-file GPL/LGPL/MIT notices,
+XGrid's core additions live in `xemu/xgrid-core/`, and the edits to upstream
+files are recorded in `xemu/xemu-patches/`. A new xemu release is a patch
+rebase rather than a re-port. xemu and QEMU are credited here and in
+`THIRD_PARTY_NOTICES.md`; the release ships the core source and our patches.
 
 The earlier program — a **full source port of xemu to managed C#** — is now the
 **reference and oracle**, not the product path: the managed emulator
@@ -133,7 +136,8 @@ dotnet run --project src/XGrid.Frontend.Avalonia
 ```
 
 It provides power/stop for the embedded xemu core, a disc library, a settings
-surface (firmware, storage, guest memory, display filter), per-title overrides,
+surface (firmware, storage, guest memory, graphics renderer/resolution/filter,
+audio backend/DSP/volume, keyboard and gamepad bindings), per-title overrides,
 an activity log and runtime accent themes. `XGrid.Cli` remains the harness for
 the managed oracle and the automation scripts. See
 `src/XGrid.Frontend.Avalonia/README.md` and
@@ -160,9 +164,10 @@ their own legally obtained files.
 
 ## License
 
-XGrid is free software under the **GNU General Public License, version 2**.
-See `COPYING` for the full text and `LICENSE` for the project notice.
-Third-party reference projects and ported modules are recorded in
+XGrid's own source is free software under the **GNU General Public License,
+version 2 or later**. See `COPYING` for the full text and `LICENSE` for the
+project notice. The vendored xemu tree keeps its own GPL-2.0/LGPL/MIT notices;
+third-party reference projects and ported modules are recorded in
 `THIRD_PARTY_NOTICES.md`, `docs/porting-policy.md` and
 `docs/research-notes/sources.md`. Ported files keep their original copyright
 and license notices.

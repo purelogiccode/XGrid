@@ -3,29 +3,29 @@
 ## Reference-first process (required)
 
 Before implementing or debugging hardware behavior, **consult the reference projects first**
-to confirm layout, IDs, registers, and semantics. **XGrid is GPL-2.0**: extract facts and
-port code from GPL-compatible references where it speeds development, preserving every
-original copyright/license notice. The binding rules are `docs/porting-policy.md`; the
-provenance log is `THIRD_PARTY_NOTICES.md`; the **full-port ledger** is
-`docs/xemu-port-manifest.md` and the open-source status is `docs/open-source.md`.
-The project stays managed C# **except the CPU core**: the vendored xemu/QEMU TCG
-i386 core is the single native exception (program XCN0-XCN3, `libxgridcpu`);
-no QEMU machine, device, block layer or UI is embedded, and every other
-emulator module is managed C#. **C# first:** P/Invoke is allowed only for host
-APIs or OS facilities (OpenGL, XInput, executable memory for the raw JIT, host
-audio, the native CPU core) and every edge is inventoried in
-`docs/porting-policy.md` section 2. **The program is a full source port
-of xemu 0.8.139** (XFP: `ImplementationPlan.md` E1), playable titles first.
+to confirm layout, IDs, registers, and semantics. **XGrid's own code is
+GPL-2.0-or-later**: extract facts and port code from GPL-compatible references
+where it speeds development, preserving every original copyright/license notice.
+The binding rules are `docs/porting-policy.md`; the provenance log is
+`THIRD_PARTY_NOTICES.md`; the **full-port ledger** is `docs/xemu-port-manifest.md`
+and the open-source status is `docs/open-source.md`. **The product is the tracked
+xemu 0.8.139 core** (`xemu/`, with `xemu/xgrid-core` additions and
+`xemu/xemu-patches` edits) behind the managed C# shell; the managed C# emulator
+is the oracle. **C# first** for XGrid's own code: P/Invoke is allowed only for
+host APIs or OS facilities and every edge is inventoried in
+`docs/porting-policy.md` section 2. `References2/` is the read-only oracle set.
 
 - `References2/xemu-0.8.139` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A, APU/DSP). **Primary
-  source, adopted 2026-10-23** (0.8.137 and 0.8.136 stay vendored as prior snapshots). Key paths:
+  source, adopted 2026-10-23**; the 0.8.137/0.8.136 snapshots were removed from
+  `References2/` before 2026-11-23. Key paths:
   `hw/xbox/nv2a/` (GPU pipeline/registers), `hw/xbox/mcpx/` (APU/ACI/nvnet),
   `hw/xbox/mcpx/apu/dsp/` (GP/EP DSP interpreter + optional JIT),
   `hw/xbox/smbus_xbox_smc.c` (SMC protocol), `hw/xbox/xbox_pci.c` (PCI topology/IDs).
   The QEMU 10.2.0 base is vendored inside the same tree; QEMU algorithms may be
   ported to C# but QEMU is never linked.
-- `References2/xemu-0.8.137` / `xemu-0.8.136` — prior snapshots; use 0.8.139 unless a
-  regression needs the older behavior.
+- `References2/xemu-0.8.137` / `xemu-0.8.136` — prior snapshots, **no longer present**
+  in the workspace (removed before 2026-11-23); their catalogued deltas remain in
+  `docs/research-notes/xemu-0.8.137.md`. Use 0.8.139.
 - `References2/xemu-Playtest-v2` — **in-development xemu fork for Sega Chihiro (arcade)**
   on a QEMU 10.2.0 base. Its NV2A is the *tuned GPU* (`pgraph/cost.c`, `seed.c`,
   `writeback.c`, `gl/probe.c`, `glsl/uniform-cache.c`) with the un-tuned baseline at
@@ -33,6 +33,11 @@ of xemu 0.8.139** (XFP: `ImplementationPlan.md` E1), playable titles first.
   performance-track facts). Full `chihiro/` subsystem, `xid-light-gun.c`, new SMBus
   devices, 5 newer NV097 methods. Cross-check and port source; 0.8.139 stays the primary
   (see `docs/research-notes/xemu-playtest-v2.md`).
+- `References2/xbased-1.2.3` — **GPL-3.0**, facts and UI/architecture cross-check.
+  Code may be ported only when the build-scoped audit proves the combined build
+  is GPL-3.0-compatible; until then it is facts/UI only. Useful for the
+  console-style input mapping UI (`native/app/ui/input_map.h`), the Vulkan
+  renderer layout and the MCPX audio path; see `docs/research-notes/sources.md`.
 - `References2/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths);
   GPL-2.0, port source allowed with notices.
 - `References2/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
@@ -71,21 +76,19 @@ of xemu 0.8.139** (XFP: `ImplementationPlan.md` E1), playable titles first.
   console architecture essay (notes: `docs/research-notes/copetti.md`). Orientation /
   onboarding / design cross-check only — never a register-level oracle.
 
-**Porting policy (2026-10-23; amended 2026-11-22).** XGrid is GPL-2.0 and may
-port code from xemu, QEMU, Cxbx, xqemu, envytools and nv2a-trace. The project
-stays managed C# **except the CPU core**: the vendored xemu 0.8.139 / QEMU
-10.2.0 TCG i386 core is the single native exception (`libxgridcpu`, XCN0-XCN3);
-no QEMU machine, device, block layer or UI is embedded, and every other
-emulator module is managed C#. Port algorithms; do not embed a second
-emulator. A ported file keeps its original copyright/license notice, gets an
-SPDX line and a `Ported from <project> <version> <path>` line, and is recorded
-in `THIRD_PARTY_NOTICES.md` + `docs/research-notes/sources.md`. The full
-workflow is `docs/porting-policy.md`. **There is no license wall**: xemu and
-QEMU are GPL-2.0, the same license family as XGrid, so any bounded module may
-be ported as full managed C# with the provenance rules. The DSP port is the
-model; a CPU
-TCG port is *allowed* but is a sized option (D8), not a default - the raw emitter
-is already bit-exact and faster than xemu on the CPU-bound ktest.
+> **Layout (2026-11-23):** the maintained core is the tracked `xemu/` tree.
+> `native/xemu`, `native/xgrid-core` and `native/xemu-patches` in older notes
+> describe the pre-vendoring layout; those files now live in `xemu/`.
+
+**Porting policy (2026-10-23; amended 2026-11-23).** XGrid's own code is
+GPL-2.0-or-later and may port code from xemu, QEMU, Cxbx, xqemu, envytools and
+nv2a-trace. The vendored xemu tree keeps its own GPL-2.0/LGPL/MIT notices. A
+ported file keeps its original copyright/license notice, gets an SPDX line and
+a `Ported from <project> <version> <path>` line, and is recorded in
+`THIRD_PARTY_NOTICES.md` + `docs/research-notes/sources.md`. The full workflow
+is `docs/porting-policy.md`. **There is no license wall** for GPL-2.0-compatible
+code; GPL-3.0 code (xbased) requires the build-scoped audit that proves every
+compiled file is "or later".
 
 **Never delete, move, or rewrite anything inside `References2/` — no file, no subfolder,
 ever.** It is the vendored oracle set every wave depends on. It has been emptied twice:
@@ -194,8 +197,8 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-11-22 - full xemu port, playable first)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-11-22):** A3 / **A3 - Core: ZAR disc driver (entry form done; XDVDFS synthesizer for --iso archives)** (active, attempt 0).
-**Gameplay (A3):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - Operator decision 2026-11-22 (performance-first, binding): maximum performance is the primary objective; the operator then granted language freedom and chose Option A - XGrid is an enhanced C# frontend for a version of xemu that this repository maintains and evolves from 0.8.139, not an independent emulator and not a GitHub fork. The maintained core is (References2/xemu-0.8.139 baseline) + (native/xgrid-core additions) + (native/xemu-patches), rebuilt by scripts/sync-native-xemu.ps1 and scripts/build-native-xemu.ps1; README, THIRD_PARTY_NOTICES and porting-policy 2c record the arrangement. A0 (window embedding) is done: XGrid.Core.Xemu writes the core config, starts the process, finds its window and reparents it into the shell's display control; scripts/a0-shell-check.ps1 launches 007 from the library and reports one visible core child with a clean teardown. The shell now has the 5DO visual language (RPCS3-style neutral grey + #3DAEE9 blue), a File/Emulation/View/Help menu, an icon toolbar, a collapsible log dock, a status bar and a display-first console page. Real time CHD is landed: native/xgrid-core/block/xgridchd.c decodes hunks on demand through libchdr 0.3.0 (BSD-3, vendored), qemu-img reports format xgridchd and the true virtual size, qemu-io reads the XDVDFS descriptor, and scripts/chd-boot-check.ps1 boots Smashing Drive (USA) from a 44.6 MB CHD with no extraction. A2 is done: the core publishes frames into a named section and the shell presents them, the core reads the shell pad for port 1, and an embedded core creates its window hidden with the XGridCore title so there is no start-up flash. A3 is half done: entry-form ZAR archives play (qemu-img reports xgridzar, qemu-io reads the descriptor, xemu mounts it with format=xgridzar and the library lists .zar), while an --iso archive stores a file tree and needs an in-memory XDVDFS synthesizer - the next slice, with the format facts in docs/research-notes/zarchive-format.md. A4 has nearest/bilinear/scanline/CRT filters pinned by tests; integer scaling and per-title overrides remain. A5 release follows. The managed emulator remains the oracle: four accurate 1B goldens, the ktest log and the suite (2,279 tests) validate the core. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact.
+**Current status (2026-11-23):** A3 / **A3 - Core: ZAR disc driver (entry form done; XDVDFS synthesizer for --iso archives)** (active, attempt 0).
+**Gameplay (A3):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - Operator decision 2026-11-22 (performance-first, binding): maximum performance is the primary objective; the operator then granted language freedom and chose Option A - XGrid is an enhanced C# frontend for a version of xemu that this repository maintains and evolves from 0.8.139, not an independent emulator and not a GitHub fork. The maintained core is the tracked xemu/ tree (0.8.139 baseline + xemu/xgrid-core additions + xemu/xemu-patches), built by scripts/build-native-xemu.ps1; README, THIRD_PARTY_NOTICES and porting-policy 2c record the arrangement. A0 (window embedding) is done: XGrid.Core.Xemu writes the core config, starts the process, finds its window and reparents it into the shell's display control; scripts/a0-shell-check.ps1 launches 007 from the library and reports one visible core child with a clean teardown. The shell now has the 5DO visual language (RPCS3-style neutral grey + #3DAEE9 blue), a File/Emulation/View/Help menu, an icon toolbar, a collapsible log dock, a status bar and a display-first console page. Real time CHD is landed: xemu/xgrid-core/block/xgridchd.c decodes hunks on demand through libchdr 0.3.0 (BSD-3, vendored), qemu-img reports format xgridchd and the true virtual size, qemu-io reads the XDVDFS descriptor, and scripts/chd-boot-check.ps1 boots Smashing Drive (USA) from a 44.6 MB CHD with no extraction. A2 is done: the core publishes frames into a named section and the shell presents them, the core reads the shell pad for port 1, and an embedded core creates its window hidden with the XGridCore title so there is no start-up flash. A3 is half done: entry-form ZAR archives play (qemu-img reports xgridzar, qemu-io reads the descriptor, xemu mounts it with format=xgridzar and the library lists .zar), while an --iso archive stores a file tree and needs an in-memory XDVDFS synthesizer - the next slice, with the format facts in docs/research-notes/zarchive-format.md. A4 has nearest/bilinear/scanline/CRT filters pinned by tests; integer scaling and per-title overrides remain. A5 release follows. The managed emulator remains the oracle: four accurate 1B goldens, the ktest log and the suite (2,279 tests) validate the core. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
 **Phase score:** 79.65% (93.99 of 118). **Next:** A4 (Shell: graphic filters (nearest, bilinear, sharp-bilinear, integer scale, scanline, CRT)), A5 (Release: patched-core source offer, package gate, seven-title pass), A6 (Core: XDVDFS synthesizer for --iso ZArchive (file tree to a real disc)).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 23.

@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-22",
+  "generated": "2026-11-23",
   "source": "Generated from docs/status.json by scripts/status.ps1. The phase weights/done are the single source; ImplementationPlan.md's assessment table is checked against them.",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [

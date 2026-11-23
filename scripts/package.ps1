@@ -6,7 +6,7 @@ Builds the reproducible release tree for the CLI and the Avalonia frontend.
 This is the local, cross-platform replacement for the dormant `release.yml`
 publish job (`docs/ci.md`). For every runtime identifier it publishes the two
 applications self-contained and single-file, strips symbols and XML docs, adds
-the files a GPL-2.0 binary distribution must carry (`COPYING`, `LICENSE`,
+the files a GPL-2.0-or-later binary distribution must carry (`COPYING`, `LICENSE`,
 `THIRD_PARTY_NOTICES.md`, the release notes), writes `VERSION`, archives with
 fixed timestamps and sorted entries, and records SHA-256 sums plus a manifest.
 

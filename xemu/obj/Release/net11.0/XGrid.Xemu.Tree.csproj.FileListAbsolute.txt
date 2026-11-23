@@ -1,0 +1,13 @@
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xemu.Tree.GeneratedMSBuildEditorConfig.editorconfig
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xemu.Tree.csproj.CoreCompileInputs.cache
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xemu.Tree.sourcelink.json
+D:\repo\CSharp_XGrid\xemu\bin\Release\net11.0\XGrid.Xemu.Tree.deps.json
+D:\repo\CSharp_XGrid\xemu\bin\Release\net11.0\XGrid.Xemu.Tree.dll
+D:\repo\CSharp_XGrid\xemu\bin\Release\net11.0\XGrid.Xemu.Tree.pdb
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xemu.Tree.AssemblyInfoInputs.cache
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xemu.Tree.AssemblyInfo.cs
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xemu.Tree.dll
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\refint\XGrid.Xemu.Tree.dll
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xemu.Tree.pdb
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\ref\XGrid.Xemu.Tree.dll
+D:\repo\CSharp_XGrid\xemu\obj\Release\net11.0\XGrid.Xe.8D43EA6E.Up2Date
