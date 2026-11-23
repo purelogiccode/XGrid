@@ -30,6 +30,9 @@ public sealed class XemuCoreSession : IDisposable
     private readonly Lock _gate = new();
     private XemuCoreProcess? _process;
     private XemuWindowEmbedder? _embedder;
+    private XemuDisplaySink? _sink;
+    private Timer? _sinkTimer;
+    private ulong _lastFrameCounter;
     private Timer? _monitor;
     private IntPtr _displayHost;
     private int _displayWidth;
@@ -40,6 +43,9 @@ public sealed class XemuCoreSession : IDisposable
 
     /// <summary>Raised for each diagnostic line the shell should log.</summary>
     public event EventHandler<string>? Log;
+
+    /// <summary>Raised for each new frame the core publishes to the display sink.</summary>
+    public event EventHandler<XemuDisplayFrame>? FrameReady;
 
     /// <summary>Raised when the core process ends, by request or on its own.</summary>
     public event EventHandler<XemuCoreStoppedEventArgs>? Stopped;
@@ -126,6 +132,13 @@ public sealed class XemuCoreSession : IDisposable
             _stopping = false;
         }
 
+        if (!string.IsNullOrWhiteSpace(launch.DisplaySinkName))
+        {
+            _sink = new XemuDisplaySink(launch.DisplaySinkName);
+            _sinkTimer = new Timer(_ => PollSink(), null, 8, 8);
+            Log?.Invoke(this, "xemu core frames go to the shell surface.");
+        }
+
         Log?.Invoke(this, $"xemu core started (pid {process.ProcessId}).");
         _monitor = new Timer(_ => Poll(), null, 250, 250);
         TryEmbed();
@@ -194,6 +207,10 @@ public sealed class XemuCoreSession : IDisposable
 
         _monitor?.Dispose();
         _monitor = null;
+        _sink?.Dispose();
+        _sink = null;
+        _sinkTimer?.Dispose();
+        _sinkTimer = null;
         _embedder?.Dispose();
         _embedder = null;
         _process?.Dispose();
@@ -204,6 +221,12 @@ public sealed class XemuCoreSession : IDisposable
     {
         lock (_gate)
         {
+            if (_sink is not null)
+            {
+                // The shell presents the frames; there is nothing to embed.
+                return;
+            }
+
             XemuCoreProcess? process = _process;
             if (process is null || _displayHost == IntPtr.Zero || _embedder?.IsEmbedded == true)
             {
@@ -262,6 +285,28 @@ public sealed class XemuCoreSession : IDisposable
         catch (ObjectDisposedException)
         {
             // The shell disposed the session while the timer was queued.
+        }
+    }
+
+    private void PollSink()
+    {
+        XemuDisplaySink? sink = _sink;
+        if (sink is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (sink.TryRead(out XemuDisplayFrame frame) && frame.Counter != _lastFrameCounter)
+            {
+                _lastFrameCounter = frame.Counter;
+                FrameReady?.Invoke(this, frame);
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // The shell disposed the session while a read was queued.
         }
     }
 

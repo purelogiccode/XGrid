@@ -23,16 +23,27 @@ if ($LASTEXITCODE -ge 8) { throw "robocopy (xgrid-core) failed with $LASTEXITCOD
 $cleanStep = if ($Clean) { 'rm -rf build' } else { '' }
 $script = @"
 export MSYSTEM=MINGW64
-export PATH=/mingw64/bin:/usr/bin:`$PATH
+export PATH=/c/cmake/bin:/mingw64/bin:/usr/bin:`$PATH
 cd /d/repos/CSharp_XGrid/native/xemu
 $cleanStep
 ./build.sh -j$Jobs --disable-werror --disable-docs --disable-guest-agent \
   --disable-vnc --disable-spice --disable-gtk --disable-sdl-image \
-  --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools > /d/repos/CSharp_XGrid/wt-data/xemu-build.log 2>&1
+  --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools --disable-curl > /d/repos/CSharp_XGrid/wt-data/xemu-build.log 2>&1
 status=`$?
 # The packaging step copies DLLs it finds under /mingw64/bin; the slirp
 # subproject builds its own, so ship it beside the executable.
 cp -f build/subprojects/slirp/libslirp-0.dll dist/ 2>/dev/null || true
+# The packaging step misses transitive dependencies (libcurl pulls brotli,
+# idn2, nghttp2, pcre2, ...); copy the whole closure from the MinGW tree.
+copy_deps() {
+  ldd "`$1" 2>/dev/null | awk '{print `$3}' | grep -E '/mingw64/bin/' | while read -r dll; do
+    cp -f "`$dll" dist/ 2>/dev/null || true
+  done
+}
+for pass in 1 2 3; do
+  copy_deps build/qemu-system-i386w.exe
+  for d in dist/*.dll; do copy_deps "`$d"; done
+done
 echo "EXIT=`$status" >> /d/repos/CSharp_XGrid/wt-data/xemu-build.log
 exit `$status
 "@
