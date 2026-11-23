@@ -24,9 +24,6 @@ public sealed class TeeAudioBackend : IAudioBackend
         _sinks = sinks;
     }
 
-    /// <summary>Gets the sinks this backend fans out to.</summary>
-    public ReadOnlySpan<IAudioBackend> Sinks => _sinks;
-
     /// <inheritdoc/>
     public void Submit(ReadOnlySpan<byte> samples)
     {

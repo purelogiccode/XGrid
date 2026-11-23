@@ -500,13 +500,6 @@ public sealed class PshCombiner : ISnapshotable
         return scaled >= 128f ? (scaled - 256f) / 127f : scaled / 127f;
     }
 
-    /// <summary>Luminance companion of <see cref="Sign3"/> (xemu <c>sign3_to_0_to_1</c>).</summary>
-    // ReSharper disable once UnusedMember.Global
-    public static float Sign3To01(float x)
-    {
-        return x >= 0f ? x / 2f : 1f + (x / 2f);
-    }
-
     /// <summary>
     /// xemu <c>remapCubeTo2D</c>: maps a cube direction to 2D coordinates for
     /// a cube map unfolded into a 2D texture. The branch order and tie

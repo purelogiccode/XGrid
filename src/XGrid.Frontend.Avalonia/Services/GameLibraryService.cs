@@ -84,12 +84,4 @@ public static class GameLibraryService
                || extension.Equals(".xbe", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Returns the prettified display title for a path (no I/O).</summary>
-    // ReSharper disable once UnusedMember.Global
-    public static string TitleFromPath(string path)
-    {
-        string name = Path.GetFileNameWithoutExtension(path);
-        string cleaned = name.Replace('_', ' ').Replace('.', ' ').Trim();
-        return cleaned.Length == 0 ? name : cleaned;
-    }
 }

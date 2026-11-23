@@ -14,8 +14,6 @@ internal sealed class IdleSkipDetector(XboxCpu cpu)
 {
     internal const int DefaultMinIterations = 128;
     internal const int MaxBodyInstructions = 32;
-    // ReSharper disable once UnusedMember.Global
-    internal const int MaxBodyBytes = 128;
     private const int MaxWatchAddresses = 32;
     private const int MaxAccountedHeads = 128;
 

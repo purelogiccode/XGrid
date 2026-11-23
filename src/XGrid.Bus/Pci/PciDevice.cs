@@ -8,10 +8,6 @@ namespace XGrid.Bus.Pci;
 /// <summary>A PCI device with a standard 256-byte configuration header and up to six BARs.</summary>
 public class PciDevice : IXboxDevice, ISnapshotable
 {
-    /// <summary>All-ones value used by firmware to size a BAR.</summary>
-    // ReSharper disable once UnusedMember.Global
-    public const uint BarProbeValue = 0xFFFFFFFFu;
-
     private readonly byte[] _config = new byte[256];
     private readonly PciBar?[] _bars = new PciBar?[6];
 

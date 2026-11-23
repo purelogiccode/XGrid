@@ -12,6 +12,7 @@ using XGrid.Cpu;
 using XGrid.Graphics;
 using XGrid.Host;
 using XGrid.Memory;
+using XGrid.XboxFs;
 
 namespace XGrid.Cli;
 

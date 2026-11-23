@@ -84,24 +84,9 @@ public partial class MainWindow : Window
         ExecuteShellCommand(static viewModel => viewModel.TogglePowerCommand.Execute(null));
     }
 
-    private void OnMenuPause(object? sender, RoutedEventArgs e)
-    {
-        ExecuteShellCommand(static viewModel => viewModel.TogglePauseCommand.Execute(null));
-    }
-
     private void OnMenuStop(object? sender, RoutedEventArgs e)
     {
         ExecuteShellCommand(static viewModel => viewModel.StopSessionCommand.Execute(null));
-    }
-
-    private void OnMenuSaveState(object? sender, RoutedEventArgs e)
-    {
-        ExecuteShellCommand(static viewModel => _ = viewModel.SaveStateCommand.ExecuteAsync(null));
-    }
-
-    private void OnMenuLoadState(object? sender, RoutedEventArgs e)
-    {
-        ExecuteShellCommand(static viewModel => _ = viewModel.LoadStateCommand.ExecuteAsync(null));
     }
 
     private void OnMenuToggleLogDock(object? sender, RoutedEventArgs e)
@@ -233,32 +218,6 @@ public partial class MainWindow : Window
                 return;
             case Key.F5:
                 ExecuteShellCommand(static viewModel => viewModel.TogglePowerCommand.Execute(null));
-                e.Handled = true;
-                return;
-            case Key.F6:
-                ExecuteShellCommand(static viewModel => viewModel.TogglePauseCommand.Execute(null));
-                e.Handled = true;
-                return;
-            case Key.F7:
-                ExecuteShellCommand(viewModel =>
-                {
-                    if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-                    {
-                        viewModel.StepInstructionsCommand.Execute(null);
-                    }
-                    else
-                    {
-                        viewModel.StepFrameCommand.Execute(null);
-                    }
-                });
-                e.Handled = true;
-                return;
-            case Key.F8:
-                ExecuteShellCommand(static viewModel => _ = viewModel.SaveStateCommand.ExecuteAsync(null));
-                e.Handled = true;
-                return;
-            case Key.F9:
-                ExecuteShellCommand(static viewModel => _ = viewModel.LoadStateCommand.ExecuteAsync(null));
                 e.Handled = true;
                 return;
         }

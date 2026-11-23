@@ -100,21 +100,17 @@
         <StackPanel Spacing="14">
           <TextBlock Text="Shortcuts" Classes="h3" />
           <Border Classes="divider" />
-          <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="9">
+          <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="9">
             <TextBlock Text="Power on / off" Classes="caption" />
             <TextBlock Grid.Row="0" Grid.Column="1" Text="F5" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Pause / resume" Classes="caption" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="F6" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="Frame step / 1M step" Classes="caption" />
-            <TextBlock Grid.Row="2" Grid.Column="1" Text="F7  ·  Shift + F7" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="3" Grid.Column="0" Text="Full screen" Classes="caption" />
-            <TextBlock Grid.Row="3" Grid.Column="1" Text="F11  ·  Esc to exit" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="4" Grid.Column="0" Text="Open disc" Classes="caption" />
-            <TextBlock Grid.Row="4" Grid.Column="1" Text="Ctrl + O" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="5" Grid.Column="0" Text="Save settings" Classes="caption" />
-            <TextBlock Grid.Row="5" Grid.Column="1" Text="Ctrl + S  (Settings page)" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="6" Grid.Column="0" Text="Controller" Classes="caption" />
-            <TextBlock Grid.Row="6"
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Full screen" Classes="caption" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="F11  ·  Esc to exit" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Open disc" Classes="caption" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="Ctrl + O" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Save settings" Classes="caption" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="Ctrl + S  (Settings page)" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Controller" Classes="caption" />
+            <TextBlock Grid.Row="4"
                        Grid.Column="1"
                        Text="Arrows · Enter · Backspace · A S D F · Q E · Z C"
                        Classes="mono"

@@ -1,8 +1,8 @@
 using System;
 using System.Globalization;
 using System.IO;
-using XGrid.Host;
 using XGrid.Xbe;
+using XGrid.XboxFs;
 
 namespace XGrid.Frontend.Avalonia.Models;
 
@@ -107,7 +107,7 @@ public sealed class GameEntry
             {
                 ".iso" => GameFormat.Iso,
                 ".chd" => GameFormat.Chd,
-        ".zar" => GameFormat.Zar,
+                ".zar" => GameFormat.Zar,
                 ".xbe" => GameFormat.Xbe,
                 _ => GameFormat.Iso,
             };

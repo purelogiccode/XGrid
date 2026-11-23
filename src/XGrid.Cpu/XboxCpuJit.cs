@@ -339,14 +339,6 @@ public sealed unsafe partial class XboxCpu
         }
     }
 
-    /// <summary>Drops every cached JIT block verdict (host-side; no guest state).</summary>
-    // ReSharper disable once UnusedMember.Global
-    public void InvalidateJitBlocks()
-    {
-        _jitBlocks?.Invalidate();
-        ClearRawChainTable();
-    }
-
     /// <summary>
     /// Serves instructions at the current EIP through built blocks, chaining
     /// block to block inside one call until the budget runs out, control

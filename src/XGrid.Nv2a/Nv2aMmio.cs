@@ -517,19 +517,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const int GuestTexelFrameCapacity = 64;
 
     /// <summary>
-    /// Switches the per-draw guest texel capture on: from now on every cube face
-    /// texel and 16-bit HILO word the software sampler reads is recorded under
-    /// the current PGRAPH state, and <see cref="GuestTexelsFor"/> hands a backend
-    /// the draw command's own words. Only a backend that honors the computed
-    /// cube/dot modes enables it (the GPU path; the software-only run pays one
-    /// predicted branch per sample).
-    /// </summary>
-    public void EnableGuestTexelCapture()
-    {
-        _guestTexelCapture = true;
-    }
-
-    /// <summary>
     /// Gets the guest texel words the software sampler read under the current
     /// PGRAPH state, most recent last, or null when nothing was read in that
     /// state. A draw command's own sets land here because the software fill
@@ -1327,13 +1314,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the flip buffer modulo. Diagnostics.</summary>
     public uint FlipModuloDebug { get; private set; }
 
-    /// <summary>Gets the fragment-pipeline state summary. Diagnostics.</summary>
-    public string FragmentStateDebug =>
-        $"alpha={_alphaTestEnable}:{_alphaFunc:X} blend={_blendEnable}:{_blendSrcFactor:X}/{_blendDstFactor:X} " +
-        $"depth={_depthTestEnable}:{_depthFunc:X}:{_depthMask} stencil={_stencilTestEnable}:{_stencilFunc:X} " +
-        $"cull={_cullFaceEnable}:{_cullFace}:{(_frontFaceCw ? "cw" : "ccw")}:{TrianglesCulled} " +
-        $"mask={_colorMask:X8} zetaDma={_dmaZeta:X}";
-
     /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
     public ulong SkippedDraws { get; private set; }
 
@@ -1384,9 +1364,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets whether the PCI interrupt line is currently asserted. Diagnostics.</summary>
     public bool InterruptAsserted { get; private set; }
-
-    /// <summary>Gets the current color format code. Diagnostics.</summary>
-    public uint PresentedColorFormat => _surfaceFormat & 0xFu;
 
     /// <summary>Gets the current color surface bytes per pixel (0 for unknown formats). Diagnostics.</summary>
     public uint PresentedColorBpp => ColorBytesPerPixel(_surfaceFormat & 0xFu);

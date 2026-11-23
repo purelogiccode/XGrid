@@ -23,21 +23,9 @@ public sealed class NvNetReceiveTests
     private const uint TxRingNext = 0x134;
     private const uint RxRingNext = 0x138;
     private const uint TxRxControl = 0x144;
-    // ReSharper disable once UnusedMember.Local
-    private const uint MiiStatus = 0x180;
-    // ReSharper disable once UnusedMember.Local
-    private const uint MdioAddr = 0x190;
-    // ReSharper disable once UnusedMember.Local
-    private const uint MdioData = 0x194;
-
     private const uint CtrlBit2 = 1u << 2;
     private const uint IrqRx = 1u << 1;
     private const uint IrqRxNoBuf = 1u << 2;
-    // ReSharper disable once UnusedMember.Local
-    private const uint IrqMiiEvent = 1u << 6;
-    // ReSharper disable once UnusedMember.Local
-    private const uint MiiLinkChange = 1u << 3;
-
     private const uint RxAvail = 1u << 15;
     private const uint RxValid = 1u << 0;
     private const uint RxBit4 = 1u << 4;

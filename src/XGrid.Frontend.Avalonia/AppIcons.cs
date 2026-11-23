@@ -74,13 +74,6 @@ public static class AppIcons
         "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11" +
         "c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z");
 
-    /// <summary>Memory chip glyph.</summary>
-    // ReSharper disable once UnusedMember.Global
-    public static Geometry Chip { get; } = Geometry.Parse(
-        "M15 9H9v6h6V9zm-2 4h-2v-2h2v2zm8-2V9h-2V7c0-1.1-.9-2-2-2h-2V3h-2v2h-2V3H9v2H7" +
-        "c-1.1 0-2 .9-2 2v2H3v2h2v2H3v2h2v2c0 1.1.9 2 2 2h2v2h2v-2h2v2h2v-2h2c1.1 0 2-.9 2-2" +
-        "v-2h2v-2h-2v-2h2zm-4 6H7V7h10v10z");
-
     /// <summary>Controller glyph.</summary>
     // ReSharper disable once UnusedMember.Global
     public static Geometry Controller { get; } = Geometry.Parse(
@@ -101,10 +94,6 @@ public static class AppIcons
     /// <summary>Close glyph.</summary>
     public static Geometry Close { get; } = Geometry.Parse(
         "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z");
-
-    /// <summary>Chevron glyph.</summary>
-    // ReSharper disable once UnusedMember.Global
-    public static Geometry ChevronRight { get; } = Geometry.Parse("M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z");
 
     /// <summary>Keyboard glyph.</summary>
     public static Geometry Keyboard { get; } = Geometry.Parse(

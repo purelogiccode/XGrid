@@ -2273,9 +2273,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly uint[] _guestWordScratch = new uint[GuestWordPoolSize * 4];
     private readonly int[] _texPoolBase = new int[4];
 
-    /// <summary>Gets the guest texel words the last applied draw resolved into the guest-word uniform pool. Diagnostics.</summary>
-    public int GuestWordCount => _guestWordCount;
-
     /// <summary>Gets how many draws were declined because a computed mode needed a guest word outside the carried set.</summary>
     public long GuestWordMisses { get; private set; }
 

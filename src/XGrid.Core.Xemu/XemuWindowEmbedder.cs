@@ -25,9 +25,6 @@ public sealed class XemuWindowEmbedder : IDisposable
     /// <summary>Gets a value indicating whether a core window is currently hosted.</summary>
     public bool IsEmbedded => _child != IntPtr.Zero;
 
-    /// <summary>Gets the embedded core window handle.</summary>
-    public IntPtr ChildHandle => _child;
-
     /// <summary>
     /// Reparents <paramref name="child"/> into <paramref name="host"/> and
     /// makes it fill the host's client area.

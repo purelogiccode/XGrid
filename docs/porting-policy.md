@@ -1,9 +1,10 @@
-# XGrid porting policy (GPL-2.0, full C#)
+# XGrid porting policy (GPL-2.0, C# frontend + maintained core)
 
-Status: **2026-10-23, operator decision.**  XGrid is GPL-2.0 and may port code
-from GPL-compatible reference projects.  This supersedes the earlier
-clean-room-only policy.  `AGENTS.md`, `README.md`, `docs/research-notes/sources.md`
-and `THIRD_PARTY_NOTICES.md` are the binding records.
+Status: **2026-11-23, decision A.**  XGrid is GPL-2.0. The product emulator is
+the maintained xemu 0.8.139 codebase (section 2c); the managed C# emulator is
+the oracle. Ported C# code still follows the rules below. `AGENTS.md`,
+`README.md`, `docs/research-notes/sources.md` and `THIRD_PARTY_NOTICES.md` are
+the binding records.
 
 ## 1. License
 
@@ -19,26 +20,27 @@ and `THIRD_PARTY_NOTICES.md` are the binding records.
 - Update `THIRD_PARTY_NOTICES.md` and `docs/research-notes/sources.md` in the
   same change as the port.
 
-## 2. Full C#
+## 2. C# frontend and the maintained core
 
-- The emulator, devices, GPU and audio stay **managed C#**.
-- The **CPU core is the single native exception** (§2b): the vendored
-  xemu/QEMU TCG i386 core behind `libxgridcpu`. No QEMU machine, device,
-  block layer or UI is added to the build.
-- Do not embed a second emulator or ship any other native emulator library.
-- Port the algorithm to C# and keep the existing interfaces (`IGpuMemory`,
-  `AddressSpace`, `IMmioDevice`, `IAudioBackend`, ...).  A line-by-line C
-  translation is usually slower to integrate than a port that fits the existing
-  seam.
+- The **product emulator is the xemu 0.8.139 codebase** (section 2c), built
+  from this repository as a patch set over the pinned baseline.
+- The **managed C# emulator is the oracle**: it keeps the four accurate 1B
+  goldens, the ktest log and the test suite that validate the core.
+- Do not add a second emulator or ship another native emulator library.
+- Port an algorithm to C# and keep the existing interfaces (`IGpuMemory`,
+  `AddressSpace`, `IMmioDevice`, `IAudioBackend`, ...) when the oracle needs
+  it. A line-by-line C translation is usually slower to integrate than a port
+  that fits the existing seam.
 - Existing native *APIs* (OpenGL through Silk.NET, XInput, host audio) are
   allowed; they are host APIs, not an embedded emulator.
 
-**C# first (2026-11-22).** Managed C# is the default for every emulator
-semantic. P/Invoke or unmanaged code is allowed only when a pure-C# path would
-be materially worse or does not exist (a host GPU API, the OS input stack,
-executable memory for the raw JIT), and every native edge is inventoried below
-with its reason. A new P/Invoke needs a row and a reason in the same commit.
-P/Invoke is **never** the way to embed QEMU/xemu or to call emulator code.
+**C# first for XGrid's own code.** Managed C# is the default for the shell,
+the oracle and the tooling. P/Invoke or unmanaged code is allowed only when a
+pure-C# path would be materially worse or does not exist (a host GPU API, the
+OS input stack, executable memory for the raw JIT), and every native edge is
+inventoried below with its reason. A new P/Invoke needs a row and a reason in
+the same commit. The maintained core is built from source as described in
+section 2c, not embedded as an opaque library.
 
 | Native edge | Where | Why it is allowed |
 |---|---|---|

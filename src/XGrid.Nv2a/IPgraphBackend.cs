@@ -353,40 +353,20 @@ public readonly struct PgraphFragmentState(
 }
 
 /// <summary>
-/// One guest texel word read the computed cube/dot texture modes need
+/// The guest texel words one draw command's computed texture modes read
 /// (B3 slice 2): a swizzled cube face texel or a 16-bit HILO word is a guest
 /// RAM read at an address no host texture object can address, so the seam
 /// carries the words themselves - the product's one guest-memory reader
 /// (<see cref="Nv2AMmio"/>, through <c>IGpuMemory</c>) resolves each address
 /// and the backend compares the top of its stack against the address it needs.
 /// The set stays small because consecutive draws read the same cube faces
-/// (the reflection direction changes per fragment, the faces do not).
-/// </summary>
-/// <remarks>Initializes one carried guest texel word.</remarks>
-/// <param name="address">Guest-physical byte address the software sampler reads.</param>
-/// <param name="word">The 32-bit word at that address (a 16-bit format masks on use).</param>
-[StructLayout(LayoutKind.Auto)]
-public readonly struct PgraphGuestTexel(uint address, uint word)
-{
-    /// <summary>Gets the guest-physical byte address the software sampler reads.</summary>
-    public uint Address { get; } = address;
-
-    /// <summary>Gets the 32-bit little-endian word at <see cref="Address"/>.</summary>
-    public uint Word { get; } = word;
-}
-
-/// <summary>
-/// The guest texel words one draw command's computed texture modes read. The
-/// backend resolves the same addresses it would sample (cube face swizzle, HILO
-/// input texel) against the top of this record at draw time; a miss means the
-/// set was sized too small and the draw is declined rather than sampled wrong.
+/// (the reflection direction changes per fragment, the faces do not). A miss
+/// means the set was sized too small and the draw is declined rather than
+/// sampled wrong.
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphGuestTexelSet
 {
-    /// <summary>Gets the constant pool size: the most recent entries a draw may reference.</summary>
-    public const int PoolSize = 32;
-
     /// <summary>Initializes the carried set from a contiguous address/word run.</summary>
     /// <param name="addresses">The addresses, most recently added last.</param>
     /// <param name="words">The word at each address, same order.</param>

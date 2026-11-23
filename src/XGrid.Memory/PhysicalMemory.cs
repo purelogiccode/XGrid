@@ -83,9 +83,6 @@ public sealed unsafe class PhysicalMemory : ISnapshotable, IPresentDirtyWatch, I
     /// <summary>Gets a value indicating whether RAM is a host buffer instead of a managed array (native CPU host).</summary>
     public bool IsExternal => _array is null;
 
-    /// <summary>Gets the host pointer of an external backing buffer, or <see cref="IntPtr.Zero"/>.</summary>
-    public IntPtr ExternalPointer => (IntPtr)_external;
-
     /// <summary>Gets the backing byte array (C3 raw emitter pins it for direct access).</summary>
     /// <exception cref="InvalidOperationException">RAM is host-backed.</exception>
     public byte[] RawBytes => _array ?? throw new InvalidOperationException(

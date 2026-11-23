@@ -19,7 +19,6 @@ public sealed class Nv2aReportTests
 
     private const uint ColorBase = 0x3000u;
     private const uint ZetaBase = 0x5000u;
-    private const uint Pitch = 0x40u;
 
     private const uint ReportHandle = 0x42u;
     private const uint ReportOffset = 0x9000u;

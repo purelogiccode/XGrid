@@ -46,12 +46,10 @@ public sealed partial class McpxApuDevice
     private const uint VoiceCurEcntEfCount = 0xFFFF0000;
 
     private const uint VoiceEnv0AttackRate = 0xFFF;
-    private const uint VoiceEnv0DelayTime = 0xFFFu << 12;
     private const uint VoiceEnv0PitchScale = 0xFFu << 24;
     private const uint VoiceEnvaDecayRate = 0xFFF;
     private const uint VoiceEnvaHoldTime = 0xFFFu << 12;
     private const uint VoiceEnvaSustainLevel = 0xFFu << 24;
-    private const uint VoiceEnvfHoldTime = 0xFFFu << 12;
     private const uint VoiceMiscEfReleaseRate = 0xFFF;
     private const uint VoiceMiscFmode = 3u << 16;
     private const uint VoiceLfoEnvEaReleaseRate = 0xFFF;

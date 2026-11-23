@@ -193,7 +193,7 @@ checklist) is linked from the Documentation section of `README.md`.
 | `hw/display/**` | `Nv2aMmio` display model | in-progress | XFP4/XFP5 |
 | `softmmu/**`, `system/memory.c` | `XGrid.Memory/AddressSpace.cs`, `Mmu.cs` | in-progress | XFP11 |
 | `accel/tcg/**`, `tcg/**`, `target/i386/tcg/**` | `XGrid.Cpu` interpreter/raw JIT | not-started | XFP11 (cpu-oracle + ktest + 1B) |
-| `migration/**` | `XGrid.Debug` snapshot (`.xgs`) | not-started | XFP13 round trip |
+| `migration/**` | `XGrid.Host/XboxMachine` snapshot (`.xgs`) | not-started | XFP13 round trip |
 | `block/qcow2.c`, `block/raw-format.c` | `XGrid.Storage/Qcow2DiskImage.cs` | in-progress | image read vectors |
 | `net/**` (hub/slirp as used) | `XGrid.Bus/Net/*` | in-progress | XFP8 |
 | `ui/**`, `audio/**`, `input/**` | Avalonia/WGL/`WaveAudioBackend`/XInput | in-progress | XFP12 host smoke |

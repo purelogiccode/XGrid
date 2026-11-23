@@ -204,9 +204,6 @@ public sealed class AtaDevice : ISnapshotable
     /// <summary>Gets the status register.</summary>
     public byte Status { get; private set; }
 
-    /// <summary>Gets whether media is attached.</summary>
-    public bool HasMedia => _disk is not null;
-
     /// <summary>Gets the number of taskfile/control accesses seen (diagnostics).</summary>
     public int AccessCount { get; private set; }
 
@@ -439,9 +436,6 @@ public sealed class AtaDevice : ISnapshotable
         _dvd = dvd;
         Reset();
     }
-
-    /// <summary>Gets whether DVD media is attached.</summary>
-    public bool HasDvdMedia => _dvd is not null;
 
     /// <summary>Returns the drive to its power-on state.</summary>
     public void Reset()

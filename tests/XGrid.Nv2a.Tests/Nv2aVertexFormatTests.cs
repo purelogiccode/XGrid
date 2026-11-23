@@ -11,7 +11,6 @@ namespace XGrid.Nv2a.Tests;
 /// </summary>
 public sealed class Nv2aVertexFormatTests
 {
-    private const uint Base = 0xFD000000;
 
     [Fact]
     public void UbD3dSwizzlesBgraToRgba()

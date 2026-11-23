@@ -14,17 +14,12 @@ day-to-day agent entry point; this file is the priority order every agent follow
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 23.
 <!-- STATUS:END -->
 
-**Operator decision 2026-11-22 (native CPU core; supersedes the CPU part of the
-managed-C# direction below).** The product CPU is the vendored xemu 0.8.139 /
-QEMU 10.2.0 TCG i386 core behind `libxgridcpu` (program XCN0-XCN3,
-`ImplementationPlan.md` E0N). Every device, the NV2A, the APU, the host layer
-and the frontend stay managed C#. The managed C# CPU (`--cpu managed`) is the
-reference-only engine and keeps the four accurate 1B goldens and the ktest log;
-the native engine's acceptance is xemu parity + the device/GPU corpus. The
-program is XCN0 (extraction spike) -> XCN1 (host seam) -> XCN2 (007 P1) ->
-XCN3 (release), then the parked XFP breadth rows. Target: xemu-class
-~1.2 ns/step (~1x on 007), not native 5-10x. Licence: GPL-2.0 stays; the
-release ships the QEMU source offer and `native/qemu-patches/`.
+> **Superseded 2026-11-23 by decision A.** The native CPU core
+> (`libxgridcpu`, XCN0-XCN3) is retired. XGrid is the frontend and the whole
+> vendored xemu 0.8.139 codebase is the core; the maintained tree is
+> `References2/xemu-0.8.139` + `native/xgrid-core` + `native/xemu-patches/`
+> (see `README.md` and `native/README.md`). The managed C# emulator remains the
+> behavioural oracle for tests and goldens. The paragraph below is history.
 
 **Decision.** XGrid's engineering program is a **P1 sprint first, then a full
 source port of xemu 0.8.139 to managed C#**. The 2026-10-24 rule ("port a module

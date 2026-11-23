@@ -18,16 +18,12 @@
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <StackPanel Spacing="1" HorizontalAlignment="Right">
-            <TextBlock Text="SPEED" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
-            <TextBlock Text="{Binding Shell.Mips, StringFormat={}{0:0.0} MIPS}" Classes="mono" FontSize="11" />
+            <TextBlock Text="CORE" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
+            <TextBlock Text="{Binding Shell.CoreLabel}" Classes="mono" FontSize="11" />
           </StackPanel>
           <StackPanel Spacing="1" HorizontalAlignment="Right">
-            <TextBlock Text="FRAMES" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
-            <TextBlock Text="{Binding Shell.Frames, StringFormat={}{0:N0}}" Classes="mono" FontSize="11" />
-          </StackPanel>
-          <StackPanel Spacing="1" HorizontalAlignment="Right">
-            <TextBlock Text="FPS" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
-            <TextBlock Text="{Binding Shell.Fps, StringFormat={}{0:0.0}}" Classes="mono" FontSize="11" />
+            <TextBlock Text="RENDERER" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
+            <TextBlock Text="{Binding Shell.RendererLabel}" Classes="mono" FontSize="11" />
           </StackPanel>
           <Border Classes="badge" VerticalAlignment="Center">
             <TextBlock Text="{Binding Shell.StatusText}" />
@@ -110,25 +106,10 @@
                          Foreground="{DynamicResource XgAccentTextBrush}" FontWeight="SemiBold" />
             </StackPanel>
           </Button>
-          <Button Classes="chrome" Command="{Binding TogglePauseCommand}"
-                  IsEnabled="{Binding Shell.IsRunning}"
-                  ToolTip.Tip="Pause or resume (F6)">
-            <Panel>
-              <PathIcon Data="{x:Static local:AppIcons.Pause}" Width="13" Height="13"
-                        IsVisible="{Binding !Shell.IsPaused}" />
-              <PathIcon Data="{x:Static local:AppIcons.Play}" Width="13" Height="13"
-                        IsVisible="{Binding Shell.IsPaused}" />
-            </Panel>
-          </Button>
           <Button Classes="chrome" Command="{Binding StopCommand}"
                   IsEnabled="{Binding Shell.IsRunning}"
                   ToolTip.Tip="Stop the console">
             <PathIcon Data="{x:Static local:AppIcons.Stop}" Width="13" Height="13" />
-          </Button>
-          <Button Classes="chrome" Command="{Binding StepFrameCommand}"
-                  IsEnabled="{Binding Shell.IsPaused}"
-                  ToolTip.Tip="Advance one frame">
-            <TextBlock Text="Frame step" FontSize="11.5" />
           </Button>
 
           <Border Width="1" Margin="6,4" Background="{DynamicResource XgBorderBrush}" />
@@ -139,12 +120,6 @@
               <TextBlock Text="Open disc" FontSize="11.5" />
             </StackPanel>
           </Button>
-          <Button Classes="chrome" Command="{Binding SaveStateCommand}" IsEnabled="{Binding Shell.IsRunning}">
-            <TextBlock Text="Save state" FontSize="11.5" />
-          </Button>
-          <Button Classes="chrome" Command="{Binding LoadStateCommand}" IsEnabled="{Binding Shell.IsRunning}">
-            <TextBlock Text="Load state" FontSize="11.5" />
-          </Button>
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
@@ -153,8 +128,7 @@
             <TextBlock Text="{Binding Shell.CurrentGameTitle}" FontSize="11.5" />
             <TextBlock Text="{Binding Shell.CurrentGameFormat}" Classes="caption" VerticalAlignment="Center" />
           </StackPanel>
-          <TextBlock Text="{Binding Shell.Eip}" Classes="mono" FontSize="10.5"
-                     ToolTip.Tip="Guest instruction pointer" />
+          <TextBlock Text="{Binding Shell.RunStateLabel}" Classes="mono" FontSize="10.5" />
         </StackPanel>
       </Grid>
     </StackPanel>

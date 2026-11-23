@@ -39,9 +39,6 @@ public sealed class XInputGamepadReader : IDisposable
     /// <summary>Gets the user slot of the last connected controller, or -1.</summary>
     public int UserIndex { get; private set; } = -1;
 
-    /// <summary>Gets whether a controller is currently connected and readable.</summary>
-    public bool IsConnected => UserIndex >= 0;
-
     /// <summary>
     /// Polls for controller state.
     /// </summary>
