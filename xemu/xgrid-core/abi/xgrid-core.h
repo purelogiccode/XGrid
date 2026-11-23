@@ -25,8 +25,6 @@ extern "C" {
  * Starts the machine on a background thread.
  *
  * @param config_path The xemu settings file (the shell writes it).
- * @param log_path Optional file that receives the core's stdout/stderr, or
- *                 NULL to keep the host's streams.
  * @param display_sink Shared-section name for presented frames, or NULL.
  * @param input_sink Shared-section name for port 1, or NULL.
  * @param extra_argv Additional command-line arguments, or NULL.
@@ -35,7 +33,6 @@ extern "C" {
  *         -3 for a bad argument count.
  */
 XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
-                                       const char *log_path,
                                        const char *display_sink,
                                        const char *input_sink,
                                        const char *const *extra_argv,

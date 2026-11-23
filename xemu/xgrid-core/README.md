@@ -26,12 +26,35 @@ is a patch rebase, not a re-port.
 executable (`xemu/meson.build`, the `xgrid_core` shared library). The shell
 loads it with `NativeLibrary.Load` and calls `xgrid_core_start`; frames and pad
 state use the same named sections as the out-of-process core, so the shell's
-presentation path does not change.
+presentation path does not change. The ABI is
+`xgrid_core_start(config, display_sink, input_sink, argv, argc)`,
+`xgrid_core_request_stop`, `xgrid_core_is_running`, `xgrid_core_exit_code`,
+`xgrid_core_join` and `xgrid_core_version`.
 
 A DLL, not the EXE: the Windows loader initialises a DLL's CRT, which an EXE
 loaded with `LoadLibrary` does not do. The DLL is linked at a fixed image base
-and with a larger thread stack; QEMU's TCG needs both when it runs inside a
-host process.
+with a larger thread stack, because QEMU's TCG needs both inside a host
+process.
+
+### The setjmp/longjmp shim
+
+QEMU's CPU loop leaves a translation block with `siglongjmp(cpu->jmp_env, 1)`.
+Inside a managed host, msvcrt's `longjmp` rejects that buffer and raises
+`STATUS_STACK_BUFFER_OVERRUN` (0xC0000409) even though the buffer and the target
+stack are valid. `include/system/os-win32.h` therefore maps the pair to
+`xgrid_sigsetjmp`/`xgrid_siglongjmp` (`util/oslib-win32.c`), which use
+`RtlCaptureContext`/`RtlRestoreContext` directly:
+
+* the capture happens in the shim, so the saved `Rip`/`Rsp`/`Rbp` are replaced
+  with the **caller's** return address and stack pointer before returning —
+  a setjmp-style call must resume in the frame that is still alive;
+* the jump value travels in `Rax`, which is the caller's return value;
+* no unwinding is needed: the CPU loop only ever jumps back to its own
+  `cpu_exec` frame.
+
+The shell owns the process streams. `xgrid_core_start` does not redirect
+stdout/stderr: a loaded library shares them with the host, so a redirect would
+capture the shell's own output too.
 
 ## Build
 

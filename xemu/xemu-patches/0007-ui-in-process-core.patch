@@ -19,29 +19,71 @@ index f0302ed0..0c79ac8d 100644
  void qemu_mutex_destroy(QemuMutex *mutex);
  int TSA_NO_TSA qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file,
 diff --git a/include/system/os-win32.h b/include/system/os-win32.h
-index 22d72bab..fbfe2997 100644
+index 22d72bab..bfe1cf57 100644
 --- a/include/system/os-win32.h
 +++ b/include/system/os-win32.h
-@@ -86,7 +86,13 @@ void __attribute__((noreturn)) __mingw_longjmp(jmp_buf, int);
+@@ -85,9 +85,26 @@ void __attribute__((noreturn)) __mingw_longjmp(jmp_buf, int);
+  * savemask parameter will always be zero we can safely define these
   * in terms of setjmp/longjmp on Win32.
   */
- #define sigjmp_buf jmp_buf
+-#define sigjmp_buf jmp_buf
 -#define sigsetjmp(env, savemask) setjmp(env)
+-#define siglongjmp(env, val) longjmp(env, val)
 +/*
-+ * XGrid: save the jump buffer with a NULL unwind frame. longjmp then restores
-+ * the context without an SEH unwind, which a managed host's vectored exception
-+ * handlers would otherwise intercept. QEMU never needs the unwind: the CPU
-+ * loop only jumps back to its own cpu_exec frame.
++ * XGrid: sigsetjmp()/siglongjmp() without the C runtime.
++ *
++ * msvcrt's longjmp validates its buffer against CRT-internal expectations and
++ * raises STATUS_STACK_BUFFER_OVERRUN when QEMU runs inside a host process,
++ * even though the buffer and the target stack are valid. QEMU only ever jumps
++ * back to its own cpu_exec frame and never needs an SEH unwind, so capturing
++ * and restoring the register context is enough and has no such validation.
 + */
-+#define sigsetjmp(env, savemask) _setjmp(env, NULL)
- #define siglongjmp(env, val) longjmp(env, val)
++typedef struct XGridSigJmpBuf {
++    CONTEXT context;
++} XGridSigJmpBuf;
++
++int xgrid_sigsetjmp(XGridSigJmpBuf *buf);
++void xgrid_siglongjmp(XGridSigJmpBuf *buf, int value)
++    __attribute__((noreturn));
++
++#define sigjmp_buf XGridSigJmpBuf
++#define sigsetjmp(env, savemask) xgrid_sigsetjmp(&(env))
++#define siglongjmp(env, val) xgrid_siglongjmp(&(env), (val))
  
  /* Missing POSIX functions. Don't use MinGW-w64 macros. */
+ #ifndef _POSIX_THREAD_SAFE_FUNCTIONS
 diff --git a/meson.build b/meson.build
-index d94efe80..91d14456 100644
+index cc049c35..91d14456 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -4666,6 +4666,27 @@ foreach target : target_dirs
+@@ -2387,10 +2387,12 @@ endif
+ vulkan = not_found
+ libglslang = not_found
+ 
+-if host_os == 'windows'
+-  vulkan = declare_dependency(compile_args: ['-DVK_USE_PLATFORM_WIN32_KHR'])
+-elif host_os == 'linux'
+-  vulkan = dependency('vulkan')
++if get_option('xgrid_vulkan')
++  if host_os == 'windows'
++    vulkan = declare_dependency(compile_args: ['-DVK_USE_PLATFORM_WIN32_KHR'])
++  elif host_os == 'linux'
++    vulkan = dependency('vulkan')
++  endif
+ endif
+ 
+ if vulkan.found()
+@@ -4033,6 +4035,9 @@ if have_block
+   subdir('scsi')
+   subdir('block')
+ 
++  # XGrid core additions (CHD/ZAR block drivers, host display, host input).
++  subdir('xgrid-core')
++
+   blockdev_ss.add(files(
+     'blockdev.c',
+     'blockdev-nbd.c',
+@@ -4661,6 +4666,27 @@ foreach target : target_dirs
                 link_args: link_args,
                 win_subsystem: exe['win_subsystem'])
  
@@ -69,9 +111,305 @@ index d94efe80..91d14456 100644
      if host_os == 'darwin'
        icon = 'pc-bios/qemu.rsrc'
        build_input = [emulator, files(icon)]
+diff --git a/ui/xemu.c b/ui/xemu.c
+index 47bb0a95..18fa3141 100644
+--- a/ui/xemu.c
++++ b/ui/xemu.c
+@@ -48,6 +48,7 @@
+ #include "xemu-snapshots.h"
+ #include "xemu-version.h"
+ #include "xemu-os-utils.h"
++#include "xemu-run.h"
+ 
+ #include "data/xemu_64x64.png.h"
+ 
+@@ -63,6 +64,7 @@
+ 
+ #ifdef _WIN32
+ #include "xui/win32-dxgi-present.h"
++#include "../xgrid-core/display/xgrid-display.h"
+ #endif
+ 
+ #ifndef DEBUG_XEMU_C
+@@ -124,6 +126,14 @@ static QemuThread vblank_thread;
+ static bool qemu_exiting;
+ static int exit_status;
+ 
++/*
++ * Set by xgrid_core_start(): the process owns the UI, so this run must not
++ * show modal dialogs and must report a startup failure to its caller instead
++ * of terminating the host.
++ */
++static bool xemu_library_mode;
++static bool xemu_stop_requested;
++
+ void tcg_register_init_ctx(void); // tcg.c
+ 
+ #if DEBUG_XEMU_C
+@@ -884,6 +894,19 @@ static void gl_render_frame(struct xemu_console *scon)
+ 
+     nv2a_release_framebuffer_surface();
+ 
++    if (xgrid_display_enabled()) {
++        int sink_w = 0, sink_h = 0;
++        SDL_GetWindowSizeInPixels(m_window, &sink_w, &sink_h);
++        if (sink_w > 0 && sink_h > 0) {
++            uint8_t *sink_pixels = g_malloc((size_t)sink_w * sink_h * 4);
++            glPixelStorei(GL_PACK_ALIGNMENT, 4);
++            glReadPixels(0, 0, sink_w, sink_h, GL_BGRA, GL_UNSIGNED_BYTE, sink_pixels);
++            xgrid_display_publish(sink_pixels, (uint32_t)sink_w, (uint32_t)sink_h,
++                                  (uint32_t)sink_w * 4);
++            g_free(sink_pixels);
++        }
++    }
++
+ #ifdef _WIN32
+     if (win32_dxgi_present_is_active()) {
+         win32_dxgi_present_end_frame(g_config.display.window.vsync);
+@@ -997,7 +1020,7 @@ static void poll_events(struct xemu_console *scon)
+     xemu_main_loop_unlock();
+ }
+ 
+-static void display_very_early_init(DisplayOptions *o)
++static bool display_very_early_init(DisplayOptions *o)
+ {
+ #ifdef __linux__
+     /* SDL3 falls back to XWayland on compositors without fifo-v1 [1],
+@@ -1012,7 +1035,7 @@ static void display_very_early_init(DisplayOptions *o)
+     if (!SDL_Init(SDL_INIT_VIDEO)) {
+         fprintf(stderr, "Failed to initialize SDL video subsystem: %s\n",
+                 SDL_GetError());
+-        exit(1);
++        return false;
+     }
+ 
+ #ifdef SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR /* only available since SDL 2.0.8 */
+@@ -1076,6 +1099,12 @@ static void display_very_early_init(DisplayOptions *o)
+ 
+     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+ 
++    /* XGrid embeds this window: create it hidden and give it a title the
++     * shell can find, so it never flashes as a top-level window. */
++    if (xgrid_embed_enabled()) {
++        window_flags |= SDL_WINDOW_HIDDEN;
++    }
++
+     // Create main window
+     m_window = SDL_CreateWindow(
+         title, window_width, window_height,
+@@ -1083,10 +1112,17 @@ static void display_very_early_init(DisplayOptions *o)
+     if (m_window == NULL) {
+         fprintf(stderr, "Failed to create main window: %s\n", SDL_GetError());
+         SDL_Quit();
+-        exit(1);
++        return false;
+     }
+     g_free(title);
++    if (xgrid_embed_enabled()) {
++        SDL_SetWindowTitle(m_window, "XGridCore");
++    }
+     SDL_SetWindowMinimumSize(m_window, min_window_width, min_window_height);
++    if (xgrid_display_enabled()) {
++        /* The shell presents the picture; keep the context but hide the window. */
++        SDL_HideWindow(m_window);
++    }
+ 
+     const SDL_DisplayMode *disp_mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(m_window));
+     if (disp_mode && (disp_mode->w < window_width || disp_mode->h < window_height)) {
+@@ -1103,16 +1139,18 @@ static void display_very_early_init(DisplayOptions *o)
+     }
+ 
+     if (m_context == NULL) {
+-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+-            "Unable to create OpenGL context",
+-            "Unable to create OpenGL context. This usually means the\r\n"
+-            "graphics device on this system does not support OpenGL 4.0.\r\n"
+-            "\r\n"
+-            "xemu cannot continue and will now exit.",
+-            m_window);
++        if (!xemu_library_mode) {
++            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
++                "Unable to create OpenGL context",
++                "Unable to create OpenGL context. This usually means the\r\n"
++                "graphics device on this system does not support OpenGL 4.0.\r\n"
++                "\r\n"
++                "xemu cannot continue and will now exit.",
++                m_window);
++        }
+         SDL_DestroyWindow(m_window);
+         SDL_Quit();
+-        exit(1);
++        return false;
+     }
+ 
+     int width, height, channels = 0;
+@@ -1137,6 +1175,7 @@ static void display_very_early_init(DisplayOptions *o)
+     // Initialize offscreen rendering context now
+     nv2a_context_init();
+     SDL_GL_MakeCurrent(NULL, NULL);
++    return true;
+ }
+ 
+ static void display_early_init(DisplayOptions *o)
+@@ -1333,8 +1372,6 @@ static void init_sdl_app_metadata(void)
+ 
+ int main(int argc, char **argv)
+ {
+-    QemuThread thread;
+-
+     setlocale(LC_NUMERIC, "C");
+ 
+ #ifdef _WIN32
+@@ -1361,6 +1398,21 @@ int main(int argc, char **argv)
+     _set_error_mode(_OUT_TO_STDERR);
+ #endif
+ 
++    return xemu_run(argc, argv, false);
++}
++
++/*
++ * Runs one machine to completion. `main` calls it for the standalone binary;
++ * xgrid_core_start() calls it from the shell's process. QEMU's global state is
++ * single-use, so a process may call this exactly once.
++ */
++int xemu_run(int argc, char **argv, bool library_mode)
++{
++    QemuThread thread;
++
++    setlocale(LC_NUMERIC, "C");
++    xemu_library_mode = library_mode;
++
+     fprintf(stderr, "xemu_version: %s\n", xemu_version);
+     fprintf(stderr, "xemu_commit: %s\n", xemu_commit);
+     fprintf(stderr, "xemu_date: %s\n", xemu_date);
+@@ -1384,11 +1436,13 @@ int main(int argc, char **argv)
+     if (!xemu_settings_load()) {
+         const char *err_msg = xemu_settings_get_error_message();
+         fprintf(stderr, "%s", err_msg);
+-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+-            "Failed to load xemu config file", err_msg,
+-            m_window);
++        if (!library_mode) {
++            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
++                "Failed to load xemu config file", err_msg,
++                m_window);
++        }
+         SDL_Quit();
+-        exit(1);
++        return 1;
+     }
+     atexit(xemu_settings_save);
+ 
+@@ -1398,13 +1452,16 @@ int main(int argc, char **argv)
+     }
+ #endif
+ 
+-    display_very_early_init(NULL);
++    if (!display_very_early_init(NULL)) {
++        return 1;
++    }
+ 
+     qemu_sem_init(&display_init_sem, 0);
+     qemu_sem_init(&display_shutdown_sem, 0);
+     qemu_thread_create(&thread, "qemu_main", qemu_main,
+                        NULL, QEMU_THREAD_JOINABLE);
+     qemu_sem_wait(&display_init_sem);
++    fprintf(stderr, "xgrid-core: machine ready\n");
+ 
+     gui_grab = 0;
+     if (gui_fullscreen) {
+@@ -1424,7 +1481,12 @@ int main(int argc, char **argv)
+     xemu_main_loop_unlock();
+ 
+     struct xemu_console *scon = &scon_list[0];
++    bool stop_sent = false;
+     while (!qatomic_read(&qemu_exiting)) {
++        if (!stop_sent && qatomic_read(&xemu_stop_requested)) {
++            stop_sent = true;
++            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
++        }
+         poll_events(scon);
+         gl_render_frame(scon);
+     }
+@@ -1434,6 +1496,11 @@ int main(int argc, char **argv)
+     return exit_status;
+ }
+ 
++void xemu_request_shutdown(void)
++{
++    qatomic_set(&xemu_stop_requested, true);
++}
++
+ void xemu_eject_disc(Error **errp)
+ {
+     Error *error = NULL;
+diff --git a/util/oslib-win32.c b/util/oslib-win32.c
+index 1117c222..bb0b04a2 100644
+--- a/util/oslib-win32.c
++++ b/util/oslib-win32.c
+@@ -948,3 +948,33 @@ int qemu_shm_alloc(size_t size, Error **errp)
+     error_setg(errp, "Shared memory is not supported.");
+     return -1;
+ }
++
++/*
++ * XGrid: the sigsetjmp()/siglongjmp() pair declared in system/os-win32.h.
++ *
++ * RtlCaptureContext() records the register state, but the captured Rip/Rsp
++ * point inside this function, whose frame is reused as soon as it returns. A
++ * setjmp-style call must resume in its caller instead, so the saved return
++ * address and stack pointer are replaced with the caller's. The jump value is
++ * delivered in Rax, which is the caller's return value.
++ */
++__attribute__((noinline))
++int xgrid_sigsetjmp(XGridSigJmpBuf *buf)
++{
++    char *frame = (char *)__builtin_frame_address(0);
++
++    RtlCaptureContext(&buf->context);
++    buf->context.Rip = *(DWORD64 *)(frame + 8);
++    buf->context.Rsp = (DWORD64)(frame + 16);
++    buf->context.Rbp = *(DWORD64 *)frame;
++    buf->context.Rax = 0;
++    return 0;
++}
++
++void xgrid_siglongjmp(XGridSigJmpBuf *buf, int value)
++{
++    buf->context.Rax = (DWORD64)(value != 0 ? value : 1);
++    RtlRestoreContext(&buf->context, NULL);
++    abort();
++}
++
+diff --git a/util/qemu-thread-win32.c b/util/qemu-thread-win32.c
+index ca2e0b51..6c39b021 100644
+--- a/util/qemu-thread-win32.c
++++ b/util/qemu-thread-win32.c
+@@ -19,6 +19,9 @@
+ 
+ static bool name_threads;
+ 
++/* Zero keeps the host executable's default stack reserve. */
++size_t qemu_thread_stack_size;
++
+ typedef HRESULT (WINAPI *pSetThreadDescription) (HANDLE hThread,
+                                                  PCWSTR lpThreadDescription);
+ static pSetThreadDescription SetThreadDescriptionFunc;
+@@ -365,8 +368,9 @@ void qemu_thread_create(QemuThread *thread, const char *name,
+         InitializeCriticalSection(&data->cs);
+     }
+ 
+-    hThread = (HANDLE) _beginthreadex(NULL, 0, win32_start_routine,
+-                                      data, 0, &thread->tid);
++    hThread = (HANDLE) _beginthreadex(NULL, (unsigned)qemu_thread_stack_size,
++                                      win32_start_routine, data, 0,
++                                      &thread->tid);
+     if (!hThread) {
+         error_exit(GetLastError(), __func__);
+     }
 diff --git a/ui/xemu-run.h b/ui/xemu-run.h
 new file mode 100644
-index 00000000..8df96346
+index 0000000..1111111
 --- /dev/null
 +++ b/ui/xemu-run.h
 @@ -0,0 +1,34 @@
@@ -109,210 +447,3 @@ index 00000000..8df96346
 +void xemu_request_shutdown(void);
 +
 +#endif /* XEMU_RUN_H */
-diff --git a/ui/xemu.c b/ui/xemu.c
-index 9b972449..18fa3141 100644
---- a/ui/xemu.c
-+++ b/ui/xemu.c
-@@ -48,6 +48,7 @@
- #include "xemu-snapshots.h"
- #include "xemu-version.h"
- #include "xemu-os-utils.h"
-+#include "xemu-run.h"
- 
- #include "data/xemu_64x64.png.h"
- 
-@@ -125,6 +126,14 @@ static QemuThread vblank_thread;
- static bool qemu_exiting;
- static int exit_status;
- 
-+/*
-+ * Set by xgrid_core_start(): the process owns the UI, so this run must not
-+ * show modal dialogs and must report a startup failure to its caller instead
-+ * of terminating the host.
-+ */
-+static bool xemu_library_mode;
-+static bool xemu_stop_requested;
-+
- void tcg_register_init_ctx(void); // tcg.c
- 
- #if DEBUG_XEMU_C
-@@ -1011,7 +1020,7 @@ static void poll_events(struct xemu_console *scon)
-     xemu_main_loop_unlock();
- }
- 
--static void display_very_early_init(DisplayOptions *o)
-+static bool display_very_early_init(DisplayOptions *o)
- {
- #ifdef __linux__
-     /* SDL3 falls back to XWayland on compositors without fifo-v1 [1],
-@@ -1026,7 +1035,7 @@ static void display_very_early_init(DisplayOptions *o)
-     if (!SDL_Init(SDL_INIT_VIDEO)) {
-         fprintf(stderr, "Failed to initialize SDL video subsystem: %s\n",
-                 SDL_GetError());
--        exit(1);
-+        return false;
-     }
- 
- #ifdef SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR /* only available since SDL 2.0.8 */
-@@ -1103,7 +1112,7 @@ static void display_very_early_init(DisplayOptions *o)
-     if (m_window == NULL) {
-         fprintf(stderr, "Failed to create main window: %s\n", SDL_GetError());
-         SDL_Quit();
--        exit(1);
-+        return false;
-     }
-     g_free(title);
-     if (xgrid_embed_enabled()) {
-@@ -1130,16 +1139,18 @@ static void display_very_early_init(DisplayOptions *o)
-     }
- 
-     if (m_context == NULL) {
--        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
--            "Unable to create OpenGL context",
--            "Unable to create OpenGL context. This usually means the\r\n"
--            "graphics device on this system does not support OpenGL 4.0.\r\n"
--            "\r\n"
--            "xemu cannot continue and will now exit.",
--            m_window);
-+        if (!xemu_library_mode) {
-+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-+                "Unable to create OpenGL context",
-+                "Unable to create OpenGL context. This usually means the\r\n"
-+                "graphics device on this system does not support OpenGL 4.0.\r\n"
-+                "\r\n"
-+                "xemu cannot continue and will now exit.",
-+                m_window);
-+        }
-         SDL_DestroyWindow(m_window);
-         SDL_Quit();
--        exit(1);
-+        return false;
-     }
- 
-     int width, height, channels = 0;
-@@ -1164,6 +1175,7 @@ static void display_very_early_init(DisplayOptions *o)
-     // Initialize offscreen rendering context now
-     nv2a_context_init();
-     SDL_GL_MakeCurrent(NULL, NULL);
-+    return true;
- }
- 
- static void display_early_init(DisplayOptions *o)
-@@ -1360,8 +1372,6 @@ static void init_sdl_app_metadata(void)
- 
- int main(int argc, char **argv)
- {
--    QemuThread thread;
--
-     setlocale(LC_NUMERIC, "C");
- 
- #ifdef _WIN32
-@@ -1388,6 +1398,21 @@ int main(int argc, char **argv)
-     _set_error_mode(_OUT_TO_STDERR);
- #endif
- 
-+    return xemu_run(argc, argv, false);
-+}
-+
-+/*
-+ * Runs one machine to completion. `main` calls it for the standalone binary;
-+ * xgrid_core_start() calls it from the shell's process. QEMU's global state is
-+ * single-use, so a process may call this exactly once.
-+ */
-+int xemu_run(int argc, char **argv, bool library_mode)
-+{
-+    QemuThread thread;
-+
-+    setlocale(LC_NUMERIC, "C");
-+    xemu_library_mode = library_mode;
-+
-     fprintf(stderr, "xemu_version: %s\n", xemu_version);
-     fprintf(stderr, "xemu_commit: %s\n", xemu_commit);
-     fprintf(stderr, "xemu_date: %s\n", xemu_date);
-@@ -1411,11 +1436,13 @@ int main(int argc, char **argv)
-     if (!xemu_settings_load()) {
-         const char *err_msg = xemu_settings_get_error_message();
-         fprintf(stderr, "%s", err_msg);
--        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
--            "Failed to load xemu config file", err_msg,
--            m_window);
-+        if (!library_mode) {
-+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-+                "Failed to load xemu config file", err_msg,
-+                m_window);
-+        }
-         SDL_Quit();
--        exit(1);
-+        return 1;
-     }
-     atexit(xemu_settings_save);
- 
-@@ -1425,13 +1452,16 @@ int main(int argc, char **argv)
-     }
- #endif
- 
--    display_very_early_init(NULL);
-+    if (!display_very_early_init(NULL)) {
-+        return 1;
-+    }
- 
-     qemu_sem_init(&display_init_sem, 0);
-     qemu_sem_init(&display_shutdown_sem, 0);
-     qemu_thread_create(&thread, "qemu_main", qemu_main,
-                        NULL, QEMU_THREAD_JOINABLE);
-     qemu_sem_wait(&display_init_sem);
-+    fprintf(stderr, "xgrid-core: machine ready\n");
- 
-     gui_grab = 0;
-     if (gui_fullscreen) {
-@@ -1451,7 +1481,12 @@ int main(int argc, char **argv)
-     xemu_main_loop_unlock();
- 
-     struct xemu_console *scon = &scon_list[0];
-+    bool stop_sent = false;
-     while (!qatomic_read(&qemu_exiting)) {
-+        if (!stop_sent && qatomic_read(&xemu_stop_requested)) {
-+            stop_sent = true;
-+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
-+        }
-         poll_events(scon);
-         gl_render_frame(scon);
-     }
-@@ -1461,6 +1496,11 @@ int main(int argc, char **argv)
-     return exit_status;
- }
- 
-+void xemu_request_shutdown(void)
-+{
-+    qatomic_set(&xemu_stop_requested, true);
-+}
-+
- void xemu_eject_disc(Error **errp)
- {
-     Error *error = NULL;
-diff --git a/util/qemu-thread-win32.c b/util/qemu-thread-win32.c
-index ca2e0b51..6c39b021 100644
---- a/util/qemu-thread-win32.c
-+++ b/util/qemu-thread-win32.c
-@@ -19,6 +19,9 @@
- 
- static bool name_threads;
- 
-+/* Zero keeps the host executable's default stack reserve. */
-+size_t qemu_thread_stack_size;
-+
- typedef HRESULT (WINAPI *pSetThreadDescription) (HANDLE hThread,
-                                                  PCWSTR lpThreadDescription);
- static pSetThreadDescription SetThreadDescriptionFunc;
-@@ -365,8 +368,9 @@ void qemu_thread_create(QemuThread *thread, const char *name,
-         InitializeCriticalSection(&data->cs);
-     }
- 
--    hThread = (HANDLE) _beginthreadex(NULL, 0, win32_start_routine,
--                                      data, 0, &thread->tid);
-+    hThread = (HANDLE) _beginthreadex(NULL, (unsigned)qemu_thread_stack_size,
-+                                      win32_start_routine, data, 0,
-+                                      &thread->tid);
-     if (!hThread) {
-         error_exit(GetLastError(), __func__);
-     }

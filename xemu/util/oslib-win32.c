@@ -948,3 +948,33 @@ int qemu_shm_alloc(size_t size, Error **errp)
     error_setg(errp, "Shared memory is not supported.");
     return -1;
 }
+
+/*
+ * XGrid: the sigsetjmp()/siglongjmp() pair declared in system/os-win32.h.
+ *
+ * RtlCaptureContext() records the register state, but the captured Rip/Rsp
+ * point inside this function, whose frame is reused as soon as it returns. A
+ * setjmp-style call must resume in its caller instead, so the saved return
+ * address and stack pointer are replaced with the caller's. The jump value is
+ * delivered in Rax, which is the caller's return value.
+ */
+__attribute__((noinline))
+int xgrid_sigsetjmp(XGridSigJmpBuf *buf)
+{
+    char *frame = (char *)__builtin_frame_address(0);
+
+    RtlCaptureContext(&buf->context);
+    buf->context.Rip = *(DWORD64 *)(frame + 8);
+    buf->context.Rsp = (DWORD64)(frame + 16);
+    buf->context.Rbp = *(DWORD64 *)frame;
+    buf->context.Rax = 0;
+    return 0;
+}
+
+void xgrid_siglongjmp(XGridSigJmpBuf *buf, int value)
+{
+    buf->context.Rax = (DWORD64)(value != 0 ? value : 1);
+    RtlRestoreContext(&buf->context, NULL);
+    abort();
+}
+

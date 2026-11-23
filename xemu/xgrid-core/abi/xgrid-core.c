@@ -58,7 +58,6 @@ static void *xgrid_core_thread(void *opaque)
  *         -3 for a bad argument count.
  */
 XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
-                                       const char *log_path,
                                        const char *display_sink,
                                        const char *input_sink,
                                        const char *const *extra_argv,
@@ -74,16 +73,12 @@ XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
         return -3;
     }
 
+    /*
+     * The host owns the process streams: redirecting them here would capture
+     * the shell's own output as well, because a loaded library shares them.
+     */
     xgrid_display_set_sink(display_sink);
     xgrid_input_set_sink(input_sink);
-
-    if (log_path != NULL && log_path[0] != '\0') {
-        FILE *log = freopen(log_path, "w", stderr);
-        if (log != NULL) {
-            /* stdout shares the file; QEMU reports through stderr. */
-            (void)freopen(log_path, "a", stdout);
-        }
-    }
 
     g_argc = 3 + extra_argc;
     g_argv = g_new0(char *, g_argc + 1);
