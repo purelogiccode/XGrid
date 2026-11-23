@@ -190,7 +190,7 @@ public sealed class XemuCoreSession : IDisposable
 
         if (_input is not null)
         {
-            Log?.Invoke(this, "xemu core frames go to the shell surface.");
+            Log?.Invoke(this, "Emulator frames go to the shell surface.");
         }
 
         _monitor = new Timer(_ => Poll(), null, 250, 250);
@@ -210,7 +210,7 @@ public sealed class XemuCoreSession : IDisposable
         {
             var runtime = new XemuInProcessRuntime(launch, core);
             runtime.Start();
-            Log?.Invoke(this, $"xemu core {runtime.Version} started in-process ({libraryPath}).");
+            Log?.Invoke(this, $"Emulator started in-process ({libraryPath}).");
             return runtime;
         }
         catch (XemuConfigurationException exception)
@@ -225,7 +225,7 @@ public sealed class XemuCoreSession : IDisposable
     {
         var process = new XemuCoreProcess(launch);
         process.Start();
-        Log?.Invoke(this, $"xemu core started (pid {process.ProcessId}).");
+        Log?.Invoke(this, $"Emulator started (pid {process.ProcessId}).");
         return process;
     }
 
@@ -349,7 +349,7 @@ public sealed class XemuCoreSession : IDisposable
                 // The embed may arrive while the user is on another page.
                 _embedder.SetVisible(_displayVisible);
                 FrontendTrace.Write($"core window 0x{window.ToInt64():X} embedded in 0x{_displayHost.ToInt64():X}");
-                Log?.Invoke(this, "xemu core display attached.");
+                Log?.Invoke(this, "Emulator display attached.");
             }
             catch (XemuConfigurationException exception)
             {
@@ -441,10 +441,10 @@ public sealed class XemuCoreSession : IDisposable
 
         bool faulted = !requested && exitCode != 0;
         string message = requested
-            ? $"The xemu core stopped after {runtime.Uptime.TotalSeconds:F1} s."
+            ? $"The emulator stopped after {runtime.Uptime.TotalSeconds:F1} s."
             : faulted
-                ? $"The xemu core exited unexpectedly (code {exitCode})."
-                : "The xemu core powered off.";
+                ? $"The emulator exited unexpectedly (code {exitCode})."
+                : "The emulator powered off.";
 
         LogTail();
         Stopped?.Invoke(this, new XemuCoreStoppedEventArgs(faulted, message, exitCode));

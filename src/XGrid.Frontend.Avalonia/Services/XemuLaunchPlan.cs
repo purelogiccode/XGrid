@@ -87,7 +87,7 @@ public static class XemuLaunchPlan
 
         if (XemuPaths.FindCore(settings.XemuCorePath) is null)
         {
-            return "The xemu core executable was not found. Set the core path in Settings.";
+            return "The emulator binary was not found. Set its path in Settings.";
         }
 
         if (!settings.IsBiosReady)

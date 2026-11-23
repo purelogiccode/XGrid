@@ -34,7 +34,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private int _coreFrameHeight;
     private bool _coreFramePending;
     private bool _coreFrameLogged;
-    private readonly string _coreLabel = "xemu 0.8.139";
     private GamepadMappingOptions _gamepadOptions = GamepadMappingOptions.Default;
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
@@ -183,7 +182,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return IsRunning
                 ? CurrentGame is not null
                     ? CurrentGame.Title + " is powered on."
-                    : "The xemu core is running the Xbox dashboard below."
+                    : "The emulator is running the Xbox dashboard below."
                 : CurrentGame is not null
                 ? "Power on again or choose another disc image."
                 : "Insert a disc image, or power on to reach the dashboard.";
@@ -192,11 +191,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the placeholder shown before the first frame is presented.</summary>
     public string FramePlaceholder => IsRunning
-        ? "Starting the xemu core."
+        ? "Starting the console."
         : "Power on the console to see output here.";
 
     /// <summary>Gets the caption under the display.</summary>
-    public string DisplayCaption => "640 x 480 - xemu 0.8.139 (" + RendererName + ")";
+    public string DisplayCaption => "640 x 480 - " + RendererName;
 
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
@@ -210,11 +209,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets the current game format label.</summary>
     public string CurrentGameFormat => CurrentGame?.FormatText ?? "No disc";
 
-    /// <summary>Gets the emulation core label for the status bar.</summary>
-    public string CoreLabel => _coreLabel;
+    /// <summary>Gets the product label for the title bar badge and the status bar.</summary>
+    public string AppLabel { get; } =
+        "XGrid v" + (typeof(MainWindowViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
 
     /// <summary>Gets the renderer label for the status bar.</summary>
-    public string RendererLabel => RendererName + " - xemu";
+    public string RendererLabel => RendererName;
 
     private string RendererName => Config.Graphics.Renderer switch
     {
@@ -475,10 +475,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         FrontendTrace.Write($"sink='{launch.DisplaySinkName}' setting={Config.DisplaySink}");
         _core.Start(launch);
         StatusText = "Running";
-        StatusDetail = "xemu core - " + (game?.Title ?? "Xbox dashboard");
+        StatusDetail = "Emulator - " + (game?.Title ?? "Xbox dashboard");
         AddLog(
             LogLevel.Info,
-            $"xemu core {Path.GetFileName(launch.CorePath)} - {launch.Renderer} - {launch.RamMb} MB - "
+            $"Emulator - {launch.Renderer} - {launch.RamMb} MB - "
             + (string.IsNullOrEmpty(launch.DvdPath) ? "no disc" : Path.GetFileName(launch.DvdPath))
             + (string.Equals(launch.AudioBackend, "wav", StringComparison.Ordinal)
                 ? " - WAV audio: " + Path.GetFileName(launch.AudioWavPath)
