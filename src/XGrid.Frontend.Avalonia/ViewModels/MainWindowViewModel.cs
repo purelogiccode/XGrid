@@ -85,6 +85,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isFullscreen;
 
+    [ObservableProperty]
+    private bool _showLogDock;
+
     /// <summary>Initializes the shell with the default per-user settings store.</summary>
     public MainWindowViewModel()
         : this(new SettingsStore())
@@ -379,6 +382,40 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _ = Library.RefreshAsync();
     }
 
+    /// <summary>Gets a value indicating whether the log dock is expanded.</summary>
+    public bool IsLogDockOpen => ShowLogDock;
+
+    /// <summary>Gets the emulation core label for the status bar.</summary>
+    public string CoreLabel => Config.UsesXemuCore ? "xemu core" : "managed C# core";
+
+    /// <summary>Gets the renderer label for the status bar.</summary>
+    public string RendererLabel => Config.UsesXemuCore
+        ? "OpenGL · xemu"
+        : RendererPolicy.Describe(Config.Renderer);
+
+    /// <summary>Gets the short run state shown in the status bar.</summary>
+    public string RunStateLabel => !IsRunning ? "Ready" : IsPaused ? "Paused" : "Running";
+
+    /// <summary>Gets the frame-rate text for the status bar.</summary>
+    public string FpsText => IsRunning && !IsXemuCore
+        ? Fps.ToString("0.0", CultureInfo.InvariantCulture) + " fps"
+        : "—";
+
+    /// <summary>Public command: shows or hides the log dock.</summary>
+    [RelayCommand]
+    private void ToggleLogDock()
+    {
+        ShowLogDock = !ShowLogDock;
+    }
+
+    /// <summary>Navigates to a destination (menu and toolbar entry point).</summary>
+    /// <param name="kind">Destination page.</param>
+    [RelayCommand]
+    private void Navigate(PageKind kind)
+    {
+        NavigateTo(kind);
+    }
+
     /// <summary>Forwards the current keyboard pad state to the emulation thread.</summary>
     public void SetPad(ushort buttons, ReadOnlySpan<byte> analog, ReadOnlySpan<short> sticks)
     {
@@ -501,7 +538,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(HomeDetail));
             IsRunning = true;
             IsPaused = false;
-            StatusText = "Booting";
+            StatusText = Config.UsesXemuCore ? "Running" : "Booting";
             StatusDetail = game?.Title ?? "Xbox dashboard";
             FrameBitmap = null;
             HasFrame = false;
@@ -742,6 +779,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(ShowCoreDisplay));
+        OnPropertyChanged(nameof(RunStateLabel));
+        OnPropertyChanged(nameof(FpsText));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StopSessionCommand.NotifyCanExecuteChanged();
         SaveStateCommand.NotifyCanExecuteChanged();
@@ -754,8 +793,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnIsPausedChanged(bool value)
     {
         OnPropertyChanged(nameof(PauseButtonText));
+        OnPropertyChanged(nameof(RunStateLabel));
         StepFrameCommand.NotifyCanExecuteChanged();
         StepInstructionsCommand.NotifyCanExecuteChanged();
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnShowLogDockChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsLogDockOpen));
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -904,6 +950,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         Steps = (ulong)Math.Max(0, steps);
         Frames = (ulong)Math.Max(0, frames);
+        OnPropertyChanged(nameof(FpsText));
         Eip = string.Format(CultureInfo.InvariantCulture, "0x{0:X8}", _session.Eip);
         if (IsPaused != _session.IsPaused)
         {

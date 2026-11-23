@@ -31,6 +31,7 @@ public sealed class AccentPalette(string key, string label, Color color)
     /// <summary>The built-in palettes, in display order.</summary>
     public static IReadOnlyList<AccentPalette> All { get; } =
     [
+        new AccentPalette("Blue", "Blue", Color.Parse("#3DAEE9")),
         new AccentPalette("Emerald", "Emerald", Color.Parse("#57E389")),
         new AccentPalette("Aqua", "Aqua", Color.Parse("#4CD7F2")),
         new AccentPalette("Violet", "Violet", Color.Parse("#A78BFA")),
@@ -38,7 +39,7 @@ public sealed class AccentPalette(string key, string label, Color color)
         new AccentPalette("Crimson", "Crimson", Color.Parse("#FF6B81")),
     ];
 
-    /// <summary>Resolves a palette key, falling back to Emerald.</summary>
+    /// <summary>Resolves a palette key, falling back to Blue.</summary>
     public static AccentPalette Find(string? key)
     {
         foreach (AccentPalette palette in All)

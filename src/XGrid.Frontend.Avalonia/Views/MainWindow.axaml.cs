@@ -33,11 +33,110 @@ public partial class MainWindow : Window
         AddHandler(KeyUpEvent, OnKeyUp, RoutingStrategies.Bubble);
         Deactivated += OnDeactivated;
         Closed += OnClosed;
+        DataContextChanged += OnDataContextChanged;
 
         // ~60 Hz: XInputGetState is a cheap driver query and the emulation thread
         // only consumes the result once per batch.
         _padTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Background, OnPadTimer);
         _padTimer.Start();
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.LogEntries.CollectionChanged += OnLogEntriesChanged;
+        }
+    }
+
+    private void OnLogEntriesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        // The dock always shows the newest line, like a console tail.
+        if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add
+            && e.NewItems is { Count: > 0 }
+            && LogDockList.ItemCount > 0)
+        {
+            Dispatcher.UIThread.Post(
+                () => LogDockList.ScrollIntoView(LogDockList.ItemCount - 1),
+                DispatcherPriority.Background);
+        }
+    }
+
+    // ---- Menu and toolbar handlers -----------------------------------------
+
+    private void OnMenuOpenDisc(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => _ = viewModel.OpenDiscCommand.ExecuteAsync(null));
+    }
+
+    private void OnMenuChooseDisc(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => _ = viewModel.OpenDiscCommand.ExecuteAsync(null));
+    }
+
+    private void OnMenuExit(object? sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void OnMenuPower(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.TogglePowerCommand.Execute(null));
+    }
+
+    private void OnMenuPause(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.TogglePauseCommand.Execute(null));
+    }
+
+    private void OnMenuStop(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.StopSessionCommand.Execute(null));
+    }
+
+    private void OnMenuSaveState(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => _ = viewModel.SaveStateCommand.ExecuteAsync(null));
+    }
+
+    private void OnMenuLoadState(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => _ = viewModel.LoadStateCommand.ExecuteAsync(null));
+    }
+
+    private void OnMenuToggleLogDock(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.ToggleLogDockCommand.Execute(null));
+    }
+
+    private void OnMenuHome(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.NavigateTo(PageKind.Home));
+    }
+
+    private void OnMenuLibrary(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.NavigateTo(PageKind.Library));
+    }
+
+    private void OnMenuSettings(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.NavigateTo(PageKind.Settings));
+    }
+
+    private void OnMenuLogs(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.NavigateTo(PageKind.Logs));
+    }
+
+    private void OnMenuAbout(object? sender, RoutedEventArgs e)
+    {
+        ExecuteShellCommand(static viewModel => viewModel.NavigateTo(PageKind.About));
+    }
+
+    private void OnMenuFullscreen(object? sender, RoutedEventArgs e)
+    {
+        ToggleFullscreen();
     }
 
     private void OnPadTimer(object? sender, EventArgs e)
