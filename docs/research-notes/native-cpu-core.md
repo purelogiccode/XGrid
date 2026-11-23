@@ -298,10 +298,17 @@ wait is not the ATAPI probe. The captured stall state is precise: `PIC
 req=0x20` (IRQ5, the APU), `imr=0xD2` (IRQ5 unmasked), **`isr=0x00`** - the line
 is latched and deliverable but was never acknowledged - while the NV2A reports
 `notify=8`, `stalls=1`, `frames=1` and the IDE's last command is `0xC8` (READ
-DMA) with no DMA pending. The probe counts both sides: **1559 injections, 499 acknowledged**, and every
-one of those 499 acks happened *before* the first frame - during the stall the
-count never moves. So the request is raised at the slice boundary and the CPU
-never takes it, while the PIC holds `req=0x20` unmasked. `pic_read_irq()` also
+DMA) with no DMA pending. The **end state** resolves it: `pic req=0x09 isr=0x20 imr=0xD2 elcr=0x68`.
+`isr=0x20` means IRQ5 *was* delivered and is still in service - the APU handler
+never EOI'd - and `req` then holds IRQ0 (PIT) and IRQ3 (NV2A), both
+higher-priority and unmasked. The guest never takes them because it faults
+inside the APU handler and lands in the kernel panic path, which disables
+interrupts and loops in `KeStallExecutionProcessor`. So the blocker is not the
+delivery path (across the whole run 499 of the raised requests were acked and
+`Pic8259.Acknowledge()` refused none - the ack-failure logger never fired);
+it is an **exception inside the IRQ5 handler** after the first presented frame,
+most likely the `#UD` the managed-engine notes recorded at this same panic
+entry (`EAX=0x1E`, `ECX=0xC000001D`). `pic_read_irq()` also
 stopped returning -1: a withdrawn INT now answers spurious IRQ7 like the 8259,
 because QEMU passed -1 straight to `do_interrupt_x86_hardirq` and indexed the
 IDT with a negative vector. The next differential is why the raised

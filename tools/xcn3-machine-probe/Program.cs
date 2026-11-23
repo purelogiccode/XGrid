@@ -301,6 +301,10 @@ namespace XGrid.Xcn3MachineProbe
                     $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls}");
                 Console.WriteLine($"ide: accesses={machine.Ide.AccessCount} " +
                     $"busmaster={machine.Ide.BusMasterStarts}");
+                Console.WriteLine($"end-state: pic req=0x{machine.Bus.Pic.MasterRequest:X2} " +
+                    $"isr=0x{machine.Bus.Pic.MasterInService:X2} imr=0x{machine.Bus.Pic.MasterMask:X2} " +
+                    $"elcr=0x{machine.Bus.Pic.MasterElcr:X2} slave req=0x{machine.Bus.Pic.SlaveRequest:X2} " +
+                    $"nv2a notify={machine.Nv2A.NotificationsRaised} frames={machine.Nv2A.FramesPresented}");
                 Console.WriteLine($"boot: wall={sw.Elapsed.TotalSeconds:F3} s " +
                     $"= {budget / sw.Elapsed.TotalSeconds / 1e6:F1} Msteps/s " +
                     $"(service={s_serviceTicks * 1e3 / Stopwatch.Frequency:F0} ms " +
