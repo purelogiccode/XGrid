@@ -149,3 +149,19 @@ That makes the remaining work: port `BuildTable` (AVL insert), `PlaceEntry`,
 `EncodeEntry` and the descriptor/volume packer into `block/xgridzar.c`, then
 diff the synthesized metadata against `hello.iso` (the same sample packed both
 ways) before booting it.
+## Acceptance for the entry form (boot proof)
+
+The drive-level checks (`qemu-img` geometry, `qemu-io` descriptor) are done, but a
+homebrew sample is not auto-launched by the prepared HDD dashboard, so the boot
+proof needs a title the dashboard plays. The command used:
+
+```
+# one-off: hardlink the title into a folder, then pack the folder
+pwsh -File scripts/display-sink-check.ps1 -Disc data/test-samples/zar/007-entry.zar -Seconds 60
+```
+
+`scripts/display-sink-check.ps1` reads the core's shared frame section, so the
+result does not depend on which window has focus (window screenshots on this host
+capture whatever is in front, which invalidated two earlier attempts).
+Pass criteria: the 007 intro/main menu renders from the archive with no file
+written to disk besides the archive itself.
