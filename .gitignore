@@ -76,3 +76,5 @@ __pycache__/
 !xemu/**
 xemu/build/
 xemu/dist/
+xemu/obj/
+xemu/bin/
