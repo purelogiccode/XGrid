@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
         xmlns:models="using:XGrid.Frontend.Avalonia.Models"
+        xmlns:views="using:XGrid.Frontend.Avalonia.Views"
         xmlns:local="using:XGrid.Frontend.Avalonia"
         x:Class="XGrid.Frontend.Avalonia.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -114,9 +115,15 @@
     </Border>
 
     <!-- ===================== Content ===================== -->
-    <ContentControl Grid.Row="2"
-                    Content="{Binding SelectedNavigationItem.Page, FallbackValue={x:Null}}"
-                    Margin="16,14,16,14" />
+    <!-- Pages stay alive across navigation: the console page owns a native
+         child window that must not be destroyed when the user opens settings. -->
+    <Grid Grid.Row="2" Margin="16,14,16,14">
+      <views:HomeView DataContext="{Binding Home}" IsVisible="{Binding IsActive}" />
+      <views:LibraryView DataContext="{Binding Library}" IsVisible="{Binding IsActive}" />
+      <views:SettingsView DataContext="{Binding Settings}" IsVisible="{Binding IsActive}" />
+      <views:LogsView DataContext="{Binding Logs}" IsVisible="{Binding IsActive}" />
+      <views:AboutView DataContext="{Binding About}" IsVisible="{Binding IsActive}" />
+    </Grid>
 
     <!-- ===================== Log dock ===================== -->
     <Border Grid.Row="3"

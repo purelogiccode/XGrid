@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace XGrid.Input;
 
 /// <summary>
@@ -8,7 +11,7 @@ namespace XGrid.Input;
 /// controller: the P/Invoke reader (<see cref="XInputGamepadReader"/>) only
 /// produces the raw fields.
 ///
-/// The mapping is close to the identity because XInput is the descendants of
+/// The mapping is close to the identity because XInput is the descendant of
 /// the same pad: the low byte of the XInput button mask uses the same bit
 /// assignments as the Xbox digital mask (d-pad, START, BACK, thumb clicks).
 /// The four face buttons and the two shoulder buttons move to the analog
@@ -63,16 +66,7 @@ public static class XInputPadMapping
     /// <summary>Y button flag.</summary>
     public const ushort ButtonY = 0x8000;
 
-    /// <summary>XInput's recommended left-stick dead zone.</summary>
-    private const short LeftDeadZone = 7849;
-
-    /// <summary>XInput's recommended right-stick dead zone.</summary>
-    private const short RightDeadZone = 8689;
-
-    /// <summary>XInput's recommended trigger press threshold.</summary>
-    private const byte TriggerThreshold = 30;
-
-    /// <summary>Translates raw XInput fields into a pad report.</summary>
+    /// <summary>Translates raw XInput fields into a pad report with default options.</summary>
     /// <param name="xinputButtons">The XInput <c>wButtons</c> mask.</param>
     /// <param name="leftTrigger">Left trigger, 0-255.</param>
     /// <param name="rightTrigger">Right trigger, 0-255.</param>
@@ -90,28 +84,121 @@ public static class XInputPadMapping
         short rightX,
         short rightY)
     {
-        var analog = new byte[HostPad.AnalogCount];
-        analog[0] = Pressed(xinputButtons, ButtonA);
-        analog[1] = Pressed(xinputButtons, ButtonB);
-        analog[2] = Pressed(xinputButtons, ButtonX);
-        analog[3] = Pressed(xinputButtons, ButtonY);
-        analog[4] = Pressed(xinputButtons, LeftShoulder);
-        analog[5] = Pressed(xinputButtons, RightShoulder);
-        analog[6] = leftTrigger >= TriggerThreshold ? leftTrigger : (byte)0;
-        analog[7] = rightTrigger >= TriggerThreshold ? rightTrigger : (byte)0;
-
-        var sticks = new short[HostPad.StickCount];
-        sticks[0] = ApplyDeadZone(leftX, leftY, LeftDeadZone);
-        sticks[1] = ApplyDeadZone(leftY, leftX, LeftDeadZone);
-        sticks[2] = ApplyDeadZone(rightX, rightY, RightDeadZone);
-        sticks[3] = ApplyDeadZone(rightY, rightX, RightDeadZone);
-
-        return new HostPad((ushort)(xinputButtons & DigitalMask), analog, sticks);
+        return Map(xinputButtons, leftTrigger, rightTrigger, leftX, leftY, rightX, rightY, null);
     }
 
-    private static byte Pressed(ushort buttons, ushort flag)
+    /// <summary>Translates raw XInput fields into a pad report with user bindings.</summary>
+    /// <param name="xinputButtons">The XInput <c>wButtons</c> mask.</param>
+    /// <param name="leftTrigger">Left trigger, 0-255.</param>
+    /// <param name="rightTrigger">Right trigger, 0-255.</param>
+    /// <param name="leftX">Left stick X, -32768 to 32767.</param>
+    /// <param name="leftY">Left stick Y, -32768 to 32767, positive up.</param>
+    /// <param name="rightX">Right stick X, -32768 to 32767.</param>
+    /// <param name="rightY">Right stick Y, -32768 to 32767, positive up.</param>
+    /// <param name="options">Bindings and axis options, or null for defaults.</param>
+    /// <returns>The equivalent Xbox pad report.</returns>
+    public static HostPad Map(
+        ushort xinputButtons,
+        byte leftTrigger,
+        byte rightTrigger,
+        short leftX,
+        short leftY,
+        short rightX,
+        short rightY,
+        GamepadMappingOptions? options)
     {
-        return (buttons & flag) != 0 ? (byte)0xFF : (byte)0;
+        options ??= GamepadMappingOptions.Default;
+        byte triggerThreshold = (byte)Math.Clamp(
+            (options.TriggerThresholdPercent * 255) / 100,
+            0,
+            255);
+
+        var values = new Dictionary<PadAction, byte>(PadActions.All.Count);
+        foreach (PadAction action in PadActions.All)
+        {
+            GamepadSource source = options.Bindings.TryGetValue(action, out GamepadSource bound)
+                ? bound
+                : GamepadMappingOptions.DefaultBindings[action];
+            values[action] = ReadSource(source, xinputButtons, leftTrigger, rightTrigger, triggerThreshold);
+        }
+
+        short lx = leftX;
+        short ly = leftY;
+        short rx = rightX;
+        short ry = rightY;
+        if (options.InvertLeftY)
+        {
+            ly = Negate(ly);
+        }
+
+        if (options.InvertRightY)
+        {
+            ry = Negate(ry);
+        }
+
+        if (options.SwapSticks)
+        {
+            (lx, ly, rx, ry) = (rx, ry, lx, ly);
+        }
+
+        int leftDeadZone = DeadZoneRadius(options.LeftDeadZonePercent);
+        int rightDeadZone = DeadZoneRadius(options.RightDeadZonePercent);
+        short[] sticks =
+        [
+            ApplyDeadZone(lx, ly, leftDeadZone),
+            ApplyDeadZone(ly, lx, leftDeadZone),
+            ApplyDeadZone(rx, ry, rightDeadZone),
+            ApplyDeadZone(ry, rx, rightDeadZone),
+        ];
+
+        return PadStateBuilder.Build(values, sticks);
+    }
+
+    private static byte ReadSource(
+        GamepadSource source,
+        ushort buttons,
+        byte leftTrigger,
+        byte rightTrigger,
+        byte triggerThreshold)
+    {
+        return source switch
+        {
+            GamepadSource.LeftTrigger => leftTrigger >= triggerThreshold ? leftTrigger : (byte)0,
+            GamepadSource.RightTrigger => rightTrigger >= triggerThreshold ? rightTrigger : (byte)0,
+            _ => (buttons & Flag(source)) != 0 ? (byte)0xFF : (byte)0,
+        };
+    }
+
+    private static ushort Flag(GamepadSource source)
+    {
+        return source switch
+        {
+            GamepadSource.A => ButtonA,
+            GamepadSource.B => ButtonB,
+            GamepadSource.X => ButtonX,
+            GamepadSource.Y => ButtonY,
+            GamepadSource.LeftShoulder => LeftShoulder,
+            GamepadSource.RightShoulder => RightShoulder,
+            GamepadSource.Back => Back,
+            GamepadSource.Start => Start,
+            GamepadSource.LeftThumb => LeftThumb,
+            GamepadSource.RightThumb => RightThumb,
+            GamepadSource.DpadUp => DpadUp,
+            GamepadSource.DpadDown => DpadDown,
+            GamepadSource.DpadLeft => DpadLeft,
+            GamepadSource.DpadRight => DpadRight,
+            _ => 0,
+        };
+    }
+
+    private static int DeadZoneRadius(int percent)
+    {
+        return (int)Math.Round(short.MaxValue * Math.Clamp(percent, 0, 100) / 100.0);
+    }
+
+    private static short Negate(short value)
+    {
+        return value == short.MinValue ? short.MaxValue : (short)-value;
     }
 
     /// <summary>
@@ -122,7 +209,7 @@ public static class XInputPadMapping
     /// the dead zone radius on both axes is inside it even though each axis
     /// alone is below the threshold.
     /// </remarks>
-    private static short ApplyDeadZone(short axis, short otherAxis, short deadZone)
+    private static short ApplyDeadZone(short axis, short otherAxis, int deadZone)
     {
         long magnitudeSquared = ((long)axis * axis) + ((long)otherAxis * otherAxis);
         return magnitudeSquared < (long)deadZone * deadZone ? (short)0 : axis;

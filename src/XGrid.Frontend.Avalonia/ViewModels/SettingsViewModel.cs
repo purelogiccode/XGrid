@@ -5,10 +5,12 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
+using XGrid.Input;
 using XGrid.XboxFs;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
@@ -106,6 +108,115 @@ public sealed class TitleOverrideItem : ObservableObject
     }
 }
 
+/// <summary>One keyboard binding row: an action and its comma-separated keys.</summary>
+public sealed class KeyboardBindingItem : ObservableObject
+{
+    private string _keys;
+    private bool _isCapturing;
+
+    /// <summary>Creates a binding row.</summary>
+    /// <param name="action">Pad action.</param>
+    /// <param name="keys">Stored key list.</param>
+    /// <param name="capture">Callback that starts key capture for this row.</param>
+    public KeyboardBindingItem(PadAction action, string keys, Action<KeyboardBindingItem> capture)
+    {
+        ArgumentNullException.ThrowIfNull(capture);
+        Action = action;
+        ActionName = PadActions.DisplayName(action);
+        _keys = keys;
+        CaptureCommand = new RelayCommand(() => capture(this));
+        ClearCommand = new RelayCommand(() =>
+        {
+            Keys = string.Empty;
+            IsCapturing = false;
+        });
+    }
+
+    /// <summary>Gets the pad action.</summary>
+    public PadAction Action { get; }
+
+    /// <summary>Gets the display label for the action.</summary>
+    public string ActionName { get; }
+
+    /// <summary>Gets or sets the stored key list.</summary>
+    public string Keys
+    {
+        get => _keys;
+        set
+        {
+            if (SetProperty(ref _keys, value))
+            {
+                OnPropertyChanged(nameof(KeysDisplay));
+            }
+        }
+    }
+
+    /// <summary>Gets the display text for the binding.</summary>
+    public string KeysDisplay => _isCapturing ? "Press a key..." : KeyboardKeys.Describe(_keys);
+
+    /// <summary>Gets or sets a value indicating whether the next key press binds this row.</summary>
+    public bool IsCapturing
+    {
+        get => _isCapturing;
+        set
+        {
+            if (SetProperty(ref _isCapturing, value))
+            {
+                OnPropertyChanged(nameof(KeysDisplay));
+            }
+        }
+    }
+
+    /// <summary>Gets the command that starts key capture.</summary>
+    public IRelayCommand CaptureCommand { get; }
+
+    /// <summary>Gets the command that clears the binding.</summary>
+    public IRelayCommand ClearCommand { get; }
+
+    /// <summary>Binds one captured key.</summary>
+    /// <param name="key">Captured key.</param>
+    public void Capture(Key key)
+    {
+        Keys = KeyboardKeys.Format(key);
+        IsCapturing = false;
+    }
+}
+
+/// <summary>One gamepad binding row: an action and its physical source.</summary>
+public sealed class GamepadBindingItem : ObservableObject
+{
+    private KeyedOption _selectedSource;
+
+    /// <summary>Creates a gamepad binding row.</summary>
+    /// <param name="action">Pad action.</param>
+    /// <param name="source">Bound source.</param>
+    /// <param name="sources">Selectable sources.</param>
+    public GamepadBindingItem(PadAction action, GamepadSource source, IReadOnlyList<KeyedOption> sources)
+    {
+        Action = action;
+        ActionName = PadActions.DisplayName(action);
+        Sources = sources;
+        _selectedSource = sources.FirstOrDefault(option => string.Equals(option.Key, source.ToString(), StringComparison.Ordinal))
+            ?? sources[0];
+    }
+
+    /// <summary>Gets the pad action.</summary>
+    public PadAction Action { get; }
+
+    /// <summary>Gets the display label for the action.</summary>
+    public string ActionName { get; }
+
+    /// <summary>Gets the selectable sources.</summary>
+    public IReadOnlyList<KeyedOption> Sources { get; }
+
+    /// <summary>Gets or sets the selected source.</summary>
+    public KeyedOption SelectedSource
+    {
+        get => _selectedSource;
+        set => SetProperty(ref _selectedSource, value);
+    }
+}
+
 /// <summary>A library folder row with a remove command.</summary>
 public sealed class LibraryFolderItem
 {
@@ -156,11 +267,127 @@ public sealed partial class SettingsViewModel : PageViewModel
     [ObservableProperty]
     private AccentOption? _selectedAccent;
 
+    [ObservableProperty]
+    private double _leftDeadZone = GamepadMappingOptions.DefaultLeftDeadZonePercent;
+
+    [ObservableProperty]
+    private double _rightDeadZone = GamepadMappingOptions.DefaultRightDeadZonePercent;
+
+    [ObservableProperty]
+    private double _triggerThreshold = GamepadMappingOptions.DefaultTriggerThresholdPercent;
+
+    [ObservableProperty]
+    private bool _invertLeftY;
+
+    [ObservableProperty]
+    private bool _invertRightY;
+
+    [ObservableProperty]
+    private bool _swapSticks;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedRenderer;
+
+    [ObservableProperty]
+    private int _surfaceScale = 1;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedFiltering;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedStartupSize;
+
+    [ObservableProperty]
+    private bool _graphicsVSync;
+
+    [ObservableProperty]
+    private bool _fullscreenOnStartup;
+
+    [ObservableProperty]
+    private bool _fullscreenExclusive;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedAspectRatio;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedFit;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedAvPack;
+
+    [ObservableProperty]
+    private bool _useDsp = true;
+
+    [ObservableProperty]
+    private bool _useDspJit;
+
+    [ObservableProperty]
+    private bool _hrtf = true;
+
+    [ObservableProperty]
+    private double _volumeLimit = 1.0;
+
+    [ObservableProperty]
+    private int _voiceWorkers;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedAudioBackend;
+
     /// <summary>Creates the settings page with a draft loaded from the shell configuration.</summary>
     public SettingsViewModel(MainWindowViewModel shell)
         : base(shell)
     {
         FilterOptions = [.. FrameFilters.All.Select(item => new KeyedOption(item.Key, item.Label))];
+        GamepadSourceOptions =
+        [
+            .. GamepadSources.All.Select(source => new KeyedOption(source.ToString(), GamepadSources.DisplayName(source))),
+        ];
+        RendererOptions =
+        [
+            new KeyedOption(GraphicsSettings.RendererOpenGl, "OpenGL"),
+            new KeyedOption(GraphicsSettings.RendererVulkan, "Vulkan"),
+            new KeyedOption(GraphicsSettings.RendererNull, "Null (headless, no picture)"),
+        ];
+        FilteringOptions =
+        [
+            new KeyedOption(GraphicsSettings.FilterLinear, "Linear"),
+            new KeyedOption(GraphicsSettings.FilterNearest, "Nearest"),
+        ];
+        StartupSizeOptions =
+        [
+            .. GraphicsSettings.StartupSizes.Select(size => new KeyedOption(size, size)),
+        ];
+        AspectRatioOptions =
+        [
+            new KeyedOption("auto", "Auto"),
+            new KeyedOption("native", "Native"),
+            new KeyedOption("4x3", "4:3"),
+            new KeyedOption("16x9", "16:9"),
+        ];
+        FitOptions =
+        [
+            new KeyedOption("scale", "Scale"),
+            new KeyedOption("center", "Center"),
+            new KeyedOption("stretch", "Stretch"),
+        ];
+        AvPackOptions =
+        [
+            .. GraphicsSettings.AvPacks.Select(pack => new KeyedOption(pack, pack)),
+        ];
+        AudioBackendOptions = OperatingSystem.IsWindows()
+            ?
+            [
+                new KeyedOption(AudioSettings.BackendAuto, "Auto"),
+                new KeyedOption(AudioSettings.BackendDirectSound, "DirectSound"),
+                new KeyedOption(AudioSettings.BackendNone, "None"),
+                new KeyedOption(AudioSettings.BackendWav, "WAV capture"),
+            ]
+            :
+            [
+                new KeyedOption(AudioSettings.BackendAuto, "Auto"),
+                new KeyedOption(AudioSettings.BackendNone, "None"),
+                new KeyedOption(AudioSettings.BackendWav, "WAV capture"),
+            ];
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -175,6 +402,48 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the selectable presentation filters.</summary>
     public IReadOnlyList<KeyedOption> FilterOptions { get; }
+
+    /// <summary>Gets the selectable gamepad sources.</summary>
+    public IReadOnlyList<KeyedOption> GamepadSourceOptions { get; }
+
+    /// <summary>Gets the selectable core renderers.</summary>
+    public IReadOnlyList<KeyedOption> RendererOptions { get; }
+
+    /// <summary>Gets the selectable internal surface scales.</summary>
+    public IReadOnlyList<int> SurfaceScaleOptions { get; } = [1, 2, 3, 4, 5, 6, 8];
+
+    /// <summary>Gets the selectable core texture filters.</summary>
+    public IReadOnlyList<KeyedOption> FilteringOptions { get; }
+
+    /// <summary>Gets the selectable core window sizes.</summary>
+    public IReadOnlyList<KeyedOption> StartupSizeOptions { get; }
+
+    /// <summary>Gets the selectable aspect-ratio modes.</summary>
+    public IReadOnlyList<KeyedOption> AspectRatioOptions { get; }
+
+    /// <summary>Gets the selectable fit modes.</summary>
+    public IReadOnlyList<KeyedOption> FitOptions { get; }
+
+    /// <summary>Gets the selectable AV packs.</summary>
+    public IReadOnlyList<KeyedOption> AvPackOptions { get; }
+
+    /// <summary>Gets the selectable host audio backends.</summary>
+    public IReadOnlyList<KeyedOption> AudioBackendOptions { get; }
+
+    /// <summary>Gets the selectable voice-worker counts (0 = auto).</summary>
+    public IReadOnlyList<int> VoiceWorkerOptions { get; } = [0, 1, 2, 4, 8];
+
+    /// <summary>Gets the keyboard binding rows.</summary>
+    public ObservableCollection<KeyboardBindingItem> KeyboardBindings { get; } = [];
+
+    /// <summary>Gets the gamepad binding rows.</summary>
+    public ObservableCollection<GamepadBindingItem> GamepadBindings { get; } = [];
+
+    /// <summary>Gets the row currently waiting for a key, or null.</summary>
+    public KeyboardBindingItem? CapturingBinding => KeyboardBindings.FirstOrDefault(item => item.IsCapturing);
+
+    /// <summary>Gets a value indicating whether a key capture is in progress.</summary>
+    public bool IsCapturingKey => CapturingBinding is not null;
 
     /// <summary>Gets the per-title overrides being edited.</summary>
     public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = [];
@@ -216,6 +485,38 @@ public sealed partial class SettingsViewModel : PageViewModel
         HddPath = settings.HddPath;
         DvdPath = settings.DvdPath;
         RamMb = settings.RamMb;
+        LoadInput(settings.Input);
+        SelectedRenderer = RendererOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Graphics.Renderer, StringComparison.Ordinal))
+            ?? RendererOptions[0];
+        SurfaceScale = settings.Graphics.SurfaceScale;
+        SelectedFiltering = FilteringOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Graphics.Filtering, StringComparison.Ordinal))
+            ?? FilteringOptions[0];
+        SelectedStartupSize = StartupSizeOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Graphics.StartupSize, StringComparison.Ordinal))
+            ?? StartupSizeOptions.FirstOrDefault(option => string.Equals(option.Key, "1280x960", StringComparison.Ordinal))
+            ?? StartupSizeOptions[0];
+        GraphicsVSync = settings.Graphics.VSync;
+        FullscreenOnStartup = settings.Graphics.FullscreenOnStartup;
+        FullscreenExclusive = settings.Graphics.FullscreenExclusive;
+        SelectedAspectRatio = AspectRatioOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Graphics.AspectRatio, StringComparison.Ordinal))
+            ?? AspectRatioOptions[0];
+        SelectedFit = FitOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Graphics.Fit, StringComparison.Ordinal))
+            ?? FitOptions[0];
+        SelectedAvPack = AvPackOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Graphics.AvPack, StringComparison.Ordinal))
+            ?? AvPackOptions[0];
+        UseDsp = settings.Audio.UseDsp;
+        UseDspJit = settings.Audio.UseDspJit;
+        Hrtf = settings.Audio.Hrtf;
+        VolumeLimit = settings.Audio.VolumeLimit;
+        VoiceWorkers = settings.Audio.VoiceWorkers;
+        SelectedAudioBackend = AudioBackendOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Audio.Backend, StringComparison.Ordinal))
+            ?? AudioBackendOptions[0];
         XemuCorePath = settings.XemuCorePath;
         DisplaySink = settings.DisplaySink;
         SelectedFilter = FilterOptions.FirstOrDefault(
@@ -261,6 +562,9 @@ public sealed partial class SettingsViewModel : PageViewModel
             HddPath = HddPath.Trim(),
             DvdPath = DvdPath.Trim(),
             RamMb = RamMb,
+            Input = BuildInputSettings(),
+            Graphics = BuildGraphicsSettings(),
+            Audio = BuildAudioSettings(),
             XemuCorePath = XemuCorePath.Trim(),
             DisplaySink = DisplaySink,
             Filter = SelectedFilter?.Key ?? FrameFilters.Nearest,
@@ -274,6 +578,144 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         Shell.SaveSettings(next);
         Shell.Home.NotifySettingsChanged();
+    }
+
+    private GraphicsSettings BuildGraphicsSettings()
+    {
+        var graphics = new GraphicsSettings
+        {
+            Renderer = SelectedRenderer?.Key ?? GraphicsSettings.RendererOpenGl,
+            SurfaceScale = SurfaceScale,
+            Filtering = SelectedFiltering?.Key ?? GraphicsSettings.FilterLinear,
+            StartupSize = SelectedStartupSize?.Key ?? "1280x960",
+            VSync = GraphicsVSync,
+            FullscreenOnStartup = FullscreenOnStartup,
+            FullscreenExclusive = FullscreenExclusive,
+            AspectRatio = SelectedAspectRatio?.Key ?? "auto",
+            Fit = SelectedFit?.Key ?? "scale",
+            AvPack = SelectedAvPack?.Key ?? "hdtv",
+        };
+        graphics.Normalize();
+        return graphics;
+    }
+
+    private AudioSettings BuildAudioSettings()
+    {
+        var audio = new AudioSettings
+        {
+            UseDsp = UseDsp,
+            UseDspJit = UseDspJit,
+            Hrtf = Hrtf,
+            VolumeLimit = VolumeLimit,
+            VoiceWorkers = VoiceWorkers,
+            Backend = SelectedAudioBackend?.Key ?? AudioSettings.BackendAuto,
+        };
+        audio.Normalize();
+        return audio;
+    }
+
+    /// <summary>Public command: restores the shipped keyboard and gamepad defaults.</summary>
+    [RelayCommand]
+    private void ResetInputDefaults()
+    {
+        LoadInput(new InputSettings());
+        Shell.ShowToast("Input defaults restored - save to apply.");
+    }
+
+    /// <summary>Loads one input configuration into the edit surface.</summary>
+    /// <param name="input">Input settings.</param>
+    private void LoadInput(InputSettings input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        KeyboardBindings.Clear();
+        foreach (PadAction action in PadActions.All)
+        {
+            string keys = input.Keyboard.TryGetValue(action.ToString(), out string? stored)
+                ? stored
+                : InputDefaults.DefaultKeyboard(action);
+            KeyboardBindings.Add(new KeyboardBindingItem(action, keys, BeginCapture));
+        }
+
+        GamepadBindings.Clear();
+        foreach (PadAction action in PadActions.All)
+        {
+            string sourceName = input.Gamepad.TryGetValue(action.ToString(), out string? stored)
+                ? stored
+                : InputDefaults.DefaultGamepad(action);
+            _ = GamepadSources.TryParse(sourceName, out GamepadSource source);
+            GamepadBindings.Add(new GamepadBindingItem(action, source, GamepadSourceOptions));
+        }
+
+        LeftDeadZone = input.LeftDeadZonePercent;
+        RightDeadZone = input.RightDeadZonePercent;
+        TriggerThreshold = input.TriggerThresholdPercent;
+        InvertLeftY = input.InvertLeftY;
+        InvertRightY = input.InvertRightY;
+        SwapSticks = input.SwapSticks;
+        OnPropertyChanged(nameof(CapturingBinding));
+        OnPropertyChanged(nameof(IsCapturingKey));
+    }
+
+    /// <summary>Projects the edit surface back into persisted input settings.</summary>
+    private InputSettings BuildInputSettings()
+    {
+        var input = new InputSettings
+        {
+            Keyboard = KeyboardBindings.ToDictionary(
+                item => item.Action.ToString(),
+                item => item.Keys,
+                StringComparer.OrdinalIgnoreCase),
+            Gamepad = GamepadBindings.ToDictionary(
+                item => item.Action.ToString(),
+                item => item.SelectedSource?.Key ?? InputDefaults.DefaultGamepad(item.Action),
+                StringComparer.OrdinalIgnoreCase),
+            LeftDeadZonePercent = (int)Math.Round(LeftDeadZone),
+            RightDeadZonePercent = (int)Math.Round(RightDeadZone),
+            TriggerThresholdPercent = (int)Math.Round(TriggerThreshold),
+            InvertLeftY = InvertLeftY,
+            InvertRightY = InvertRightY,
+            SwapSticks = SwapSticks,
+        };
+        input.Normalize();
+        return input;
+    }
+
+    private void BeginCapture(KeyboardBindingItem item)
+    {
+        foreach (KeyboardBindingItem binding in KeyboardBindings)
+        {
+            binding.IsCapturing = false;
+        }
+
+        item.IsCapturing = true;
+        OnPropertyChanged(nameof(CapturingBinding));
+        OnPropertyChanged(nameof(IsCapturingKey));
+        Shell.ShowToast("Press a key for " + item.ActionName + ". Esc cancels.");
+    }
+
+    /// <summary>Captures the next key while a binding row is armed.</summary>
+    /// <param name="key">Pressed key.</param>
+    /// <returns>True when the key was consumed by the capture.</returns>
+    public bool CaptureKey(Key key)
+    {
+        KeyboardBindingItem? item = CapturingBinding;
+        if (item is null)
+        {
+            return false;
+        }
+
+        if (key == Key.Escape)
+        {
+            item.IsCapturing = false;
+        }
+        else
+        {
+            item.Capture(key);
+        }
+
+        OnPropertyChanged(nameof(CapturingBinding));
+        OnPropertyChanged(nameof(IsCapturingKey));
+        return true;
     }
 
     /// <summary>Public command: adds a per-title override for a disc or XBE image.</summary>

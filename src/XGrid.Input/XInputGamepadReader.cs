@@ -43,8 +43,9 @@ public sealed class XInputGamepadReader : IDisposable
     /// Polls for controller state.
     /// </summary>
     /// <param name="pad">Receives the translated pad report when a controller is connected.</param>
+    /// <param name="options">Bindings and axis options, or null for defaults.</param>
     /// <returns><c>true</c> when a controller reported state, <c>false</c> otherwise.</returns>
-    public bool TryRead(out HostPad pad)
+    public bool TryRead(out HostPad pad, GamepadMappingOptions? options = null)
     {
         pad = HostPad.Neutral;
         if (_disposed || _getState is null)
@@ -54,14 +55,14 @@ public sealed class XInputGamepadReader : IDisposable
 
         // Stick to the first slot that answered: re-scanning every poll would
         // make two connected controllers fight over slot order.
-        if (UserIndex >= 0 && TryPoll(UserIndex, out pad))
+        if (UserIndex >= 0 && TryPoll(UserIndex, out pad, options))
         {
             return true;
         }
 
         for (int user = 0; user < MaxUsers; user++)
         {
-            if (!TryPoll(user, out pad))
+            if (!TryPoll(user, out pad, options))
             {
                 continue;
             }
@@ -75,7 +76,7 @@ public sealed class XInputGamepadReader : IDisposable
         return false;
     }
 
-    private bool TryPoll(int user, out HostPad pad)
+    private bool TryPoll(int user, out HostPad pad, GamepadMappingOptions? options)
     {
         pad = HostPad.Neutral;
         if (_getState is null)
@@ -97,7 +98,8 @@ public sealed class XInputGamepadReader : IDisposable
                 state.Gamepad.LeftThumbX,
                 state.Gamepad.LeftThumbY,
                 state.Gamepad.RightThumbX,
-                state.Gamepad.RightThumbY);
+                state.Gamepad.RightThumbY,
+                options);
             return true;
         }
         catch (DllNotFoundException)

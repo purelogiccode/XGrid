@@ -49,8 +49,50 @@ public sealed record XemuLaunchSettings
     /// </summary>
     public bool VSync { get; init; }
 
+    /// <summary>Gets the core renderer: <c>OPENGL</c>, <c>VULKAN</c> or <c>NULL</c>.</summary>
+    public string Renderer { get; init; } = "OPENGL";
+
+    /// <summary>Gets the internal surface scale (1-8).</summary>
+    public int SurfaceScale { get; init; } = 1;
+
+    /// <summary>Gets the core texture filtering: <c>linear</c> or <c>nearest</c>.</summary>
+    public string Filtering { get; init; } = "linear";
+
+    /// <summary>Gets the core window startup-size key.</summary>
+    public string StartupSize { get; init; } = "1280x960";
+
+    /// <summary>Gets a value indicating whether the core starts fullscreen.</summary>
+    public bool FullscreenOnStartup { get; init; }
+
+    /// <summary>Gets a value indicating whether fullscreen is exclusive.</summary>
+    public bool FullscreenExclusive { get; init; }
+
+    /// <summary>Gets the aspect-ratio mode: <c>native</c>, <c>auto</c>, <c>4x3</c> or <c>16x9</c>.</summary>
+    public string AspectRatio { get; init; } = "auto";
+
+    /// <summary>Gets the fit mode: <c>center</c>, <c>scale</c> or <c>stretch</c>.</summary>
+    public string Fit { get; init; } = "scale";
+
     /// <summary>Gets a value indicating whether the APU DSP (guest audio microcode) runs.</summary>
     public bool AudioDsp { get; init; } = true;
+
+    /// <summary>Gets a value indicating whether the DSP JIT is used.</summary>
+    public bool AudioDspJit { get; init; }
+
+    /// <summary>Gets a value indicating whether HRTF filtering is applied.</summary>
+    public bool Hrtf { get; init; } = true;
+
+    /// <summary>Gets the output volume limit (0-1).</summary>
+    public double VolumeLimit { get; init; } = 1.0;
+
+    /// <summary>Gets the voice-processor worker count (0 = auto).</summary>
+    public int VoiceWorkers { get; init; }
+
+    /// <summary>Gets the host audio backend: <c>auto</c>, <c>dsound</c>, <c>none</c> or <c>wav</c>.</summary>
+    public string AudioBackend { get; init; } = "auto";
+
+    /// <summary>Gets the WAV capture path when <see cref="AudioBackend"/> is <c>wav</c>.</summary>
+    public string AudioWavPath { get; init; } = string.Empty;
 
     /// <summary>Gets a value indicating whether the boot animation is skipped.</summary>
     public bool SkipBootAnimation { get; init; }
@@ -89,6 +131,21 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the directory that holds the generated config and the core log.</summary>
     public string WorkingDirectory { get; init; } = string.Empty;
 
+    private static readonly HashSet<string> StartupSizes = new(StringComparer.Ordinal)
+    {
+        "last_used",
+        "640x480",
+        "720x480",
+        "1280x720",
+        "1280x800",
+        "1280x960",
+        "1920x1080",
+        "2560x1440",
+        "2560x1600",
+        "2560x1920",
+        "3840x2160",
+    };
+
     /// <summary>
     /// Returns the configuration problems that would stop the core from
     /// booting, as human-readable messages. Empty means valid.
@@ -116,6 +173,68 @@ public sealed record XemuLaunchSettings
         if (WindowWidth < 64 || WindowHeight < 64)
         {
             errors.Add($"The window must be at least 64x64 pixels (got {WindowWidth}x{WindowHeight}).");
+        }
+
+        if (!string.Equals(Renderer, "OPENGL", StringComparison.Ordinal)
+            && !string.Equals(Renderer, "VULKAN", StringComparison.Ordinal)
+            && !string.Equals(Renderer, "NULL", StringComparison.Ordinal))
+        {
+            errors.Add($"Unknown renderer '{Renderer}'.");
+        }
+
+        if (SurfaceScale is < 1 or > 8)
+        {
+            errors.Add($"Surface scale must be between 1 and 8, not {SurfaceScale}.");
+        }
+
+        if (!string.Equals(Filtering, "linear", StringComparison.Ordinal)
+            && !string.Equals(Filtering, "nearest", StringComparison.Ordinal))
+        {
+            errors.Add($"Unknown texture filtering '{Filtering}'.");
+        }
+
+        if (!StartupSizes.Contains(StartupSize))
+        {
+            errors.Add($"Unknown startup size '{StartupSize}'.");
+        }
+
+        if (!string.Equals(AspectRatio, "native", StringComparison.Ordinal)
+            && !string.Equals(AspectRatio, "auto", StringComparison.Ordinal)
+            && !string.Equals(AspectRatio, "4x3", StringComparison.Ordinal)
+            && !string.Equals(AspectRatio, "16x9", StringComparison.Ordinal))
+        {
+            errors.Add($"Unknown aspect ratio '{AspectRatio}'.");
+        }
+
+        if (!string.Equals(Fit, "center", StringComparison.Ordinal)
+            && !string.Equals(Fit, "scale", StringComparison.Ordinal)
+            && !string.Equals(Fit, "stretch", StringComparison.Ordinal))
+        {
+            errors.Add($"Unknown fit mode '{Fit}'.");
+        }
+
+        if (VolumeLimit is < 0.0 or > 1.0)
+        {
+            errors.Add($"Audio volume must be between 0 and 1, not {VolumeLimit}.");
+        }
+
+        if (VoiceWorkers is < 0 or > 16)
+        {
+            errors.Add($"Audio worker count must be between 0 and 16, not {VoiceWorkers}.");
+        }
+
+        if (!string.Equals(AudioBackend, "auto", StringComparison.Ordinal)
+            && !string.Equals(AudioBackend, "dsound", StringComparison.Ordinal)
+            && !string.Equals(AudioBackend, "none", StringComparison.Ordinal)
+            && !string.Equals(AudioBackend, "wav", StringComparison.Ordinal))
+        {
+            errors.Add($"Unknown audio backend '{AudioBackend}'.");
+        }
+
+        if (string.Equals(AudioBackend, "wav", StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(AudioWavPath))
+        {
+            errors.Add("The WAV audio backend needs a capture path.");
         }
 
         if (!string.Equals(AvPack, "hdtv", StringComparison.Ordinal)

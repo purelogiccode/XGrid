@@ -126,10 +126,24 @@ public sealed class XemuCoreProcess : IDisposable
         Directory.CreateDirectory(_settings.WorkingDirectory);
         File.WriteAllText(ConfigPath, XemuTomlWriter.Build(_settings));
 
+        string arguments = "-config_path " + Quote(ConfigPath);
+        switch (_settings.AudioBackend)
+        {
+            case "dsound":
+                arguments += " -audiodev dsound,id=xgrid";
+                break;
+            case "none":
+                arguments += " -audiodev none,id=xgrid";
+                break;
+            case "wav":
+                arguments += " -audiodev wav,id=xgrid,path=" + Quote(_settings.AudioWavPath);
+                break;
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = _settings.CorePath,
-            Arguments = "-config_path " + Quote(ConfigPath),
+            Arguments = arguments,
             WorkingDirectory = _settings.WorkingDirectory,
             UseShellExecute = false,
         };

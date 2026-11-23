@@ -44,6 +44,15 @@ public sealed class EmulatorSettings
     /// </summary>
     public string Filter { get; set; } = Services.FrameFilters.Nearest;
 
+    /// <summary>Gets or sets the player-1 keyboard and gamepad configuration.</summary>
+    public InputSettings Input { get; set; } = new();
+
+    /// <summary>Gets or sets the graphics configuration.</summary>
+    public GraphicsSettings Graphics { get; set; } = new();
+
+    /// <summary>Gets or sets the audio configuration.</summary>
+    public AudioSettings Audio { get; set; } = new();
+
     /// <summary>Gets or sets the accent palette key.</summary>
     public string Accent { get; set; } = "Blue";
 
@@ -178,6 +187,9 @@ public sealed class EmulatorSettings
             XemuCorePath = XemuCorePath,
             DisplaySink = DisplaySink,
             Filter = Filter,
+            Input = Input?.Clone() ?? new InputSettings(),
+            Graphics = Graphics?.Clone() ?? new GraphicsSettings(),
+            Audio = Audio?.Clone() ?? new AudioSettings(),
             LibraryFolders = [.. LibraryFolders],
         };
         foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
@@ -193,6 +205,12 @@ public sealed class EmulatorSettings
     {
         RamMb = RamMb is 128 ? 128 : 64;
         Filter = Services.FrameFilters.Normalize(Filter);
+        Input ??= new InputSettings();
+        Graphics ??= new GraphicsSettings();
+        Audio ??= new AudioSettings();
+        Input.Normalize();
+        Graphics.Normalize();
+        Audio.Normalize();
         if (string.IsNullOrWhiteSpace(Accent))
         {
             Accent = "Blue";

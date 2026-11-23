@@ -4,275 +4,251 @@
              xmlns:local="using:XGrid.Frontend.Avalonia"
              x:Class="XGrid.Frontend.Avalonia.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
-  <ScrollViewer Name="PageScroll">
-    <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
-      <!-- ===================== Save bar ===================== -->
-      <Border Classes="card tight" Padding="16">
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="3" VerticalAlignment="Center">
-            <TextBlock Text="Configuration" Classes="label" />
-            <TextBlock Text="{Binding SettingsFolder}" Classes="mono" FontSize="10.5" TextTrimming="CharacterEllipsis" />
-          </StackPanel>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-            <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="7">
-                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
-                <TextBlock Text="Open folder" />
-              </StackPanel>
-            </Button>
-            <Button Classes="primary" Command="{Binding SaveCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="7">
-                <PathIcon Data="{x:Static local:AppIcons.Save}"
-                          Width="13"
-                          Height="13"
-                          Foreground="{DynamicResource XgAccentTextBrush}" />
-                <TextBlock Text="Save settings"
-                           Foreground="{DynamicResource XgAccentTextBrush}"
-                           FontWeight="SemiBold" />
-              </StackPanel>
-            </Button>
-          </StackPanel>
-        </Grid>
-      </Border>
+  <Grid RowDefinitions="Auto,*" RowSpacing="12">
 
-      <!-- ===================== Firmware ===================== -->
-      <Border Classes="card">
-        <StackPanel Spacing="16">
-          <StackPanel Spacing="3">
-            <TextBlock Text="Firmware" Classes="h3" />
-            <TextBlock Text="XGrid ships no Microsoft firmware. Provide your own legally obtained images."
-                       Classes="hint" />
-          </StackPanel>
-          <Border Classes="divider" />
-
-          <StackPanel Spacing="7">
-            <StackPanel Spacing="2">
-              <TextBlock Text="BIOS image" Classes="label" />
-              <TextBlock Text="Required. The retail MCPX BIOS (256 KB or 512 KB)." Classes="hint" />
-            </StackPanel>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBox Classes="path"
-                       Text="{Binding BiosPath, Mode=TwoWay}"
-                       PlaceholderText="Path to the BIOS image" />
-              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…" />
-              <Button Grid.Column="2"
-                      Classes="subtle icon"
-                      Command="{Binding ClearFieldCommand}"
-                      CommandParameter="bios"
-                      ToolTip.Tip="Clear">
-                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
-              </Button>
-            </Grid>
+    <!-- ===================== Save bar ===================== -->
+    <Border Grid.Row="0" Classes="card tight" Padding="16">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="3" VerticalAlignment="Center">
+          <TextBlock Text="Configuration" Classes="label" />
+          <TextBlock Text="{Binding SettingsFolder}" Classes="mono" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+          <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}">
             <StackPanel Orientation="Horizontal" Spacing="7">
-              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                       Fill="{DynamicResource XgErrorBrush}"
-                       IsVisible="{Binding ShowBiosWarning}" />
-              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                       Fill="{DynamicResource XgAccentBrush}"
-                       IsVisible="{Binding BiosPathValid}" />
-              <TextBlock Text="{Binding BiosStatusText}" Classes="hint" />
+              <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+              <TextBlock Text="Open folder" />
             </StackPanel>
-          </StackPanel>
-
-          <StackPanel Spacing="7">
-            <StackPanel Spacing="2">
-              <TextBlock Text="MCPX boot ROM" Classes="label" />
-              <TextBlock Text="Optional 512-byte MCPX ROM (mcpx_1.0.bin)." Classes="hint" />
+          </Button>
+          <Button Classes="primary" Command="{Binding SaveCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <PathIcon Data="{x:Static local:AppIcons.Save}"
+                        Width="13"
+                        Height="13"
+                        Foreground="{DynamicResource XgAccentTextBrush}" />
+              <TextBlock Text="Save settings"
+                         Foreground="{DynamicResource XgAccentTextBrush}"
+                         FontWeight="SemiBold" />
             </StackPanel>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBox Classes="path"
-                       Text="{Binding McpxRomPath, Mode=TwoWay}"
-                       PlaceholderText="Optional" />
-              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…" />
-              <Button Grid.Column="2"
-                      Classes="subtle icon"
-                      Command="{Binding ClearFieldCommand}"
-                      CommandParameter="mcpx"
-                      ToolTip.Tip="Clear">
-                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
-              </Button>
-            </Grid>
-          </StackPanel>
-
-          <StackPanel Spacing="7">
-            <StackPanel Spacing="2">
-              <TextBlock Text="EEPROM image" Classes="label" />
-              <TextBlock Text="Optional 256-byte EEPROM dump. Uses a blank image when omitted." Classes="hint" />
-            </StackPanel>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBox Classes="path"
-                       Text="{Binding EepromPath, Mode=TwoWay}"
-                       PlaceholderText="Optional" />
-              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…" />
-              <Button Grid.Column="2"
-                      Classes="subtle icon"
-                      Command="{Binding ClearFieldCommand}"
-                      CommandParameter="eeprom"
-                      ToolTip.Tip="Clear">
-                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
-              </Button>
-            </Grid>
-          </StackPanel>
-
+          </Button>
         </StackPanel>
-      </Border>
+      </Grid>
+    </Border>
 
-      <!-- ===================== Storage ===================== -->
-      <Border Classes="card">
-        <StackPanel Spacing="16">
-          <StackPanel Spacing="3">
-            <TextBlock Text="Storage" Classes="h3" />
-            <TextBlock Text="Discs and hard-disk images are mounted read-only or through a copy-on-write overlay."
-                       Classes="hint" />
-          </StackPanel>
-          <Border Classes="divider" />
+    <!-- ===================== Sections ===================== -->
+    <TabControl Grid.Row="1" Name="SettingsTabs" Classes="settings">
 
-          <StackPanel Spacing="7">
-            <StackPanel Spacing="2">
-              <TextBlock Text="Hard-disk image" Classes="label" />
-              <TextBlock Text="Optional Xbox HDD image (raw or qcow2). Boots the dashboard when no disc is inserted."
-                       Classes="hint" />
-            </StackPanel>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBox Classes="path"
-                       Text="{Binding HddPath, Mode=TwoWay}"
-                       PlaceholderText="Optional" />
-              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…" />
-              <Button Grid.Column="2"
-                      Classes="subtle icon"
-                      Command="{Binding ClearFieldCommand}"
-                      CommandParameter="hdd"
-                      ToolTip.Tip="Clear">
-                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
-              </Button>
-            </Grid>
-          </StackPanel>
+      <!-- ===================== System ===================== -->
+      <TabItem Header="System">
+        <ScrollViewer>
+          <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
 
-          <StackPanel Spacing="7">
-            <StackPanel Spacing="2">
-              <TextBlock Text="Default disc image" Classes="label" />
-              <TextBlock Text="Inserted automatically when the console powers on without a selected game (ISO or CHD)."
-                         Classes="hint" />
-            </StackPanel>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBox Classes="path"
-                       Text="{Binding DvdPath, Mode=TwoWay}"
-                       PlaceholderText="Optional" />
-              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…" />
-              <Button Grid.Column="2"
-                      Classes="subtle icon"
-                      Command="{Binding ClearFieldCommand}"
-                      CommandParameter="dvd"
-                      ToolTip.Tip="Clear">
-                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
-              </Button>
-            </Grid>
-          </StackPanel>
-        </StackPanel>
-      </Border>
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Firmware" Classes="h3" />
+                  <TextBlock Text="XGrid ships no Microsoft firmware. Provide your own legally obtained images."
+                             Classes="hint" />
+                </StackPanel>
+                <Border Classes="divider" />
 
-      <!-- ===================== Emulation ===================== -->
-      <Border Classes="card">
-        <StackPanel Spacing="16">
-          <StackPanel Spacing="3">
-            <TextBlock Text="xemu core" Classes="h3" />
-            <TextBlock Text="XGrid is the shell: the vendored xemu 0.8.139 core runs the console, its renderer and its devices."
-                       Classes="hint" TextWrapping="Wrap" />
-          </StackPanel>
-          <Border Classes="divider" />
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="BIOS image" Classes="label" />
+                    <TextBlock Text="Required. The retail MCPX BIOS (256 KB or 512 KB)." Classes="hint" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Classes="path"
+                             Text="{Binding BiosPath, Mode=TwoWay}"
+                             PlaceholderText="Path to the BIOS image" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…" />
+                    <Button Grid.Column="2"
+                            Classes="subtle icon"
+                            Command="{Binding ClearFieldCommand}"
+                            CommandParameter="bios"
+                            ToolTip.Tip="Clear">
+                      <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                    </Button>
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                             Fill="{DynamicResource XgErrorBrush}"
+                             IsVisible="{Binding ShowBiosWarning}" />
+                    <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                             Fill="{DynamicResource XgAccentBrush}"
+                             IsVisible="{Binding BiosPathValid}" />
+                    <TextBlock Text="{Binding BiosStatusText}" Classes="hint" />
+                  </StackPanel>
+                </StackPanel>
 
-          <StackPanel Spacing="7">
-            <StackPanel Spacing="2">
-              <TextBlock Text="xemu core executable" Classes="label" />
-              <TextBlock Text="Optional. Empty resolves core/xemu/xemu.exe beside the app, then data/xemu/xemu.exe in the repository."
-                         Classes="hint" />
-            </StackPanel>
-            <TextBox Classes="path"
-                     Text="{Binding XemuCorePath, Mode=TwoWay}"
-                     PlaceholderText="Auto-detect" />
-          </StackPanel>
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="MCPX boot ROM" Classes="label" />
+                    <TextBlock Text="Optional 512-byte MCPX ROM (mcpx_1.0.bin)." Classes="hint" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Classes="path"
+                             Text="{Binding McpxRomPath, Mode=TwoWay}"
+                             PlaceholderText="Optional" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…" />
+                    <Button Grid.Column="2"
+                            Classes="subtle icon"
+                            Command="{Binding ClearFieldCommand}"
+                            CommandParameter="mcpx"
+                            ToolTip.Tip="Clear">
+                      <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                    </Button>
+                  </Grid>
+                </StackPanel>
 
-          <Border Classes="divider" />
-
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2" VerticalAlignment="Center">
-              <TextBlock Text="Guest memory" Classes="label" />
-              <TextBlock Text="64 MB is the retail configuration; 128 MB matches debug-kit hardware." Classes="hint" />
-            </StackPanel>
-            <ComboBox Grid.Column="1"
-                      Width="180"
-                      ItemsSource="{Binding RamOptions}"
-                      SelectedItem="{Binding RamMb, Mode=TwoWay}"
-                      VerticalAlignment="Center" />
-          </Grid>
-
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2">
-              <TextBlock Text="Present core frames in the shell" Classes="label" />
-              <TextBlock Text="The shell draws the picture (needed for filters); when off, the core's own window is embedded instead. Requires the patched core."
-                         Classes="hint" TextWrapping="Wrap" />
-            </StackPanel>
-            <ToggleSwitch Grid.Column="1"
-                          IsChecked="{Binding DisplaySink, Mode=TwoWay}"
-                          OnContent=""
-                          OffContent=""
-                          VerticalAlignment="Center" />
-          </Grid>
-
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2" VerticalAlignment="Center">
-              <TextBlock Text="Presentation filter" Classes="label" />
-              <TextBlock Text="Applied by the shell to the picture: nearest or bilinear sampling, or a scanline/CRT phosphor mask."
-                         Classes="hint" TextWrapping="Wrap" />
-            </StackPanel>
-            <ComboBox Grid.Column="1"
-                      Width="220"
-                      ItemsSource="{Binding FilterOptions}"
-                      SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
-                      VerticalAlignment="Center">
-              <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:KeyedOption">
-                  <TextBlock Text="{Binding Label}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-          </Grid>
-        </StackPanel>
-      </Border>
-
-      <!-- ===================== Per-title overrides ===================== -->
-      <Border Classes="card">
-        <StackPanel Spacing="14">
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="3">
-              <TextBlock Text="Per-title overrides" Classes="h3" />
-              <TextBlock Text="Guest memory applied when a specific disc or XBE is launched. Unset values inherit the global configuration."
-                         Classes="hint" />
-            </StackPanel>
-            <Button Grid.Column="1" Classes="ghost" Command="{Binding AddTitleOverrideCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="7">
-                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
-                <TextBlock Text="Add override" />
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="EEPROM image" Classes="label" />
+                    <TextBlock Text="Optional 256-byte EEPROM dump. Uses a blank image when omitted." Classes="hint" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Classes="path"
+                             Text="{Binding EepromPath, Mode=TwoWay}"
+                             PlaceholderText="Optional" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…" />
+                    <Button Grid.Column="2"
+                            Classes="subtle icon"
+                            Command="{Binding ClearFieldCommand}"
+                            CommandParameter="eeprom"
+                            ToolTip.Tip="Clear">
+                      <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                    </Button>
+                  </Grid>
+                </StackPanel>
               </StackPanel>
-            </Button>
-          </Grid>
-          <Border Classes="divider" />
+            </Border>
 
-          <ItemsControl ItemsSource="{Binding TitleOverrides}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate DataType="vm:TitleOverrideItem">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
-                  <StackPanel Spacing="1" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding DisplayName}" Classes="label" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding PathText}" Classes="mono" FontSize="10.5"
-                               TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource XgTextMutedBrush}" />
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Storage" Classes="h3" />
+                  <TextBlock Text="Discs and hard-disk images are mounted read-only or through a copy-on-write overlay."
+                             Classes="hint" />
+                </StackPanel>
+                <Border Classes="divider" />
+
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Hard-disk image" Classes="label" />
+                    <TextBlock Text="Optional Xbox HDD image (raw or qcow2). Boots the dashboard when no disc is inserted."
+                               Classes="hint" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Classes="path"
+                             Text="{Binding HddPath, Mode=TwoWay}"
+                             PlaceholderText="Optional" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…" />
+                    <Button Grid.Column="2"
+                            Classes="subtle icon"
+                            Command="{Binding ClearFieldCommand}"
+                            CommandParameter="hdd"
+                            ToolTip.Tip="Clear">
+                      <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                    </Button>
+                  </Grid>
+                </StackPanel>
+
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Default disc image" Classes="label" />
+                    <TextBlock Text="Inserted automatically when the console powers on without a selected game (ISO or CHD)."
+                               Classes="hint" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Classes="path"
+                             Text="{Binding DvdPath, Mode=TwoWay}"
+                             PlaceholderText="Optional" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…" />
+                    <Button Grid.Column="2"
+                            Classes="subtle icon"
+                            Command="{Binding ClearFieldCommand}"
+                            CommandParameter="dvd"
+                            ToolTip.Tip="Clear">
+                      <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                    </Button>
+                  </Grid>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="xemu core" Classes="h3" />
+                  <TextBlock Text="XGrid is the shell: the vendored xemu 0.8.139 core runs the console, its renderer and its devices."
+                             Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Classes="divider" />
+
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="xemu core executable" Classes="label" />
+                    <TextBlock Text="Optional. Empty resolves core/xemu/xemu.exe beside the app, then data/xemu/xemu.exe in the repository."
+                               Classes="hint" />
+                  </StackPanel>
+                  <TextBox Classes="path"
+                           Text="{Binding XemuCorePath, Mode=TwoWay}"
+                           PlaceholderText="Auto-detect" />
+                </StackPanel>
+
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Guest memory" Classes="label" />
+                    <TextBlock Text="64 MB is the retail configuration; 128 MB matches debug-kit hardware." Classes="hint" />
                   </StackPanel>
                   <ComboBox Grid.Column="1"
-                            Width="140"
+                            Width="180"
                             ItemsSource="{Binding RamOptions}"
-                            SelectedItem="{Binding SelectedRam, Mode=TwoWay}"
-                            ToolTip.Tip="Guest memory for this title"
+                            SelectedItem="{Binding RamMb, Mode=TwoWay}"
+                            VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Present core frames in the shell" Classes="label" />
+                    <TextBlock Text="The shell draws the picture (needed for filters); when off, the core's own window is embedded instead. Requires the patched core."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1"
+                                IsChecked="{Binding DisplaySink, Mode=TwoWay}"
+                                OnContent=""
+                                OffContent=""
+                                VerticalAlignment="Center" />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ===================== Graphics ===================== -->
+      <TabItem Header="Graphics">
+        <ScrollViewer>
+          <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Graphics" Classes="h3" />
+                  <TextBlock Text="xemu 0.8.139 renders with OpenGL or Vulkan. It has no DirectX or software backend, so those are not offered."
+                             Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Renderer" Classes="label" />
+                    <TextBlock Text="OpenGL is the default; Vulkan is available when the core was built with it." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="220"
+                            ItemsSource="{Binding RendererOptions}"
+                            SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
                             VerticalAlignment="Center">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
@@ -280,136 +256,537 @@
                       </DataTemplate>
                     </ComboBox.ItemTemplate>
                   </ComboBox>
-                  <Button Grid.Column="2"
-                          Classes="subtle icon"
-                          Width="32"
-                          Height="32"
-                          Command="{Binding RemoveCommand}"
-                          ToolTip.Tip="Remove override">
-                    <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Internal resolution scale" Classes="label" />
+                    <TextBlock Text="Renders the guest at a multiple of its native resolution." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="180"
+                            ItemsSource="{Binding SurfaceScaleOptions}"
+                            SelectedItem="{Binding SurfaceScale, Mode=TwoWay}"
+                            VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Texture filtering" Classes="label" />
+                    <TextBlock Text="Applied by the core to guest textures." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="220"
+                            ItemsSource="{Binding FilteringOptions}"
+                            SelectedItem="{Binding SelectedFiltering, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Window startup size" Classes="label" />
+                    <TextBlock Text="Used when the core starts in a window; the shell still embeds it." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="220"
+                            ItemsSource="{Binding StartupSizeOptions}"
+                            SelectedItem="{Binding SelectedStartupSize, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Vertical sync" Classes="label" />
+                    <TextBlock Text="Waits for the display refresh. Leave off for lowest input latency." Classes="hint" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding GraphicsVSync, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Start fullscreen" Classes="label" />
+                    <TextBlock Text="The embedded window follows the core's own mode." Classes="hint" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding FullscreenOnStartup, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Exclusive fullscreen" Classes="label" />
+                    <TextBlock Text="Only used when fullscreen starts." Classes="hint" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding FullscreenExclusive, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Aspect ratio" Classes="label" />
+                    <TextBlock Text="The core's picture fit inside its window." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="220"
+                            ItemsSource="{Binding AspectRatioOptions}"
+                            SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Fit mode" Classes="label" />
+                    <TextBlock Text="Scale preserves the aspect ratio; stretch fills the window." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="220"
+                            ItemsSource="{Binding FitOptions}"
+                            SelectedItem="{Binding SelectedFit, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="AV pack" Classes="label" />
+                    <TextBlock Text="The video output the console reports to the guest." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="220"
+                            ItemsSource="{Binding AvPackOptions}"
+                            SelectedItem="{Binding SelectedAvPack, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Shell presentation filter" Classes="label" />
+                    <TextBlock Text="Applied by the shell to the picture: nearest or bilinear sampling, or a scanline/CRT phosphor mask."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1"
+                            Width="220"
+                            ItemsSource="{Binding FilterOptions}"
+                            SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ===================== Audio ===================== -->
+      <TabItem Header="Audio">
+        <ScrollViewer>
+          <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Audio" Classes="h3" />
+                  <TextBlock Text="The core runs the guest DSP and mixes the APU voices; these options select the host sink and mixer behavior."
+                             Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Host audio backend" Classes="label" />
+                    <TextBlock Text="Auto lets the core choose; WAV capture writes audio.wav in the core working directory." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="220"
+                            ItemsSource="{Binding AudioBackendOptions}"
+                            SelectedItem="{Binding SelectedAudioBackend, Mode=TwoWay}"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Guest DSP" Classes="label" />
+                    <TextBlock Text="Runs the APU's GP/EP microcode. Required for game audio." Classes="hint" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseDsp, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding UseDsp}">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="DSP JIT" Classes="label" />
+                    <TextBlock Text="Native code generation for the DSP. Off keeps the interpreter." Classes="hint" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseDspJit, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="HRTF" Classes="label" />
+                    <TextBlock Text="Head-related filtering for 3D voices." Classes="hint" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding Hrtf, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Volume limit" Classes="label" />
+                    <TextBlock Text="Caps the mixed output; 100% is the core default." Classes="hint" />
+                  </StackPanel>
+                  <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="1" TickFrequency="0.05"
+                          Value="{Binding VolumeLimit, Mode=TwoWay}" />
+                  <TextBlock Grid.Column="2" Width="48" Classes="mono" FontSize="11"
+                             VerticalAlignment="Center" TextAlignment="Right"
+                             Text="{Binding VolumeLimit, StringFormat={}{0:P0}}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Voice workers" Classes="label" />
+                    <TextBlock Text="0 lets the core choose; higher values parallelize the voice processor." Classes="hint" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="180"
+                            ItemsSource="{Binding VoiceWorkerOptions}"
+                            SelectedItem="{Binding VoiceWorkers, Mode=TwoWay}"
+                            VerticalAlignment="Center" />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ===================== Input ===================== -->
+      <TabItem Header="Input">
+        <ScrollViewer>
+          <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Input" Classes="h3" />
+                  <TextBlock Text="Player-1 keyboard and gamepad bindings. Click a key button, then press the new key; Esc cancels."
+                             Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Classes="divider" />
+
+                <TextBlock Text="Keyboard" Classes="label" />
+                <ItemsControl ItemsSource="{Binding KeyboardBindings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:KeyboardBindingItem">
+                      <Grid ColumnDefinitions="170,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding ActionName}" Classes="caption" VerticalAlignment="Center" />
+                        <Button Grid.Column="1"
+                                Classes="ghost"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Command="{Binding CaptureCommand}"
+                                Content="{Binding KeysDisplay}" />
+                        <Button Grid.Column="2"
+                                Classes="subtle icon"
+                                Width="32"
+                                Height="32"
+                                Command="{Binding ClearCommand}"
+                                ToolTip.Tip="Clear binding">
+                          <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border Classes="divider" />
+
+                <TextBlock Text="Gamepad" Classes="label" />
+                <ItemsControl ItemsSource="{Binding GamepadBindings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:GamepadBindingItem">
+                      <Grid ColumnDefinitions="170,*" ColumnSpacing="10" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding ActionName}" Classes="caption" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1"
+                                  HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding Sources}"
+                                  SelectedItem="{Binding SelectedSource, Mode=TwoWay}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="vm:KeyedOption">
+                              <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Left stick dead zone" Classes="label" />
+                    <TextBlock Text="Radial dead zone applied before the report is published." Classes="hint" />
+                  </StackPanel>
+                  <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="50" TickFrequency="1"
+                          IsSnapToTickEnabled="True" Value="{Binding LeftDeadZone, Mode=TwoWay}" />
+                  <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
+                             VerticalAlignment="Center" TextAlignment="Right"
+                             Text="{Binding LeftDeadZone, StringFormat={}{0:0}%}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Right stick dead zone" Classes="label" />
+                    <TextBlock Text="Radial dead zone applied before the report is published." Classes="hint" />
+                  </StackPanel>
+                  <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="50" TickFrequency="1"
+                          IsSnapToTickEnabled="True" Value="{Binding RightDeadZone, Mode=TwoWay}" />
+                  <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
+                             VerticalAlignment="Center" TextAlignment="Right"
+                             Text="{Binding RightDeadZone, StringFormat={}{0:0}%}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Trigger threshold" Classes="label" />
+                    <TextBlock Text="Values below this are reported as released." Classes="hint" />
+                  </StackPanel>
+                  <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="100" TickFrequency="1"
+                          IsSnapToTickEnabled="True" Value="{Binding TriggerThreshold, Mode=TwoWay}" />
+                  <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
+                             VerticalAlignment="Center" TextAlignment="Right"
+                             Text="{Binding TriggerThreshold, StringFormat={}{0:0}%}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Invert left stick Y" Classes="label" VerticalAlignment="Center" />
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding InvertLeftY, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Invert right stick Y" Classes="label" VerticalAlignment="Center" />
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding InvertRightY, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Swap left and right sticks" Classes="label" VerticalAlignment="Center" />
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding SwapSticks, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                </Grid>
+
+                <Button Classes="ghost" Command="{Binding ResetInputDefaultsCommand}"
+                        HorizontalAlignment="Left" Content="Reset input defaults" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ===================== Per-title overrides ===================== -->
+      <TabItem Header="Titles">
+        <ScrollViewer>
+          <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
+            <Border Classes="card">
+              <StackPanel Spacing="14">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Per-title overrides" Classes="h3" />
+                    <TextBlock Text="Guest memory applied when a specific disc or XBE is launched. Unset values inherit the global configuration."
+                               Classes="hint" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="ghost" Command="{Binding AddTitleOverrideCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                      <TextBlock Text="Add override" />
+                    </StackPanel>
                   </Button>
                 </Grid>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+                <Border Classes="divider" />
 
-          <TextBlock IsVisible="{Binding !HasTitleOverrides}"
-                     Text="No overrides yet. Add one for a title that needs different guest memory."
-                     Classes="hint" />
-        </StackPanel>
-      </Border>
+                <ItemsControl ItemsSource="{Binding TitleOverrides}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:TitleOverrideItem">
+                      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
+                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding DisplayName}" Classes="label" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding PathText}" Classes="mono" FontSize="10.5"
+                                     TextTrimming="CharacterEllipsis"
+                                     Foreground="{DynamicResource XgTextMutedBrush}" />
+                        </StackPanel>
+                        <ComboBox Grid.Column="1"
+                                  Width="140"
+                                  ItemsSource="{Binding RamOptions}"
+                                  SelectedItem="{Binding SelectedRam, Mode=TwoWay}"
+                                  ToolTip.Tip="Guest memory for this title"
+                                  VerticalAlignment="Center">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="vm:KeyedOption">
+                              <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="2"
+                                Classes="subtle icon"
+                                Width="32"
+                                Height="32"
+                                Command="{Binding RemoveCommand}"
+                                ToolTip.Tip="Remove override">
+                          <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock IsVisible="{Binding !HasTitleOverrides}"
+                           Text="No overrides yet. Add one for a title that needs different guest memory."
+                           Classes="hint" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
 
       <!-- ===================== Library ===================== -->
-      <Border Classes="card">
-        <StackPanel Spacing="14">
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="3">
-              <TextBlock Text="Game library" Classes="h3" />
-              <TextBlock Text="Folders scanned recursively for ISO, CHD, and XBE files." Classes="hint" />
-            </StackPanel>
-            <Button Grid.Column="1" Classes="ghost" Command="{Binding AddLibraryFolderCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="7">
-                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
-                <TextBlock Text="Add folder" />
-              </StackPanel>
-            </Button>
-          </Grid>
-          <Border Classes="divider" />
-
-          <ItemsControl ItemsSource="{Binding LibraryFolders}" IsVisible="{Binding HasLibraryFolders}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate DataType="vm:LibraryFolderItem">
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
-                  <PathIcon Data="{x:Static local:AppIcons.Folder}"
-                            Width="14"
-                            Height="14"
-                            VerticalAlignment="Center"
-                            Foreground="{DynamicResource XgTextMutedBrush}" />
-                  <TextBlock Grid.Column="1"
-                             Text="{Binding Path}"
-                             Classes="mono"
-                             FontSize="11.5"
-                             TextTrimming="CharacterEllipsis"
-                             VerticalAlignment="Center" />
-                  <Button Grid.Column="2"
-                          Classes="subtle icon"
-                          Width="32"
-                          Height="32"
-                          Command="{Binding RemoveCommand}"
-                          ToolTip.Tip="Remove folder">
-                    <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+      <TabItem Header="Library">
+        <ScrollViewer>
+          <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
+            <Border Classes="card">
+              <StackPanel Spacing="14">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Game library" Classes="h3" />
+                    <TextBlock Text="Folders scanned recursively for ISO, CHD, and XBE files." Classes="hint" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="ghost" Command="{Binding AddLibraryFolderCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                      <TextBlock Text="Add folder" />
+                    </StackPanel>
                   </Button>
                 </Grid>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+                <Border Classes="divider" />
 
-          <TextBlock IsVisible="{Binding !HasLibraryFolders}"
-                     Text="No folders yet. Add one to populate the library page."
-                     Classes="hint" />
-        </StackPanel>
-      </Border>
+                <ItemsControl ItemsSource="{Binding LibraryFolders}" IsVisible="{Binding HasLibraryFolders}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:LibraryFolderItem">
+                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+                        <PathIcon Data="{x:Static local:AppIcons.Folder}"
+                                  Width="14"
+                                  Height="14"
+                                  VerticalAlignment="Center"
+                                  Foreground="{DynamicResource XgTextMutedBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Path}"
+                                   Classes="mono"
+                                   FontSize="11.5"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="2"
+                                Classes="subtle icon"
+                                Width="32"
+                                Height="32"
+                                Command="{Binding RemoveCommand}"
+                                ToolTip.Tip="Remove folder">
+                          <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock IsVisible="{Binding !HasLibraryFolders}"
+                           Text="No folders yet. Add one to populate the library page."
+                           Classes="hint" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
 
       <!-- ===================== Appearance ===================== -->
-      <Border Classes="card">
-        <StackPanel Spacing="16">
-          <StackPanel Spacing="3">
-            <TextBlock Text="Appearance" Classes="h3" />
-            <TextBlock Text="XGrid uses a dark theme on every platform. Pick an accent for highlights and controls."
-                       Classes="hint" />
-          </StackPanel>
-          <Border Classes="divider" />
-
-          <ListBox Classes="swatches"
-                   ItemsSource="{Binding AccentOptions}"
-                   SelectedItem="{Binding SelectedAccent, Mode=TwoWay}">
-            <ListBox.ItemsPanel>
-              <ItemsPanelTemplate>
-                <WrapPanel Orientation="Horizontal" />
-              </ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-              <DataTemplate DataType="vm:AccentOption">
-                <StackPanel Spacing="6" Width="72">
-                  <Border Width="46"
-                          Height="46"
-                          CornerRadius="13"
-                          HorizontalAlignment="Center"
-                          Background="{Binding Brush}">
-                    <PathIcon Data="{x:Static local:AppIcons.Check}"
-                              Width="18"
-                              Height="18"
-                              Foreground="#06200F"
-                              IsVisible="{Binding IsSelected}" />
-                  </Border>
-                  <TextBlock Text="{Binding Label}"
-                             Classes="caption"
-                             FontSize="10"
-                             HorizontalAlignment="Center" />
+      <TabItem Header="Appearance">
+        <ScrollViewer>
+          <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Appearance" Classes="h3" />
+                  <TextBlock Text="XGrid uses a dark theme on every platform. Pick an accent for highlights and controls."
+                             Classes="hint" />
                 </StackPanel>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </StackPanel>
-      </Border>
+                <Border Classes="divider" />
 
-      <!-- ===================== Footer ===================== -->
-      <Grid ColumnDefinitions="*,Auto" Margin="2,4,2,8">
-        <TextBlock Text="Changes take effect on the next power-on."
-                   Classes="hint"
-                   VerticalAlignment="Center" />
-        <Button Grid.Column="1" Classes="primary" Command="{Binding SaveCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="7">
-            <PathIcon Data="{x:Static local:AppIcons.Save}"
-                      Width="13"
-                      Height="13"
-                      Foreground="{DynamicResource XgAccentTextBrush}" />
-            <TextBlock Text="Save settings"
-                       Foreground="{DynamicResource XgAccentTextBrush}"
-                       FontWeight="SemiBold" />
+                <ListBox Classes="swatches"
+                         ItemsSource="{Binding AccentOptions}"
+                         SelectedItem="{Binding SelectedAccent, Mode=TwoWay}">
+                  <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ListBox.ItemsPanel>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate DataType="vm:AccentOption">
+                      <StackPanel Spacing="6" Width="72">
+                        <Border Width="46"
+                                Height="46"
+                                CornerRadius="13"
+                                HorizontalAlignment="Center"
+                                Background="{Binding Brush}">
+                          <PathIcon Data="{x:Static local:AppIcons.Check}"
+                                    Width="18"
+                                    Height="18"
+                                    Foreground="#06200F"
+                                    IsVisible="{Binding IsSelected}" />
+                        </Border>
+                        <TextBlock Text="{Binding Label}"
+                                   Classes="caption"
+                                   FontSize="10"
+                                   HorizontalAlignment="Center" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Text="Changes take effect on the next power-on."
+                       Classes="hint"
+                       Margin="2,4,2,8" />
           </StackPanel>
-        </Button>
-      </Grid>
-    </StackPanel>
-  </ScrollViewer>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </Grid>
 </UserControl>

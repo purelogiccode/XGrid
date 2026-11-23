@@ -27,7 +27,7 @@ not part of this application; it is the test oracle in `XGrid.Cli`.
 | --- | --- |
 | **Home** | Power on/off, stop, the embedded core display, current disc and core/renderer labels. |
 | **Library** | Recursive scan of configured folders for `.iso`, `.chd`, `.zar` and `.xbe` entries; search and launch. |
-| **Settings** | Firmware/storage paths, guest RAM, xemu core path, display sink and filter, per-title overrides, library folders, accent color. Persisted as JSON. |
+| **Settings** | Firmware/storage paths, guest RAM, xemu core path, display sink, graphics (renderer, resolution scale, filtering, window, AV pack), audio (backend, DSP/JIT/HRTF, volume), keyboard/gamepad bindings, per-title overrides, library folders, accent color. Persisted as JSON. |
 | **Activity** | Filtered emulator log with copy and clear. |
 | **About** | Build/runtime information, project links, shortcuts. |
 
@@ -61,9 +61,12 @@ display.
 ## Current scope
 
 - One engine: the maintained xemu core (ISO, CHD and entry-form ZAR media).
-- Firmware, storage, guest memory and display-filter settings; per-title
-  overrides keyed by image path or XBE title id.
-- Keyboard and XInput controller input for the player-1 pad.
+- Firmware, storage, guest memory, graphics, audio and display-filter settings;
+  per-title overrides keyed by image path or XBE title id.
+- Configurable keyboard and XInput controller bindings, dead zones, trigger
+  threshold, Y inversion and stick swapping for the player-1 pad.
+- Graphics renderers: OpenGL, Vulkan and the null backend (xemu 0.8.139 has no
+  DirectX or software renderer).
 - A loose `.xbe` is listed for inspection but must be wrapped in an ISO/CHD/ZAR
   image to boot.
 - Save states, pause/frame-step and the managed-engine renderer options belong

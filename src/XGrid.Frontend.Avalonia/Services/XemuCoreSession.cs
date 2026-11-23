@@ -57,6 +57,9 @@ public sealed class XemuCoreSession : IDisposable
     /// <summary>Gets a value indicating whether the core window is embedded in the shell.</summary>
     public bool IsEmbedded => _embedder?.IsEmbedded == true;
 
+    /// <summary>Gets a value indicating whether the shell is presenting core frames itself.</summary>
+    public bool IsFrameSinkActive => _sink is not null && _lastFrameCounter != 0;
+
     /// <summary>Gets the core process id, or 0.</summary>
     public int ProcessId => _process?.ProcessId ?? 0;
 
@@ -87,12 +90,15 @@ public sealed class XemuCoreSession : IDisposable
         }
 
         FrontendTrace.Write($"display attached hwnd=0x{host.ToInt64():X} {width}x{height}");
-        if (_embedder is { IsEmbedded: true } embedder)
+        if (_embedder is { IsEmbedded: true } embedder && embedder.IsEmbeddedIn(host))
         {
             embedder.Resize(_displayWidth, _displayHeight);
         }
         else
         {
+            // The page host is new (the old one was destroyed), so the core
+            // window must be moved into it rather than merely resized.
+            _embedder?.Detach();
             TryEmbed();
         }
     }

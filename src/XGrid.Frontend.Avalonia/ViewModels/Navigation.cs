@@ -45,8 +45,10 @@ public enum PageKind
 
 /// <summary>A sidebar destination plus its page view model.</summary>
 /// <remarks>Creates a navigation item.</remarks>
-public sealed class NavigationItem(PageKind kind, string title, Geometry icon, PageViewModel page) : ObservableObject
+public sealed partial class NavigationItem(PageKind kind, string title, Geometry icon, PageViewModel page) : ObservableObject
 {
+    [ObservableProperty]
+    private bool _isSelected;
 
     /// <summary>Gets the destination kind.</summary>
     public PageKind Kind { get; } = kind;
@@ -63,8 +65,10 @@ public sealed class NavigationItem(PageKind kind, string title, Geometry icon, P
 
 /// <summary>Base class for a navigable page view model.</summary>
 /// <remarks>Creates a page bound to the application shell.</remarks>
-public abstract class PageViewModel(MainWindowViewModel shell) : ObservableObject
+public abstract partial class PageViewModel(MainWindowViewModel shell) : ObservableObject
 {
+    [ObservableProperty]
+    private bool _isActive;
 
     /// <summary>Gets the application shell.</summary>
     public MainWindowViewModel Shell { get; } = shell;

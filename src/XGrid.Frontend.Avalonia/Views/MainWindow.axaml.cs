@@ -138,7 +138,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!_gamepad.TryRead(out HostPad pad))
+        GamepadMappingOptions options = DataContext is MainWindowViewModel current
+            ? current.GamepadOptions
+            : GamepadMappingOptions.Default;
+        if (!_gamepad.TryRead(out HostPad pad, options))
         {
             if (!_hostPad.IsNeutral)
             {
@@ -222,12 +225,12 @@ public partial class MainWindow : Window
                 return;
         }
 
-        if (DataContext is not MainWindowViewModel { IsRunning: true })
+        if (DataContext is not MainWindowViewModel { IsRunning: true } viewModel)
         {
             return;
         }
 
-        if (TryMap(e.Key, out _, out _))
+        if (viewModel.TryMapKey(e.Key, out _))
         {
             _pressed.Add(e.Key);
             PublishPad();
@@ -242,9 +245,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (TryMap(e.Key, out _, out _))
+        if (_pressed.Remove(e.Key))
         {
-            _pressed.Remove(e.Key);
             PublishPad();
             e.Handled = true;
         }
@@ -299,88 +301,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        ushort buttons = _hostPad.Buttons;
-        var analog = new byte[HostPad.AnalogCount];
-        for (int i = 0; i < analog.Length; i++)
-        {
-            analog[i] = _hostPad.Analog[i];
-        }
-
-        var sticks = new short[HostPad.StickCount];
-        Array.Copy(_hostPad.Sticks, sticks, sticks.Length);
-
-        foreach (Key key in _pressed)
-        {
-            if (!TryMap(key, out ushort button, out int analogIndex))
-            {
-                continue;
-            }
-
-            buttons |= button;
-            if (analogIndex >= 0)
-            {
-                // Max, not assign: a controller trigger must not be cancelled by
-                // a keyboard press of the same logical button, or vice versa.
-                analog[analogIndex] = Math.Max(analog[analogIndex], (byte)0xFF);
-            }
-        }
-
+        HostPad pad = viewModel.MergeKeyboard(_hostPad, _pressed);
+        ushort buttons = pad.Buttons;
+        var analog = (byte[])pad.Analog.Clone();
+        var sticks = (short[])pad.Sticks.Clone();
         viewModel.SetPad(buttons, analog, sticks);
-    }
-
-    private static bool TryMap(Key key, out ushort button, out int analogIndex)
-    {
-        button = 0;
-        analogIndex = -1;
-        switch (key)
-        {
-            case Key.Up:
-                button = 0x0001;
-                return true;
-            case Key.Down:
-                button = 0x0002;
-                return true;
-            case Key.Left:
-                button = 0x0004;
-                return true;
-            case Key.Right:
-                button = 0x0008;
-                return true;
-            case Key.Enter:
-                button = 0x0010;
-                return true;
-            case Key.Back:
-                button = 0x0020;
-                return true;
-            case Key.A:
-                analogIndex = 0;
-                return true;
-            case Key.S:
-                analogIndex = 1;
-                return true;
-            case Key.D:
-                analogIndex = 2;
-                return true;
-            case Key.F:
-                analogIndex = 3;
-                return true;
-            case Key.Q:
-                analogIndex = 5;
-                return true;
-            case Key.E:
-                analogIndex = 4;
-                return true;
-            case Key.Z:
-                analogIndex = 6;
-                return true;
-            case Key.C:
-                analogIndex = 7;
-                return true;
-            case Key.Space:
-                analogIndex = 0;
-                return true;
-            default:
-                return false;
-        }
     }
 }
