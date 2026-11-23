@@ -2,19 +2,21 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Styles.Resources>
     <ResourceDictionary>
-      <!-- ===================== XGrid dark palette ===================== -->
-      <Color x:Key="XgBackgroundColor">#070B10</Color>
-      <Color x:Key="XgSidebarColor">#0A1018</Color>
-      <Color x:Key="XgSurfaceColor">#0E1620</Color>
-      <Color x:Key="XgSurfaceAltColor">#121C28</Color>
-      <Color x:Key="XgSurfaceHoverColor">#172333</Color>
-      <Color x:Key="XgBorderColor">#1E2C3E</Color>
-      <Color x:Key="XgBorderStrongColor">#2A3C53</Color>
-      <Color x:Key="XgTextColor">#EAF2FB</Color>
-      <Color x:Key="XgTextSecondaryColor">#9FB2C9</Color>
-      <Color x:Key="XgTextMutedColor">#6B8099</Color>
-      <Color x:Key="XgErrorColor">#FF6B7D</Color>
-      <Color x:Key="XgWarningColor">#F2B84B</Color>
+      <!-- ===================== XGrid dark palette =====================
+           RPCS3-inspired neutral greys and a single blue accent, matching the
+           5DO frontend so both emulators share one visual language. -->
+      <Color x:Key="XgBackgroundColor">#17181B</Color>
+      <Color x:Key="XgSidebarColor">#1B1D20</Color>
+      <Color x:Key="XgSurfaceColor">#1E2024</Color>
+      <Color x:Key="XgSurfaceAltColor">#25282D</Color>
+      <Color x:Key="XgSurfaceHoverColor">#2C3036</Color>
+      <Color x:Key="XgBorderColor">#32353B</Color>
+      <Color x:Key="XgBorderStrongColor">#3E4249</Color>
+      <Color x:Key="XgTextColor">#E7E9EC</Color>
+      <Color x:Key="XgTextSecondaryColor">#9AA0A8</Color>
+      <Color x:Key="XgTextMutedColor">#6E747D</Color>
+      <Color x:Key="XgErrorColor">#E06C6C</Color>
+      <Color x:Key="XgWarningColor">#E0B050</Color>
 
       <SolidColorBrush x:Key="XgBackgroundBrush" Color="{StaticResource XgBackgroundColor}" />
       <SolidColorBrush x:Key="XgSidebarBrush" Color="{StaticResource XgSidebarColor}" />
@@ -28,34 +30,41 @@
       <SolidColorBrush x:Key="XgTextMutedBrush" Color="{StaticResource XgTextMutedColor}" />
       <SolidColorBrush x:Key="XgErrorBrush" Color="{StaticResource XgErrorColor}" />
       <SolidColorBrush x:Key="XgWarningBrush" Color="{StaticResource XgWarningColor}" />
-      <SolidColorBrush x:Key="XgInsetBrush" Color="#0A1119" />
-      <SolidColorBrush x:Key="XgOverlayBrush" Color="#E60B1119" />
-      <SolidColorBrush x:Key="XgErrorSoftBrush" Color="#26FF6B7D" />
-      <SolidColorBrush x:Key="XgWarningSoftBrush" Color="#26F2B84B" />
-      <SolidColorBrush x:Key="XgAccentTextBrush" Color="#06200F" />
+      <SolidColorBrush x:Key="XgInsetBrush" Color="#141518" />
+      <SolidColorBrush x:Key="XgOverlayBrush" Color="#F0141519" />
+      <SolidColorBrush x:Key="XgErrorSoftBrush" Color="#26E06C6C" />
+      <SolidColorBrush x:Key="XgWarningSoftBrush" Color="#26E0B050" />
+      <SolidColorBrush x:Key="XgAccentTextBrush" Color="#FFFFFF" />
 
       <!-- Defaults; the AccentService swaps these application-wide at runtime. -->
-      <Color x:Key="XgAccentColor">#57E389</Color>
-      <SolidColorBrush x:Key="XgAccentBrush" Color="#57E389" />
-      <SolidColorBrush x:Key="XgAccentHoverBrush" Color="#7CF0A7" />
-      <SolidColorBrush x:Key="XgAccentPressedBrush" Color="#40B968" />
-      <SolidColorBrush x:Key="XgAccentSoftBrush" Color="#2657E389" />
+      <Color x:Key="XgAccentColor">#3DAEE9</Color>
+      <SolidColorBrush x:Key="XgAccentBrush" Color="#3DAEE9" />
+      <SolidColorBrush x:Key="XgAccentHoverBrush" Color="#5BBFF0" />
+      <SolidColorBrush x:Key="XgAccentPressedBrush" Color="#2A8FC2" />
+      <SolidColorBrush x:Key="XgAccentSoftBrush" Color="#263DAEE9" />
+
+      <!-- Shared toolbar/menu/log resources (5DO vocabulary). -->
+      <SolidColorBrush x:Key="XgToolbarBrush" Color="#202226" />
+      <SolidColorBrush x:Key="XgStatusBarBrush" Color="#181A1D" />
+      <SolidColorBrush x:Key="XgFieldBrush" Color="#141518" />
+      <SolidColorBrush x:Key="XgSelectionBrush" Color="#263F52" />
+      <SolidColorBrush x:Key="XgSuccessBrush" Color="#57C878" />
 
       <!-- Fluent control resource overrides for the dark surfaces. -->
-      <SolidColorBrush x:Key="TextControlBackground" Color="#0A121B" />
-      <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#0C1621" />
-      <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#0C1621" />
-      <SolidColorBrush x:Key="TextControlBorderBrush" Color="#1E2C3E" />
-      <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#2A3C53" />
-      <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#57E389" />
-      <SolidColorBrush x:Key="ComboBoxBackground" Color="#0A121B" />
-      <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#0C1621" />
-      <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#1E2C3E" />
-      <SolidColorBrush x:Key="ButtonBackground" Color="#121C28" />
-      <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#172333" />
-      <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#0E1620" />
-      <SolidColorBrush x:Key="ButtonBorderBrush" Color="#1E2C3E" />
-      <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#2A3C53" />
+      <SolidColorBrush x:Key="TextControlBackground" Color="#141518" />
+      <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#1B1D21" />
+      <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#1B1D21" />
+      <SolidColorBrush x:Key="TextControlBorderBrush" Color="#32353B" />
+      <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#3E4249" />
+      <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#3DAEE9" />
+      <SolidColorBrush x:Key="ComboBoxBackground" Color="#141518" />
+      <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#1B1D21" />
+      <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#32353B" />
+      <SolidColorBrush x:Key="ButtonBackground" Color="#25282D" />
+      <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#2C3036" />
+      <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#22252A" />
+      <SolidColorBrush x:Key="ButtonBorderBrush" Color="#32353B" />
+      <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#3E4249" />
     </ResourceDictionary>
   </Styles.Resources>
 
@@ -365,5 +374,192 @@
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Padding" Value="10,6" />
     <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- ===================== Desktop chrome (5DO vocabulary) ===================== -->
+  <Style Selector="Menu">
+    <Setter Property="Background" Value="{DynamicResource XgSidebarBrush}" />
+    <Setter Property="Padding" Value="4,0" />
+    <Setter Property="MinHeight" Value="28" />
+  </Style>
+  <Style Selector="Menu > MenuItem">
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Padding" Value="9,4" />
+  </Style>
+
+  <Style Selector="Button.toolbar">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+    <Setter Property="Padding" Value="9,5" />
+    <Setter Property="Margin" Value="1,0" />
+    <Setter Property="MinWidth" Value="56" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.toolbar /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+  <Style Selector="Button.toolbar:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSurfaceHoverBrush}" />
+  </Style>
+  <Style Selector="Button.toolbar:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSurfaceAltBrush}" />
+  </Style>
+  <Style Selector="Button.toolbar.active /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSelectionBrush}" />
+  </Style>
+  <Style Selector="Button.toolbar:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+
+  <Style Selector="Button.chrome">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+    <Setter Property="Padding" Value="8,4" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="Button.chrome /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+  <Style Selector="Button.chrome:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSurfaceHoverBrush}" />
+  </Style>
+  <Style Selector="Button.chrome:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSurfaceAltBrush}" />
+  </Style>
+
+  <Style Selector="Button.accent">
+    <Setter Property="Background" Value="{DynamicResource XgAccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource XgAccentTextBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="14,6" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.accent /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgAccentBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+  <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgAccentHoverBrush}" />
+  </Style>
+  <Style Selector="Button.accent:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgAccentPressedBrush}" />
+  </Style>
+
+  <Style Selector="TextBox.search">
+    <Setter Property="Background" Value="{DynamicResource XgFieldBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource XgBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="28,5,8,5" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBox.search:pointerover">
+    <Setter Property="BorderBrush" Value="{DynamicResource XgBorderStrongBrush}" />
+  </Style>
+  <Style Selector="TextBox.search:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource XgAccentBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.library">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="6" />
+  </Style>
+  <Style Selector="ListBox.library ListBoxItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="ListBox.libraryGrid ListBoxItem">
+    <Setter Property="Margin" Value="5" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+  <Style Selector="ListBox.libraryGrid ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+  <Style Selector="ListBox.libraryGrid ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSurfaceHoverBrush}" />
+  </Style>
+  <Style Selector="ListBox.libraryGrid ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSelectionBrush}" />
+  </Style>
+  <Style Selector="ListBox.libraryGrid ListBoxItem:selected Border.libraryCard">
+    <Setter Property="BorderBrush" Value="{DynamicResource XgAccentBrush}" />
+  </Style>
+
+  <Style Selector="Border.libraryCard">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Padding" Value="6" />
+  </Style>
+  <Style Selector="Border.coverFrame">
+    <Setter Property="Background" Value="#111216" />
+    <Setter Property="BorderBrush" Value="{DynamicResource XgBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="ClipToBounds" Value="True" />
+  </Style>
+  <Style Selector="Border.badge">
+    <Setter Property="Background" Value="{DynamicResource XgSurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource XgBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="Padding" Value="5,1" />
+  </Style>
+  <Style Selector="Border.badge TextBlock">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextMutedBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.log">
+    <Setter Property="Background" Value="{DynamicResource XgFieldBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, monospace" />
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+  <Style Selector="ListBox.log ListBoxItem">
+    <Setter Property="Padding" Value="3,1" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="TextBlock.sectionTitle">
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+  </Style>
+  <Style Selector="TextBlock.status">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextMutedBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.statusStrong">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 </Styles>
