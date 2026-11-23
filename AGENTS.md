@@ -919,6 +919,47 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
 
+**Session 2026-11-23 (sixtieth; the vendored core is one tree and one build, and
+the in-process DLL is built but not the default).**
+
+- **One tree, one build.** `xemu/` is the tracked 0.8.139 tree (baseline +
+  `xemu/xgrid-core` + `xemu/xemu-patches`), `References2/xemu-0.8.139` stays the
+  read-only oracle, and `xemu/dist` is ignored. `scripts/build-native-xemu.ps1`
+  builds `xemu/dist/xemu.exe` and `xemu/dist/xgrid_core.dll` from the same
+  objects; `xemu/XGrid.Xemu.Tree.csproj` is the solution anchor.
+- **In-process ABI.** `xemu/xgrid-core/abi` exports `xgrid_core_start`,
+  `xgrid_core_request_stop`, `xgrid_core_is_running`, `xgrid_core_join`,
+  `xgrid_core_exit_code` and `xgrid_core_version`. `xemu_run()` is the old
+  `main` body minus the process-level console setup; the display/input modules
+  take sink names from the ABI as well as the environment.
+- **What works.** The DLL loads in a native C host, boots the dashboard, runs
+  for 30 s and joins with status 0. Frames and pad state use the existing named
+  sections, so the shell's presentation path is unchanged.
+- **What does not.** In a .NET process the guest faults at the first
+  `cpu_io_recompile` -> `cpu_loop_exit` -> `longjmp` with 0xC0000409 (GS
+  failure). Reproduced in PowerShell and in a minimal .NET console host; the
+  native host is clean. The fixed image base (0x150000000), 8 MB QEMU threads,
+  16 MB image stack and the NULL-unwind `_setjmp` are all in and none of them
+  closes it. **The separate process is the default**; Settings -> System ->
+  Core hosting offers in-process as experimental, and the session falls back to
+  the process when the DLL is missing or refuses to start.
+- **Shell.** `IXemuCoreRuntime` is the seam; `XemuInProcessCore` owns
+  `NativeLibrary.Load` and the ABI, `XemuInProcessRuntime` owns the config,
+  log and join, and `XemuCoreProcess` implements the same interface for the
+  process path. `WriteConfiguration`/`BuildExtraArguments` are shared. The
+  audio backend arguments lost their `id=` so QEMU installs them as the default
+  driver (the named form left `default_audiodevs` empty and failed `audio_init`).
+- **Gates.** Solution build 0 warnings; suite 2,249 green (one Nv2a GL flake on
+  the first run, green on rerun); `dotnet format --verify-no-changes` clean;
+  `refs-manifest.ps1 -Verify` PASS; `status.ps1 -Check` OK. The core boots from
+  `xemu/dist/xemu.exe` with the firmware/HDD in `data/xemu`. Pushed through
+  `aed79259`.
+- **Next for in-process.** The remaining fault is QEMU's `longjmp` under the
+  managed runtime; the native host proves the DLL/ABI. Candidate directions: a
+  dedicated host process for the core with a shared-memory ring (already the
+  stable path), or a QEMU CPU-loop exit that does not use `longjmp` when
+  `xemu_library_mode` is set.
+
 **Session 2026-10-26 (fifty-ninth; TM8 ported the xemu APU voice processor - the
 APU produces real audio, and the frame cadence was 8x slow - decisions 259).**
 
