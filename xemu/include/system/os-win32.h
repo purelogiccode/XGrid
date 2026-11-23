@@ -85,15 +85,26 @@ void __attribute__((noreturn)) __mingw_longjmp(jmp_buf, int);
  * savemask parameter will always be zero we can safely define these
  * in terms of setjmp/longjmp on Win32.
  */
-#define sigjmp_buf jmp_buf
 /*
- * XGrid: save the jump buffer with a NULL unwind frame. longjmp then restores
- * the context without an SEH unwind, which a managed host's vectored exception
- * handlers would otherwise intercept. QEMU never needs the unwind: the CPU
- * loop only jumps back to its own cpu_exec frame.
+ * XGrid: sigsetjmp()/siglongjmp() without the C runtime.
+ *
+ * msvcrt's longjmp validates its buffer against CRT-internal expectations and
+ * raises STATUS_STACK_BUFFER_OVERRUN when QEMU runs inside a host process,
+ * even though the buffer and the target stack are valid. QEMU only ever jumps
+ * back to its own cpu_exec frame and never needs an SEH unwind, so capturing
+ * and restoring the register context is enough and has no such validation.
  */
-#define sigsetjmp(env, savemask) _setjmp(env, NULL)
-#define siglongjmp(env, val) longjmp(env, val)
+typedef struct XGridSigJmpBuf {
+    CONTEXT context;
+} XGridSigJmpBuf;
+
+int xgrid_sigsetjmp(XGridSigJmpBuf *buf);
+void xgrid_siglongjmp(XGridSigJmpBuf *buf, int value)
+    __attribute__((noreturn));
+
+#define sigjmp_buf XGridSigJmpBuf
+#define sigsetjmp(env, savemask) xgrid_sigsetjmp(&(env))
+#define siglongjmp(env, val) xgrid_siglongjmp(&(env), (val))
 
 /* Missing POSIX functions. Don't use MinGW-w64 macros. */
 #ifndef _POSIX_THREAD_SAFE_FUNCTIONS
