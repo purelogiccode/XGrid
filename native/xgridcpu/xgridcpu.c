@@ -234,7 +234,12 @@ int xgc_init(void)
 
     XGC_TRACE("xgc_init: enter\n");
     if (getenv("XGRID_CPU_TRACE")) {
+        Error *log_err = NULL;
         qemu_loglevel |= CPU_LOG_INT;
+        qemu_set_log(CPU_LOG_INT, &log_err);
+        if (log_err) {
+            error_free(log_err);
+        }
     }
 
     /* QEMU's normal init order: locks, RCU, BQL, the trace/QOM/migration
