@@ -25,6 +25,15 @@ public sealed class XemuWindowEmbedder : IDisposable
     /// <summary>Gets a value indicating whether a core window is currently hosted.</summary>
     public bool IsEmbedded => _child != IntPtr.Zero;
 
+    /// <summary>Gets a value indicating whether the core window is hosted by a specific surface.</summary>
+    /// <param name="host">Host window handle to test.</param>
+    /// <remarks>
+    /// A page swap can destroy the native host while the core window survives.
+    /// Re-embedding is only safe when the host is the one the child is already
+    /// parented to; otherwise the child must be moved to the new host.
+    /// </remarks>
+    public bool IsEmbeddedIn(IntPtr host) => _child != IntPtr.Zero && _host == host;
+
     /// <summary>
     /// Reparents <paramref name="child"/> into <paramref name="host"/> and
     /// makes it fill the host's client area.
@@ -136,6 +145,9 @@ public sealed class XemuWindowEmbedder : IDisposable
         _host = IntPtr.Zero;
         if (Win32Window.IsWindow(child))
         {
+            // Hide first: returning the child to the desktop while it is still
+            // visible makes the core flash as a separate top-level window.
+            _ = Win32Window.ShowWindow(child, Win32Window.SwHide);
             _ = Win32Window.SetParent(child, IntPtr.Zero);
         }
     }

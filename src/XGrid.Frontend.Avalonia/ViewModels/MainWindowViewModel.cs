@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -7,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -15,6 +17,7 @@ using CommunityToolkit.Mvvm.Input;
 using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
+using XGrid.Input;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
@@ -31,11 +34,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private int _coreFrameHeight;
     private bool _coreFramePending;
     private bool _coreFrameLogged;
-    private readonly string _displayCaption = "640 x 480 - xemu 0.8.139 core (OpenGL)";
     private readonly string _coreLabel = "xemu 0.8.139";
-    private readonly string _rendererLabel = "OpenGL - xemu";
+    private GamepadMappingOptions _gamepadOptions = GamepadMappingOptions.Default;
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
+    private bool _lastFrameSinkActive;
     private bool _shuttingDown;
 
     [ObservableProperty]
@@ -82,6 +85,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         _settingsStore = settingsStore;
         Config = settingsStore.Load();
+        _gamepadOptions = InputMapping.Create(Config.Input);
         _core = new XemuCoreSession();
         _core.Log += OnCoreLog;
         _core.FrameReady += OnCoreFrameReady;
@@ -116,16 +120,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public HomeViewModel Home { get; }
 
     /// <summary>Gets the library page.</summary>
-    private LibraryViewModel Library { get; }
+    public LibraryViewModel Library { get; }
 
     /// <summary>Gets the settings page.</summary>
     public SettingsViewModel Settings { get; }
 
     /// <summary>Gets the activity log page.</summary>
-    private LogsViewModel Logs { get; }
+    public LogsViewModel Logs { get; }
 
     /// <summary>Gets the about page.</summary>
-    private AboutViewModel About { get; }
+    public AboutViewModel About { get; }
 
     /// <summary>Gets the sidebar navigation items.</summary>
     public ObservableCollection<NavigationItem> NavigationItems { get; }
@@ -143,7 +147,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsBiosReady => Config.IsBiosReady;
 
     /// <summary>Gets a value indicating whether the native core display should be shown.</summary>
-    public bool ShowCoreDisplay => IsRunning;
+    public bool ShowCoreDisplay => IsRunning && !_core.IsFrameSinkActive;
+
+    /// <summary>Gets a value indicating whether the console page is selected.</summary>
+    public bool IsHomePage => SelectedNavigationItem?.Kind == PageKind.Home;
+
+    /// <summary>Gets a value indicating whether the library page is selected.</summary>
+    public bool IsLibraryPage => SelectedNavigationItem?.Kind == PageKind.Library;
+
+    /// <summary>Gets a value indicating whether the settings page is selected.</summary>
+    public bool IsSettingsPage => SelectedNavigationItem?.Kind == PageKind.Settings;
+
+    /// <summary>Gets a value indicating whether the activity page is selected.</summary>
+    public bool IsLogsPage => SelectedNavigationItem?.Kind == PageKind.Logs;
+
+    /// <summary>Gets a value indicating whether the about page is selected.</summary>
+    public bool IsAboutPage => SelectedNavigationItem?.Kind == PageKind.About;
 
     /// <summary>Gets a value indicating whether firmware setup is needed.</summary>
     public bool NeedsSetup => !Config.IsBiosReady;
@@ -174,7 +193,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         : "Power on the console to see output here.";
 
     /// <summary>Gets the caption under the display.</summary>
-    public string DisplayCaption => _displayCaption;
+    public string DisplayCaption => "640 x 480 - xemu 0.8.139 (" + RendererName + ")";
 
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
@@ -192,13 +211,39 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public string CoreLabel => _coreLabel;
 
     /// <summary>Gets the renderer label for the status bar.</summary>
-    public string RendererLabel => _rendererLabel;
+    public string RendererLabel => RendererName + " - xemu";
+
+    private string RendererName => Config.Graphics.Renderer switch
+    {
+        GraphicsSettings.RendererVulkan => "Vulkan",
+        GraphicsSettings.RendererNull => "Null",
+        _ => "OpenGL",
+    };
 
     /// <summary>Gets the short run state shown in the status bar.</summary>
     public string RunStateLabel => IsRunning ? "Running" : "Ready";
 
     /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
     public bool SmoothFrame => FrameFilters.UsesBilinearSampling(Config.Filter);
+
+    /// <summary>Gets the gamepad options for the current configuration.</summary>
+    public GamepadMappingOptions GamepadOptions => _gamepadOptions;
+
+    /// <summary>Maps a keyboard key to the configured player-1 action.</summary>
+    /// <param name="key">Pressed key.</param>
+    /// <param name="action">Mapped action.</param>
+    public bool TryMapKey(Key key, out PadAction action)
+    {
+        return InputMapping.TryMapKey(Config.Input, key, out action);
+    }
+
+    /// <summary>Overlays the pressed keyboard keys on the gamepad report.</summary>
+    /// <param name="gamepad">Gamepad report.</param>
+    /// <param name="pressed">Pressed keys.</param>
+    public HostPad MergeKeyboard(HostPad gamepad, IEnumerable<Key> pressed)
+    {
+        return InputMapping.MergeKeyboard(gamepad, Config.Input, pressed);
+    }
 
     /// <summary>Attaches the shell to the main window and performs first-run initialization.</summary>
     public void Attach(Window window)
@@ -281,6 +326,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(settings);
         settings.Normalize();
         Config = settings;
+        _gamepadOptions = InputMapping.Create(Config.Input);
         try
         {
             _settingsStore.Save(Config);
@@ -428,8 +474,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         StatusDetail = "xemu core - " + (game?.Title ?? "Xbox dashboard");
         AddLog(
             LogLevel.Info,
-            $"xemu core {Path.GetFileName(launch.CorePath)} - {launch.RamMb} MB - "
-            + (string.IsNullOrEmpty(launch.DvdPath) ? "no disc" : Path.GetFileName(launch.DvdPath)));
+            $"xemu core {Path.GetFileName(launch.CorePath)} - {launch.Renderer} - {launch.RamMb} MB - "
+            + (string.IsNullOrEmpty(launch.DvdPath) ? "no disc" : Path.GetFileName(launch.DvdPath))
+            + (string.Equals(launch.AudioBackend, "wav", StringComparison.Ordinal)
+                ? " - WAV audio: " + Path.GetFileName(launch.AudioWavPath)
+                : string.Empty));
     }
 
     /// <summary>Public command: powers the console on, or off when already running.</summary>
@@ -566,6 +615,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         StopSessionCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnSelectedNavigationItemChanged(NavigationItem? value)
+    {
+        foreach (NavigationItem item in NavigationItems)
+        {
+            bool active = ReferenceEquals(item, value);
+            item.IsSelected = active;
+            item.Page.IsActive = active;
+        }
+
+        OnPropertyChanged(nameof(IsHomePage));
+        OnPropertyChanged(nameof(IsLibraryPage));
+        OnPropertyChanged(nameof(IsSettingsPage));
+        OnPropertyChanged(nameof(IsLogsPage));
+        OnPropertyChanged(nameof(IsAboutPage));
+    }
+
     // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnStatusDetailChanged(string value)
     {
@@ -652,6 +717,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             HasFrame = true;
         }
 
+        // The native host is only shown while the core paints into it. When the
+        // frame sink takes over it must not sit above the frame image.
+        bool sinkActive = _core.IsFrameSinkActive;
+        if (sinkActive != _lastFrameSinkActive)
+        {
+            _lastFrameSinkActive = sinkActive;
+            OnPropertyChanged(nameof(ShowCoreDisplay));
+        }
+
         // The core owns the picture, its pacing and its input; the shell only
         // mirrors liveness so a crash is never silent.
         if (IsRunning && !_core.IsRunning)
@@ -719,6 +793,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(DisplayCaption));
+        OnPropertyChanged(nameof(RendererLabel));
         OnPropertyChanged(nameof(SmoothFrame));
         OnPropertyChanged(nameof(ShowCoreDisplay));
         StopSessionCommand.NotifyCanExecuteChanged();

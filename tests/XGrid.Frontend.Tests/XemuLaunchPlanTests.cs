@@ -64,6 +64,45 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_CopiesGraphicsAndAudioSettings()
+    {
+        EmulatorSettings settings = Settings();
+        settings.Graphics.Renderer = GraphicsSettings.RendererVulkan;
+        settings.Graphics.SurfaceScale = 3;
+        settings.Graphics.Filtering = GraphicsSettings.FilterNearest;
+        settings.Graphics.StartupSize = "1920x1080";
+        settings.Graphics.VSync = true;
+        settings.Graphics.FullscreenOnStartup = true;
+        settings.Graphics.AspectRatio = "16x9";
+        settings.Graphics.Fit = "stretch";
+        settings.Graphics.AvPack = "composite";
+        settings.Audio.UseDsp = true;
+        settings.Audio.UseDspJit = true;
+        settings.Audio.Hrtf = false;
+        settings.Audio.VolumeLimit = 0.75;
+        settings.Audio.VoiceWorkers = 4;
+        settings.Audio.Backend = AudioSettings.BackendWav;
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal("VULKAN", launch.Renderer);
+        Assert.Equal(3, launch.SurfaceScale);
+        Assert.Equal("nearest", launch.Filtering);
+        Assert.Equal("1920x1080", launch.StartupSize);
+        Assert.True(launch.VSync);
+        Assert.True(launch.FullscreenOnStartup);
+        Assert.Equal("16x9", launch.AspectRatio);
+        Assert.Equal("stretch", launch.Fit);
+        Assert.Equal("composite", launch.AvPack);
+        Assert.True(launch.AudioDspJit);
+        Assert.False(launch.Hrtf);
+        Assert.Equal(0.75, launch.VolumeLimit);
+        Assert.Equal(4, launch.VoiceWorkers);
+        Assert.Equal(Path.Combine(_root, "work", "audio.wav"), launch.AudioWavPath);
+    }
+
+    [Fact]
     public void Create_FillsUnsetFirmwareFromTheCoreDirectory()
     {
         var settings = new EmulatorSettings

@@ -42,6 +42,75 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Build_WritesGraphicsAndAudioSettings()
+    {
+        XemuLaunchSettings settings = CreateSettings() with
+        {
+            Renderer = "VULKAN",
+            SurfaceScale = 3,
+            Filtering = "nearest",
+            StartupSize = "1920x1080",
+            VSync = true,
+            FullscreenOnStartup = true,
+            FullscreenExclusive = true,
+            AspectRatio = "16x9",
+            Fit = "stretch",
+            AvPack = "composite",
+            AudioDsp = true,
+            AudioDspJit = true,
+            Hrtf = false,
+            VolumeLimit = 0.75,
+            VoiceWorkers = 4,
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains("renderer = 'VULKAN'", toml, StringComparison.Ordinal);
+        Assert.Contains("surface_scale = 3", toml, StringComparison.Ordinal);
+        Assert.Contains("filtering = 'nearest'", toml, StringComparison.Ordinal);
+        Assert.Contains("startup_size = '1920x1080'", toml, StringComparison.Ordinal);
+        Assert.Contains("fullscreen_on_startup = true", toml, StringComparison.Ordinal);
+        Assert.Contains("fullscreen_exclusive = true", toml, StringComparison.Ordinal);
+        Assert.Contains("aspect_ratio = '16x9'", toml, StringComparison.Ordinal);
+        Assert.Contains("fit = 'stretch'", toml, StringComparison.Ordinal);
+        Assert.Contains("avpack = 'composite'", toml, StringComparison.Ordinal);
+        Assert.Contains("use_dsp_jit = true", toml, StringComparison.Ordinal);
+        Assert.Contains("hrtf = false", toml, StringComparison.Ordinal);
+        Assert.Contains("volume_limit = 0.75", toml, StringComparison.Ordinal);
+        Assert.Contains("num_workers = 4", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_RejectsInvalidGraphicsAndAudioValues()
+    {
+        using var files = new TemporaryFiles();
+        XemuLaunchSettings settings = files.Settings with
+        {
+            Renderer = "DIRECTX",
+            SurfaceScale = 12,
+            Filtering = "anisotropic",
+            StartupSize = "800x600",
+            AspectRatio = "21x9",
+            Fit = "zoom",
+            VolumeLimit = 2.0,
+            VoiceWorkers = 99,
+            AudioBackend = "asio",
+        };
+
+        IReadOnlyList<string> errors = settings.Validate();
+
+        Assert.Contains(errors, error => error.Contains("renderer", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("Surface scale", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("filtering", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("startup size", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("aspect ratio", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("fit mode", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("volume", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("worker", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("audio backend", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Build_DisablesTheWelcomeOverlayUpdateCheckAndMenuBar()
     {
         string toml = XemuTomlWriter.Build(CreateSettings());

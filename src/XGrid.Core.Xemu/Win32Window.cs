@@ -42,6 +42,8 @@ internal static partial class Win32Window
 
     internal const int SwShow = 5;
 
+    internal const int SwHide = 0;
+
     internal const uint WmClose = 0x0010;
 
     [LibraryImport("user32.dll", SetLastError = true)]

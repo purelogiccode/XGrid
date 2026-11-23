@@ -37,11 +37,22 @@ public static class XemuTomlWriter
         text.Append("check = false\n");
         text.Append('\n');
 
+        text.Append("[display]\n");
+        text.Append("renderer = '").Append(settings.Renderer).Append("'\n");
+        text.Append("filtering = '").Append(settings.Filtering).Append("'\n");
+        text.Append('\n');
+
+        text.Append("[display.quality]\n");
+        text.Append("surface_scale = ").Append(settings.SurfaceScale.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        text.Append('\n');
+
         text.Append("[display.window]\n");
-        text.Append("startup_size = 'last_used'\n");
+        text.Append("startup_size = '").Append(settings.StartupSize).Append("'\n");
         text.Append("last_width = ").Append(settings.WindowWidth.ToString(CultureInfo.InvariantCulture)).Append('\n');
         text.Append("last_height = ").Append(settings.WindowHeight.ToString(CultureInfo.InvariantCulture)).Append('\n');
         text.Append("vsync = ").Append(Bool(settings.VSync)).Append('\n');
+        text.Append("fullscreen_on_startup = ").Append(Bool(settings.FullscreenOnStartup)).Append('\n');
+        text.Append("fullscreen_exclusive = ").Append(Bool(settings.FullscreenExclusive)).Append('\n');
         text.Append('\n');
 
         text.Append("[display.ui]\n");
@@ -49,6 +60,8 @@ public static class XemuTomlWriter
         // The shell surfaces its own messages; core toasts would draw inside
         // the embedded display rectangle.
         text.Append("show_notifications = false\n");
+        text.Append("fit = '").Append(settings.Fit).Append("'\n");
+        text.Append("aspect_ratio = '").Append(settings.AspectRatio).Append("'\n");
         text.Append('\n');
 
         // Only when the shell supplies port 1: bind the keyboard controller so a
@@ -63,6 +76,15 @@ public static class XemuTomlWriter
 
         text.Append("[audio]\n");
         text.Append("use_dsp = ").Append(Bool(settings.AudioDsp)).Append('\n');
+        text.Append("use_dsp_jit = ").Append(Bool(settings.AudioDspJit)).Append('\n');
+        text.Append("hrtf = ").Append(Bool(settings.Hrtf)).Append('\n');
+        text.Append("volume_limit = ")
+            .Append(settings.VolumeLimit.ToString("0.###", CultureInfo.InvariantCulture))
+            .Append('\n');
+        text.Append('\n');
+
+        text.Append("[audio.vp]\n");
+        text.Append("num_workers = ").Append(settings.VoiceWorkers.ToString(CultureInfo.InvariantCulture)).Append('\n');
         text.Append('\n');
 
         text.Append("[sys]\n");

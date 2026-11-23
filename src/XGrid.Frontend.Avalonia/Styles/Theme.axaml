@@ -562,4 +562,19 @@
     <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
+
+  <Style Selector="TabControl.settings">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="TabControl.settings > TabItem">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Padding" Value="14,7" />
+    <Setter Property="MinHeight" Value="34" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextMutedBrush}" />
+  </Style>
+  <Style Selector="TabControl.settings > TabItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+  </Style>
 </Styles>
