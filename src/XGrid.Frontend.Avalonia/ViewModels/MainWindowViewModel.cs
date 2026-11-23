@@ -406,6 +406,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets the short run state shown in the status bar.</summary>
     public string RunStateLabel => !IsRunning ? "Ready" : IsPaused ? "Paused" : "Running";
 
+    /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
+    public bool SmoothFrame => FrameFilters.UsesBilinearSampling(Config.Filter);
+
     /// <summary>Gets the frame-rate text for the status bar.</summary>
     public string FpsText => IsRunning && !IsXemuCore
         ? Fps.ToString("0.0", CultureInfo.InvariantCulture) + " fps"
@@ -1022,6 +1025,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void PresentFrame(FramePacket packet)
     {
+        FrameFilters.Apply(Config.Filter, packet.Bgra, (int)packet.Width, (int)packet.Height);
         int width = (int)packet.Width;
         int height = (int)packet.Height;
         int rowBytes = width * 4;
@@ -1116,6 +1120,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(DisplayCaption));
+        OnPropertyChanged(nameof(SmoothFrame));
         OnPropertyChanged(nameof(IsXemuCore));
         OnPropertyChanged(nameof(ShowCoreDisplay));
         TogglePauseCommand.NotifyCanExecuteChanged();

@@ -45,7 +45,8 @@
             ClipToBounds="True"
             MinHeight="320">
       <Grid>
-        <Image Source="{Binding Shell.FrameBitmap}"
+        <Image x:Name="FrameImage"
+               Source="{Binding Shell.FrameBitmap}"
                Stretch="Uniform"
                RenderOptions.BitmapInterpolationMode="HighQuality" />
 
