@@ -392,6 +392,27 @@
 
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Presentation filter" Classes="label" />
+              <TextBlock Text="Applied by the shell to the picture: nearest or bilinear sampling, or a scanline/CRT phosphor mask."
+                         Classes="hint" TextWrapping="Wrap" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding FilterOptions}"
+                      SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:KeyedOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Renderer" Classes="label" />
               <TextBlock Text="Software is the portable reference rasterizer. OpenGL renders on the host GPU (Windows/WGL) and falls back to software when unavailable."
                          Classes="hint" TextWrapping="Wrap" />

@@ -103,6 +103,11 @@ public sealed class EmulatorSettings
     /// </summary>
     public bool DisplaySink { get; init; } = true;
 
+    /// <summary>
+    /// Gets or sets the presentation filter (nearest, bilinear, scanline, crt).
+    /// </summary>
+    public string Filter { get; set; } = Services.FrameFilters.Nearest;
+
     /// <summary>Gets or sets the accent palette key.</summary>
     public string Accent { get; set; } = "Blue";
 
@@ -299,6 +304,7 @@ public sealed class EmulatorSettings
             Core = Core,
             XemuCorePath = XemuCorePath,
             DisplaySink = DisplaySink,
+            Filter = Filter,
             LibraryFolders = [.. LibraryFolders],
             RecentGames = [.. RecentGames],
         };
@@ -320,6 +326,7 @@ public sealed class EmulatorSettings
             : "legacy";
         Renderer = IsGpuRenderer(Renderer) ? RendererOpenGl : RendererSoftware;
         Core = IsXemuCore(Core) ? CoreXemu : CoreManaged;
+        Filter = Services.FrameFilters.Normalize(Filter);
         NetworkBackend = string.Equals(NetworkBackend, "socket", StringComparison.Ordinal)
             ? "socket"
             : "loopback";

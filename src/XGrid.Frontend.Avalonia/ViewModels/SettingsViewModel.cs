@@ -203,6 +203,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     private KeyedOption? _selectedRenderer;
 
     [ObservableProperty]
+    private KeyedOption? _selectedFilter;
+
+    [ObservableProperty]
     private KeyedOption? _selectedCore;
 
     [ObservableProperty]
@@ -239,6 +242,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             new KeyedOption(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
             new KeyedOption(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),
         ];
+        FilterOptions = [.. FrameFilters.All.Select(item => new KeyedOption(item.Key, item.Label))];
         CoreOptions =
         [
             new KeyedOption(EmulatorSettings.CoreManaged, "Managed C# core", "oracle, slower"),
@@ -258,6 +262,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the selectable network backends.</summary>
     public ObservableCollection<KeyedOption> NetworkOptions { get; }
+
+    /// <summary>Gets the selectable presentation filters.</summary>
+    public IReadOnlyList<KeyedOption> FilterOptions { get; }
 
     /// <summary>Gets the selectable emulation cores.</summary>
     public IReadOnlyList<KeyedOption> CoreOptions { get; }
@@ -329,6 +336,9 @@ public sealed partial class SettingsViewModel : PageViewModel
             option => string.Equals(option.Key, settings.Core, StringComparison.Ordinal))
             ?? CoreOptions[0];
         XemuCorePath = settings.XemuCorePath;
+        SelectedFilter = FilterOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Filter, StringComparison.Ordinal))
+            ?? FilterOptions[0];
         TitleOverrides.Clear();
         foreach (KeyValuePair<string, TitleOverride> pair in settings.TitleOverrides)
         {
@@ -387,6 +397,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             Renderer = SelectedRenderer?.Key ?? EmulatorSettings.RendererSoftware,
             Core = SelectedCore?.Key ?? EmulatorSettings.CoreManaged,
             XemuCorePath = XemuCorePath.Trim(),
+            Filter = SelectedFilter?.Key ?? FrameFilters.Nearest,
             EosQuirk = EosQuirk,
             NetworkBackend = SelectedNetwork?.Key ?? "loopback",
             NetworkLinkUp = NetworkLinkUp,
