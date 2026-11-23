@@ -27,7 +27,7 @@
         <Separator />
         <MenuItem Header="Exit" Click="OnMenuExit" ToolTip.Tip="Close XGrid." />
       </MenuItem>
-      <MenuItem Header="Emulation" ToolTip.Tip="Power and stop the xemu core.">
+      <MenuItem Header="Emulation" ToolTip.Tip="Power and stop the core.">
         <MenuItem Header="Power On / Off" InputGesture="F5" Click="OnMenuPower" />
         <MenuItem Header="Stop" Click="OnMenuStop" />
         <Separator />
@@ -39,6 +39,8 @@
         <MenuItem Header="Settings" Click="OnMenuSettings" />
         <MenuItem Header="Activity" Click="OnMenuLogs" />
         <Separator />
+        <MenuItem Header="Save Screenshot" InputGesture="F8" Click="OnMenuScreenshot"
+                  ToolTip.Tip="Write the current frame to the screenshots folder as a PNG." />
         <MenuItem Header="Show Log Dock" ToggleType="CheckBox" IsChecked="{Binding ShowLogDock}"
                   Click="OnMenuToggleLogDock" />
         <Separator />

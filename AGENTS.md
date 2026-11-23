@@ -956,6 +956,31 @@ fault is closed and one process hosts the shell and the emulator).**
 - **Next.** Flip the release packaging to ship `xgrid_core.dll` beside the shell
   and keep `xemu.exe` as the fallback; then the input/graphics settings audit.
 
+**Session 2026-11-23 (sixty-fourth; F8 writes a screenshot next to the
+configuration).**
+
+- **The feature.** `F8` (and View -> Save Screenshot) writes the presented frame
+  as a PNG at its own resolution. The file goes to the `screenshots` folder
+  inside the shell's data folder, beside `settings.json`:
+  `%APPDATA%\XGrid\screenshots\screenshot-YYYYMMDD-HHMMSS.png` on Windows,
+  `~/Library/Application Support/XGrid/screenshots/` on macOS, or
+  `$XGRID_FRONTEND_DATA_DIR/screenshots/` when that is set.
+- **How.** `MainWindowViewModel.SaveScreenshot` saves `FrameBitmap` (the frame
+  the shell presents, after the configured filter, no UI chrome) with
+  `PngBitmapEncoderOptions`; `Services/ScreenshotNaming` builds the name and
+  appends `-1`, `-2`... so two captures in one second cannot overwrite each
+  other. The command logs the full path, toasts the file name, and refuses
+  politely when nothing is powered on yet.
+- **Where the shell keeps its files.** `<data>/settings.json` is the shell's own
+  configuration; `<data>/xemu/xemu.toml` is the configuration generated for the
+  core on every launch (never read back, so a launch cannot inherit state);
+  `<data>/screenshots/` is this feature.
+- **Evidence.** Driven through the real shell with `--autostart` on a corpus ISO
+  and a posted F8: `screenshot-20261123-173950.png`, 50,380 bytes, PNG magic,
+  1280x960, 4,443 colours, 89.9% non-black. Three `ScreenshotNaming` tests pin
+  the name, the collision suffix and the empty-directory guard. Suite 2,251 ->
+  2,254 green, build 0 warnings, format clean.
+
 **Session 2026-11-23 (sixty-third; the shell owns the picture and the pad - the
 frame/input sink is on, and port 1 is actually bound).**
 
