@@ -919,6 +919,27 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
 
+**Session 2026-11-23 (sixty-eighth; the implementation plan is a checklist of
+what is missing).**
+
+- **The file was gone.** `ImplementationPlan.md` no longer existed, and
+  `scripts/status.ps1 -Check` failed on it (`ReadAllText` of a missing file).
+- **What it holds now.** A shipped-today checklist, then the gaps as `[ ]` items
+  with a **Done when:** line each: **P1-P8** (save states, pause/frame step,
+  disc swap, netplay, screenshot access, audio device, per-title renderer,
+  controller assignment), **U1-U7** (caption size, window geometry, first-run,
+  crash guard, Vulkan honesty, game-only full screen, shortcut sheet),
+  **C1-C5** (Vulkan build, Linux/macOS cores, audio verified, save-state
+  bridge, netplay plumbing), **D1-D4** (core per RID, dependency licences,
+  signing, publish) and **Q1-Q6** (status re-baseline, committed shell check,
+  CI, shell coverage, user guide, performance numbers).
+- **Gate shape kept.** The `## E0N.`/`E1.`/`E2.`/`E3.` sections, the queue
+  cross-reference, the negatives list and the `| Phase | Weight | Done | What
+  remains |` table are there because `status.ps1 -Check` requires them; the
+  table is generated from `docs/status.json` and its rows are the **0-based**
+  phase index the script indexes by. `status.ps1 -Check -Sync` is green and
+  regenerated the status block.
+
 **Session 2026-11-23 (sixty-seventh; the placeholder icon is centred and the
 shell no longer names the upstream project).**
 
