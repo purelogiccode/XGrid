@@ -59,9 +59,51 @@ matters more than the size of the C# footprint. L1's optimizations are a subset
 of L2 and are not wasted, but L1 alone cannot pass 0.5x if the per-method cost
 is what we fear.
 
+## If the implementation language is free (2026-11-22)
+
+The operator has authorised changing the implementation language if that is
+what performance requires. That resolves the last structural question, and the
+logic points one way:
+
+**Reimplementing xemu's C in our own C is pointless.** The only reason to
+rewrite a module was the managed-C# rule; with the rule gone, porting xemu's
+NV2A/IDE/APU sources into our own C project is the same code, the same
+performance and strictly more work than using them in place.
+
+So the performance-optimal architecture is **L3: XGrid as a shell over the
+xemu 0.8.139 core** (already vendored, GPL-2.0, already the porting source):
+
+```
+xgrid (C# shell)                     xemu 0.8.139 core (C, GPL-2.0)
+  Avalonia UI, library, settings  ──►  QEMU 10.2 TCG i386 + MCPX + NV2A +
+  library/settings, snapshots          APU/ACI + IDE + USB + GL renderer
+  input mapping, audio sink            + audio + input + netplay
+  corpus, goldens, diagnostics         (built as a library or a fork with a
+                                        small control C API)
+```
+
+- **Performance: exactly xemu's** — the mature GL renderer, all devices, the
+  real audio path, the real input path. No seam, no port, no regression risk in
+  the device models.
+- **Time to playable: weeks, not months.**
+- **What we lose:** the project stops being an independent C# emulator and
+  becomes a C# frontend/distribution over an xemu-based core.
+- **What we keep:** the Avalonia shell, the managed goldens/ktest/corpus as the
+  behavioural oracle, the release/packaging pipeline, the GPL/notices
+  discipline.
+- **Effort:** the integration is the work — expose a control API (start, disc,
+  pause, frame, input, audio, snapshot) and replace the shell's emulation loop.
+  The first spike is "build the core headless, present one frame and one PCM
+  buffer into a C# host".
+
+This supersedes the L0-L2 ladder unless the operator prefers to keep an
+independent core. It is recorded as the recommended path, **pending an explicit
+operator confirmation of the identity change** (independent emulator vs shell
+over an xemu-based core), because it is not a technical detail.
+
 ## Execution order
 
-**P0 — price the two ceilings (this week, before any porting).**
+**P0 - price the two ceilings (this week, before any porting).**
 
 1. **Root-cause the single-process crash.** The .NET-hosted DLL failed with
    `0xC0000409` on the MMIO path and was attributed to Control Flow Guard; that
