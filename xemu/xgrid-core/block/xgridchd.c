@@ -1,7 +1,7 @@
 /*
  * XGrid CHD block driver for the xemu core.
  *
- * SPDX-License-Identifier: GPL-2.0
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * The guest reads a disc; this driver decodes CHD hunks on demand, so a
  * compressed image boots and plays without an extraction step. All format work

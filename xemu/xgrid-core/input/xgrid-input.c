@@ -1,7 +1,7 @@
 /*
  * XGrid host input source.
  *
- * SPDX-License-Identifier: GPL-2.0
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * See input/xgrid-input.h. The shell publishes the pad; port 1 reads it.
  */

@@ -1,7 +1,7 @@
 /*
  * XGrid host input source.
  *
- * SPDX-License-Identifier: GPL-2.0
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * When XGRID_INPUT_SHM is set, port 1's controller state comes from a named
  * shared section that the shell writes, instead of SDL. The shell owns the
