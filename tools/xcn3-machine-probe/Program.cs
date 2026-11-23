@@ -66,6 +66,7 @@ namespace XGrid.Xcn3MachineProbe
         private static long s_writes;
         private static long s_irqs;
         private static long s_irqSets;
+        private static int s_irqFail;
         private static long s_serviceTicks;
         private static long s_advanceTicks;
         private static long s_drainTicks;
@@ -73,6 +74,7 @@ namespace XGrid.Xcn3MachineProbe
         private static byte[] s_bios = [];
         private static bool s_haltLogged;
         private static bool s_panicLogged;
+        private static bool s_yield;
 
         private static uint Read32(byte* p) => Volatile.Read(ref *(uint*)p);
 
@@ -92,6 +94,7 @@ namespace XGrid.Xcn3MachineProbe
             string dvdPath = args.Length > 6 ? args[6] : "";
             uint budget = args.Length > 4 ? uint.Parse(args[4]) : 2_000_000_000;
             uint slice = args.Length > 5 ? uint.Parse(args[5]) : 1_000_000;
+            s_yield = Environment.GetEnvironmentVariable("XGRID_PROBE_YIELD") == "1";
 
             byte[] bios = File.ReadAllBytes(biosPath);
             byte[] rom = File.ReadAllBytes(romPath);
@@ -205,7 +208,7 @@ namespace XGrid.Xcn3MachineProbe
                             return 1;
                         }
                         long spinStart = Stopwatch.GetTimestamp();
-                        Thread.SpinWait(32);
+                        if (s_yield) { Thread.Sleep(0); } else { Thread.SpinWait(32); }
                         s_spinTicks += Stopwatch.GetTimestamp() - spinStart;
                     }
                     left -= chunk;
@@ -398,6 +401,17 @@ namespace XGrid.Xcn3MachineProbe
                 if (vector >= 0)
                 {
                     s_irqs++;
+                }
+                else if (s_irqFail < 5)
+                {
+                    s_irqFail++;
+                    Console.WriteLine($"ack-fail: req=0x{machine.Bus.Pic.MasterRequest:X2} " +
+                        $"isr=0x{machine.Bus.Pic.MasterInService:X2} " +
+                        $"imr=0x{machine.Bus.Pic.MasterMask:X2} " +
+                        $"elcr=0x{machine.Bus.Pic.MasterElcr:X2} " +
+                        $"slave req=0x{machine.Bus.Pic.SlaveRequest:X2} " +
+                        $"isr=0x{machine.Bus.Pic.SlaveInService:X2} " +
+                        $"imr=0x{machine.Bus.Pic.SlaveMask:X2}");
                 }
                 Write64(ctl + OffIoValue, vector < 0 ? 0xFFFFFFFFu : (uint)vector);
                 Write32(ctl + OffIoState, 2);
