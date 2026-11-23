@@ -304,6 +304,18 @@ directory before extracting, and GNU tar needs `--force-local` for Windows
 paths. They are recorded in `wt-data/build-xemu.sh` and the subproject, and will
 be folded into the patch set.
 
+**Runtime dependencies (2026-11-23).** The MSYS2 build links glib/SDL/zlib/zstd
+and libcurl dynamically, and the packaging step only copies DLLs it finds under
+`/mingw64/bin` directly. Two consequences, both fixed in
+`scripts/build-native-xemu.ps1`: (a) the *transitive* closure must be copied, or
+the core dies with `STATUS_DLL_NOT_FOUND` (`libidn2`, `nghttp2`, `brotli`,
+`pcre2`, `openssl`); (b) a partially upgraded MSYS2 produces mismatched pairs
+(libcurl wanted `libidn2-a.dll`, then OpenSSL 3.6's `libcrypto-4` while
+`libssh2`/`ngtcp2` still wanted `libcrypto-3`). The fix is to upgrade the whole
+chain (`curl`, `libidn2`, `openssl`, `libssh2`, `ngtcp2`) and re-run the bundle
+pass; `ldd` over every file in `dist/` is the check. CMake must also be ahead of
+`/mingw64/bin` on `PATH` (the MSYS2 `cmake` shim there is broken, exit 127).
+
 **Cost.** Codebase build and first run 1-2 days; display + input 3-5 days; CHD
 3-4 days; ZAR 4-6 days. First playable under the new present path is display +
 input, before either media driver.

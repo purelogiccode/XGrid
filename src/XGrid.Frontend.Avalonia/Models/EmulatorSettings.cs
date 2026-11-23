@@ -97,6 +97,12 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets a value indicating whether the emulated network link is up.</summary>
     public bool NetworkLinkUp { get; init; } = true;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the core publishes frames to the
+    /// shell (shared section, shell presents) instead of showing its own window.
+    /// </summary>
+    public bool DisplaySink { get; init; } = true;
+
     /// <summary>Gets or sets the accent palette key.</summary>
     public string Accent { get; set; } = "Blue";
 
@@ -292,6 +298,7 @@ public sealed class EmulatorSettings
             Accent = Accent,
             Core = Core,
             XemuCorePath = XemuCorePath,
+            DisplaySink = DisplaySink,
             LibraryFolders = [.. LibraryFolders],
             RecentGames = [.. RecentGames],
         };

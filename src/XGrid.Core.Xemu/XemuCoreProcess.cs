@@ -138,6 +138,11 @@ public sealed class XemuCoreProcess : IDisposable
             UseShellExecute = false,
         };
 
+        if (!string.IsNullOrWhiteSpace(_settings.DisplaySinkName))
+        {
+            startInfo.Environment["XGRID_DISPLAY_SHM"] = _settings.DisplaySinkName;
+        }
+
         try
         {
             _process = Process.Start(startInfo)

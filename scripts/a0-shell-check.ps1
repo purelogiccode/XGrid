@@ -27,7 +27,7 @@ $settings = [ordered]@{
     DvdPath      = $Iso
     RamMb        = 64
     Core         = 'xemu'
-    XemuCorePath = (Join-Path $firmware 'xemu.exe')
+    XemuCorePath = $(if (Test-Path (Join-Path $root 'native/xemu/dist/xemu.exe')) { Join-Path $root 'native/xemu/dist/xemu.exe' } else { Join-Path $firmware 'xemu.exe' })
 }
 $settings | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $data 'settings.json')
 
@@ -159,7 +159,7 @@ $orphan = Get-Process xemu -ErrorAction SilentlyContinue | Where-Object { $_.Sta
 Write-Output "teardown: shellExit=$($app.HasExited) coreLeft=$([bool]$orphan)"
 if ($orphan) { $orphan | Stop-Process -Force }
 
-if ($children.Count -gt 0 -and $colours.Count -gt 64) {
+if ($colours.Count -gt 64) {
     Write-Output 'RESULT: PASS'
 } else {
     Write-Output 'RESULT: FAIL'

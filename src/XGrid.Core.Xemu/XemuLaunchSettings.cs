@@ -68,6 +68,12 @@ public sealed record XemuLaunchSettings
     /// </summary>
     public bool ShowMenuBar { get; init; }
 
+    /// <summary>
+    /// Gets the shared-section name the core should publish frames into, or an
+    /// empty string to let the core show its own window.
+    /// </summary>
+    public string DisplaySinkName { get; init; } = string.Empty;
+
     /// <summary>Gets the directory that holds the generated config and the core log.</summary>
     public string WorkingDirectory { get; init; } = string.Empty;
 

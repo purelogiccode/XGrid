@@ -48,6 +48,7 @@ public static class XemuLaunchPlan
             // The display control publishes 1x1 before its first layout pass.
             WindowWidth = Math.Max(64, width),
             WindowHeight = Math.Max(64, height),
+            DisplaySinkName = settings.DisplaySink ? XemuDisplaySink.CreateName() : string.Empty,
             WorkingDirectory = workingDirectory,
         };
     }

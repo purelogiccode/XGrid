@@ -30,6 +30,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _toastTimer;
     private readonly Lock _frameLock = new();
     private FramePacket? _pendingFrame;
+    private readonly Lock _coreFrameLock = new();
+    private byte[]? _coreFrameBuffer;
+    private int _coreFrameWidth;
+    private int _coreFrameHeight;
+    private bool _coreFramePending;
+    private bool _coreFrameLogged;
     private long _lastSampleTicks;
     private long _lastSampleSteps;
     private long _lastSampleFrames;
@@ -105,6 +111,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _session.Stopped += OnSessionStopped;
         _core = new XemuCoreSession();
         _core.Log += OnCoreLog;
+        _core.FrameReady += OnCoreFrameReady;
         _core.Stopped += OnCoreStopped;
 
         Home = new HomeViewModel(this);
@@ -475,6 +482,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             _coreDisplayWidth,
             _coreDisplayHeight,
             workingDirectory);
+        FrontendTrace.Write($"sink='{launch.DisplaySinkName}' setting={Config.DisplaySink}");
         _core.Start(launch);
         StatusText = "Running";
         StatusDetail = "xemu core · " + (game?.Title ?? "Xbox dashboard");
@@ -842,6 +850,51 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Dispatcher.UIThread.Post(() => HandleSessionStopped(e));
     }
 
+    private void OnCoreFrameReady(object? sender, XemuDisplayFrame frame)
+    {
+        int length = frame.Width * frame.Height * 4;
+        lock (_coreFrameLock)
+        {
+            // Latest wins: a slow UI must never queue frames.
+            if (_coreFramePending)
+            {
+                return;
+            }
+
+            if (_coreFrameBuffer is null || _coreFrameBuffer.Length < length)
+            {
+                _coreFrameBuffer = new byte[length];
+            }
+
+            Buffer.BlockCopy(frame.Pixels, 0, _coreFrameBuffer, 0, length);
+            _coreFrameWidth = frame.Width;
+            _coreFrameHeight = frame.Height;
+            _coreFramePending = true;
+        }
+
+        if (!_coreFrameLogged)
+        {
+            _coreFrameLogged = true;
+            FrontendTrace.Write($"core frame {frame.Width}x{frame.Height} #{frame.Counter}");
+        }
+    }
+
+    private bool TryTakeCoreFrame(out FramePacket? packet)
+    {
+        lock (_coreFrameLock)
+        {
+            if (!_coreFramePending || _coreFrameBuffer is null)
+            {
+                packet = null;
+                return false;
+            }
+
+            _coreFramePending = false;
+            packet = new FramePacket((uint)_coreFrameWidth, (uint)_coreFrameHeight, _coreFrameBuffer);
+            return true;
+        }
+    }
+
     private void OnCoreLog(object? sender, string message)
     {
         Dispatcher.UIThread.Post(() => AddLog(LogLevel.Info, message));
@@ -908,7 +961,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
             if (IsRunning)
             {
-                HasFrame = _core.IsEmbedded;
+                if (TryTakeCoreFrame(out FramePacket? coreFrame))
+                {
+                    PresentFrame(coreFrame!);
+                }
+
+                HasFrame = _core.IsEmbedded || HasFrame;
                 Steps = 0;
                 Frames = 0;
                 Mips = 0;
