@@ -43,6 +43,12 @@ static const char *sink_name(void)
     return name;
 }
 
+bool xgrid_embed_enabled(void)
+{
+    const char *value = getenv("XGRID_EMBED");
+    return value != NULL && value[0] == '1';
+}
+
 bool xgrid_display_enabled(void)
 {
     return sink_name() != NULL;
@@ -122,6 +128,11 @@ void xgrid_display_publish(const void *pixels, uint32_t width, uint32_t height,
 }
 
 #else
+
+bool xgrid_embed_enabled(void)
+{
+    return false;
+}
 
 bool xgrid_display_enabled(void)
 {

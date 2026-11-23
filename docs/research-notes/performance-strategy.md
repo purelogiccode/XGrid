@@ -320,6 +320,39 @@ pass; `ldd` over every file in `dist/` is the check. CMake must also be ahead of
 3-4 days; ZAR 4-6 days. First playable under the new present path is display +
 input, before either media driver.
 
+## Cleanup (2026-11-23): XGrid is the frontend, xemu is the base
+
+Operator instruction: *"XGrid is a xemu frontend — xemu codebase is base code — we
+will evolve from that. Delete all unneeded files and dead code. Do not delete
+files inside References2."*
+
+**Deleted** (superseded by decision A or unreferenced):
+
+- `native/xgridcpu/` (the `libxgridcpu` host + shim), `native/qemu-patches/` and
+  the `native/qemu/` build tree: the native-CPU extraction program (XCN0-XCN3)
+  that decision A replaced with the whole xemu core.
+- `tools/xcn0-probe`, `xcn1-boot-probe`, `xcn1-host-probe`, `xcn2-smc-probe`,
+  `xcn3-machine-probe`: the probes for that program (no remaining references).
+- `tools/xemu-embed-spike`: superseded by `scripts/a0-shell-check.ps1`.
+- `tools/texture-oracle`: unreferenced (the texture corpus is in the test data).
+- `src/XGrid.Debug` and `src/XGrid.Mcpx`: in the solution but referenced by no
+  project and imported by no file.
+- Build clutter: every `bin/` and `obj/` outside `References2/` and
+  `native/xemu/`, plus the `wt-data/` scratch tree.
+
+**Kept, with the reason:**
+
+| Kept | Why |
+|---|---|
+| `References2/` | the vendored oracle set; never touched |
+| `native/xemu/` + `native/xemu-patches/` + `native/xgrid-core/` | the base code and our patches: this **is** the maintained core |
+| the managed emulator (`XGrid.Cpu/Nv2a/Bus/Audio/…`) and its tests | behavioural oracle: four 1B goldens, the ktest log and 2,284 tests |
+| `tools/cpu-oracle`, `dsp-oracle`, `ktest-recon`, `perf`, `frontend-smoke`, `testroms`, `completion-graph` | referenced by tests, scripts or the status tooling |
+
+The managed emulator is not dead code: it is how a regression in the core is
+proven, and deleting it would remove the only independent oracle. It stays until
+the corpus is replaced by something equivalent.
+
 ## Execution order
 
 **P0 - price the two ceilings (this week, before any porting).**

@@ -47,6 +47,7 @@ public static class A0Win32 {
     [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
 
     private delegate bool EnumProc(IntPtr h, IntPtr p);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc proc, IntPtr p);
@@ -79,6 +80,7 @@ while ((Get-Date) -lt $deadline) {
 if ($app.MainWindowHandle -eq 0) { throw 'The shell window never appeared.' }
 $hwnd = $app.MainWindowHandle
 Write-Output "shell: hwnd=0x$('{0:X}' -f $hwnd.Int64)"
+[void][A0Win32]::ShowWindow($hwnd, 9)
 [void][A0Win32]::SetForegroundWindow($hwnd)
 Start-Sleep -Seconds 1
 

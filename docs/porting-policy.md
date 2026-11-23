@@ -66,7 +66,11 @@ The product emulator is the xemu 0.8.139 codebase, compiled from this repository
 The managed emulator remains in the tree as the oracle: the four 1B goldens,
 the ktest log and the test suite validate the core.
 
-### 2b. The native CPU core (XCN0-XCN3, 2026-11-22)
+### 2b. The native CPU core (XCN0-XCN3, 2026-11-22) - RETIRED 2026-11-23
+
+> Retired by decision A: the whole xemu codebase is now the core (section 2c) and
+> the `libxgridcpu` shim, its patches and probes were deleted. The text below is
+> history.
 
 The operator decision of 2026-11-22 makes the vendored xemu 0.8.139 / QEMU
 10.2.0 TCG i386 core the product CPU. It is the **one** exception to the
