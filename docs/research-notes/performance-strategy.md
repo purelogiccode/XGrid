@@ -180,6 +180,64 @@ Notes that matter for the implementation:
 - Update story: if upstream xemu ever gains a CHD driver, the A2 patch is
   dropped rather than maintained - the fork/patch-set strategy makes that free.
 
+## A2 fork decision (2026-11-23): own the core, keep it an executable
+
+The operator authorised changing the xemu codebase and asked for **real-time CHD
+and ZAR loading with no extraction step**. Both goals need a fork; only one of
+them needs a DLL verdict.
+
+**Evidence gathered before deciding.**
+
+- **No CHD driver exists in either reference tree.** `block/` in 0.8.139 and in
+  `xemu-Playtest-v2` contains raw/qcow/qcow2/vpc/vhdx/vdi/vmdk and no CHD source
+  at all, so CHD/ZAR cannot be enabled by configuration.
+- **xemu already presents through QEMU's display abstraction**
+  (`ui/xemu.c` registers `dcl_gl_ops` on a `DisplayChangeListener`), so a host
+  display backend that hands frames to the shell is a small, structural patch -
+  not a rewrite.
+- **The cost of a DLL is process semantics, not the build.** The paths we would
+  embed call `exit()` on failure: **38 in `ui/`, 7 in `hw/xbox/`, 104 in
+  `system/vl.c`**. In an EXE that is correct; inside the Avalonia process it
+  terminates the shell. A DLL also inherits QEMU's singleton globals, `atexit`
+  handlers and signal setup.
+- **The codecs are already available.** QEMU depends on `libzstd`
+  (`meson.build` zstd dependency), so a ZAR reader has its codec in-tree; CHD
+  needs `libchdr` vendored (BSD-3) because nothing in the tree reads it.
+- **The host toolchain works:** MSYS2 MINGW64 has glib, pixman, zlib, libepoxy,
+  SDL3, meson and ninja, and xemu's own `build.sh` has an MSYS/MINGW profile
+  that produces `qemu-system-i386w.exe`.
+
+**Decision.**
+
+1. **Fork, as an EXE.** `native/xemu/` is a git-ignored copy of 0.8.139;
+   `native/xemu-patches/` is the tracked patch set (GPL-2.0, rebased per
+   release).
+2. **`-display xgrid`: shared-section frames.** A `DisplayChangeListener` copies
+   the console surface into a named section with a frame counter; no SDL window.
+   The shell owns the video surface, so OSD, the quick menu, integer scaling and
+   fullscreen all live in Avalonia. This supersedes A0 window embedding as the
+   product present path (A0 is kept as the fallback/debug path - it works).
+3. **Host input driver.** The shell publishes the pad block; the core's virtual
+   gamepad reads it. No key injection, no window focus rules.
+4. **Real-time media drivers in the core:** `xgridchd` (vendored libchdr) and
+   `xgridzar` (zstd from the tree) as QEMU block drivers. The guest reads a disc;
+   the driver decodes on demand. Nothing is extracted to disk, and no sector
+   read crosses a process or managed boundary.
+5. **No DLL for now.** The frame copy is ~1.2 MB per presented frame (640x480
+   BGRA), i.e. tens of MB/s at 60 fps - a few percent of one core, not a reason
+   to accept `exit()` semantics. A DLL is reopened only with a measured reason
+   (for example a C# CHDSharp provider instead of the C driver), and then the
+   `exit()` audit is the priced work.
+
+**Why this is still "adapting xemu to XGrid".** The patch set is the adaptation:
+a display sink, an input source, and two block drivers - all additive, all
+upstream-shaped, all small enough to rebase. The emulator itself (CPU, NV2A,
+renderer, APU, IDE, USB) stays exactly the performance maximum it already is.
+
+**Cost.** Fork build and first run 1-2 days; display + input 3-5 days; CHD 3-4
+days; ZAR 4-6 days. First playable under the new present path is display +
+input, before either media driver.
+
 ## Execution order
 
 **P0 - price the two ceilings (this week, before any porting).**
