@@ -116,7 +116,14 @@ remote-origin deletions of `References/`); both names stay git-ignored.
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
 
-## Native CPU core (operator decision 2026-11-22; required reading)
+## Native CPU core (RETIRED 2026-11-23; kept as history)
+
+> **Retired.** Decision A (2026-11-23) makes the vendored xemu 0.8.139 codebase the
+> emulation core and XGrid its frontend. The native-CPU extraction (`libxgridcpu`,
+> XCN0-XCN3), its shim, patch set, probes and build trees were deleted in the
+> cleanup of 2026-11-23; this section records why that path existed and what it
+> measured. Do not rebuild it. The managed C# emulator below stays as the
+> behavioural oracle (goldens, ktest log, suite).
 
 The product CPU is the **vendored xemu 0.8.139 / QEMU 10.2.0 TCG i386 core**
 behind `libxgridcpu` (program **XCN0-XCN3** in `ImplementationPlan.md` E0N).

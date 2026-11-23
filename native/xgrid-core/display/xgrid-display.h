@@ -24,6 +24,11 @@
 #include <stdint.h>
 
 /**
+ * Returns true when the shell will embed the core window (XGRID_EMBED).
+ */
+bool xgrid_embed_enabled(void);
+
+/**
  * Returns true when a shared-section sink was requested in the environment.
  */
 bool xgrid_display_enabled(void);
