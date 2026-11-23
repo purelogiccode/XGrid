@@ -303,3 +303,27 @@ Project-local usage notes and the shortcut table live in
 - `XemuWindowEmbedder.IsEmbeddedIn(host)` makes re-attachment host-aware, and
   `Detach` hides the child before returning it to the desktop, so it never
   flashes as a top-level window.
+
+## Update 2026-11-23: in-process core hosting
+
+- The core is built twice from the same objects: `xemu/dist/xemu.exe` for the
+  standalone path and `xemu/dist/xgrid_core.dll` for in-process hosting. The
+  DLL exports the `xgrid_core_*` ABI in `xemu/xgrid-core/abi`.
+- Settings -> System -> Core hosting selects `Separate process (recommended)`
+  or `In-process (experimental)`. The default is the process; the in-process
+  library is built and loads, but the core's TCG `longjmp` path faults under the
+  managed runtime, so it is not the default yet. The shell falls back to the
+  process automatically when the DLL is missing or refuses to start.
+- The shell creates the display/input sections **before** starting the core,
+  because an in-process core begins immediately. Sink names are passed to the
+  ABI rather than through the environment: the DLL's CRT environment predates
+  the shell's settings.
+- One process hosts one machine (QEMU's global state is single-use). The shell
+  reports that a restart is needed when a second power-on is attempted without
+  restarting the shell.
+- A DLL, not the EXE: the Windows loader initialises a DLL's CRT, which an EXE
+  loaded with `LoadLibrary` does not do. The DLL links at a fixed image base
+  (0x150000000) with a 16 MB image stack and 8 MB QEMU threads. Its `_setjmp`
+  pair uses a NULL unwind frame so the CPU loop does not unwind through a
+  managed host's vectored exception handlers; that is necessary but not
+  sufficient, and the remaining TCG `longjmp` fault is the open item.

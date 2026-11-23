@@ -259,6 +259,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     private bool _displaySink;
 
     [ObservableProperty]
+    private KeyedOption? _selectedCoreHosting;
+
+    [ObservableProperty]
     private KeyedOption? _selectedFilter;
 
     [ObservableProperty]
@@ -338,6 +341,11 @@ public sealed partial class SettingsViewModel : PageViewModel
         : base(shell)
     {
         FilterOptions = [.. FrameFilters.All.Select(item => new KeyedOption(item.Key, item.Label))];
+        CoreHostingOptions =
+        [
+            new KeyedOption(EmulatorSettings.CoreHostingProcess, "Separate process (recommended)"),
+            new KeyedOption(EmulatorSettings.CoreHostingInProcess, "In-process (experimental)"),
+        ];
         GamepadSourceOptions =
         [
             .. GamepadSources.All.Select(source => new KeyedOption(source.ToString(), GamepadSources.DisplayName(source))),
@@ -399,6 +407,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the guest RAM choices.</summary>
     public IReadOnlyList<int> RamOptions { get; } = [64, 128];
+
+    /// <summary>Gets the selectable core hosting modes.</summary>
+    public IReadOnlyList<KeyedOption> CoreHostingOptions { get; }
 
     /// <summary>Gets the selectable presentation filters.</summary>
     public IReadOnlyList<KeyedOption> FilterOptions { get; }
@@ -519,6 +530,9 @@ public sealed partial class SettingsViewModel : PageViewModel
             ?? AudioBackendOptions[0];
         XemuCorePath = settings.XemuCorePath;
         DisplaySink = settings.DisplaySink;
+        SelectedCoreHosting = CoreHostingOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.CoreHosting, StringComparison.Ordinal))
+            ?? CoreHostingOptions[0];
         SelectedFilter = FilterOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Filter, StringComparison.Ordinal))
             ?? FilterOptions[0];
@@ -567,6 +581,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             Audio = BuildAudioSettings(),
             XemuCorePath = XemuCorePath.Trim(),
             DisplaySink = DisplaySink,
+            CoreHosting = SelectedCoreHosting?.Key ?? EmulatorSettings.CoreHostingProcess,
             Filter = SelectedFilter?.Key ?? FrameFilters.Nearest,
             Accent = SelectedAccent?.Key ?? "Emerald",
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],
