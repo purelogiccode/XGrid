@@ -106,6 +106,21 @@ public sealed class XemuWindowEmbedder : IDisposable
         _ = Win32Window.SetFocus(child);
     }
 
+    /// <summary>Shows or hides the hosted core window without detaching it.</summary>
+    /// <param name="visible">True to show the core picture, false to hide it.</param>
+    /// <remarks>
+    /// A native child window is not clipped by the shell's visual tree, so a
+    /// page change must hide it explicitly. The core keeps running and painting
+    /// into its hidden swapchain.
+    /// </remarks>
+    public void SetVisible(bool visible)
+    {
+        if (_child != IntPtr.Zero && Win32Window.IsWindow(_child))
+        {
+            _ = Win32Window.ShowWindow(_child, visible ? Win32Window.SwShow : Win32Window.SwHide);
+        }
+    }
+
     /// <summary>Resizes the embedded window to the display rectangle.</summary>
     /// <param name="widthPx">Width in physical pixels.</param>
     /// <param name="heightPx">Height in physical pixels.</param>

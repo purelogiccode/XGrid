@@ -38,6 +38,7 @@ public sealed class XemuCoreSession : IDisposable
     private IntPtr _displayHost;
     private int _displayWidth;
     private int _displayHeight;
+    private bool _displayVisible = true;
     private long _stopDeadline;
     private bool _stopping;
     private bool _disposed;
@@ -114,6 +115,14 @@ public sealed class XemuCoreSession : IDisposable
     public void SetPad(uint buttons, int lx, int ly, int rx, int ry, int lt, int rt)
     {
         _input?.Write(buttons, lx, ly, rx, ry, lt, rt);
+    }
+
+    /// <summary>Shows or hides the core picture without stopping the core.</summary>
+    /// <param name="visible">True on the console page, false on any other page.</param>
+    public void SetDisplayVisible(bool visible)
+    {
+        _displayVisible = visible;
+        _embedder?.SetVisible(visible);
     }
 
     /// <summary>Reports that the display control is gone (page change, closed window).</summary>
@@ -270,6 +279,8 @@ public sealed class XemuCoreSession : IDisposable
             {
                 _embedder ??= new XemuWindowEmbedder();
                 _embedder.Embed(_displayHost, window, _displayWidth, _displayHeight);
+                // The embed may arrive while the user is on another page.
+                _embedder.SetVisible(_displayVisible);
                 FrontendTrace.Write($"core window 0x{window.ToInt64():X} embedded in 0x{_displayHost.ToInt64():X}");
                 Log?.Invoke(this, "xemu core display attached.");
             }
