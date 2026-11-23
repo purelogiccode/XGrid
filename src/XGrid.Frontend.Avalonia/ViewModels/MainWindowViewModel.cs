@@ -996,6 +996,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 if (TryTakeCoreFrame(out FramePacket? coreFrame))
                 {
                     PresentFrame(coreFrame!);
+                    HasFrame = true;
                 }
 
                 HasFrame = _core.IsEmbedded || HasFrame;
