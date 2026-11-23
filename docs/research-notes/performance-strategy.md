@@ -59,47 +59,59 @@ matters more than the size of the C# footprint. L1's optimizations are a subset
 of L2 and are not wasted, but L1 alone cannot pass 0.5x if the per-method cost
 is what we fear.
 
-## If the implementation language is free (2026-11-22)
+## Decision A (2026-11-22, operator): XGrid is the shell over the xemu core
 
-The operator has authorised changing the implementation language if that is
-what performance requires. That resolves the last structural question, and the
-logic points one way:
+Chosen after the language freedom was granted. XGrid stops being an
+independent emulator; it becomes a **C# frontend and distribution over the
+xemu 0.8.139 core** (GPL-2.0, already vendored, already the porting source).
 
-**Reimplementing xemu's C in our own C is pointless.** The only reason to
-rewrite a module was the managed-C# rule; with the rule gone, porting xemu's
-NV2A/IDE/APU sources into our own C project is the same code, the same
-performance and strictly more work than using them in place.
+**Why this is the performance maximum.** The emulator *is* xemu: its QEMU TCG
+CPU, NV2A + GL renderer, MCPX/APU/ACI, IDE, USB, audio and input paths. There
+is no seam, no port and no device-model risk. The only work is integration.
 
-So the performance-optimal architecture is **L3: XGrid as a shell over the
-xemu 0.8.139 core** (already vendored, GPL-2.0, already the porting source):
+**Why the update story improves (operator point).** A new xemu release becomes
+a rebase of a *small* patch set (our frontend hooks + config surface), not a
+re-implementation of every module. That is the opposite of the porting program,
+where every upstream release had to be re-ported by hand.
 
-```
-xgrid (C# shell)                     xemu 0.8.139 core (C, GPL-2.0)
-  Avalonia UI, library, settings  ──►  QEMU 10.2 TCG i386 + MCPX + NV2A +
-  library/settings, snapshots          APU/ACI + IDE + USB + GL renderer
-  input mapping, audio sink            + audio + input + netplay
-  corpus, goldens, diagnostics         (built as a library or a fork with a
-                                        small control C API)
-```
+### Integration plan
 
-- **Performance: exactly xemu's** — the mature GL renderer, all devices, the
-  real audio path, the real input path. No seam, no port, no regression risk in
-  the device models.
-- **Time to playable: weeks, not months.**
-- **What we lose:** the project stops being an independent C# emulator and
-  becomes a C# frontend/distribution over an xemu-based core.
-- **What we keep:** the Avalonia shell, the managed goldens/ktest/corpus as the
-  behavioural oracle, the release/packaging pipeline, the GPL/notices
-  discipline.
-- **Effort:** the integration is the work — expose a control API (start, disc,
-  pause, frame, input, audio, snapshot) and replace the shell's emulation loop.
-  The first spike is "build the core headless, present one frame and one PCM
-  buffer into a C# host".
+**A0 - prove the shape (days).** `XGrid.Core.Xemu`:
+- generate/point xemu at our BIOS/MCPX/EEPROM/HDD/disc and our settings;
+- start the core, **embed its window** into the Avalonia shell (`SetParent`,
+  no per-frame copy, so no overhead);
+- forward pad/keyboard, stop cleanly.
+- Acceptance: 007 launches from our shell, runs at xemu's own speed, and the
+  shell shows the game inside its own window with no measurable overhead.
 
-This supersedes the L0-L2 ladder unless the operator prefers to keep an
-independent core. It is recorded as the recommended path, **pending an explicit
-operator confirmation of the identity change** (independent emulator vs shell
-over an xemu-based core), because it is not a technical detail.
+**A1 - product shell (about a week).** Library/settings drive the launch;
+lifecycle (start/pause/stop), per-title overrides mapped to core arguments,
+aspect-correct display area, hotkeys; xemu keeps its own audio device and
+snapshots. Input is the one real integration seam: evaluate sending Windows key
+events against xemu's keyboard bindings vs a small `xgrid_pad` shared-memory
+patch in the fork; take the patch if latency or mapping is imperfect.
+
+**A2 - optional fork (only if needed).** If window embedding is unsatisfactory
+(DPI, focus, multi-monitor), build our own xemu fork with a display backend
+writing frames to shared memory plus a small control API. Same performance;
+more control; not required for the first playable build.
+
+### What this retires and what it keeps
+
+- **Retires:** the native-host seam as the *product* path (kept as the fallback
+  and as the reference for `--cpu managed` experiments); the device-porting
+  ladder L0-L2.
+- **Keeps:** the Avalonia shell, the managed goldens / ktest log / corpus as the
+  behavioural oracle for the core and for the fork, the packaging pipeline, the
+  GPL/notices discipline, and every test in the suite.
+- **Licence:** unchanged. GPL-2.0; the release ships the core source (or a
+  written offer), our patches and the notices. Our frontend is GPL-2.0 too.
+
+**Context.** The operator authorised changing the implementation language if
+performance requires it. That removes the last structural reason to rewrite
+anything: porting xemu's C into our own C project is the same code and strictly
+more work than using it in place, so the performance-optimal architecture is to
+adopt the core and keep the shell.
 
 ## Execution order
 
