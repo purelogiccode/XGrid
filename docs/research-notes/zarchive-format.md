@@ -120,3 +120,32 @@ tree, build the volume descriptor and directory tables in memory, place each
 file at a 2048-byte sector boundary, and map guest reads onto the archived file
 extents. That is the next slice (3-5 days) and it makes `--iso` archives
 playable with no extraction, which is the operator's actual goal.
+
+## XDVDFS synthesizer: the layout rules (from XISOSharp, the oracle)
+
+The synthesizer must produce a volume the Xbox kernel accepts, so its layout is
+copied from XISOSharp's writer (`DirectoryEntryTableWriter`, `XisoWriter`), which
+is the project's tested packer:
+
+- **Descriptor** at sector 32: `MICROSOFT*XBOX*MEDIA` at 0x00 and again at
+  0x7EC, root table sector at 0x14, root table size at 0x18 (sector-rounded),
+  FILETIME at 0x1C.
+- **Records** (little-endian): `u16` left-child offset, `u16` right-child offset
+  (both in DWORDs from the table start), `u32` start sector, `u32` size,
+  `u8` attributes (0x10 directory, 0x20 archive), `u8` name length, name in
+  Latin-1.
+- **Tree**: entries sorted by ordinal name, inserted into an **AVL tree**; the
+  left/right offsets are that tree's shape. A flat list (all 0xFFFF) is *not*
+  what the reference produces and is not what the guest expects.
+- **Placement**: records are DWORD-aligned and never straddle a 2048-byte
+  sector; gaps and the sector tail are `0xFF`; a directory's size is its table
+  size rounded up to a sector (one `0xFF` sector when empty).
+- **Files** are placed at partition-relative sector boundaries; the archive's
+  files already have uncompressed offsets/sizes, so a read for sector S is
+  mapped to the owning file's extent and then to archive blocks - the same
+  block path the entry driver already validates.
+
+That makes the remaining work: port `BuildTable` (AVL insert), `PlaceEntry`,
+`EncodeEntry` and the descriptor/volume packer into `block/xgridzar.c`, then
+diff the synthesized metadata against `hello.iso` (the same sample packed both
+ways) before booting it.
