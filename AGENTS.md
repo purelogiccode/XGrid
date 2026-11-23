@@ -956,6 +956,33 @@ fault is closed and one process hosts the shell and the emulator).**
 - **Next.** Flip the release packaging to ship `xgrid_core.dll` beside the shell
   and keep `xemu.exe` as the fallback; then the input/graphics settings audit.
 
+**Session 2026-11-23 (sixty-second; the release archive now carries the
+emulator, and the packaged frontend boots from it).**
+
+- **The gap.** `scripts/package.ps1` shipped only the managed applications, so a
+  packaged frontend had no core at all: `XemuPaths.FindCore` looks for
+  `core/xemu/xemu.exe` beside the application and nothing was there.
+- **`package.ps1`** now copies `xemu/dist` into `core/xemu/` for the `win-x64`
+  frontend archive (the standalone core, `xgrid_core.dll` and the runtime DLLs
+  both import) and strips the two large binaries, 92 MB each with debug
+  information -> 17.5 MB. The core is required for that RID; `-SkipCore` is the
+  development escape. The manifest records the core version and commit.
+- **`package-verify.ps1`** now fails the `win-x64` frontend archive without
+  `core/xemu/xemu.exe`, `core/xemu/xgrid_core.dll`, their runtime DLLs and a
+  matching `core` block in the manifest.
+- **Notices.** The archive redistributes SDL3, GLib, OpenSSL, libcurl and the
+  rest of the core's DLLs, so `THIRD_PARTY_NOTICES.md` gained a table of those
+  libraries and licenses (including the LGPL-3.0-or-later `libidn2`/
+  `libunistring`, which the GPL-2.0-or-later combination permits). Shipping
+  their full texts is an operator action in `docs/release-licensing-review.md`.
+- **Evidence.** `scripts/package.ps1 -Rids win-x64` -> `PACKAGE PASS: 2 archives,
+  version 0.1.0, 1 RIDs, licenses complete`; the frontend archive is 68.8 MB
+  with 62 MB of core under `core/xemu/`. Extracted to a temp directory and run
+  with `--autostart` on a corpus ISO: `childCoreProcesses=0`, 37.3 s of CPU in
+  25 s, so the packaged shell finds the bundled core and emulates in-process.
+- **Next.** Ship the dependency license texts with the archive; then the
+  input/graphics settings audit.
+
 **Session 2026-11-23 (sixtieth; the vendored core is one tree and one build, and
 the in-process DLL is built but not the default).**
 

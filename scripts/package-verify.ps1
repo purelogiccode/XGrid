@@ -11,7 +11,8 @@ things a GPL-2.0-or-later binary distribution can get wrong without anyone notic
      every source file that declares itself ported is recorded in the notices;
   2. package integrity - the expected archives exist for every RID, contain the
      executable and the release metadata, carry no symbols or firmware/game
-     data, and match their SHA-256 sum and the package manifest.
+     data, and match their SHA-256 sum and the package manifest. The win-x64
+     frontend archive must also carry the emulator (core/xemu/).
 
 It also smoke-runs the Windows CLI from its archive (`--version` must equal the
 version in the archive's VERSION file). That leg is skipped on other hosts.
@@ -71,6 +72,19 @@ try {
         if ([string]::IsNullOrWhiteSpace($Version)) { $Version = [string]$manifest.version }
     }
     if ([string]::IsNullOrWhiteSpace($Version)) { Fail 'no expected version (pass -Version)' }
+
+    if ($manifest -and ($Rids -contains 'win-x64')) {
+        $expectedCore = if (Test-Path (Join-Path $repo 'xemu/XEMU_VERSION')) {
+            (Get-Content (Join-Path $repo 'xemu/XEMU_VERSION') -TotalCount 1).Trim()
+        }
+        else { '' }
+        if (-not $manifest.core) {
+            Fail 'package-manifest.json does not describe the bundled emulator core'
+        }
+        elseif ($expectedCore -and [string]$manifest.core.version -ne $expectedCore) {
+            Fail "package-manifest.json records core version '$($manifest.core.version)', expected '$expectedCore'"
+        }
+    }
 
     # --- license inputs -------------------------------------------------------
     Write-Host 'LICENSE INPUTS'
@@ -243,6 +257,26 @@ try {
                 foreach ($ext in $forbiddenExtension) {
                     if ($name.EndsWith($ext, [StringComparison]::OrdinalIgnoreCase)) {
                         Fail "$file ships a forbidden file: $name"
+                    }
+                }
+            }
+
+            if ($app -eq 'frontend' -and $rid -eq 'win-x64') {
+                # The archive carries the emulator itself; a frontend without it
+                # can present nothing.
+                foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll') {
+                    if (-not $archive.Names.ContainsKey($entry)) { Fail "$file is missing $entry" }
+                }
+                $coreLibraries = @($archive.Names.Keys | Where-Object { $_ -like 'core/xemu/*.dll' })
+                if ($coreLibraries.Count -lt 5) {
+                    Fail "$file ships $($coreLibraries.Count) files under core/xemu; the core needs its runtime DLLs"
+                }
+                foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll') {
+                    if ($archive.Head.ContainsKey($entry)) {
+                        $magic = -join ($archive.Head[$entry] | ForEach-Object { $_.ToString('x2') })
+                        if (-not $magic.StartsWith('4d5a', [StringComparison]::Ordinal)) {
+                            Fail "$file $entry is not a Windows binary"
+                        }
                     }
                 }
             }

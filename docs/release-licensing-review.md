@@ -22,8 +22,14 @@ Nothing else ships. In particular the packages contain **no** Xbox firmware
 (BIOS/MCPX/EEPROM), **no** game or disc data, **no** `References2/` tree, **no**
 `data/` or test media, and **no** code from `tools/dsp-oracle` (it compiles the
 reference DSP interpreter at development time and is deliberately outside
-`XGrid.sln`). The emulator is full managed C#; no QEMU/xemu native library is
-linked or bundled.
+`XGrid.sln`).
+
+The Windows frontend archive **does** bundle the emulator itself, under
+`core/xemu/`: `xemu.exe`, `xgrid_core.dll` and the runtime DLLs they import.
+That is xemu 0.8.139 (GPL-2.0/LGPL-2.0/MIT per file) plus our additions in
+`xemu/xgrid-core/` and the edits in `xemu/xemu-patches/`, built from the
+tracked tree. Shipping it makes the archive a distribution of the core, so the
+source obligation in 3 covers `xemu/` as well as `src/`.
 
 ## 2. GPL-2.0 obligations
 
@@ -91,6 +97,11 @@ when either is missing.
    download.
 3. Optional: Apple Developer ID + notarization for the macOS archives and an
    Authenticode certificate for Windows. Neither changes the license review.
+4. Ship the full license texts of the runtime libraries listed in
+   `THIRD_PARTY_NOTICES.md` ("Runtime libraries redistributed with the Windows
+   core package") with the `win-x64` frontend archive. The MSYS2 packages that
+   provide those DLLs carry them; add them under `core/xemu/licenses/` before a
+   public release, or state in `RELEASE-NOTES.md` where they can be obtained.
 
 ## 7. Verification
 

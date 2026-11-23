@@ -38,6 +38,10 @@ Release-tree directory, relative to the repository root (default `dist`).
 .PARAMETER Work
 Intermediate publish directory (default `publish`, already git-ignored).
 
+.PARAMETER SkipCore
+Do not bundle the xemu core into the win-x64 frontend archive. Development
+only: a release archive without the core cannot emulate anything.
+
 .PARAMETER NoVerify
 Do not run `scripts/package-verify.ps1` at the end.
 
@@ -51,6 +55,7 @@ param(
     [string[]]$Rids = @('win-x64', 'linux-x64', 'osx-x64', 'osx-arm64'),
     [string]$Output = 'dist',
     [string]$Work = 'publish',
+    [switch]$SkipCore,
     [switch]$NoVerify
 )
 
@@ -155,6 +160,58 @@ try {
         finally { $stream.Dispose() }
     }
 
+    # The win-x64 frontend archive carries the emulator: the standalone core and
+    # the in-process library, plus the DLLs both import. `XemuPaths` looks for it
+    # at `core/xemu/` beside the application.
+    $coreDist = Join-Path $repo 'xemu/dist'
+    $coreExe = Join-Path $coreDist 'xemu.exe'
+    $coreDll = Join-Path $coreDist 'xgrid_core.dll'
+    $coreVersion = if (Test-Path (Join-Path $repo 'xemu/XEMU_VERSION')) {
+        (Get-Content (Join-Path $repo 'xemu/XEMU_VERSION') -TotalCount 1).Trim()
+    }
+    else { '' }
+
+    function Find-StripTool {
+        foreach ($candidate in @('C:\msys64\mingw64\bin\strip.exe', (Join-Path $env:SystemDrive 'msys64/mingw64/bin/strip.exe'))) {
+            if (Test-Path $candidate) { return $candidate }
+        }
+        $command = Get-Command strip -ErrorAction SilentlyContinue
+        return if ($command) { $command.Source } else { $null }
+    }
+
+    function Copy-XemuCore([string]$Destination) {
+        $coreDirectory = Join-Path $Destination 'core/xemu'
+        New-Item -ItemType Directory -Path $coreDirectory -Force | Out-Null
+        foreach ($file in Get-ChildItem $coreDist -File) {
+            if ($file.Extension -in '.pdb', '.log', '.txt') { continue }
+            Copy-Item $file.FullName (Join-Path $coreDirectory $file.Name) -Force
+        }
+
+        # The development build carries full debug information; a release
+        # archive carries code. 92 MB per binary becomes about 17 MB.
+        $strip = Find-StripTool
+        if ($strip) {
+            foreach ($name in 'xemu.exe', 'xgrid_core.dll') {
+                & $strip --strip-all (Join-Path $coreDirectory $name) | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "strip failed for $name" }
+            }
+        }
+        else {
+            Write-Warning 'strip was not found; the archive carries the unstripped core'
+        }
+        $bytes = (Get-ChildItem $coreDirectory -File | Measure-Object Length -Sum).Sum
+        Write-Host ("  core {0} -> core/xemu ({1:N1} MB)" -f $coreVersion, ($bytes / 1MB))
+    }
+
+    $bundleCore = ($Rids -contains 'win-x64') -and -not $SkipCore
+    if ($bundleCore) {
+        foreach ($required in $coreExe, $coreDll) {
+            if (-not (Test-Path $required)) {
+                throw "missing $required - run scripts/build-native-xemu.ps1 first (or pass -SkipCore for a development archive)"
+            }
+        }
+    }
+
     $apps = @(
         [pscustomobject]@{ Name = 'cli'; Project = 'src/XGrid.Cli/XGrid.Cli.csproj'; Exe = 'XGrid.Cli' },
         [pscustomobject]@{ Name = 'frontend'; Project = 'src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj'; Exe = 'XGrid.Frontend.Avalonia' }
@@ -187,6 +244,10 @@ try {
             $exePath = Join-Path $publishDirectory $exeName
             if (-not (Test-Path $exePath)) { throw "publish output has no $exeName for $($app.Name) $rid" }
 
+            if ($bundleCore -and $app.Name -eq 'frontend') {
+                Copy-XemuCore $publishDirectory
+            }
+
             $file = "XGrid-$($app.Name)-$rid$extension"
             $archivePath = Join-Path $outputPath $file
             if ($isWindowsRid) { New-DeterministicZip $publishDirectory $archivePath }
@@ -209,6 +270,19 @@ try {
         dirty = $dirty
         dotnet = $dotnet
         rids = @($Rids)
+        core = if ($bundleCore) {
+            [ordered]@{
+                name = 'xemu'
+                version = $coreVersion
+                commit = if (Test-Path (Join-Path $repo 'xemu/XEMU_COMMIT')) {
+                    (Get-Content (Join-Path $repo 'xemu/XEMU_COMMIT') -TotalCount 1).Trim()
+                }
+                else { '' }
+                path = 'core/xemu'
+                rids = @('win-x64')
+            }
+        }
+        else { $null }
         archives = @($archives)
     }
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $outputPath 'package-manifest.json') -Encoding utf8NoBOM
