@@ -40,15 +40,15 @@ public sealed class XemuCoreHostingTests : IDisposable
     public void BuildExtraArguments_MapsTheAudioBackend()
     {
         Assert.Equal(
-            ["-audiodev", "none"],
+            ["-audio", "none"],
             XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings { AudioBackend = "none" }));
 
         Assert.Equal(
-            ["-audiodev", "dsound"],
+            ["-audio", "dsound"],
             XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings { AudioBackend = "dsound" }));
 
         Assert.Equal(
-            ["-audiodev", "wav,path=C:\\capture.wav"],
+            ["-audio", "wav,path=C:\\capture.wav"],
             XemuCoreProcess.BuildExtraArguments(
                 new XemuLaunchSettings { AudioBackend = "wav", AudioWavPath = "C:\\capture.wav" }));
     }
