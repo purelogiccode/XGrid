@@ -48,15 +48,13 @@
         <StackPanel Spacing="14">
           <TextBlock Text="This build" Classes="h3" />
           <Border Classes="divider" />
-          <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
-            <TextBlock Text="Frontend" Classes="caption" VerticalAlignment="Center" />
+          <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+            <TextBlock Text="Version" Classes="caption" VerticalAlignment="Center" />
             <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding AppVersion}" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Emulator core" Classes="caption" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CoreVersion}" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="Runtime" Classes="caption" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding RuntimeText}" Classes="mono" FontSize="11.5" />
-            <TextBlock Grid.Row="3" Grid.Column="0" Text="Platform" Classes="caption" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OperatingSystemText}" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Runtime" Classes="caption" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding RuntimeText}" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Platform" Classes="caption" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding OperatingSystemText}" Classes="mono" FontSize="11.5" />
           </Grid>
         </StackPanel>
       </Border>

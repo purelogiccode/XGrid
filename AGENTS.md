@@ -919,6 +919,29 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
 
+**Session 2026-11-23 (sixty-seventh; the placeholder icon is centred and the
+shell no longer names the upstream project).**
+
+- **The icon.** The empty-display placeholder drew its X from `27,27` to
+  `49,49` inside a 64x64 box, so the stroke sat 6 units right and down of the
+  circle centre. It is `21..43` now; measured on a window capture, the X's
+  bounding box and centroid are both (1120.5, 738.5), the same centre as the
+  circles.
+- **No xemu in the UI.** The console header's CORE block is gone; the badge and
+  status bar read `XGrid v0.1.0`; the renderer label is just the renderer; the
+  display caption is `640 x 480 - OpenGL`; the placeholder says "Starting the
+  console."; the session log says "Emulator ..."; the Settings section is
+  "Emulator" / "Emulator binary"; the About "Emulator core" row (xemu 0.8.139)
+  is removed. The XGrid build is the emulator, so the shell presents it that
+  way.
+- **Kept on purpose:** the About attribution paragraph still names xemu,
+  Cxbx-Reloaded, XboxDevWiki, envytools and nv2a-trace - that is licence
+  attribution, not a product claim - and the on-disk working folder stays
+  `<data>/xemu/` so existing configurations keep resolving.
+- **Evidence.** A UI Automation dump of the console page lists 25 visible
+  strings and none contains "xemu"; build 0 warnings, suite 2,258 green,
+  `dotnet format --verify-no-changes` clean.
+
 **Session 2026-11-23 (sixty-sixth; the File menu opens the configuration and
 screenshot folders).**
 

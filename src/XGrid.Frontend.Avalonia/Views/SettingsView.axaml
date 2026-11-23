@@ -179,16 +179,16 @@
             <Border Classes="card">
               <StackPanel Spacing="16">
                 <StackPanel Spacing="3">
-                  <TextBlock Text="core" Classes="h3" />
-                  <TextBlock Text="XGrid is the shell: the vendored xemu 0.8.139 core runs the console, its renderer and its devices."
+                  <TextBlock Text="Emulator" Classes="h3" />
+                  <TextBlock Text="XGrid runs the console, its renderer and its devices. The emulator is part of this build, not a separate download."
                              Classes="hint" TextWrapping="Wrap" />
                 </StackPanel>
                 <Border Classes="divider" />
 
                 <StackPanel Spacing="7">
                   <StackPanel Spacing="2">
-                    <TextBlock Text="xemu core executable" Classes="label" />
-                    <TextBlock Text="Optional. Empty resolves core/xemu/xemu.exe beside the app, then data/xemu/xemu.exe in the repository."
+                    <TextBlock Text="Emulator binary" Classes="label" />
+                    <TextBlock Text="Optional. Empty uses the emulator shipped with the app, then the build in this repository."
                                Classes="hint" />
                   </StackPanel>
                   <TextBox Classes="path"
@@ -257,7 +257,7 @@
               <StackPanel Spacing="16">
                 <StackPanel Spacing="3">
                   <TextBlock Text="Graphics" Classes="h3" />
-                  <TextBlock Text="xemu 0.8.139 renders with OpenGL or Vulkan. It has no DirectX or software backend, so those are not offered."
+                  <TextBlock Text="The emulator renders with OpenGL or Vulkan. It has no DirectX or software backend, so those are not offered."
                              Classes="hint" TextWrapping="Wrap" />
                 </StackPanel>
                 <Border Classes="divider" />

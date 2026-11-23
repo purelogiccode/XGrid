@@ -18,10 +18,6 @@
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <StackPanel Spacing="1" HorizontalAlignment="Right">
-            <TextBlock Text="CORE" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
-            <TextBlock Text="{Binding Shell.CoreLabel}" Classes="mono" FontSize="11" />
-          </StackPanel>
-          <StackPanel Spacing="1" HorizontalAlignment="Right">
             <TextBlock Text="RENDERER" Classes="caption" FontSize="9.5" HorizontalAlignment="Right" />
             <TextBlock Text="{Binding Shell.RendererLabel}" Classes="mono" FontSize="11" />
           </StackPanel>
@@ -62,7 +58,7 @@
                      Width="46"
                      Height="46"
                      Opacity="0.7" />
-            <Path Data="M27 27 L49 49 M49 27 L27 49"
+            <Path Data="M21 21 L43 43 M43 21 L21 43"
                   Stroke="{DynamicResource XgAccentBrush}"
                   StrokeThickness="2.6"
                   StrokeLineCap="Round" />

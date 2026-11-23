@@ -14,7 +14,6 @@ public sealed partial class AboutViewModel : PageViewModel
     {
         Version version = typeof(AboutViewModel).Assembly.GetName().Version ?? new Version(0, 0, 0);
         AppVersion = "v" + version.ToString(3);
-        CoreVersion = "xemu 0.8.139";
         RuntimeText = RuntimeInformation.FrameworkDescription;
         OperatingSystemText = RuntimeInformation.OSDescription + " · " + RuntimeInformation.OSArchitecture;
         RepositoryUrl = "https://github.com/purelogiccode/XGrid";
@@ -23,8 +22,6 @@ public sealed partial class AboutViewModel : PageViewModel
     /// <summary>Gets the frontend assembly version.</summary>
     public string AppVersion { get; }
 
-    /// <summary>Gets the emulator core assembly version.</summary>
-    public string CoreVersion { get; }
 
     /// <summary>Gets the .NET runtime description.</summary>
     public string RuntimeText { get; }
