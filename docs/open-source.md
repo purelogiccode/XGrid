@@ -1,25 +1,26 @@
 # Open-source status and obligations
 
-Status: **2026-11-22.** This page answers one question: *is XGrid an open-source
-project, and what must be true for the full xemu port to keep it that way?*
+Status: **2026-11-23.** This page answers one question: *is XGrid an open-source
+project, and what must be true for the vendored xemu core to keep it that way?*
 
-## 1. Licence: GPL-2.0 (confirmed)
+## 1. Licence: GPL-2.0-or-later (confirmed)
 
 - `COPYING` is the unmodified **GNU General Public License, version 2**.
-- `LICENSE` is the project notice: GPL-2.0, no warranty, ported-file rule,
-  LGPL-2.0 §3 election for the LGPL-2.0-or-later files.
-- GPL-2.0 is an OSI-approved open-source licence and grants the four freedoms
-  (run, study, redistribute, improve) to every recipient of the source or a
-  binary.
-- The full port does not change the licence: xemu is GPL-2.0 (per-file
-  LGPL-2+/MIT/GPL-2+) and QEMU is GPL-2.0, the same licence family. A port
-  keeps each file's original notice and adds `SPDX-License-Identifier` plus
+- `LICENSE` is the project notice: GPL-2.0-or-later, no warranty, ported-file
+  rule, LGPL §3 election for the LGPL-or-later files.
+- GPL-2.0-or-later is an OSI-approved open-source licence and grants the four
+  freedoms (run, study, redistribute, improve) to every recipient of the
+  source or a binary.
+- The licence covers **XGrid's own code**. The vendored xemu tree under
+  `xemu/` keeps its own GPL-2.0/LGPL/MIT notices; a port keeps each file's
+  original notice and adds `SPDX-License-Identifier` plus
   `Ported from <project> <version> <path>` (`docs/porting-policy.md`).
-- The **maintained xemu core** (the pinned xemu 0.8.139 baseline plus
-  `native/xgrid-core` and `native/xemu-patches/`) is GPL-2.0. The release
-  ships its corresponding source or a written offer, the patch set and the
-  notices; `THIRD_PARTY_NOTICES.md` records the component
-  (`docs/porting-policy.md` §2c). There is no relicense.
+- The **maintained xemu core** is the tracked `xemu/` tree (0.8.139 baseline
+  plus `xemu/xgrid-core/` and `xemu/xemu-patches/`). The release ships its
+  corresponding source and the patches; `THIRD_PARTY_NOTICES.md` records the
+  component (`docs/porting-policy.md` §2c). A binary that contains a
+  GPL-2.0-only xemu/QEMU file is distributed under GPL-2.0; the build-scoped
+  audit is what would allow GPL-3.0 (and therefore xbased code).
 - `THIRD_PARTY_NOTICES.md` records every reference project, every ported module
   and every redistributed package; `docs/research-notes/sources.md` is the
   development-side inventory.
@@ -85,8 +86,9 @@ non-negotiable:
    and `Ported from` line. A file that is GPL-2.0-only stays GPL-2.0-only; a
    GPL-2.0-or-later file is included under GPL-2.0; LGPL-2.0-or-later files are
    included under GPL-2.0 through LGPL-2.0 §3.
-2. **No relicensing.** The combined work is GPL-2.0. Do not add a EULA, DRM,
-   field-of-use limit or activation to a distributed build.
+2. **No relicensing.** The combined work is GPL-2.0 (or GPL-3.0 only if the
+   build-scoped audit clears every compiled file as "or later"). Do not add a
+   EULA, DRM, field-of-use limit or activation to a distributed build.
 3. **No native emulator embedding.** The port stays managed C#; OpenGL, XInput,
    host audio and Silk.NET are host APIs, not embedded GPL-incompatible code.
 4. **Complete corresponding source.** Every published binary must have the
@@ -108,7 +110,8 @@ BenchmarkDotNet - MIT/Apache-2.0 and never linked into the shipped emulator.
 
 ## 5. Verdict
 
-- **Open-source licence:** yes, GPL-2.0, complete and compatible.
+- **Open-source licence:** yes - GPL-2.0-or-later for XGrid's own code, and
+  the vendored core is GPL-2.0-compatible.
 - **Open-source publication:** no, by operator decision: the repository stays
   private until a game is playable (0.11x today). The trigger and checklist in
   §2 are the remaining work.

@@ -27,7 +27,7 @@ not part of this application; it is the test oracle in `XGrid.Cli`.
 | --- | --- |
 | **Home** | Power on/off, stop, the embedded core display, current disc and core/renderer labels. |
 | **Library** | Recursive scan of configured folders for `.iso`, `.chd`, `.zar` and `.xbe` entries; search and launch. |
-| **Settings** | Firmware/storage paths, guest RAM, xemu core path, display sink, graphics (renderer, resolution scale, filtering, window, AV pack), audio (backend, DSP/JIT/HRTF, volume), keyboard/gamepad bindings, per-title overrides, library folders, accent color. Persisted as JSON. |
+| **Settings** | Tabbed: System (firmware/storage paths, guest RAM, xemu core path, display sink), Graphics (renderer, resolution scale, filtering, window, AV pack), Audio (backend, DSP/JIT/HRTF, volume), Input (keyboard/gamepad bindings), Titles, Library and Appearance. Persisted as JSON. |
 | **Activity** | Filtered emulator log with copy and clear. |
 | **About** | Build/runtime information, project links, shortcuts. |
 

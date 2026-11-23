@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Build anchor for the vendored xemu tree.
+
+    xemu is a meson/ninja C project, so it cannot be compiled by MSBuild. This
+    project keeps the tree inside XGrid.sln and gives the IDE a place to hang
+    the native build: `dotnet build -p:BuildXemuCore=true` runs the MSYS2
+    recipe in scripts/build-native-xemu.ps1. A normal solution build only
+    builds this empty anchor, so the managed build stays fast.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS2008</NoWarn>
+  </PropertyGroup>
+
+  <Target Name="BuildXemuCore"
+          BeforeTargets="Build"
+          Condition="'$(BuildXemuCore)' == 'true'">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)..\scripts\build-native-xemu.ps1&quot;" />
+  </Target>
+
+</Project>

@@ -8,6 +8,12 @@ in-scope xemu/QEMU module has a row, a target C# file (or "new"), a status and
 the differential that proves it. `ImplementationPlan.md` -> `E1` is the task
 plan; this file is the coverage record.
 
+> **Superseded for the product by decision A (2026-11-23).** The shipping core
+> is the tracked `xemu/` tree (native C, built by
+> `scripts/build-native-xemu.ps1`); the managed C# port below remains the
+> oracle and the coverage ledger, not the product engine. The vendored tree
+> keeps its own GPL-2.0/LGPL/MIT notices.
+
 Reference identity (do not drift):
 
 - xemu **0.8.139**, commit `aa54c34cae1c09410d74c69a44210a9867fe2d16`,

@@ -287,3 +287,19 @@ Project-local usage notes and the shortcut table live in
   own slice.
 - **Tests:** `tests/XGrid.Frontend.Tests` 21 -> 34 (`RendererPolicyTests`,
   `GraphicsBackendHostTests`, including a live attach/detach on Windows).
+
+## Update 2026-11-23: settings tabs and page lifetime
+
+- Settings is a `TabControl`: System (firmware/storage/core), Graphics, Audio,
+  Input, Titles, Library and Appearance. The save bar stays pinned above the
+  tabs, and the selected tab scrolls to its top when opened.
+- Pages are no longer recreated by a `ContentControl`. All five page views live
+  in one `Grid` and toggle `IsVisible` through `PageViewModel.IsActive`,
+  so the console page's `NativeControlHost` (and the embedded core HWND)
+  survives navigation. This fixes the white canvas when returning from Settings.
+- A native child window is not clipped by Avalonia, so the shell hides the core
+  picture on every non-console page and shows it again on Home; a late embed
+  applies the current visibility.
+- `XemuWindowEmbedder.IsEmbeddedIn(host)` makes re-attachment host-aware, and
+  `Detach` hides the child before returning it to the desktop, so it never
+  flashes as a top-level window.

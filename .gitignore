@@ -69,4 +69,10 @@ tri-golden-gl.bmp
 # Python tooling caches
 __pycache__/
 *.pyc
-native/xemu/
+
+# Vendored xemu tree: tracked source, build output excluded. The negation must
+# follow the media rules above so pc-bios and test data (which the
+# repository-wide *.bin/*.iso rules would drop) are committed.
+!xemu/**
+xemu/build/
+xemu/dist/

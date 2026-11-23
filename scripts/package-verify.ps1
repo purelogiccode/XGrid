@@ -4,7 +4,7 @@ Verifies a packaged release tree produced by `scripts/package.ps1`.
 
 .DESCRIPTION
 This is the acceptance gate for the release task (R1.1). It checks the two
-things a GPL-2.0 binary distribution can get wrong without anyone noticing:
+things a GPL-2.0-or-later binary distribution can get wrong without anyone noticing:
 
   1. license completeness - every archive carries COPYING, LICENSE and
      THIRD_PARTY_NOTICES.md, the repo's COPYING really is the GPL-2.0 text, and
@@ -92,7 +92,7 @@ try {
     elseif ((Get-Content $licensePath -Raw) -notmatch 'GNU General Public License') {
         Fail 'LICENSE does not name the GNU General Public License'
     }
-    else { Write-Host '  license      project GPL-2.0 notice' }
+    else { Write-Host '  license      project GPL-2.0-or-later notice' }
 
     $noticesPath = Join-Path $repo 'THIRD_PARTY_NOTICES.md'
     if (-not (Test-Path $noticesPath)) { Fail 'THIRD_PARTY_NOTICES.md is missing from the repository' }
