@@ -25,6 +25,11 @@
         <MenuItem Header="Choose Disc Image..." Click="OnMenuChooseDisc"
                   ToolTip.Tip="Select the disc that the power button will boot." />
         <Separator />
+        <MenuItem Header="Open Config Folder" Click="OnMenuOpenConfigFolder"
+                  ToolTip.Tip="Show the folder with settings.json and the generated core configuration." />
+        <MenuItem Header="Open Screenshots Folder" Click="OnMenuOpenScreenshotsFolder"
+                  ToolTip.Tip="Show the folder that F8 writes captures to." />
+        <Separator />
         <MenuItem Header="Exit" Click="OnMenuExit" ToolTip.Tip="Close XGrid." />
       </MenuItem>
       <MenuItem Header="Emulation" ToolTip.Tip="Power and stop the core.">

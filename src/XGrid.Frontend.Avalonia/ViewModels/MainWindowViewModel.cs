@@ -514,7 +514,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         try
         {
-            string directory = Path.Combine(SettingsStore.ResolveDirectory(), "screenshots");
+            string directory = ScreenshotNaming.Directory(SettingsStore.ResolveDirectory());
             _ = Directory.CreateDirectory(directory);
             string path = ScreenshotNaming.NextPath(directory, DateTimeOffset.Now);
 
@@ -540,6 +540,40 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             AddLog(LogLevel.Error, "Could not save the screenshot: " + exception.Message);
             ShowToast("Could not save the screenshot.");
+        }
+    }
+
+    /// <summary>
+    /// Public command: opens the folder that holds the shell's configuration
+    /// (<c>settings.json</c> and the generated core configuration).
+    /// </summary>
+    [RelayCommand]
+    private void OpenConfigFolder()
+    {
+        OpenFolder(SettingsStore.ResolveDirectory(), "configuration");
+    }
+
+    /// <summary>Public command: opens the folder that holds the screenshots.</summary>
+    [RelayCommand]
+    private void OpenScreenshotsFolder()
+    {
+        OpenFolder(ScreenshotNaming.Directory(SettingsStore.ResolveDirectory()), "screenshots");
+    }
+
+    private void OpenFolder(string path, string description)
+    {
+        try
+        {
+            FolderLauncher.Open(path);
+            AddLog(LogLevel.Info, "Opened the " + description + " folder: " + path);
+        }
+        catch (Exception exception) when (exception is IOException
+                                              or UnauthorizedAccessException
+                                              or InvalidOperationException
+                                              or System.ComponentModel.Win32Exception)
+        {
+            AddLog(LogLevel.Error, "Could not open the " + description + " folder: " + exception.Message);
+            ShowToast("Could not open the folder.");
         }
     }
 

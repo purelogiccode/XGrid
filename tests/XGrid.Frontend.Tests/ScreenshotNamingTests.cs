@@ -46,6 +46,19 @@ public sealed class ScreenshotNamingTests
     }
 
     [Fact]
+    public void Directory_IsTheScreenshotsFolderInsideTheDataFolder()
+    {
+        string data = Path.Combine(Path.GetTempPath(), "xgrid-data");
+
+        Assert.Equal(Path.Combine(data, "screenshots"), ScreenshotNaming.Directory(data));
+    }
+
+    [Fact]
+    public void Directory_RejectsAnEmptyDataFolder()
+    {
+        Assert.Throws<ArgumentException>(() => ScreenshotNaming.Directory(" "));
+    }
+    [Fact]
     public void NextPath_RejectsAnEmptyDirectory()
     {
         Assert.Throws<ArgumentException>(() => ScreenshotNaming.NextPath(" ", DateTimeOffset.Now));
