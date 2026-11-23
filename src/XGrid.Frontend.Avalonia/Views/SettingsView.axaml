@@ -391,6 +391,19 @@
           </Grid>
 
           <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Present core frames in the shell" Classes="label" />
+              <TextBlock Text="The shell draws the picture (needed for filters); when off, the core's own window is embedded instead. Requires the patched core."
+                         Classes="hint" TextWrapping="Wrap" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding DisplaySink, Mode=TwoWay}"
+                          OnContent=""
+                          OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Presentation filter" Classes="label" />
               <TextBlock Text="Applied by the shell to the picture: nearest or bilinear sampling, or a scanline/CRT phosphor mask."

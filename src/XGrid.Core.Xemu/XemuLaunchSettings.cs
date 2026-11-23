@@ -74,6 +74,12 @@ public sealed record XemuLaunchSettings
     /// </summary>
     public string DisplaySinkName { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Gets the shared-section name the core should read port 1 from, or an
+    /// empty string to use SDL input.
+    /// </summary>
+    public string InputSinkName { get; init; } = string.Empty;
+
     /// <summary>Gets the directory that holds the generated config and the core log.</summary>
     public string WorkingDirectory { get; init; } = string.Empty;
 

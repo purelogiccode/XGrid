@@ -31,6 +31,7 @@ public sealed class XemuCoreSession : IDisposable
     private XemuCoreProcess? _process;
     private XemuWindowEmbedder? _embedder;
     private XemuDisplaySink? _sink;
+    private XemuInputSink? _input;
     private Timer? _sinkTimer;
     private ulong _lastFrameCounter;
     private Timer? _monitor;
@@ -103,6 +104,19 @@ public sealed class XemuCoreSession : IDisposable
         }
     }
 
+    /// <summary>Forwards one pad state to the core.</summary>
+    /// <param name="buttons">xemu XID button mask.</param>
+    /// <param name="lx">Left stick X.</param>
+    /// <param name="ly">Left stick Y.</param>
+    /// <param name="rx">Right stick X.</param>
+    /// <param name="ry">Right stick Y.</param>
+    /// <param name="lt">Left trigger 0..32767.</param>
+    /// <param name="rt">Right trigger 0..32767.</param>
+    public void SetPad(uint buttons, int lx, int ly, int rx, int ry, int lt, int rt)
+    {
+        _input?.Write(buttons, lx, ly, rx, ry, lt, rt);
+    }
+
     /// <summary>Reports that the display control is gone (page change, closed window).</summary>
     public void DetachDisplay()
     {
@@ -136,6 +150,13 @@ public sealed class XemuCoreSession : IDisposable
         {
             _sink = new XemuDisplaySink(launch.DisplaySinkName);
             _sinkTimer = new Timer(_ => PollSink(), null, 8, 8);
+        }
+
+        if (!string.IsNullOrWhiteSpace(launch.InputSinkName))
+        {
+            _input = new XemuInputSink(launch.InputSinkName);
+            // Publish a neutral pad immediately so the core never reads garbage.
+            _input.Write(0, 0, 0, 0, 0, 0, 0);
             Log?.Invoke(this, "xemu core frames go to the shell surface.");
         }
 
@@ -211,6 +232,8 @@ public sealed class XemuCoreSession : IDisposable
         _sink = null;
         _sinkTimer?.Dispose();
         _sinkTimer = null;
+        _input?.Dispose();
+        _input = null;
         _embedder?.Dispose();
         _embedder = null;
         _process?.Dispose();
@@ -221,9 +244,9 @@ public sealed class XemuCoreSession : IDisposable
     {
         lock (_gate)
         {
-            if (_sink is not null)
+            if (_sink is not null && _lastFrameCounter != 0)
             {
-                // The shell presents the frames; there is nothing to embed.
+                // The shell is presenting real frames; there is nothing to embed.
                 return;
             }
 
@@ -241,6 +264,8 @@ public sealed class XemuCoreSession : IDisposable
                 FrontendTrace.Write($"core window not found yet (pid {process.ProcessId})");
                 return;
             }
+
+            FrontendTrace.Write($"embed check host=0x{_displayHost.ToInt64():X} child=0x{window.ToInt64():X}");
 
             try
             {
@@ -301,6 +326,12 @@ public sealed class XemuCoreSession : IDisposable
             if (sink.TryRead(out XemuDisplayFrame frame) && frame.Counter != _lastFrameCounter)
             {
                 _lastFrameCounter = frame.Counter;
+                if (_lastFrameCounter != 0 && _embedder?.IsEmbedded == true)
+                {
+                    // The core supports the sink: stop showing its window.
+                    _embedder.Detach();
+                }
+
                 FrameReady?.Invoke(this, frame);
             }
         }
