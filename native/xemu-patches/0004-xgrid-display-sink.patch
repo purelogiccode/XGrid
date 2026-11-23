@@ -1,0 +1,41 @@
+--- a/ui/xemu.c
++++ b/ui/xemu.c
+@@ -63,6 +63,7 @@
+ 
+ #ifdef _WIN32
+ #include "xui/win32-dxgi-present.h"
++#include "../xgrid-core/display/xgrid-display.h"
+ #endif
+ 
+ #ifndef DEBUG_XEMU_C
+@@ -884,6 +885,19 @@
+ 
+     nv2a_release_framebuffer_surface();
+ 
++    if (xgrid_display_enabled()) {
++        int sink_w = 0, sink_h = 0;
++        SDL_GetWindowSizeInPixels(m_window, &sink_w, &sink_h);
++        if (sink_w > 0 && sink_h > 0) {
++            uint8_t *sink_pixels = g_malloc((size_t)sink_w * sink_h * 4);
++            glPixelStorei(GL_PACK_ALIGNMENT, 4);
++            glReadPixels(0, 0, sink_w, sink_h, GL_BGRA, GL_UNSIGNED_BYTE, sink_pixels);
++            xgrid_display_publish(sink_pixels, (uint32_t)sink_w, (uint32_t)sink_h,
++                                  (uint32_t)sink_w * 4);
++            g_free(sink_pixels);
++        }
++    }
++
+ #ifdef _WIN32
+     if (win32_dxgi_present_is_active()) {
+         win32_dxgi_present_end_frame(g_config.display.window.vsync);
+@@ -1087,6 +1101,10 @@
+     }
+     g_free(title);
+     SDL_SetWindowMinimumSize(m_window, min_window_width, min_window_height);
++    if (xgrid_display_enabled()) {
++        /* The shell presents the picture; keep the context but hide the window. */
++        SDL_HideWindow(m_window);
++    }
+ 
+     const SDL_DisplayMode *disp_mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(m_window));
+     if (disp_mode && (disp_mode->w < window_width || disp_mode->h < window_height)) {
