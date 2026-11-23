@@ -624,6 +624,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             item.Page.IsActive = active;
         }
 
+        // A native child window is not clipped by the shell's visual tree; hide
+        // it while another page is on top so it cannot cover the settings tabs.
+        _core.SetDisplayVisible(value?.Kind == PageKind.Home);
+
         OnPropertyChanged(nameof(IsHomePage));
         OnPropertyChanged(nameof(IsLibraryPage));
         OnPropertyChanged(nameof(IsSettingsPage));
