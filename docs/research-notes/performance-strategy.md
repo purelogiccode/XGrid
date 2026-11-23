@@ -113,6 +113,73 @@ anything: porting xemu's C into our own C project is the same code and strictly
 more work than using it in place, so the performance-optimal architecture is to
 adopt the core and keep the shell.
 
+## A0 result (2026-11-23): embedding works
+
+`XGrid.Core.Xemu` + `tools/xemu-embed-spike` ran 007 for 75 s with the core's
+window reparented into a plain Win32 host: `isEmbedded=true`, a captured frame
+with **106,466 colours** (the intro scene), and a graceful close (the core's own
+window-close power-off path). No per-frame copy, no frame pacing of ours.
+
+- The core logs `win32_dxgi_present: FBO incomplete (0x8CDD) ... falling back to
+  SDL_GL_SwapWindow`; **the same line appears when xemu runs un-embedded**, so it
+  is a path issue in this build/host, not an embedding penalty. Present cost is
+  identical either way.
+- The generated `xemu.toml` is verified against the binary: `sys.mem_limit` is
+  the string enum `'64'`/`'128'` (an integer is rejected), `show_welcome` must be
+  false or the core clears autostart, and `flashrom_path` reaches QEMU as
+  `-bios` (it is not printed in the "launch parameters" line).
+
+## Media formats under decision A (2026-11-23)
+
+**The shell owns formats; the core only ever sees bytes.** That is the split
+that keeps CHDSharp, XISOSharp and ZArchiveSharp valuable instead of obsolete.
+
+What the core can open, verified in the vendored tree:
+
+- The DVD is `-drive index=1,media=cdrom,file=<path>` (`system/vl.c:3091`), i.e.
+  QEMU's block layer, the same layer as the HDD. `block/` has **no CHD driver**
+  (no `chd` source at all).
+- The HDD already benefits from that layer: raw, qcow, qcow2, vpc, vhdx, vdi,
+  vmdk (our HDD is qcow2 and boots).
+- So a raw ISO/XISO works natively; **CHD and ZAR do not**.
+- `-dvd_path <path>` overrides the generated config (`system/vl.c:3079`), so a
+  launch can keep one stable config and still choose the disc per title.
+
+Three ways to add a format, cheapest first:
+
+1. **Shell-side reading (works today).** Library scan, title id, XBE metadata,
+   artwork, save management, verification. `XISOSharp` 2.1.0 and `CHDSharp`
+   1.7.1 are already referenced; `XGrid.Storage/ChdDvdImage` and
+   `XGrid.XboxFs.XdvdfsSectorReader` already read both containers. Nothing about
+   decision A changes this layer.
+2. **Materialize a cached raw ISO** (1-2 days). Decompress CHD (or the ISO entry
+   of a ZAR) once into the shell's cache, hand the core that path. Works with
+   the stock `xemu.exe`, no core patch. Cost: first-launch decode (a 7 GB disc
+   at 100-200 MB/s) and cache disk space; keyed by source size+mtime.
+3. **A2 block provider (the right end state).** Add one small QEMU `BlockDriver`
+   to our fork whose reads call back into the shell, where CHDSharp /
+   ZArchiveSharp do the work. No temp files, no conversion wait, format logic
+   stays pure C#.
+
+Why (3) costs **no measurable performance**: the disc path is cold I/O, not a
+hot path. An Xbox DVD tops out around 12x (~16 MB/s); at 2 KB sectors a 50 us
+callback still sustains ~40 MB/s, and larger requests amortise it further.
+Contrast the NV2A at 18.6M method writes per 1B steps, where a crossing is fatal.
+This is the one seam that is cheap by construction.
+
+Notes that matter for the implementation:
+
+- The provider should expose a **seekable** byte stream, not a file path; QEMU
+  issues unaligned and short reads and asks for the device length at probe time.
+- `ZArchiveSharp` is a directory-tree archive (per-block zstd), not a disc
+  format: a `.zar` is either an ISO entry (materialize it) or an extracted file
+  tree (pack an ISO with XISOSharp, which is what its `--zar-level` pipeline
+  already does). It is not a block format the core can mount.
+- Licences are compatible and must be recorded per `porting-policy.md`:
+  CHDSharp MIT (+ LGPL-2.1 vendored codecs), XISOSharp MIT, ZArchiveSharp MIT.
+- Update story: if upstream xemu ever gains a CHD driver, the A2 patch is
+  dropped rather than maintained - the fork/patch-set strategy makes that free.
+
 ## Execution order
 
 **P0 - price the two ceilings (this week, before any porting).**
