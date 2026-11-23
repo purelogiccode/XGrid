@@ -3,15 +3,15 @@
   "updated": "2026-11-22",
   "objective": "At least one game playable and xemu-class speed: the product CPU is the vendored xemu 0.8.139 / QEMU 10.2.0 TCG i386 core behind a narrow C API (libxgridcpu); all devices, GPU, audio, host and frontend remain managed C#; the managed C# CPU (--cpu managed) is the reference-only engine. GPL-2.0; the C# GPU/APU/UI are kept; the repository stays private until P1",
   "current": {
-    "milestone": "A1",
-    "id": "A1",
-    "title": "Enhanced shell over the xemu core: library, chrome, per-title settings, pad, snapshots",
-    "plan": "E1",
+    "milestone": "A3",
+    "id": "A3",
+    "title": "Core: ZAR disc driver (entry form done; XDVDFS synthesizer for --iso archives)",
+    "plan": "E2",
     "status": "active",
     "started": "2026-11-23",
     "attempts": 0,
-    "acceptance": "A disc from the library boots on the xemu core inside the shell: the game renders in the display surface, keyboard/gamepad input reaches the pad, power/pause/stop/save/load work, and the shell chrome carries the session.",
-    "price": "1 week."
+    "acceptance": "Entry-form archives play today (qemu-img reports xgridzar, qemu-io reads the XDVDFS descriptor, xemu mounts it with format=xgridzar). The remaining half: an --iso archive (file tree, no .iso entry) boots without extraction via an in-memory XDVDFS volume.",
+    "price": "4-6 days."
   },
   "position": {
     "host": "H1",
@@ -66,7 +66,7 @@
     },
     "gameplay": {
       "target": "H:\\Tests\\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black)",
-      "state": "Operator decision 2026-11-22 (performance-first, binding): maximum performance is the primary objective; the operator then granted language freedom and chose Option A - XGrid is an enhanced C# frontend for a version of xemu that this repository maintains and evolves from 0.8.139, not an independent emulator and not a GitHub fork. The maintained core is (References2/xemu-0.8.139 baseline) + (native/xgrid-core additions) + (native/xemu-patches), rebuilt by scripts/sync-native-xemu.ps1 and scripts/build-native-xemu.ps1; README, THIRD_PARTY_NOTICES and porting-policy 2c record the arrangement. A0 (window embedding) is done: XGrid.Core.Xemu writes the core config, starts the process, finds its window and reparents it into the shell's display control; scripts/a0-shell-check.ps1 launches 007 from the library and reports one visible core child with a clean teardown. The shell now has the 5DO visual language (RPCS3-style neutral grey + #3DAEE9 blue), a File/Emulation/View/Help menu, an icon toolbar, a collapsible log dock, a status bar and a display-first console page. Real time CHD is landed: native/xgrid-core/block/xgridchd.c decodes hunks on demand through libchdr 0.3.0 (BSD-3, vendored), qemu-img reports format xgridchd and the true virtual size, qemu-io reads the XDVDFS descriptor, and scripts/chd-boot-check.ps1 boots Smashing Drive (USA) from a 44.6 MB CHD with no extraction. Next: A2 host display sink + host input (-display xgrid) for in-shell frames, OSD and filters; A3 ZAR driver; A4 graphic filters; A5 release. The managed emulator remains the oracle: four accurate 1B goldens, the ktest log and the suite (2,279 tests) validate the core",
+      "state": "Operator decision 2026-11-22 (performance-first, binding): maximum performance is the primary objective; the operator then granted language freedom and chose Option A - XGrid is an enhanced C# frontend for a version of xemu that this repository maintains and evolves from 0.8.139, not an independent emulator and not a GitHub fork. The maintained core is (References2/xemu-0.8.139 baseline) + (native/xgrid-core additions) + (native/xemu-patches), rebuilt by scripts/sync-native-xemu.ps1 and scripts/build-native-xemu.ps1; README, THIRD_PARTY_NOTICES and porting-policy 2c record the arrangement. A0 (window embedding) is done: XGrid.Core.Xemu writes the core config, starts the process, finds its window and reparents it into the shell's display control; scripts/a0-shell-check.ps1 launches 007 from the library and reports one visible core child with a clean teardown. The shell now has the 5DO visual language (RPCS3-style neutral grey + #3DAEE9 blue), a File/Emulation/View/Help menu, an icon toolbar, a collapsible log dock, a status bar and a display-first console page. Real time CHD is landed: native/xgrid-core/block/xgridchd.c decodes hunks on demand through libchdr 0.3.0 (BSD-3, vendored), qemu-img reports format xgridchd and the true virtual size, qemu-io reads the XDVDFS descriptor, and scripts/chd-boot-check.ps1 boots Smashing Drive (USA) from a 44.6 MB CHD with no extraction. A2 is done: the core publishes frames into a named section and the shell presents them, the core reads the shell pad for port 1, and an embedded core creates its window hidden with the XGridCore title so there is no start-up flash. A3 is half done: entry-form ZAR archives play (qemu-img reports xgridzar, qemu-io reads the descriptor, xemu mounts it with format=xgridzar and the library lists .zar), while an --iso archive stores a file tree and needs an in-memory XDVDFS synthesizer - the next slice, with the format facts in docs/research-notes/zarchive-format.md. A4 has nearest/bilinear/scanline/CRT filters pinned by tests; integer scaling and per-title overrides remain. A5 release follows. The managed emulator remains the oracle: four accurate 1B goldens, the ktest log and the suite (2,279 tests) validate the core",
       "second": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs, XGrid-only compatibility media)",
       "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area; a capture is a window screenshot, so the policy is mean/colour/coverage, never pixel-exact",
       "matrix": "44-title 1B sweep (7 oracle + 37 compat) in docs/research-notes/title-matrix.md: TM6 re-run (2026-10-25) 6 own-render / 38 dashboard / 0 fault / 0 timeout (unchanged counts, but Ninja Gaiden Black's row advanced 2,672 -> 12,800 draws and 41,995,882 -> 166,119,138 px at the same 6,475 frames, and the dashboard tuple moved 33,638/253,998,498 -> 34,339/268,744,098 because the 701 format-skipped inline draws now run the program - the accurate gate frames and RAM/CPU SHAs are byte-identical)."
@@ -258,7 +258,7 @@
     {
       "id": "A1",
       "title": "Enhanced shell over the xemu core: library, chrome, per-title settings, pad, snapshots",
-      "status": "active",
+      "status": "done",
       "depends": [],
       "plan": "E1",
       "bar": "correctness",
@@ -450,23 +450,23 @@
     {
       "id": "A2",
       "title": "Core: host display sink and host input source (-display xgrid)",
-      "status": "queued",
+      "status": "done",
       "depends": [],
       "plan": "E2",
       "bar": "performance",
-      "acceptance": "The core presents frames into a named shared section with no SDL window; the shell renders them in its own surface with OSD overlays; pad state published by the shell reaches the guest at 60 Hz.",
+      "acceptance": "Frames cross the boundary both ways: the core publishes into a named section and the shell presents them (HasFrame set), the core reads the shell pad for port 1, and an embedded core creates its window hidden with the XGridCore title so there is no start-up flash.",
       "price": "3-5 days."
     },
     {
       "id": "A3",
-      "title": "Core: ZAR disc driver (real time, no extraction)",
-      "status": "queued",
+      "title": "Core: ZAR disc driver (entry form done; XDVDFS synthesizer for --iso archives)",
+      "status": "active",
       "depends": [
         "A2"
       ],
       "plan": "E2",
       "bar": "correctness",
-      "acceptance": "A .zar containing an XISO boots in the shell; qemu-io reads the XDVDFS descriptor from it; nothing is extracted to disk.",
+      "acceptance": "Entry-form archives play today (qemu-img reports xgridzar, qemu-io reads the XDVDFS descriptor, xemu mounts it with format=xgridzar). The remaining half: an --iso archive (file tree, no .iso entry) boots without extraction via an in-memory XDVDFS volume.",
       "price": "4-6 days."
     },
     {
@@ -478,7 +478,7 @@
       ],
       "plan": "E2",
       "bar": "performance",
-      "acceptance": "Each filter renders the same frame with its own policy; a per-title override selects one; switching is live and the core keeps 60 fps.",
+      "acceptance": "Nearest, bilinear, scanline and CRT are implemented and pinned by tests; integer scaling and per-title overrides remain.",
       "price": "1 week."
     },
     {
