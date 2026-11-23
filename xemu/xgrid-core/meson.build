@@ -51,3 +51,6 @@ system_ss.add(files('display/xgrid-display.c'))
 
 # Host input source (port 1 pad from the shell).
 system_ss.add(files('input/xgrid-input.c'))
+
+# In-process core ABI: the shell loads the core image and calls these.
+system_ss.add(files('abi/xgrid-core.c'))

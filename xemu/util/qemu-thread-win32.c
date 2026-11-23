@@ -19,6 +19,9 @@
 
 static bool name_threads;
 
+/* Zero keeps the host executable's default stack reserve. */
+size_t qemu_thread_stack_size;
+
 typedef HRESULT (WINAPI *pSetThreadDescription) (HANDLE hThread,
                                                  PCWSTR lpThreadDescription);
 static pSetThreadDescription SetThreadDescriptionFunc;
@@ -365,8 +368,9 @@ void qemu_thread_create(QemuThread *thread, const char *name,
         InitializeCriticalSection(&data->cs);
     }
 
-    hThread = (HANDLE) _beginthreadex(NULL, 0, win32_start_routine,
-                                      data, 0, &thread->tid);
+    hThread = (HANDLE) _beginthreadex(NULL, (unsigned)qemu_thread_stack_size,
+                                      win32_start_routine, data, 0,
+                                      &thread->tid);
     if (!hThread) {
         error_exit(GetLastError(), __func__);
     }

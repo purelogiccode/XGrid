@@ -24,11 +24,28 @@
 static HANDLE g_mapping;
 static const uint8_t *g_view;
 static bool g_announced;
+static char g_configured_name[256];
+
+void xgrid_input_set_sink(const char *name)
+{
+    if (name == NULL || name[0] == '\0') {
+        g_configured_name[0] = '\0';
+        return;
+    }
+
+    snprintf(g_configured_name, sizeof(g_configured_name), "%s", name);
+}
 
 static const char *source_name(void)
 {
     static char name[256];
-    const char *configured = getenv("XGRID_INPUT_SHM");
+    const char *configured;
+
+    if (g_configured_name[0] != '\0') {
+        return g_configured_name;
+    }
+
+    configured = getenv("XGRID_INPUT_SHM");
 
     if (configured == NULL || configured[0] == '\0') {
         return NULL;
@@ -122,6 +139,11 @@ bool xgrid_input_read(uint32_t *buttons, int32_t *lx, int32_t *ly,
 }
 
 #else
+
+void xgrid_input_set_sink(const char *name)
+{
+    (void)name;
+}
 
 bool xgrid_input_enabled(void)
 {

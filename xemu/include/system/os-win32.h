@@ -86,7 +86,13 @@ void __attribute__((noreturn)) __mingw_longjmp(jmp_buf, int);
  * in terms of setjmp/longjmp on Win32.
  */
 #define sigjmp_buf jmp_buf
-#define sigsetjmp(env, savemask) setjmp(env)
+/*
+ * XGrid: save the jump buffer with a NULL unwind frame. longjmp then restores
+ * the context without an SEH unwind, which a managed host's vectored exception
+ * handlers would otherwise intercept. QEMU never needs the unwind: the CPU
+ * loop only jumps back to its own cpu_exec frame.
+ */
+#define sigsetjmp(env, savemask) _setjmp(env, NULL)
 #define siglongjmp(env, val) longjmp(env, val)
 
 /* Missing POSIX functions. Don't use MinGW-w64 macros. */

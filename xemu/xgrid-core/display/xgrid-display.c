@@ -29,11 +29,28 @@ static uint32_t g_width;
 static uint32_t g_height;
 static uint32_t g_stride;
 static uint64_t g_frame;
+static char g_configured_name[256];
+
+void xgrid_display_set_sink(const char *name)
+{
+    if (name == NULL || name[0] == '\0') {
+        g_configured_name[0] = '\0';
+        return;
+    }
+
+    snprintf(g_configured_name, sizeof(g_configured_name), "%s", name);
+}
 
 static const char *sink_name(void)
 {
     static char name[256];
-    const char *configured = getenv("XGRID_DISPLAY_SHM");
+    const char *configured;
+
+    if (g_configured_name[0] != '\0') {
+        return g_configured_name;
+    }
+
+    configured = getenv("XGRID_DISPLAY_SHM");
 
     if (configured == NULL || configured[0] == '\0') {
         return NULL;
@@ -132,6 +149,11 @@ void xgrid_display_publish(const void *pixels, uint32_t width, uint32_t height,
 bool xgrid_embed_enabled(void)
 {
     return false;
+}
+
+void xgrid_display_set_sink(const char *name)
+{
+    (void)name;
 }
 
 bool xgrid_display_enabled(void)
