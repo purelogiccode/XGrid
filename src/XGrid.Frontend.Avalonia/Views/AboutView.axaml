@@ -116,7 +116,7 @@
                        Classes="mono"
                        FontSize="11.5" />
             <TextBlock Grid.Row="5" Grid.Column="0" Text="Screenshot" Classes="caption" />
-            <TextBlock Grid.Row="5" Grid.Column="1" Text="F8  (screenshots folder)" Classes="mono" FontSize="11.5" />
+            <TextBlock Grid.Row="5" Grid.Column="1" Text="F8  (whole window)" Classes="mono" FontSize="11.5" />
           </Grid>
         </StackPanel>
       </Border>
