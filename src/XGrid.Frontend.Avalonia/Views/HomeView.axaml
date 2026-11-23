@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
              xmlns:local="using:XGrid.Frontend.Avalonia"
+             xmlns:views="using:XGrid.Frontend.Avalonia.Views"
              x:Class="XGrid.Frontend.Avalonia.Views.HomeView"
              x:DataType="vm:HomeViewModel">
   <ScrollViewer Name="PageScroll">
@@ -153,6 +154,11 @@
                   <Image Source="{Binding Shell.FrameBitmap}"
                           Stretch="Uniform"
                           RenderOptions.BitmapInterpolationMode="HighQuality" />
+
+                  <!-- The xemu core paints into this native surface with its own
+                       swapchain; the shell never copies a frame. -->
+                  <views:XemuDisplayHost x:Name="CoreDisplay"
+                                         IsVisible="{Binding Shell.ShowCoreDisplay}" />
 
                   <StackPanel HorizontalAlignment="Center"
                               VerticalAlignment="Center"

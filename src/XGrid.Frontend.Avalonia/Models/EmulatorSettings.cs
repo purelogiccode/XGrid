@@ -100,6 +100,37 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets the accent palette key.</summary>
     public string Accent { get; set; } = "Emerald";
 
+    /// <summary>
+    /// Gets or sets the emulation core: <see cref="CoreManaged"/> (the C#
+    /// emulator, the behavioural oracle) or <see cref="CoreXemu"/> (the vendored
+    /// xemu 0.8.139 core, the performance path).
+    /// </summary>
+    public string Core { get; set; } = CoreManaged;
+
+    /// <summary>Core key for the managed C# emulator.</summary>
+    public const string CoreManaged = "managed";
+
+    /// <summary>Core key for the xemu 0.8.139 core.</summary>
+    public const string CoreXemu = "xemu";
+
+    /// <summary>
+    /// Gets or sets an explicit xemu executable path. Empty resolves the
+    /// packaged <c>core/xemu/xemu.exe</c> and then the repository's
+    /// <c>data/xemu/xemu.exe</c>.
+    /// </summary>
+    public string XemuCorePath { get; init; } = string.Empty;
+
+    /// <summary>Returns true when <paramref name="core"/> names the xemu core.</summary>
+    /// <param name="core">Core key.</param>
+    public static bool IsXemuCore(string? core)
+    {
+        return string.Equals(core, CoreXemu, StringComparison.Ordinal);
+    }
+
+    /// <summary>Gets a value indicating whether the xemu core is selected.</summary>
+    [JsonIgnore]
+    public bool UsesXemuCore => IsXemuCore(Core);
+
     /// <summary>Gets or sets the folders scanned by the game library.</summary>
     public List<string> LibraryFolders { get; init; } = [];
 
@@ -259,6 +290,8 @@ public sealed class EmulatorSettings
             NetworkBackend = NetworkBackend,
             NetworkLinkUp = NetworkLinkUp,
             Accent = Accent,
+            Core = Core,
+            XemuCorePath = XemuCorePath,
             LibraryFolders = [.. LibraryFolders],
             RecentGames = [.. RecentGames],
         };
@@ -279,6 +312,7 @@ public sealed class EmulatorSettings
             ? "registers"
             : "legacy";
         Renderer = IsGpuRenderer(Renderer) ? RendererOpenGl : RendererSoftware;
+        Core = IsXemuCore(Core) ? CoreXemu : CoreManaged;
         NetworkBackend = string.Equals(NetworkBackend, "socket", StringComparison.Ordinal)
             ? "socket"
             : "loopback";

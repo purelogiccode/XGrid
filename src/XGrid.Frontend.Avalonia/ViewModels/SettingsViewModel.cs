@@ -203,6 +203,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private KeyedOption? _selectedRenderer;
 
     [ObservableProperty]
+    private KeyedOption? _selectedCore;
+
+    [ObservableProperty]
+    private string _xemuCorePath = string.Empty;
+
+    [ObservableProperty]
     private bool _eosQuirk = true;
 
     [ObservableProperty]
@@ -233,6 +239,11 @@ public sealed partial class SettingsViewModel : PageViewModel
             new KeyedOption(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
             new KeyedOption(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),
         ];
+        CoreOptions =
+        [
+            new KeyedOption(EmulatorSettings.CoreManaged, "Managed C# core", "oracle, slower"),
+            new KeyedOption(EmulatorSettings.CoreXemu, "xemu 0.8.139 core", "fastest"),
+        ];
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -247,6 +258,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the selectable network backends.</summary>
     public ObservableCollection<KeyedOption> NetworkOptions { get; }
+
+    /// <summary>Gets the selectable emulation cores.</summary>
+    public IReadOnlyList<KeyedOption> CoreOptions { get; }
 
     /// <summary>Gets the selectable texture filter modes.</summary>
     public ObservableCollection<KeyedOption> TextureFilterOptions { get; }
@@ -311,6 +325,10 @@ public sealed partial class SettingsViewModel : PageViewModel
         SelectedRenderer = RendererOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Renderer, StringComparison.Ordinal))
             ?? RendererOptions[0];
+        SelectedCore = CoreOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Core, StringComparison.Ordinal))
+            ?? CoreOptions[0];
+        XemuCorePath = settings.XemuCorePath;
         TitleOverrides.Clear();
         foreach (KeyValuePair<string, TitleOverride> pair in settings.TitleOverrides)
         {
@@ -367,6 +385,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             FixedFunctionVertex = FixedFunctionVertex,
             TextureFilter = SelectedTextureFilter?.Key ?? "legacy",
             Renderer = SelectedRenderer?.Key ?? EmulatorSettings.RendererSoftware,
+            Core = SelectedCore?.Key ?? EmulatorSettings.CoreManaged,
+            XemuCorePath = XemuCorePath.Trim(),
             EosQuirk = EosQuirk,
             NetworkBackend = SelectedNetwork?.Key ?? "loopback",
             NetworkLinkUp = NetworkLinkUp,

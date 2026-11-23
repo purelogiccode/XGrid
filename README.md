@@ -6,36 +6,52 @@
 > [Build and test](#build-and-test) and `docs/ci.md`. The **GPL-2.0 licence is
 > open source**; the repository publication checklist is `docs/open-source.md`.
 
-XGrid is a cross-platform original Xbox emulator written in **C#/.NET**. It is
-licensed under the **GNU General Public License, version 2** (`COPYING`) and may
-port code from GPL-compatible reference projects, primarily **xemu 0.8.139** and
-its QEMU base. Ported files retain their original copyright and license notices;
-see `THIRD_PARTY_NOTICES.md` and `docs/porting-policy.md`.
+XGrid is a cross-platform original Xbox emulator. It is licensed under the
+**GNU General Public License, version 2** (`COPYING`).
 
-The emulator itself stays **full managed C#**: no QEMU/xemu native library is
-embedded, and no C/C++ emulator code is part of the build. **C# first:** P/Invoke
-is allowed only for host APIs or OS facilities (OpenGL, XInput, executable
-memory for the raw JIT, host audio), and every edge is inventoried in
-`docs/porting-policy.md` §2.
+**Architecture (operator decision 2026-11-23, "A"): XGrid is the shell and the
+xemu 0.8.139 codebase is the emulation core.** The emulator itself — QEMU TCG
+i386, the NV2A and its OpenGL renderer, the MCPX/APU/ACI/IDE/USB devices, audio,
+input and netplay — is the vendored xemu codebase, used in place rather than
+re-implemented. XGrid provides the application: the Avalonia frontend, settings,
+library, per-title overrides, input mapping, snapshot orchestration, the
+diagnostics/corpus tooling and the packaging pipeline.
 
-## Program: full xemu port, playable first
+This repository is an **independent project, not a GitHub fork**: `CSharp_XGrid`
+is canonical, xemu is vendored under `native/xemu/` (GPL-2.0) with XGrid's
+changes tracked as a patch set in `native/xemu-patches/`, so a new xemu release
+is a patch rebase rather than a re-port. xemu and QEMU are credited here and in
+`THIRD_PARTY_NOTICES.md`; the release ships their source (or a written offer)
+and our patches, as GPL-2.0 requires.
 
-The engineering program is a **full source port of xemu 0.8.139 to managed C#**,
-sequenced so retail titles become playable as early as possible. The module
-ledger is [`docs/xemu-port-manifest.md`](docs/xemu-port-manifest.md); the task
-plan is `ImplementationPlan.md` E1 (XFP0-XFP14). **The objective is at least one
-game playable (P1).** The gates are **M1** 007's own render/input milestone
-(met), **P1** at least one game playable, **P2/P3** a second and third title
-(breadth after P1), **P4** seven of seven and **P5** the ledger complete.
-**Playable** means own render, live input, ≥ 0.5× guest time, 10 minutes,
-save/load, the xemu frame policy and **live host audio** - not an offline WAV.
+The earlier program — a **full source port of xemu to managed C#** — is now the
+**reference and oracle**, not the product path: the managed emulator
+(`--cpu managed`), its four 1B goldens, the ktest byte-identical log and the
+full test suite stay in the tree to validate the core and catch regressions.
 
-**The fast path is a P1 sprint** on the current engine: **P1S0** measures 007
-(wall per 1B, guest speed, presented fps, stage split), **P1S1** adds a live NuGet
-audio sink and the AC'97 codec, **P1S2** fixes the measured speed blockers to
-≥ 0.5×, and **P1S3** runs the nine-part gate. **NuGet host packages are allowed**
-(C# first; the native edges are inventoried in `docs/porting-policy.md`). The
-full xemu port starts after P1.
+## Program: playable first, xemu core as the performance path
+
+The program is **playable first on the xemu core**. The shell launches the
+vendored core, embeds its display and drives it from settings, the library and
+per-title overrides; the managed emulator remains the oracle. The gates are
+**M1** 007's own render/input milestone (met), **P1** at least one game
+playable, **P2/P3** a second and third title, **P4** seven of seven and **P5**
+the ledger complete. **Playable** means own render, live input, ≥ 0.5× guest
+time, 10 minutes, save/load, the xemu frame policy and **live host audio** - not
+an offline WAV.
+
+**Current integration step: A0 (window embedding) passed.** `XGrid.Core.Xemu`
+generates the core configuration, starts the process and reparents its window
+into the shell; `scripts/a0-shell-check.ps1` launches 007 from the shell and
+captures the picture inside the app. Next: A1 (lifecycle, per-title settings,
+pad, log dock) and the media work below.
+
+**Media formats.** The core reads ISO/XISO natively (QEMU block layer). CHD and
+ZAR are **not** block formats the core can mount, so they are added as real-time
+drivers rather than an extraction step: a tracked patch in `native/xemu-patches/`
+implements `xgridchd` (vendored libchdr) and `xgridzar` (zstd, already a QEMU
+dependency), and the guest reads the disc directly. This is a patch inside this
+repository - not a GitHub fork - which is why the README credits the codebase.
 
 ## Status
 

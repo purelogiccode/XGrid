@@ -180,11 +180,32 @@ Notes that matter for the implementation:
 - Update story: if upstream xemu ever gains a CHD driver, the A2 patch is
   dropped rather than maintained - the fork/patch-set strategy makes that free.
 
-## A2 fork decision (2026-11-23): own the core, keep it an executable
+## A2 decision (2026-11-23): use the xemu codebase, never a GitHub fork
 
 The operator authorised changing the xemu codebase and asked for **real-time CHD
-and ZAR loading with no extraction step**. Both goals need a fork; only one of
-them needs a DLL verdict.
+and ZAR loading with no extraction step**, with one repository constraint:
+
+> "I don't want to create a fork because forks have less visualizations on
+> GitHub, but we can write in the README that we are using the xemu codebase to
+> build XGrid."
+
+That constraint is about the **GitHub repository**, not about the code:
+
+- `CSharp_XGrid` stays the canonical, independent repository. It is **not** a
+  GitHub fork of `xemu-project/xemu` (no "forked from" banner, its own stars,
+  traffic and search presence).
+- xemu is **vendored as a codebase** under `native/xemu/` (git-ignored) exactly
+  as `native/qemu/` already is, with the XGrid changes tracked as a patch set in
+  `native/xemu-patches/`. That is the same mechanism the project already uses
+  for the CPU core, and GitHub cannot see it as a fork.
+- `README.md` credits xemu 0.8.139 as the emulation core (GPL-2.0) and points at
+  the patch set, which is also what the licence requires.
+
+If the operator later prefers **zero patches to the core**, the only way to get
+real-time CHD/ZAR is a virtual disc presented to an unmodified core as a normal
+file (a user-mode filesystem such as Dokan, MIT; WinFsp is GPLv3, which does not
+combine with this GPL-2.0 project). That adds a signed kernel driver to the
+product, so the patch set is the cheaper and cleaner route.
 
 **Evidence gathered before deciding.**
 
@@ -199,7 +220,7 @@ them needs a DLL verdict.
   embed call `exit()` on failure: **38 in `ui/`, 7 in `hw/xbox/`, 104 in
   `system/vl.c`**. In an EXE that is correct; inside the Avalonia process it
   terminates the shell. A DLL also inherits QEMU's singleton globals, `atexit`
-  handlers and signal setup.
+  handlers and signal setup. The DLL stays out of scope.
 - **The codecs are already available.** QEMU depends on `libzstd`
   (`meson.build` zstd dependency), so a ZAR reader has its codec in-tree; CHD
   needs `libchdr` vendored (BSD-3) because nothing in the tree reads it.
@@ -209,33 +230,35 @@ them needs a DLL verdict.
 
 **Decision.**
 
-1. **Fork, as an EXE.** `native/xemu/` is a git-ignored copy of 0.8.139;
-   `native/xemu-patches/` is the tracked patch set (GPL-2.0, rebased per
-   release).
+1. **Vendored codebase + tracked patch set.** `native/xemu/` is a git-ignored
+   copy of 0.8.139; `native/xemu-patches/` is the tracked patch set (GPL-2.0,
+   rebased per release). No GitHub fork.
 2. **`-display xgrid`: shared-section frames.** A `DisplayChangeListener` copies
    the console surface into a named section with a frame counter; no SDL window.
    The shell owns the video surface, so OSD, the quick menu, integer scaling and
-   fullscreen all live in Avalonia. This supersedes A0 window embedding as the
-   product present path (A0 is kept as the fallback/debug path - it works).
+   fullscreen all live in Avalonia. Window embedding stays as the fallback path
+   (it works and needs no patch).
 3. **Host input driver.** The shell publishes the pad block; the core's virtual
    gamepad reads it. No key injection, no window focus rules.
 4. **Real-time media drivers in the core:** `xgridchd` (vendored libchdr) and
    `xgridzar` (zstd from the tree) as QEMU block drivers. The guest reads a disc;
    the driver decodes on demand. Nothing is extracted to disk, and no sector
    read crosses a process or managed boundary.
-5. **No DLL for now.** The frame copy is ~1.2 MB per presented frame (640x480
-   BGRA), i.e. tens of MB/s at 60 fps - a few percent of one core, not a reason
-   to accept `exit()` semantics. A DLL is reopened only with a measured reason
-   (for example a C# CHDSharp provider instead of the C driver), and then the
-   `exit()` audit is the priced work.
 
 **Why this is still "adapting xemu to XGrid".** The patch set is the adaptation:
 a display sink, an input source, and two block drivers - all additive, all
 upstream-shaped, all small enough to rebase. The emulator itself (CPU, NV2A,
 renderer, APU, IDE, USB) stays exactly the performance maximum it already is.
 
-**Cost.** Fork build and first run 1-2 days; display + input 3-5 days; CHD 3-4
-days; ZAR 4-6 days. First playable under the new present path is display +
+**Build notes (MSYS2, this host).** The tree needs three environment fixes that
+are unrelated to XGrid: `-Dxgrid_vulkan=false` (the Vulkan block pulls CMake
+subprojects even when unused), the dsp56300 subproject must `fs.mkdir` its build
+directory before extracting, and GNU tar needs `--force-local` for Windows
+paths. They are recorded in `wt-data/build-xemu.sh` and the subproject, and will
+be folded into the patch set.
+
+**Cost.** Codebase build and first run 1-2 days; display + input 3-5 days; CHD
+3-4 days; ZAR 4-6 days. First playable under the new present path is display +
 input, before either media driver.
 
 ## Execution order

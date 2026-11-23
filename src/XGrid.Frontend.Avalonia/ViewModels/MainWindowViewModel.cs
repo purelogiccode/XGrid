@@ -14,6 +14,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 
@@ -24,6 +25,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly SettingsStore _settingsStore;
     private readonly EmulatorSession _session;
+    private readonly XemuCoreSession _core;
     private readonly DispatcherTimer _uiTimer;
     private readonly DispatcherTimer _toastTimer;
     private readonly Lock _frameLock = new();
@@ -31,6 +33,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private long _lastSampleTicks;
     private long _lastSampleSteps;
     private long _lastSampleFrames;
+    private int _coreDisplayWidth = 640;
+    private int _coreDisplayHeight = 480;
     private bool _shuttingDown;
 
     [ObservableProperty]
@@ -96,6 +100,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _session.Log += OnSessionLog;
         _session.FrameReady += OnFrameReady;
         _session.Stopped += OnSessionStopped;
+        _core = new XemuCoreSession();
+        _core.Log += OnCoreLog;
+        _core.Stopped += OnCoreStopped;
 
         Home = new HomeViewModel(this);
         Settings = new SettingsViewModel(this);
@@ -155,6 +162,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets a value indicating whether a BIOS image is configured.</summary>
     public bool IsBiosReady => Config.IsBiosReady;
 
+    /// <summary>Gets a value indicating whether the selected core is the xemu core.</summary>
+    public bool IsXemuCore => Config.UsesXemuCore;
+
+    /// <summary>Gets a value indicating whether the native core display should be shown.</summary>
+    public bool ShowCoreDisplay => IsRunning && IsXemuCore;
+
     /// <summary>Gets a value indicating whether firmware setup is needed.</summary>
     public bool NeedsSetup => !Config.IsBiosReady;
 
@@ -196,7 +209,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return IsRunning
                 ? CurrentGame is not null
                     ? CurrentGame.Title + " is powered on."
-                    : "The Xbox dashboard is live below."
+                    : Config.UsesXemuCore
+                        ? "The xemu core is running the Xbox dashboard below."
+                        : "The Xbox dashboard is live below."
                 : CurrentGame is not null
                 ? "Power on again or choose another disc image."
                 : "Insert a disc image, or power on to reach the dashboard.";
@@ -205,14 +220,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the placeholder shown before the first frame is presented.</summary>
     public string FramePlaceholder => IsRunning
-        ? "Waiting for the first presented frame…"
+        ? IsXemuCore
+            ? "Starting the xemu core…"
+            : "Waiting for the first presented frame…"
         : "Power on the console to see output here.";
 
     /// <summary>
     /// Gets the caption under the display: the picture is a 640x480 console
     /// scanout, rendered by the configured NV2A renderer.
     /// </summary>
-    public string DisplayCaption => "640 × 480 · " + RendererPolicy.Describe(Config.Renderer);
+    public string DisplayCaption => IsXemuCore
+        ? "640 × 480 · xemu 0.8.139 core (OpenGL)"
+        : "640 × 480 · " + RendererPolicy.Describe(Config.Renderer);
 
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
@@ -261,6 +280,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _shuttingDown = true;
         _uiTimer.Stop();
         _toastTimer.Stop();
+        _core.Dispose();
         _session.Dispose();
     }
 
@@ -362,10 +382,66 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Forwards the current keyboard pad state to the emulation thread.</summary>
     public void SetPad(ushort buttons, ReadOnlySpan<byte> analog, ReadOnlySpan<short> sticks)
     {
+        if (Config.UsesXemuCore)
+        {
+            // The core window owns the keyboard and any XInput pad directly.
+            return;
+        }
+
         if (_session.IsRunning)
         {
             _session.SetPad(buttons, analog, sticks);
         }
+    }
+
+    /// <summary>
+    /// Reports the native display surface the core should be embedded in.
+    /// Called by the home view when the surface is created or resized.
+    /// </summary>
+    /// <param name="handle">Host child window handle.</param>
+    /// <param name="width">Width in physical pixels.</param>
+    /// <param name="height">Height in physical pixels.</param>
+    public void AttachCoreDisplay(IntPtr handle, int width, int height)
+    {
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _coreDisplayWidth = Math.Max(1, width);
+        _coreDisplayHeight = Math.Max(1, height);
+        _core.AttachDisplay(handle, _coreDisplayWidth, _coreDisplayHeight);
+    }
+
+    /// <summary>Reports that the native display surface was destroyed.</summary>
+    public void DetachCoreDisplay()
+    {
+        _core.DetachDisplay();
+    }
+
+    /// <summary>Builds and starts the core for a title, logging why it cannot.</summary>
+    private void StartCore(GameEntry? game)
+    {
+        string workingDirectory = Path.Combine(SettingsStore.ResolveDirectory(), "xemu");
+        string? problem = XemuLaunchPlan.DescribeProblem(Config, game?.Path, workingDirectory);
+        if (problem is not null)
+        {
+            throw new InvalidOperationException(problem);
+        }
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            Config,
+            game?.Path,
+            _coreDisplayWidth,
+            _coreDisplayHeight,
+            workingDirectory);
+        _core.Start(launch);
+        StatusText = "Running";
+        StatusDetail = "xemu core · " + (game?.Title ?? "Xbox dashboard");
+        AddLog(
+            LogLevel.Info,
+            $"xemu core {Path.GetFileName(launch.CorePath)} · {launch.RamMb} MB · "
+            + (string.IsNullOrEmpty(launch.DvdPath) ? "no disc" : Path.GetFileName(launch.DvdPath)));
     }
 
     /// <summary>Public command: powers the console on, or off when already running.</summary>
@@ -409,7 +485,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             CurrentGame = game;
-            _session.Start(Config, game?.Path);
+            if (Config.UsesXemuCore)
+            {
+                StartCore(game);
+            }
+            else
+            {
+                _session.Start(Config, game?.Path);
+            }
+
             OnPropertyChanged(nameof(CurrentGameTitle));
             OnPropertyChanged(nameof(CurrentGameFormat));
             OnPropertyChanged(nameof(CurrentGameSize));
@@ -437,9 +521,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             NavigateTo(PageKind.Home);
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException
-                                              or UnauthorizedAccessException or ArgumentException)
+                                              or UnauthorizedAccessException or ArgumentException
+                                              or XemuConfigurationException)
         {
             IsRunning = false;
+            IsPaused = false;
+            HasFrame = false;
+            FrameBitmap = null;
             StatusText = "Idle";
             StatusDetail = "Power-on failed";
             AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
@@ -451,6 +539,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanTogglePause))]
     private void TogglePause()
     {
+        if (IsXemuCore)
+        {
+            ShowToast("The xemu core manages its own pause (its window has focus).");
+            return;
+        }
+
         if (_session.IsPaused)
         {
             _session.Resume();
@@ -491,12 +585,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void StopSession()
     {
-        if (!_session.IsRunning)
+        if (!IsRunning)
         {
             return;
         }
 
         AddLog(LogLevel.Info, "Stopping the console…");
+        if (IsXemuCore)
+        {
+            _core.Stop();
+            StatusText = "Stopping";
+            return;
+        }
+
         _session.Stop();
     }
 
@@ -535,12 +636,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private bool CanTogglePause()
     {
-        return IsRunning;
+        return IsRunning && !IsXemuCore;
     }
 
     private bool CanStepFrame()
     {
-        return IsRunning && IsPaused;
+        return IsRunning && IsPaused && !IsXemuCore;
     }
 
     private bool CanStop()
@@ -640,10 +741,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeHeadline));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
+        OnPropertyChanged(nameof(ShowCoreDisplay));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StopSessionCommand.NotifyCanExecuteChanged();
         SaveStateCommand.NotifyCanExecuteChanged();
         LoadStateCommand.NotifyCanExecuteChanged();
+        StepFrameCommand.NotifyCanExecuteChanged();
+        StepInstructionsCommand.NotifyCanExecuteChanged();
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -688,6 +792,27 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Dispatcher.UIThread.Post(() => HandleSessionStopped(e));
     }
 
+    private void OnCoreLog(object? sender, string message)
+    {
+        Dispatcher.UIThread.Post(() => AddLog(LogLevel.Info, message));
+    }
+
+    private void OnCoreStopped(object? sender, XemuCoreStoppedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            IsRunning = false;
+            IsPaused = false;
+            HasFrame = false;
+            FrameBitmap = null;
+            Mips = 0;
+            Fps = 0;
+            StatusText = e.Faulted ? "Faulted" : "Off";
+            StatusDetail = e.Message;
+            AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
+        });
+    }
+
     private void HandleSessionStopped(SessionStoppedEventArgs e)
     {
         IsRunning = false;
@@ -719,6 +844,28 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         if (frame is not null)
         {
             PresentFrame(frame);
+        }
+
+        if (IsXemuCore)
+        {
+            // The core owns the picture, its pacing and its input; the shell
+            // only mirrors liveness so a crash is never silent.
+            if (IsRunning && !_core.IsRunning)
+            {
+                IsRunning = false;
+                HasFrame = false;
+            }
+
+            if (IsRunning)
+            {
+                HasFrame = _core.IsEmbedded;
+                Steps = 0;
+                Frames = 0;
+                Mips = 0;
+                Fps = 0;
+            }
+
+            return;
         }
 
         if (!_session.IsRunning)
@@ -860,6 +1007,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(DisplayCaption));
+        OnPropertyChanged(nameof(IsXemuCore));
+        OnPropertyChanged(nameof(ShowCoreDisplay));
+        TogglePauseCommand.NotifyCanExecuteChanged();
+        StepFrameCommand.NotifyCanExecuteChanged();
+        StepInstructionsCommand.NotifyCanExecuteChanged();
     }
 
     private void OnToastTick(object? sender, EventArgs e)
