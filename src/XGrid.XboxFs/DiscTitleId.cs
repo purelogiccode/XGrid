@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using XGrid.Storage;
 using XGrid.Xbe;
-using XGrid.XboxFs;
 
-namespace XGrid.Host;
+namespace XGrid.XboxFs;
 
 /// <summary>
 /// Resolves the XBE certificate title id of a disc image or a loose

@@ -50,10 +50,6 @@ public static class SevenEosQuirk
     /// <summary>Stream chunk tag ("MPCh").</summary>
     private const uint MpchMagic = 0x6843504Du;
 
-    /// <summary>Consumed queue-entry marker (written by the release path).</summary>
-    // ReSharper disable once UnusedMember.Global
-    public const uint ConsumedMarker = 0xFFFFFFFEu;
-
     /// <summary>Stability delay in guest steps before firing (filters transients).</summary>
     public const ulong StabilityThresholdSteps = 10_000_000uL;
 

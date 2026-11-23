@@ -40,9 +40,6 @@ public sealed class XemuDisplayHost : NativeControlHost
     /// <summary>Raised when the native surface goes away.</summary>
     public event EventHandler? GeometryLost;
 
-    /// <summary>Gets the host child window handle, or zero when not created.</summary>
-    public IntPtr HostHandle => _handle;
-
     /// <summary>
     /// Publishes the current handle and size. The view calls this after it has
     /// subscribed, so an initial geometry that was recorded while the surface

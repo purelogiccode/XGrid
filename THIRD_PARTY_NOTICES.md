@@ -15,7 +15,7 @@ XGrid build and is not redistributed with XGrid.
 | xemu | **0.8.139 (primary)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and ported source. The APU DSP port is derived from `hw/xbox/mcpx/apu/dsp/` (GPL-2+). |
 | xemu | 0.8.137 (prior) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks. |
 | xemu | 0.8.136 (prior) | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks. |
-| QEMU (xemu base) | 10.2.0 (via xemu 0.8.139) | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | Facts and ported source where a module is taken from the QEMU base. **The TCG i386 CPU core is embedded natively** behind `libxgridcpu` (XCN0-XCN3); the rest of QEMU is not embedded. |
+| QEMU (xemu base) | 10.2.0 (via xemu 0.8.139) | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | The xemu codebase, including its QEMU 10.2.0 base, is the maintained emulation core and is built from `native/xemu` (baseline + patches). QEMU is not linked as a separate library. |
 | xemu-Playtest-v2 | local snapshot, QEMU 10.2.0 base | no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks only. |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | Facts and, where useful, ported source. |
 | xqemu | master | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | Facts and, where useful, ported source. |
@@ -40,15 +40,13 @@ Vendored inside the core additions:
 |---|---|---|---|
 | libchdr | 0.3.0 | BSD-3-Clause (Copyright Romain Tisserand) | CHD hunk decoding behind `block/xgridchd.c`; ships its LZMA decoder, zlib/zstd come from the host. |
 
-## Native CPU core (`libxgridcpu`)
+## Earlier native CPU extraction (retired 2026-11-23)
 
 The TCG i386 core from the pinned xemu 0.8.139 tree (QEMU 10.2.0 base),
-GPL-2.0, was the first native component (XCN0-XCN3). With decision A the whole
-core is the product engine; this section records the earlier bounded extraction.
-The vendored source is not committed; the build reproduces it from
-`References2/xemu-0.8.139` plus `native/qemu-patches/` (configure/venv and
-subproject extraction fixes only), and the release ships the corresponding
-source or a written offer together with the patches.
+GPL-2.0, was first extracted behind `libxgridcpu` (XCN0-XCN3). Decision A made
+the whole xemu codebase the core, so the shim, its patches and its probes were
+removed. That component is no longer built or shipped; the current core source
+offer is the one described in "The emulation core" above.
 
 ## Runtime and build dependencies
 

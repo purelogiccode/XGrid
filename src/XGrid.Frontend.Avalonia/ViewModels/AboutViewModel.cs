@@ -2,7 +2,6 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
-using XGrid.Host;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
@@ -15,7 +14,7 @@ public sealed partial class AboutViewModel : PageViewModel
     {
         Version version = typeof(AboutViewModel).Assembly.GetName().Version ?? new Version(0, 0, 0);
         AppVersion = "v" + version.ToString(3);
-        CoreVersion = typeof(XboxMachine).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+        CoreVersion = "xemu 0.8.139";
         RuntimeText = RuntimeInformation.FrameworkDescription;
         OperatingSystemText = RuntimeInformation.OSDescription + " · " + RuntimeInformation.OSArchitecture;
         RepositoryUrl = "https://github.com/purelogiccode/XGrid";

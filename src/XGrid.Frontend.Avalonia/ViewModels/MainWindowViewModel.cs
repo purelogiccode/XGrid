@@ -1,7 +1,5 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -20,25 +18,22 @@ using XGrid.Frontend.Avalonia.Services;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
-/// <summary>Application shell: owns settings, the emulation session, navigation, and live status.</summary>
+/// <summary>Application shell: owns settings, the xemu core session, navigation, and live status.</summary>
 public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly SettingsStore _settingsStore;
-    private readonly EmulatorSession _session;
     private readonly XemuCoreSession _core;
     private readonly DispatcherTimer _uiTimer;
     private readonly DispatcherTimer _toastTimer;
-    private readonly Lock _frameLock = new();
-    private FramePacket? _pendingFrame;
     private readonly Lock _coreFrameLock = new();
     private byte[]? _coreFrameBuffer;
     private int _coreFrameWidth;
     private int _coreFrameHeight;
     private bool _coreFramePending;
     private bool _coreFrameLogged;
-    private long _lastSampleTicks;
-    private long _lastSampleSteps;
-    private long _lastSampleFrames;
+    private readonly string _displayCaption = "640 x 480 - xemu 0.8.139 core (OpenGL)";
+    private readonly string _coreLabel = "xemu 0.8.139";
+    private readonly string _rendererLabel = "OpenGL - xemu";
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
     private bool _shuttingDown;
@@ -50,28 +45,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _isRunning;
 
     [ObservableProperty]
-    private bool _isPaused;
-
-    [ObservableProperty]
     private string _statusText = "Idle";
 
     [ObservableProperty]
     private string _statusDetail = "No console powered on";
-
-    [ObservableProperty]
-    private ulong _steps;
-
-    [ObservableProperty]
-    private ulong _frames;
-
-    [ObservableProperty]
-    private double _mips;
-
-    [ObservableProperty]
-    private double _fps;
-
-    [ObservableProperty]
-    private string _eip = "—";
 
     [ObservableProperty]
     private WriteableBitmap? _frameBitmap;
@@ -105,10 +82,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         _settingsStore = settingsStore;
         Config = settingsStore.Load();
-        _session = new EmulatorSession();
-        _session.Log += OnSessionLog;
-        _session.FrameReady += OnFrameReady;
-        _session.Stopped += OnSessionStopped;
         _core = new XemuCoreSession();
         _core.Log += OnCoreLog;
         _core.FrameReady += OnCoreFrameReady;
@@ -122,11 +95,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         NavigationItems =
         [
-            new NavigationItem(PageKind.Home, "Home", "Console status", AppIcons.Home, Home),
-            new NavigationItem(PageKind.Library, "Library", "Disc images", AppIcons.Library, Library),
-            new NavigationItem(PageKind.Settings, "Settings", "Configure XGrid", AppIcons.Settings, Settings),
-            new NavigationItem(PageKind.Logs, "Activity", "Emulator log", AppIcons.Logs, Logs),
-            new NavigationItem(PageKind.About, "About", "Build information", AppIcons.Info, About),
+            new NavigationItem(PageKind.Home, "Home", AppIcons.Home, Home),
+            new NavigationItem(PageKind.Library, "Library", AppIcons.Library, Library),
+            new NavigationItem(PageKind.Settings, "Settings", AppIcons.Settings, Settings),
+            new NavigationItem(PageKind.Logs, "Activity", AppIcons.Logs, Logs),
+            new NavigationItem(PageKind.About, "About", AppIcons.Info, About),
         ];
         SelectedNavigationItem = NavigationItems[0];
 
@@ -160,9 +133,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets all activity log entries (newest last).</summary>
     public ObservableCollection<LogEntry> LogEntries { get; } = [];
 
-    /// <summary>Gets recently launched games (newest first).</summary>
-    public ObservableCollection<GameEntry> RecentGames { get; } = [];
-
     /// <summary>Gets the file dialog service.</summary>
     public FileDialogService Dialogs { get; } = new();
 
@@ -172,39 +142,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets a value indicating whether a BIOS image is configured.</summary>
     public bool IsBiosReady => Config.IsBiosReady;
 
-    /// <summary>Gets a value indicating whether the selected core is the xemu core.</summary>
-    public bool IsXemuCore => Config.UsesXemuCore;
-
     /// <summary>Gets a value indicating whether the native core display should be shown.</summary>
-    public bool ShowCoreDisplay => IsRunning && IsXemuCore;
+    public bool ShowCoreDisplay => IsRunning;
 
     /// <summary>Gets a value indicating whether firmware setup is needed.</summary>
     public bool NeedsSetup => !Config.IsBiosReady;
-
-    /// <summary>Gets the current page title.</summary>
-    public string PageTitle => SelectedNavigationItem?.Title ?? "Home";
-
-    /// <summary>Gets the current page caption.</summary>
-    public string PageCaption => SelectedNavigationItem?.Subtitle ?? string.Empty;
-
-    /// <summary>Gets the headline shown on the home page.</summary>
-    public string HomeHeadline
-    {
-        get
-        {
-            if (!Config.IsBiosReady)
-            {
-                return "Firmware required";
-            }
-
-            if (IsRunning && CurrentGame is not null)
-            {
-                return "Now playing";
-            }
-
-            return IsRunning ? "Console running" : CurrentGame is not null ? "Ready to play" : "Ready when you are";
-        }
-    }
 
     /// <summary>Gets the supporting copy shown on the home page.</summary>
     public string HomeDetail
@@ -219,9 +161,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return IsRunning
                 ? CurrentGame is not null
                     ? CurrentGame.Title + " is powered on."
-                    : Config.UsesXemuCore
-                        ? "The xemu core is running the Xbox dashboard below."
-                        : "The Xbox dashboard is live below."
+                    : "The xemu core is running the Xbox dashboard below."
                 : CurrentGame is not null
                 ? "Power on again or choose another disc image."
                 : "Insert a disc image, or power on to reach the dashboard.";
@@ -230,24 +170,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the placeholder shown before the first frame is presented.</summary>
     public string FramePlaceholder => IsRunning
-        ? IsXemuCore
-            ? "Starting the xemu core…"
-            : "Waiting for the first presented frame…"
+        ? "Starting the xemu core."
         : "Power on the console to see output here.";
 
-    /// <summary>
-    /// Gets the caption under the display: the picture is a 640x480 console
-    /// scanout, rendered by the configured NV2A renderer.
-    /// </summary>
-    public string DisplayCaption => IsXemuCore
-        ? "640 × 480 · xemu 0.8.139 core (OpenGL)"
-        : "640 × 480 · " + RendererPolicy.Describe(Config.Renderer);
+    /// <summary>Gets the caption under the display.</summary>
+    public string DisplayCaption => _displayCaption;
 
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
-
-    /// <summary>Gets the pause button label.</summary>
-    public string PauseButtonText => IsPaused ? "Resume" : "Pause";
 
     /// <summary>Gets the current game title (or a console default).</summary>
     public string CurrentGameTitle => CurrentGame?.Title ?? "Xbox dashboard";
@@ -258,8 +188,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets the current game format label.</summary>
     public string CurrentGameFormat => CurrentGame?.FormatText ?? "No disc";
 
-    /// <summary>Gets the current game size label.</summary>
-    public string CurrentGameSize => CurrentGame?.SizeText ?? string.Empty;
+    /// <summary>Gets the emulation core label for the status bar.</summary>
+    public string CoreLabel => _coreLabel;
+
+    /// <summary>Gets the renderer label for the status bar.</summary>
+    public string RendererLabel => _rendererLabel;
+
+    /// <summary>Gets the short run state shown in the status bar.</summary>
+    public string RunStateLabel => IsRunning ? "Running" : "Ready";
+
+    /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
+    public bool SmoothFrame => FrameFilters.UsesBilinearSampling(Config.Filter);
 
     /// <summary>Attaches the shell to the main window and performs first-run initialization.</summary>
     public void Attach(Window window)
@@ -270,8 +209,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         AccentService.Apply(AccentPalette.Find(Config.Accent));
         Settings.LoadFrom(Config);
-        RefreshRecentGames();
-        AddLog(LogLevel.Info, "XGrid frontend ready · " + RuntimeInformation.FrameworkDescription);
+        AddLog(LogLevel.Info, "XGrid frontend ready - " + RuntimeInformation.FrameworkDescription);
         AddLog(
             Config.IsBiosReady ? LogLevel.Info : LogLevel.Warning,
             Config.IsBiosReady
@@ -294,7 +232,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _uiTimer.Stop();
         _toastTimer.Stop();
         _core.Dispose();
-        _session.Dispose();
     }
 
     /// <inheritdoc />
@@ -350,7 +287,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             Settings.LoadFrom(Config);
             AccentService.Apply(AccentPalette.Find(Config.Accent));
             NotifyConfigChanged();
-            RefreshRecentGames();
             AddLog(LogLevel.Info, "Settings saved to " + _settingsStore.FilePath);
             ShowToast("Settings saved");
             _ = Library.RefreshAsync();
@@ -392,28 +328,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _ = Library.RefreshAsync();
     }
 
-    /// <summary>Gets a value indicating whether the log dock is expanded.</summary>
-    public bool IsLogDockOpen => ShowLogDock;
-
-    /// <summary>Gets the emulation core label for the status bar.</summary>
-    public string CoreLabel => Config.UsesXemuCore ? "xemu core" : "managed C# core";
-
-    /// <summary>Gets the renderer label for the status bar.</summary>
-    public string RendererLabel => Config.UsesXemuCore
-        ? "OpenGL · xemu"
-        : RendererPolicy.Describe(Config.Renderer);
-
-    /// <summary>Gets the short run state shown in the status bar.</summary>
-    public string RunStateLabel => !IsRunning ? "Ready" : IsPaused ? "Paused" : "Running";
-
-    /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
-    public bool SmoothFrame => FrameFilters.UsesBilinearSampling(Config.Filter);
-
-    /// <summary>Gets the frame-rate text for the status bar.</summary>
-    public string FpsText => IsRunning && !IsXemuCore
-        ? Fps.ToString("0.0", CultureInfo.InvariantCulture) + " fps"
-        : "—";
-
     /// <summary>Public command: shows or hides the log dock.</summary>
     [RelayCommand]
     private void ToggleLogDock()
@@ -429,19 +343,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         NavigateTo(kind);
     }
 
-    /// <summary>Forwards the current keyboard pad state to the emulation thread.</summary>
+    /// <summary>Forwards the current keyboard/controller pad state to the core.</summary>
     public void SetPad(ushort buttons, ReadOnlySpan<byte> analog, ReadOnlySpan<short> sticks)
     {
-        if (Config.UsesXemuCore)
-        {
-            ForwardCorePad(buttons, analog, sticks);
-            return;
-        }
-
-        if (_session.IsRunning)
-        {
-            _session.SetPad(buttons, analog, sticks);
-        }
+        ForwardCorePad(buttons, analog, sticks);
     }
 
     /// <summary>Maps the shell pad onto xemu's XID mask and publishes it to the core.</summary>
@@ -502,14 +407,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private void StartCore(GameEntry? game)
     {
         string workingDirectory = Path.Combine(SettingsStore.ResolveDirectory(), "xemu");
-        string? problem = XemuLaunchPlan.DescribeProblem(Config, game?.Path, workingDirectory);
+        EmulatorSettings effective = game is null
+            ? Config
+            : Config.WithTitleOverride(game.Path, game.TitleId == 0 ? null : game.TitleId);
+        string? problem = XemuLaunchPlan.DescribeProblem(effective, game?.Path, workingDirectory);
         if (problem is not null)
         {
             throw new InvalidOperationException(problem);
         }
 
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
-            Config,
+            effective,
             game?.Path,
             _coreDisplayWidth,
             _coreDisplayHeight,
@@ -517,10 +425,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         FrontendTrace.Write($"sink='{launch.DisplaySinkName}' setting={Config.DisplaySink}");
         _core.Start(launch);
         StatusText = "Running";
-        StatusDetail = "xemu core · " + (game?.Title ?? "Xbox dashboard");
+        StatusDetail = "xemu core - " + (game?.Title ?? "Xbox dashboard");
         AddLog(
             LogLevel.Info,
-            $"xemu core {Path.GetFileName(launch.CorePath)} · {launch.RamMb} MB · "
+            $"xemu core {Path.GetFileName(launch.CorePath)} - {launch.RamMb} MB - "
             + (string.IsNullOrEmpty(launch.DvdPath) ? "no disc" : Path.GetFileName(launch.DvdPath)));
     }
 
@@ -542,7 +450,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void StartGame(GameEntry? game)
     {
-        if (_session.IsRunning)
+        if (_core.IsRunning)
         {
             ShowToast("Power off the console before launching another disc.");
             return;
@@ -565,38 +473,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             CurrentGame = game;
-            if (Config.UsesXemuCore)
-            {
-                StartCore(game);
-            }
-            else
-            {
-                _session.Start(Config, game?.Path);
-            }
+            StartCore(game);
 
             OnPropertyChanged(nameof(CurrentGameTitle));
             OnPropertyChanged(nameof(CurrentGameFormat));
-            OnPropertyChanged(nameof(CurrentGameSize));
-            OnPropertyChanged(nameof(HomeHeadline));
             OnPropertyChanged(nameof(HomeDetail));
             IsRunning = true;
-            IsPaused = false;
-            StatusText = Config.UsesXemuCore ? "Running" : "Booting";
+            StatusText = "Running";
             StatusDetail = game?.Title ?? "Xbox dashboard";
             FrameBitmap = null;
             HasFrame = false;
-            Steps = 0;
-            Frames = 0;
-            Mips = 0;
-            Fps = 0;
-            _lastSampleTicks = 0;
             AddLog(LogLevel.Info, game is null
-                ? "Powering on the console…"
-                : "Launching " + game.Title + "…");
-            if (game is not null)
-            {
-                RememberGame(game.Path);
-            }
+                ? "Powering on the console."
+                : "Launching " + game.Title + ".");
 
             NavigateTo(PageKind.Home);
         }
@@ -605,59 +494,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                                               or XemuConfigurationException)
         {
             IsRunning = false;
-            IsPaused = false;
             HasFrame = false;
             FrameBitmap = null;
             StatusText = "Idle";
             StatusDetail = "Power-on failed";
             AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
             ShowToast("Power-on failed: " + exception.Message);
-        }
-    }
-
-    /// <summary>Public command: pauses or resumes the running console.</summary>
-    [RelayCommand(CanExecute = nameof(CanTogglePause))]
-    private void TogglePause()
-    {
-        if (IsXemuCore)
-        {
-            ShowToast("The xemu core manages its own pause (its window has focus).");
-            return;
-        }
-
-        if (_session.IsPaused)
-        {
-            _session.Resume();
-            IsPaused = false;
-            StatusText = "Running";
-            AddLog(LogLevel.Info, "Emulation resumed.");
-        }
-        else
-        {
-            _session.Pause();
-            IsPaused = true;
-            StatusText = "Paused";
-            AddLog(LogLevel.Info, "Emulation paused.");
-        }
-    }
-
-    /// <summary>Public command: advances one frame while the console is paused.</summary>
-    [RelayCommand(CanExecute = nameof(CanStepFrame))]
-    private void StepFrame()
-    {
-        if (_session.StepFrame())
-        {
-            AddLog(LogLevel.Info, "Stepping one frame.");
-        }
-    }
-
-    /// <summary>Public command: advances a slice of guest time while paused.</summary>
-    [RelayCommand(CanExecute = nameof(CanStepFrame))]
-    private void StepInstructions()
-    {
-        if (_session.StepInstructions(1_000_000))
-        {
-            AddLog(LogLevel.Info, "Stepping 1,000,000 instructions.");
         }
     }
 
@@ -670,15 +512,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        AddLog(LogLevel.Info, "Stopping the console…");
-        if (IsXemuCore)
-        {
-            _core.Stop();
-            StatusText = "Stopping";
-            return;
-        }
-
-        _session.Stop();
+        AddLog(LogLevel.Info, "Stopping the console.");
+        _core.Stop();
+        StatusText = "Stopping";
     }
 
     /// <summary>Public command: stays on the home page.</summary>
@@ -714,137 +550,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         StartGame(entry);
     }
 
-    private bool CanTogglePause()
-    {
-        return IsRunning && !IsXemuCore;
-    }
-
-    private bool CanStepFrame()
-    {
-        return IsRunning && IsPaused && !IsXemuCore;
-    }
-
     private bool CanStop()
     {
         return IsRunning;
-    }
-
-    /// <summary>Public command: saves a snapshot of the running console.</summary>
-    [RelayCommand(CanExecute = nameof(CanSaveState))]
-    private async Task SaveStateAsync()
-    {
-        if (!_session.IsRunning)
-        {
-            return;
-        }
-
-        string? path = await Dialogs.PickSaveFileAsync(
-            "Save state",
-            SuggestedStateName(),
-            FileDialogService.StateTypes);
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        try
-        {
-            _session.SaveState(path);
-            AddLog(LogLevel.Info, "State saved: " + path);
-            ShowToast("State saved.");
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
-        {
-            AddLog(LogLevel.Error, "Save state failed: " + exception.Message);
-            ShowToast("Save state failed: " + exception.Message);
-        }
-    }
-
-    /// <summary>Public command: loads a snapshot into the running console.</summary>
-    [RelayCommand(CanExecute = nameof(CanSaveState))]
-    private async Task LoadStateAsync()
-    {
-        if (!_session.IsRunning)
-        {
-            return;
-        }
-
-        string? path = await Dialogs.PickFileAsync("Load state", FileDialogService.StateTypes);
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        try
-        {
-            _session.LoadState(path);
-            AddLog(LogLevel.Info, "State loaded: " + path);
-            ShowToast("State loaded.");
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or IOException or UnauthorizedAccessException)
-        {
-            AddLog(LogLevel.Error, "Load state failed: " + exception.Message);
-            ShowToast("Load state failed: " + exception.Message);
-        }
-    }
-
-    private bool CanSaveState()
-    {
-        return IsRunning;
-    }
-
-    private string SuggestedStateName()
-    {
-        string name = CurrentGame is { } game && !string.IsNullOrWhiteSpace(game.Title)
-            ? game.Title
-            : "xgrid";
-
-        foreach (char invalid in Path.GetInvalidFileNameChars())
-        {
-            name = name.Replace(invalid, '_');
-        }
-
-        return name + " " + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss", CultureInfo.InvariantCulture);
-    }
-
-    // ReSharper disable once UnusedParameterInPartialMethod
-    partial void OnSelectedNavigationItemChanged(NavigationItem? value)
-    {
-        OnPropertyChanged(nameof(PageTitle));
-        OnPropertyChanged(nameof(PageCaption));
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnIsRunningChanged(bool value)
     {
         OnPropertyChanged(nameof(PowerButtonText));
-        OnPropertyChanged(nameof(HomeHeadline));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(ShowCoreDisplay));
         OnPropertyChanged(nameof(RunStateLabel));
-        OnPropertyChanged(nameof(FpsText));
-        TogglePauseCommand.NotifyCanExecuteChanged();
         StopSessionCommand.NotifyCanExecuteChanged();
-        SaveStateCommand.NotifyCanExecuteChanged();
-        LoadStateCommand.NotifyCanExecuteChanged();
-        StepFrameCommand.NotifyCanExecuteChanged();
-        StepInstructionsCommand.NotifyCanExecuteChanged();
-    }
-
-    // ReSharper disable once UnusedParameterInPartialMethod
-    partial void OnIsPausedChanged(bool value)
-    {
-        OnPropertyChanged(nameof(PauseButtonText));
-        OnPropertyChanged(nameof(RunStateLabel));
-        StepFrameCommand.NotifyCanExecuteChanged();
-        StepInstructionsCommand.NotifyCanExecuteChanged();
-    }
-
-    // ReSharper disable once UnusedParameterInPartialMethod
-    partial void OnShowLogDockChanged(bool value)
-    {
-        OnPropertyChanged(nameof(IsLogDockOpen));
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -858,28 +577,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(CurrentGameTitle));
         OnPropertyChanged(nameof(CurrentGameFormat));
-        OnPropertyChanged(nameof(CurrentGameSize));
         OnPropertyChanged(nameof(HasCurrentGame));
-        OnPropertyChanged(nameof(HomeHeadline));
         OnPropertyChanged(nameof(HomeDetail));
-    }
-
-    private void OnSessionLog(object? sender, string message)
-    {
-        Dispatcher.UIThread.Post(() => AddLog(LogLevel.Info, message));
-    }
-
-    private void OnFrameReady(object? sender, FramePacket packet)
-    {
-        lock (_frameLock)
-        {
-            _pendingFrame = packet;
-        }
-    }
-
-    private void OnSessionStopped(object? sender, SessionStoppedEventArgs e)
-    {
-        Dispatcher.UIThread.Post(() => HandleSessionStopped(e));
     }
 
     private void OnCoreFrameReady(object? sender, XemuDisplayFrame frame)
@@ -937,119 +636,34 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Dispatcher.UIThread.Post(() =>
         {
             IsRunning = false;
-            IsPaused = false;
             HasFrame = false;
             FrameBitmap = null;
-            Mips = 0;
-            Fps = 0;
             StatusText = e.Faulted ? "Faulted" : "Off";
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
         });
     }
 
-    private void HandleSessionStopped(SessionStoppedEventArgs e)
-    {
-        IsRunning = false;
-        IsPaused = false;
-        StatusText = e.Faulted ? "Faulted" : "Stopped";
-        StatusDetail = e.Message;
-        Mips = 0;
-        Fps = 0;
-        if (e.Faulted)
-        {
-            AddLog(LogLevel.Error, "Emulation stopped: " + e.Message);
-            ShowToast("Emulation stopped: " + e.Message);
-        }
-        else
-        {
-            AddLog(LogLevel.Info, $"Emulation stopped after {e.Steps:N0} steps.");
-        }
-    }
-
     private void OnUiTick(object? sender, EventArgs e)
     {
-        FramePacket? frame;
-        lock (_frameLock)
+        if (TryTakeCoreFrame(out FramePacket? coreFrame))
         {
-            frame = _pendingFrame;
-            _pendingFrame = null;
+            PresentFrame(coreFrame!);
+            HasFrame = true;
         }
 
-        if (frame is not null)
+        // The core owns the picture, its pacing and its input; the shell only
+        // mirrors liveness so a crash is never silent.
+        if (IsRunning && !_core.IsRunning)
         {
-            PresentFrame(frame);
-        }
-
-        if (IsXemuCore)
-        {
-            // The core owns the picture, its pacing and its input; the shell
-            // only mirrors liveness so a crash is never silent.
-            if (IsRunning && !_core.IsRunning)
-            {
-                IsRunning = false;
-                HasFrame = false;
-            }
-
-            if (IsRunning)
-            {
-                if (TryTakeCoreFrame(out FramePacket? coreFrame))
-                {
-                    PresentFrame(coreFrame!);
-                    HasFrame = true;
-                }
-
-                HasFrame = _core.IsEmbedded || HasFrame;
-                Steps = 0;
-                Frames = 0;
-                Mips = 0;
-                Fps = 0;
-            }
-
+            IsRunning = false;
+            HasFrame = false;
             return;
         }
 
-        if (!_session.IsRunning)
+        if (IsRunning)
         {
-            if (IsRunning)
-            {
-                IsRunning = false;
-            }
-
-            return;
-        }
-
-        long steps = _session.Steps;
-        long frames = _session.Frames;
-        long now = Stopwatch.GetTimestamp();
-        if (_lastSampleTicks == 0)
-        {
-            _lastSampleTicks = now;
-            _lastSampleSteps = steps;
-            _lastSampleFrames = frames;
-        }
-        else
-        {
-            double seconds = (now - _lastSampleTicks) / (double)Stopwatch.Frequency;
-            if (seconds >= 0.25)
-            {
-                double instantMips = (steps - _lastSampleSteps) / seconds / 1_000_000.0;
-                double instantFps = (frames - _lastSampleFrames) / seconds;
-                Mips = Mips <= 0 ? instantMips : (Mips * 0.65) + (instantMips * 0.35);
-                Fps = Fps <= 0 ? instantFps : (Fps * 0.65) + (instantFps * 0.35);
-                _lastSampleTicks = now;
-                _lastSampleSteps = steps;
-                _lastSampleFrames = frames;
-            }
-        }
-
-        Steps = (ulong)Math.Max(0, steps);
-        Frames = (ulong)Math.Max(0, frames);
-        OnPropertyChanged(nameof(FpsText));
-        Eip = string.Format(CultureInfo.InvariantCulture, "0x{0:X8}", _session.Eip);
-        if (IsPaused != _session.IsPaused)
-        {
-            IsPaused = _session.IsPaused;
+            HasFrame = _core.IsEmbedded || HasFrame;
         }
     }
 
@@ -1059,14 +673,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         int width = (int)packet.Width;
         int height = (int)packet.Height;
         int rowBytes = width * 4;
-        bool hasVisibleColor = false;
         for (int index = 0; index < packet.Bgra.Length; index += 4)
         {
             packet.Bgra[index + 3] = 255;
-            if ((packet.Bgra[index] | packet.Bgra[index + 1] | packet.Bgra[index + 2]) != 0)
-            {
-                hasVisibleColor = true;
-            }
         }
 
         if (FrameBitmap is null
@@ -1100,45 +709,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             HasFrame = true;
             OnPropertyChanged(nameof(FramePlaceholder));
         }
-
-        if (hasVisibleColor && string.Equals(StatusText, "Booting", StringComparison.Ordinal))
-        {
-            StatusText = "Running";
-        }
-    }
-
-    private void RememberGame(string path)
-    {
-        Config.RecentGames.RemoveAll(existing => string.Equals(existing, path, StringComparison.OrdinalIgnoreCase));
-        Config.RecentGames.Insert(0, path);
-        while (Config.RecentGames.Count > 8)
-        {
-            Config.RecentGames.RemoveAt(Config.RecentGames.Count - 1);
-        }
-
-        try
-        {
-            _settingsStore.Save(Config);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            AddLog(LogLevel.Warning, "Could not save recent games: " + exception.Message);
-        }
-
-        RefreshRecentGames();
-    }
-
-    private void RefreshRecentGames()
-    {
-        RecentGames.Clear();
-        foreach (string path in Config.RecentGames)
-        {
-            GameEntry? entry = GameEntry.FromFile(path);
-            if (entry is not null)
-            {
-                RecentGames.Add(entry);
-            }
-        }
     }
 
     private void NotifyConfigChanged()
@@ -1146,16 +716,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsBiosReady));
         OnPropertyChanged(nameof(NeedsSetup));
         OnPropertyChanged(nameof(SettingsPath));
-        OnPropertyChanged(nameof(HomeHeadline));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(DisplayCaption));
         OnPropertyChanged(nameof(SmoothFrame));
-        OnPropertyChanged(nameof(IsXemuCore));
         OnPropertyChanged(nameof(ShowCoreDisplay));
-        TogglePauseCommand.NotifyCanExecuteChanged();
-        StepFrameCommand.NotifyCanExecuteChanged();
-        StepInstructionsCommand.NotifyCanExecuteChanged();
+        StopSessionCommand.NotifyCanExecuteChanged();
     }
 
     private void OnToastTick(object? sender, EventArgs e)

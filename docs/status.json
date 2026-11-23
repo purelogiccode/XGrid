@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "updated": "2026-11-22",
-  "objective": "At least one game playable and xemu-class speed: the product CPU is the vendored xemu 0.8.139 / QEMU 10.2.0 TCG i386 core behind a narrow C API (libxgridcpu); all devices, GPU, audio, host and frontend remain managed C#; the managed C# CPU (--cpu managed) is the reference-only engine. GPL-2.0; the C# GPU/APU/UI are kept; the repository stays private until P1",
+  "updated": "2026-11-23",
+  "objective": "At least one game playable on the maintained xemu 0.8.139 core: XGrid is the C# frontend (shell, settings, library, input, packaging); the whole xemu codebase is the emulator, rebuilt from the pinned baseline + native/xgrid-core + native/xemu-patches. The managed C# emulator is the oracle (goldens, ktest log, test suite). GPL-2.0; the repository stays private until P1",
   "current": {
     "milestone": "A3",
     "id": "A3",
@@ -935,7 +935,7 @@
     "perf_bar": "applies to performance tasks only; XFP port tasks are correctness tasks priced by the module differential and the session budget, and XFP11 is gated on not-slower than the current engine",
     "port_rule": "port the reference in scope: every hw/xbox module plus the QEMU modules the machine uses, with a differential and the old path as fallback; the CPU is in scope but sequenced last and gated on not-slower; docs/xemu-port-manifest.md is the ledger and scripts/port-manifest.ps1 -Check enforces it",
     "operator_order_2026_11_22": "P1 sprint: measure (P1S0, done) -> live audio (P1S1, done) -> port the xemu/QEMU CPU engine in four phases (P1S2 softmmu/TLB, P1S3 TCG IR + i386 translator, P1S4 host codegen, P1S5 parity/switchover) -> P1 gate (P1S6). P1 = at least one game playable (own render, live input, >= 0.5x guest time, 10 minutes, save/load, xemu frame policy, live host audio, product defaults, gates exact). Then the full xemu 0.8.139 port (XFP0-XFP14) for breadth",
-    "operator_order_2026_11_22_native": "P1 + performance: the product CPU is the vendored xemu/QEMU TCG core behind libxgridcpu; all other emulator code stays managed C#; the managed C# CPU is reference-only; XCN0 (extraction spike) -> XCN1 (host seam) -> XCN2 (007 P1) -> XCN3 (release); the XFP program is parked for breadth after P1",
-    "native_cpu_rule": "The QEMU TCG i386 CPU core is the single native exception. It is vendored from the pinned xemu 0.8.139 tree, built with the recorded patches, and linked behind libxgridcpu; no QEMU machine, device, block layer or UI is shipped. The GPL-2.0 source offer is part of every release."
+    "operator_order_2026_11_22_native": "SUPERSEDED 2026-11-23 by decision A: the native CPU extraction (XCN0-XCN3, libxgridcpu) is retired; the whole vendored xemu 0.8.139 codebase is the core and XGrid is the frontend. The managed C# emulator is the oracle.",
+    "native_cpu_rule": "RETIRED 2026-11-23 (decision A). The maintained core is the xemu 0.8.139 codebase built from References2/xemu-0.8.139 + native/xgrid-core + native/xemu-patches; the GPL-2.0 source offer and patches ship with every release. Do not rebuild libxgridcpu."
   }
 }

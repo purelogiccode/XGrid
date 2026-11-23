@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Threading;
 
 namespace XGrid.Core.Xemu;
 
@@ -65,9 +64,6 @@ public sealed class XemuCoreProcess : IDisposable
 
     /// <summary>Gets the core process id, or 0 when it was never started.</summary>
     public int ProcessId => _process?.Id ?? 0;
-
-    /// <summary>Gets the core's window handle, or <see cref="IntPtr.Zero"/> before it exists.</summary>
-    public IntPtr WindowHandle => _window;
 
     /// <summary>Gets the process exit code once it has exited, or -1 before then.</summary>
     public int ExitCode

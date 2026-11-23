@@ -1,8 +1,8 @@
 # XGrid frontend (Avalonia)
 
-Cross-platform desktop frontend for XGrid, built with [Avalonia](https://avaloniaui.net/)
-(12.1, `VersionOverride` in the project file). The same project runs on Windows,
-Linux, and macOS.
+Cross-platform desktop shell for the maintained xemu core, built with
+[Avalonia](https://avaloniaui.net/) (12.1, `VersionOverride` in the project
+file). The same project runs on Windows, Linux, and macOS.
 
 ## Run
 
@@ -16,18 +16,18 @@ Release build:
 dotnet build src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Release
 ```
 
-The frontend lives entirely in this folder and talks to the emulator only through
-the public `XGrid.Host` API (`XboxMachine`); the OpenGL renderer is attached through
-the same public seam (`Nv2A.Backend`) using `XGrid.GpuGl`'s factory. It never reaches
-into emulator internals.
+The shell talks to the core through `XGrid.Core.Xemu`: it writes the core
+configuration, starts the process, embeds the core window (or presents the
+core's frame sink) and forwards the player-1 pad. The managed C# emulator is
+not part of this application; it is the test oracle in `XGrid.Cli`.
 
 ## Pages
 
 | Page | Purpose |
 | --- | --- |
-| **Home** | Power on/off, pause/resume, live presented-frame display, session counters, recent games, keyboard pad reference. |
-| **Library** | Recursive scan of configured folders for `.iso`, `.chd`, and `.xbe` entries; search, launch, rescan. |
-| **Settings** | Firmware/storage paths, RAM size, renderer (software/OpenGL), JIT/performance options, NV2A graphics fidelity switches, per-title overrides, network backend, library folders, accent color. Persisted as JSON. |
+| **Home** | Power on/off, stop, the embedded core display, current disc and core/renderer labels. |
+| **Library** | Recursive scan of configured folders for `.iso`, `.chd`, `.zar` and `.xbe` entries; search and launch. |
+| **Settings** | Firmware/storage paths, guest RAM, xemu core path, display sink and filter, per-title overrides, library folders, accent color. Persisted as JSON. |
 | **Activity** | Filtered emulator log with copy and clear. |
 | **About** | Build/runtime information, project links, shortcuts. |
 
@@ -45,73 +45,35 @@ images on the Settings page.
 
 ## Display path
 
-The frontend boots the emulator in-process on a dedicated background thread. Two
-renderers are available (Settings -> Emulation -> **Renderer**):
+The shell starts the xemu core and embeds its native window in the Home page
+(`XemuDisplayHost`), so the core paints with its own swapchain and the shell
+never copies a frame. When **Present core frames in the shell** is enabled, the
+patched core publishes BGRA frames into a named section instead; the shell
+copies the latest frame into a `WriteableBitmap` and can apply the presentation
+filter (nearest, bilinear, scanline, CRT). The display source and the filter are
+independent settings.
 
-- **Software rasterizer** (default) - the exact renderer, the same code path the
-  accurate-mode gates use. Frames are decoded from the display controller
-  (`TryCopyDisplayFrame`: the VGA CRTC scanout, falling back to the last flipped
-  3D surface before a mode exists), so direct-framebuffer guests update too.
-- **OpenGL** - the host GPU backend in replacement mode
-  (`--gpu gl --gpu-replace`), several times faster on the dashboard menu. The
-  backend renders offscreen into its own framebuffer (Windows/WGL); nothing is
-  embedded in the Avalonia visual tree and no foreign window is created. The
-  picture is the backend's per-flip readback, and a draw the backend declines is
-  painted in software and composed into the presented frame (all-or-nothing,
-  never mixed). When no GL context can be created (any non-Windows host, no
-  driver, failed probe) the session logs the reason and runs the software
-  rasterizer instead of failing. The context is created, used and disposed on
-  the emulation thread.
-
-Both renderers hand the same `FramePacket` (BGRA, top-down, 4:3) to the UI
-through a 100 ms dispatcher timer, which copies the rows into a `WriteableBitmap`.
-The emulator is never advanced from the UI thread, and none of this requires a
-WGL/OpenGL type in the UI layer.
-
-Note that the OpenGL renderer presents the last **flipped** frame, so a guest
-that only ever writes the framebuffer directly (nxdk `gamma`, `hello`) is not
-displayed on that renderer once a backend frame exists; the software renderer
-shows the scanout and does. Before the first backend frame the session reads the
-RAM scanout (`TryCopyScanoutFrameFromMemory`), so a guest that never flips is
-still visible.
-
-## Default performance profile
-
-- Fast-mode block JIT enabled.
-- Raw x86-64 block emitter enabled.
-- Idle-spin fast-forward enabled.
-- Decode cache enabled.
-- JIT build threshold 8.
-
-All of these are configurable, and **Fast mode** can be disabled to run the accurate
-interpreter. Toggle `Accent` to restyle the UI live.
+The core window is found and reparented after it appears; a 250 ms poll retries
+until it exists, so the UI thread never blocks. Resizing the page resizes the
+embedded child. Stopping the console closes the process and releases the
+display.
 
 ## Current scope
 
-- Two renderers: the portable software rasterizer (default, exact) and the
-  opt-in host OpenGL backend (offscreen FBO + readback, Windows-only at runtime,
-  automatic software fallback elsewhere). Neither opens a separate emulator window.
-- Settings also expose the NV2A graphics-fidelity switches (`--ffp`,
-  `--tex-filter registers`), per-title overrides keyed by image path or XBE
-  title id (including a per-title renderer), and a persisted EEPROM image.
-- Programs that write the framebuffer directly (nxdk `gamma`/`hello`, `debugPrint`)
-  issue no 3D draws and never flip, so on the GPU renderer they are shown from the RAM
-  scanout until the backend presents its first frame; after that the backend readback
-  is the display source.
-- The keyboard mapping above drives the emulated player-1 XID pad. No physical gamepad
-  binding or analog stick capture yet.
-- Audio devices are emulated by the core but host audio output is not wired to the UI.
-- Save states exist (`.xgs` save/load on the Home page, F8/F9); debugger panes,
-  screenshot capture and per-title compatibility profiles are future work.
-- A loose `.xbe` is listed for inspection but must be wrapped in an ISO/CHD image to boot.
+- One engine: the maintained xemu core (ISO, CHD and entry-form ZAR media).
+- Firmware, storage, guest memory and display-filter settings; per-title
+  overrides keyed by image path or XBE title id.
+- Keyboard and XInput controller input for the player-1 pad.
+- A loose `.xbe` is listed for inspection but must be wrapped in an ISO/CHD/ZAR
+  image to boot.
+- Save states, pause/frame-step and the managed-engine renderer options belong
+  to the oracle CLI, not the shell.
 
 ## Keyboard
 
 | Key | Action |
 | --- | --- |
 | `F5` | Power on / off |
-| `F6` | Pause / resume |
-| `F7` / `Shift+F7` | Frame step / 1,000,000-instruction step (while paused) |
 | `F11` / `Esc` | Full screen toggle / exit |
 | `Ctrl+O` | Open a disc image |
 | `Ctrl+S` | Save settings (Settings page) |
@@ -128,8 +90,8 @@ interpreter. Toggle `Accent` to restyle the UI live.
 App.axaml(.cs)              application, theme, page data templates
 Program.cs                  Avalonia bootstrap
 Models/                     settings, game entries, log entries, frame packets
-Services/                   settings store, library scanner, emulator session (renderer attach,
-                            GPU backend lifetime), dialogs, accents
+Services/                   settings store, library scanner, xemu launch plan,
+                            core session, display host, dialogs, accents
 ViewModels/                 MVVM shell and page view models (CommunityToolkit.Mvvm)
 Views/                      MainWindow + one UserControl per page
 Styles/Theme.axaml          dark palette, typography, control styles
@@ -147,5 +109,5 @@ dotnet build src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Relea
 dotnet format src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj --no-restore
 ```
 
-The frontend is an observation/interaction surface; it is not part of the accurate-mode
+The shell is an observation/interaction surface; it is not part of the accurate-mode
 golden gates. Gate runs continue to use `XGrid.Cli` headless.

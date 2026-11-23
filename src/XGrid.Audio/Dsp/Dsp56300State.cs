@@ -154,12 +154,6 @@ public sealed class Dsp56300State
     /// <summary>Scaling mode 1 bit.</summary>
     public const int SrS1 = 11;
 
-    /// <summary>Sixteen-bit compatibility mode bit.</summary>
-    public const int SrSc = 13;
-
-    /// <summary>Double-precision mode bit.</summary>
-    public const int SrDm = 14;
-
     /// <summary>Loop flag bit.</summary>
     public const int SrLf = 15;
 

@@ -87,20 +87,13 @@ public sealed class XemuCoreSession : IDisposable
         }
 
         FrontendTrace.Write($"display attached hwnd=0x{host.ToInt64():X} {width}x{height}");
-        TryEmbed();
-    }
-
-    /// <summary>Reports a new display size; the embedded window follows.</summary>
-    /// <param name="width">Display width in physical pixels.</param>
-    /// <param name="height">Display height in physical pixels.</param>
-    public void ResizeDisplay(int width, int height)
-    {
-        _displayWidth = Math.Max(1, width);
-        _displayHeight = Math.Max(1, height);
-        XemuWindowEmbedder? embedder = _embedder;
-        if (embedder is not null && embedder.IsEmbedded)
+        if (_embedder is { IsEmbedded: true } embedder)
         {
             embedder.Resize(_displayWidth, _displayHeight);
+        }
+        else
+        {
+            TryEmbed();
         }
     }
 

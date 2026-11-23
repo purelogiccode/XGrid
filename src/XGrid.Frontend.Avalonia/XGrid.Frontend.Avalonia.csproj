@@ -19,23 +19,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" VersionOverride="12.1.6" />
-    <PackageReference Include="Avalonia.Desktop" VersionOverride="12.1.6" />
-    <PackageReference Include="Avalonia.Themes.Fluent" VersionOverride="12.1.6" />
-    <PackageReference Include="Avalonia.Fonts.Inter" VersionOverride="12.1.6" />
+    <PackageReference Include="Avalonia" VersionOverride="12.2.0" />
+    <PackageReference Include="Avalonia.Desktop" VersionOverride="12.2.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" VersionOverride="12.2.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" VersionOverride="12.2.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" VersionOverride="8.4.2" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
     <ProjectReference Include="..\XGrid.Core.Xemu\XGrid.Core.Xemu.csproj" />
-    <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
-    <ProjectReference Include="..\XGrid.GpuGl\XGrid.GpuGl.csproj" />
-    <ProjectReference Include="..\XGrid.Graphics\XGrid.Graphics.csproj" />
-    <ProjectReference Include="..\XGrid.GpuGl\XGrid.GpuGl.csproj" />
-    <ProjectReference Include="..\XGrid.Host\XGrid.Host.csproj" />
     <ProjectReference Include="..\XGrid.Input\XGrid.Input.csproj" />
     <ProjectReference Include="..\XGrid.Xbe\XGrid.Xbe.csproj" />
+    <ProjectReference Include="..\XGrid.XboxFs\XGrid.XboxFs.csproj" />
   </ItemGroup>
 
   <ItemGroup>

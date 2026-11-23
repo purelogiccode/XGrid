@@ -42,13 +42,13 @@ public sealed class TitleOverrideKeyTests
         var settings = new EmulatorSettings();
         settings.TitleOverrides[EmulatorSettings.TitleIdKey(HaloTitleId)] = new TitleOverride
         {
-            TextureFilter = "registers",
+            RamMb = 128,
         };
 
         // A different folder and file name still resolve the title override.
         TitleOverride? found = settings.FindTitleOverride(@"D:\redump\Halo - Combat Evolved.iso", HaloTitleId);
         Assert.NotNull(found);
-        Assert.Equal("registers", found.TextureFilter);
+        Assert.Equal(128, found.RamMb);
 
         // Without a title id only the path key can match - and there is none.
         Assert.Null(settings.FindTitleOverride(@"D:\redump\Halo - Combat Evolved.iso"));
@@ -60,16 +60,16 @@ public sealed class TitleOverrideKeyTests
         var settings = new EmulatorSettings();
         settings.TitleOverrides[EmulatorSettings.TitleIdKey(HaloTitleId)] = new TitleOverride
         {
-            FixedFunctionVertex = true,
+            RamMb = 128,
         };
         settings.TitleOverrides[EmulatorSettings.NormalizeTitleKey(@"C:\games\halo.iso")] = new TitleOverride
         {
-            FixedFunctionVertex = false,
+            RamMb = 64,
         };
 
         EmulatorSettings effective = settings.WithTitleOverride(@"C:\games\halo.iso", HaloTitleId);
 
-        Assert.True(effective.FixedFunctionVertex);
+        Assert.Equal(128, effective.RamMb);
     }
 
     [Fact]
@@ -90,9 +90,9 @@ public sealed class TitleOverrideKeyTests
     public void NormalizeKeepsTitleKeysCanonicalAndDropsInvalidOnes()
     {
         var settings = new EmulatorSettings();
-        settings.TitleOverrides["title:4d530002"] = new TitleOverride { FixedFunctionVertex = true };
-        settings.TitleOverrides["title:zzzz"] = new TitleOverride { FixedFunctionVertex = true };
-        settings.TitleOverrides[@"relative\image.iso"] = new TitleOverride { TextureFilter = "registers" };
+        settings.TitleOverrides["title:4d530002"] = new TitleOverride { RamMb = 128 };
+        settings.TitleOverrides["title:zzzz"] = new TitleOverride { RamMb = 64 };
+        settings.TitleOverrides[@"relative\image.iso"] = new TitleOverride { RamMb = 64 };
 
         settings.Normalize();
 
@@ -109,7 +109,7 @@ public sealed class TitleOverrideKeyTests
     public void OverrideRowShowsTheTitleIdentity()
     {
         var item = new TitleOverrideItem(
-            EmulatorSettings.TitleIdKey(HaloTitleId), new TitleOverride { FixedFunctionVertex = true }, _ => { }, "HALO");
+            EmulatorSettings.TitleIdKey(HaloTitleId), new TitleOverride { RamMb = 128 }, _ => { }, "HALO");
 
         Assert.Equal("HALO (Title 4D530002)", item.DisplayName);
         Assert.Equal("applies wherever this title id is launched", item.PathText);

@@ -1558,8 +1558,6 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecRolCountClHandler = SpecRolCountCl;
     private static readonly SpecHandler SpecRorCountClHandler = SpecRorCountCl;
     private static readonly SpecHandler SpecFldRegHandler = SpecFldReg;
-    // ReSharper disable once UnusedMember.Local
-    private static readonly SpecHandler SpecFstMemHandler = SpecFstMem;
     private static readonly SpecHandler SpecFstHandler = SpecFst;
     private static readonly SpecHandler SpecFstpHandler = SpecFstp;
     private static readonly SpecHandler SpecFildMemHandler = SpecFildMem;
@@ -2713,13 +2711,6 @@ public sealed partial class XboxCpu
         // push mutates TOP/tags, so EIP stays precise exactly like the
         // interpreter; width rides Operand1.Size (32/64/80).
         cpu.Fpu.Push(cpu.ReadFpuReal(instruction.Operand1));
-        cpu.Context.Eip += (uint)instruction.Length;
-    }
-
-    private static void SpecFstMem(XboxCpu cpu, in DecodedInstruction instruction)
-    {
-        // Slice 13: verbatim `Fst` case (store, no pop, no stack change).
-        cpu.WriteFpuReal(instruction.Operand1, cpu.Fpu.GetRegister(0));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

@@ -57,8 +57,6 @@ runs/
 node_modules/
 
 # Native cores (vendored source/build trees; patches, shims and scripts are tracked)
-native/qemu/
-native/xgridcpu/*.dll
 native/**/build/
 
 

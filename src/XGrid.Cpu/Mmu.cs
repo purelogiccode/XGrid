@@ -111,10 +111,6 @@ public sealed class Mmu(XboxContext context, IMemoryBus memory)
     /// <summary>Gets the page-table-page bitset (C3 raw store guard pins it; null when tracking is off).</summary>
     internal ulong[]? PageTablePageBits { get; private set; }
 
-    /// <summary>Gets the last physical page tracked by <see cref="IsPageTablePage"/> (exclusive).</summary>
-    // ReSharper disable once UnusedMember.Global
-    internal static int TrackedPageLimit => TrackedPages;
-
     private void TrackPageTablePage(uint physicalPage)
     {
         ulong[]? pages = PageTablePageBits;

@@ -203,14 +203,6 @@ public sealed class XboxMachine : IIdleSkipHost
     /// <summary>Gets the number of times the 007 end-of-stream quirk fired.</summary>
     public ulong SevenEosQuirkFires { get; private set; }
 
-    /// <summary>Gets whether a BIOS image has been loaded.</summary>
-    // ReSharper disable once UnusedMember.Global
-    public bool BiosLoaded => _bios is not null;
-
-    /// <summary>Gets the padded flash image size in bytes (0 when no BIOS is loaded).</summary>
-    // ReSharper disable once UnusedMember.Global
-    public uint BiosSize => (uint)(_bios?.Length ?? 0);
-
     /// <summary>Loads a BIOS image and optional 512-byte MCPX boot ROM, then maps flash and overlay.</summary>
     public void LoadBios(ReadOnlySpan<byte> bios, ReadOnlySpan<byte> mcpxRom = default)
     {

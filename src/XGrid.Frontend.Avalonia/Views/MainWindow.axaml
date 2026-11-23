@@ -26,13 +26,9 @@
         <Separator />
         <MenuItem Header="Exit" Click="OnMenuExit" ToolTip.Tip="Close XGrid." />
       </MenuItem>
-      <MenuItem Header="Emulation" ToolTip.Tip="Power, pause, save states and stop.">
+      <MenuItem Header="Emulation" ToolTip.Tip="Power and stop the xemu core.">
         <MenuItem Header="Power On / Off" InputGesture="F5" Click="OnMenuPower" />
-        <MenuItem Header="Pause / Resume" InputGesture="F6" Click="OnMenuPause" />
         <MenuItem Header="Stop" Click="OnMenuStop" />
-        <Separator />
-        <MenuItem Header="Save State" InputGesture="F8" Click="OnMenuSaveState" />
-        <MenuItem Header="Load State" InputGesture="F9" Click="OnMenuLoadState" />
         <Separator />
         <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen" />
       </MenuItem>
@@ -97,18 +93,6 @@
 
           <Border Width="1" Margin="7,6" Background="{DynamicResource XgBorderBrush}" />
 
-          <Button Classes="toolbar" Click="OnMenuSaveState" ToolTip.Tip="Save a snapshot (F8)">
-            <StackPanel Spacing="2">
-              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Save}" />
-              <TextBlock Text="Save" FontSize="10.5" HorizontalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Button Classes="toolbar" Click="OnMenuLoadState" ToolTip.Tip="Load a snapshot (F9)">
-            <StackPanel Spacing="2">
-              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Refresh}" />
-              <TextBlock Text="Load" FontSize="10.5" HorizontalAlignment="Center" />
-            </StackPanel>
-          </Button>
           <Button Classes="toolbar" Click="OnMenuToggleLogDock" ToolTip.Tip="Show or hide the log dock">
             <StackPanel Spacing="2">
               <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Logs}" />
@@ -190,11 +174,10 @@
                  Fill="{DynamicResource XgAccentBrush}" />
         <TextBlock Grid.Column="1" Classes="status" Text="{Binding StatusDetail}"
                    TextTrimming="CharacterEllipsis" ToolTip.Tip="Current status" />
-        <TextBlock Grid.Column="2" Classes="status" Margin="12,0" Text="{Binding RendererLabel}" />
-        <TextBlock Grid.Column="3" Classes="status" Margin="12,0"
-                   Text="{Binding Steps, StringFormat={}{0:N0} steps}" />
+        <TextBlock Grid.Column="2" Classes="status" Margin="12,0" Text="{Binding CoreLabel}" />
+        <TextBlock Grid.Column="3" Classes="status" Margin="12,0" Text="{Binding RendererLabel}" />
         <TextBlock Grid.Column="4" Classes="statusStrong" MinWidth="60" TextAlignment="Right"
-                   Text="{Binding FpsText}" />
+                   Text="{Binding RunStateLabel}" />
       </Grid>
     </Border>
 

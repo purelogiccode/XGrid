@@ -9,40 +9,34 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
+using XGrid.XboxFs;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
-/// <summary>One selectable option in a settings drop-down: a persisted key, a label and an optional hint.</summary>
+/// <summary>One selectable option in a settings drop-down: a persisted key and a label.</summary>
 /// <remarks>Creates an option.</remarks>
 /// <param name="key">Value persisted in the settings file.</param>
 /// <param name="label">Text shown in the drop-down.</param>
-/// <param name="hint">Optional availability/behavior hint shown next to the label.</param>
-public sealed class KeyedOption(string key, string label, string hint = "")
+public sealed class KeyedOption(string key, string label)
 {
-
     /// <summary>Gets the persisted key.</summary>
     public string Key { get; } = key;
 
     /// <summary>Gets the display label.</summary>
     public string Label { get; } = label;
-
-    /// <summary>Gets the availability/behavior hint (may be empty).</summary>
-    public string Hint { get; } = hint;
 }
+
 /// <summary>One per-title override row in the settings list.</summary>
 public sealed class TitleOverrideItem : ObservableObject
 {
-    private static readonly KeyedOption[] RendererChoices =
+    private static readonly KeyedOption[] RamChoices =
     [
         new(string.Empty, "inherit"),
-        new(EmulatorSettings.RendererSoftware, "software"),
-        new(EmulatorSettings.RendererOpenGl, "OpenGL"),
+        new("64", "64 MB"),
+        new("128", "128 MB"),
     ];
 
-    private bool _fixedFunctionVertex;
-    private bool _texFilterRegisters;
-    private bool _inheritTextureFilter;
-    private KeyedOption _selectedRenderer;
+    private KeyedOption _selectedRam;
 
     /// <summary>Creates a row for a launched image path or an XBE title id.</summary>
     /// <param name="key">Override dictionary key (image path or <c>title:XXXXXXXX</c>).</param>
@@ -55,12 +49,11 @@ public sealed class TitleOverrideItem : ObservableObject
         ArgumentNullException.ThrowIfNull(remove);
         Path = key;
         TitleName = titleName ?? string.Empty;
-        _fixedFunctionVertex = value.FixedFunctionVertex == true;
-        _texFilterRegisters = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal);
-        _inheritTextureFilter = string.IsNullOrEmpty(value.TextureFilter);
-        _selectedRenderer = RendererChoices.FirstOrDefault(
-            option => option.Key.Length > 0 && string.Equals(option.Key, value.Renderer, StringComparison.Ordinal))
-            ?? RendererChoices[0];
+        _selectedRam = RamChoices.FirstOrDefault(
+            option => option.Key.Length > 0
+                && int.TryParse(option.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ram)
+                && ram == value.RamMb)
+            ?? RamChoices[0];
         RemoveCommand = new RelayCommand(() => remove(this));
     }
 
@@ -91,35 +84,14 @@ public sealed class TitleOverrideItem : ObservableObject
     /// <summary>Gets the command that removes this override.</summary>
     public IRelayCommand RemoveCommand { get; }
 
-    /// <summary>Gets or sets a value indicating whether the title runs the fixed-function vertex stage.</summary>
-    public bool FixedFunctionVertex
-    {
-        get => _fixedFunctionVertex;
-        set => SetProperty(ref _fixedFunctionVertex, value);
-    }
+    /// <summary>Gets the guest-memory choices this row can pick from ("inherit", "64", "128").</summary>
+    public IReadOnlyList<KeyedOption> RamOptions { get; } = RamChoices;
 
-    /// <summary>Gets or sets a value indicating whether the title maps TEXFILTER onto the tent sampler.</summary>
-    public bool TexFilterRegisters
+    /// <summary>Gets or sets the guest memory this title uses (the "inherit" row keeps the global one).</summary>
+    public KeyedOption SelectedRam
     {
-        get => _texFilterRegisters;
-        set => SetProperty(ref _texFilterRegisters, value);
-    }
-
-    /// <summary>Gets or sets a value indicating whether the override inherits the global texture filter.</summary>
-    public bool InheritTextureFilter
-    {
-        get => _inheritTextureFilter;
-        set => SetProperty(ref _inheritTextureFilter, value);
-    }
-
-    /// <summary>Gets the renderer choices this row can pick from ("inherit", "software", "OpenGL").</summary>
-    public IReadOnlyList<KeyedOption> Renderers { get; } = RendererChoices;
-
-    /// <summary>Gets or sets the renderer this title uses (the "inherit" row keeps the global one).</summary>
-    public KeyedOption SelectedRenderer
-    {
-        get => _selectedRenderer;
-        set => SetProperty(ref _selectedRenderer, value);
+        get => _selectedRam;
+        set => SetProperty(ref _selectedRam, value);
     }
 
     /// <summary>Projects the row back into the persisted model.</summary>
@@ -127,9 +99,9 @@ public sealed class TitleOverrideItem : ObservableObject
     {
         return new TitleOverride
         {
-            FixedFunctionVertex = _fixedFunctionVertex,
-            TextureFilter = _inheritTextureFilter ? null : (_texFilterRegisters ? "registers" : "legacy"),
-            Renderer = _selectedRenderer.Key.Length == 0 ? null : _selectedRenderer.Key,
+            RamMb = int.TryParse(_selectedRam.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ram)
+                ? ram
+                : null,
         };
     }
 }
@@ -151,7 +123,7 @@ public sealed class LibraryFolderItem
     public IRelayCommand RemoveCommand { get; }
 }
 
-/// <summary>Settings page: firmware, storage, performance, network, appearance, and library.</summary>
+/// <summary>Settings page: firmware, storage, xemu core options, appearance, and library.</summary>
 public sealed partial class SettingsViewModel : PageViewModel
 {
     [ObservableProperty]
@@ -173,55 +145,13 @@ public sealed partial class SettingsViewModel : PageViewModel
     private int _ramMb = 64;
 
     [ObservableProperty]
-    private bool _fastMode = true;
-
-    [ObservableProperty]
-    private bool _apuDsp = true;
-
-    [ObservableProperty]
-    private bool _liveAudio = true;
-
-    [ObservableProperty]
-    private bool _rawBlocks = true;
-
-    [ObservableProperty]
-    private bool _spinSkip = true;
-
-    [ObservableProperty]
-    private bool _decodeCache = true;
-
-    [ObservableProperty]
-    private decimal _jitThreshold = 8;
-
-    [ObservableProperty]
-    private bool _fixedFunctionVertex;
-
-    [ObservableProperty]
-    private KeyedOption? _selectedTextureFilter;
-
-    [ObservableProperty]
-    private KeyedOption? _selectedRenderer;
-
-    [ObservableProperty]
     private bool _displaySink;
 
     [ObservableProperty]
     private KeyedOption? _selectedFilter;
 
     [ObservableProperty]
-    private KeyedOption? _selectedCore;
-
-    [ObservableProperty]
     private string _xemuCorePath = string.Empty;
-
-    [ObservableProperty]
-    private bool _eosQuirk = true;
-
-    [ObservableProperty]
-    private bool _networkLinkUp = true;
-
-    [ObservableProperty]
-    private KeyedOption? _selectedNetwork;
 
     [ObservableProperty]
     private AccentOption? _selectedAccent;
@@ -230,27 +160,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     public SettingsViewModel(MainWindowViewModel shell)
         : base(shell)
     {
-        NetworkOptions =
-        [
-            new KeyedOption("loopback", "Loopback (offline)"),
-            new KeyedOption("socket", "User-mode sockets"),
-        ];
-        TextureFilterOptions =
-        [
-            new KeyedOption("legacy", "Legacy (nearest)"),
-            new KeyedOption("registers", "TEXFILTER (tent, LOD 0)"),
-        ];
-        RendererOptions =
-        [
-            new KeyedOption(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
-            new KeyedOption(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),
-        ];
         FilterOptions = [.. FrameFilters.All.Select(item => new KeyedOption(item.Key, item.Label))];
-        CoreOptions =
-        [
-            new KeyedOption(EmulatorSettings.CoreManaged, "Managed C# core", "oracle, slower"),
-            new KeyedOption(EmulatorSettings.CoreXemu, "xemu 0.8.139 core", "fastest"),
-        ];
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -263,20 +173,8 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the guest RAM choices.</summary>
     public IReadOnlyList<int> RamOptions { get; } = [64, 128];
 
-    /// <summary>Gets the selectable network backends.</summary>
-    public ObservableCollection<KeyedOption> NetworkOptions { get; }
-
     /// <summary>Gets the selectable presentation filters.</summary>
     public IReadOnlyList<KeyedOption> FilterOptions { get; }
-
-    /// <summary>Gets the selectable emulation cores.</summary>
-    public IReadOnlyList<KeyedOption> CoreOptions { get; }
-
-    /// <summary>Gets the selectable texture filter modes.</summary>
-    public ObservableCollection<KeyedOption> TextureFilterOptions { get; }
-
-    /// <summary>Gets the selectable NV2A renderers.</summary>
-    public ObservableCollection<KeyedOption> RendererOptions { get; }
 
     /// <summary>Gets the per-title overrides being edited.</summary>
     public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = [];
@@ -305,9 +203,6 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the settings storage folder.</summary>
     public string SettingsFolder => Path.GetDirectoryName(Shell.SettingsPath) ?? string.Empty;
 
-    /// <summary>Gets the persisted EEPROM state path.</summary>
-    public string EepromStatePath => new EepromStateStore(SettingsFolder).FilePath;
-
     /// <summary>Gets a value indicating whether any library folders are configured.</summary>
     public bool HasLibraryFolders => LibraryFolders.Count > 0;
 
@@ -321,23 +216,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         HddPath = settings.HddPath;
         DvdPath = settings.DvdPath;
         RamMb = settings.RamMb;
-        FastMode = settings.FastMode;
-        ApuDsp = settings.ApuDsp;
-        LiveAudio = !string.Equals(settings.AudioOutput, EmulatorSettings.AudioOutputOff, StringComparison.Ordinal);
-        RawBlocks = settings.RawBlocks;
-        SpinSkip = settings.SpinSkip;
-        DecodeCache = settings.DecodeCache;
-        JitThreshold = settings.JitThreshold;
-        FixedFunctionVertex = settings.FixedFunctionVertex;
-        SelectedTextureFilter = TextureFilterOptions.FirstOrDefault(
-            option => string.Equals(option.Key, settings.TextureFilter, StringComparison.Ordinal))
-            ?? TextureFilterOptions[0];
-        SelectedRenderer = RendererOptions.FirstOrDefault(
-            option => string.Equals(option.Key, settings.Renderer, StringComparison.Ordinal))
-            ?? RendererOptions[0];
-        SelectedCore = CoreOptions.FirstOrDefault(
-            option => string.Equals(option.Key, settings.Core, StringComparison.Ordinal))
-            ?? CoreOptions[0];
         XemuCorePath = settings.XemuCorePath;
         DisplaySink = settings.DisplaySink;
         SelectedFilter = FilterOptions.FirstOrDefault(
@@ -348,12 +226,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         {
             TitleOverrides.Add(new TitleOverrideItem(pair.Key, pair.Value, RemoveTitleOverride));
         }
-
-        EosQuirk = settings.EosQuirk;
-        NetworkLinkUp = settings.NetworkLinkUp;
-        SelectedNetwork = NetworkOptions.FirstOrDefault(
-            option => string.Equals(option.Key, settings.NetworkBackend, StringComparison.Ordinal))
-            ?? NetworkOptions[0];
 
         string accentKey = settings.Accent;
         foreach (AccentOption option in AccentOptions)
@@ -389,26 +261,11 @@ public sealed partial class SettingsViewModel : PageViewModel
             HddPath = HddPath.Trim(),
             DvdPath = DvdPath.Trim(),
             RamMb = RamMb,
-            FastMode = FastMode,
-            ApuDsp = ApuDsp,
-            AudioOutput = LiveAudio ? EmulatorSettings.AudioOutputLive : EmulatorSettings.AudioOutputOff,
-            RawBlocks = RawBlocks,
-            SpinSkip = SpinSkip,
-            DecodeCache = DecodeCache,
-            JitThreshold = (int)JitThreshold,
-            FixedFunctionVertex = FixedFunctionVertex,
-            TextureFilter = SelectedTextureFilter?.Key ?? "legacy",
-            Renderer = SelectedRenderer?.Key ?? EmulatorSettings.RendererSoftware,
-            Core = SelectedCore?.Key ?? EmulatorSettings.CoreManaged,
             XemuCorePath = XemuCorePath.Trim(),
             DisplaySink = DisplaySink,
             Filter = SelectedFilter?.Key ?? FrameFilters.Nearest,
-            EosQuirk = EosQuirk,
-            NetworkBackend = SelectedNetwork?.Key ?? "loopback",
-            NetworkLinkUp = NetworkLinkUp,
             Accent = SelectedAccent?.Key ?? "Emerald",
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],
-            RecentGames = [.. Shell.Config.RecentGames],
         };
         foreach (TitleOverrideItem item in TitleOverrides)
         {
@@ -417,18 +274,6 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         Shell.SaveSettings(next);
         Shell.Home.NotifySettingsChanged();
-    }
-
-    /// <summary>Public command: restores the recommended performance options without saving.</summary>
-    [RelayCommand]
-    private void ResetPerformance()
-    {
-        FastMode = true;
-        RawBlocks = true;
-        SpinSkip = true;
-        DecodeCache = true;
-        JitThreshold = 8;
-        Shell.ShowToast("Recommended performance options restored — save to apply.");
     }
 
     /// <summary>Public command: adds a per-title override for a disc or XBE image.</summary>
@@ -445,11 +290,10 @@ public sealed partial class SettingsViewModel : PageViewModel
         string key = EmulatorSettings.NormalizeTitleKey(path);
         string? titleName = null;
 
-        // V2: key the override by the XBE title id when it can be read, so it
+        // Key the override by the XBE title id when it can be read, so it
         // follows the title across renamed, moved or re-wrapped images. An
-        // unreadable image (e.g. a CHD, which has no XDVDFS reader yet) keeps
-        // the V1 path key.
-        if (EmulatorSession.TryResolveTitle(path, out uint titleId, out string resolvedName))
+        // unreadable image keeps the path key.
+        if (DiscTitleId.TryRead(path, out uint titleId, out string resolvedName))
         {
             key = EmulatorSettings.TitleIdKey(titleId);
             titleName = resolvedName;
@@ -464,7 +308,7 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         TitleOverrides.Add(new TitleOverrideItem(
             key,
-            new TitleOverride { FixedFunctionVertex = FixedFunctionVertex },
+            new TitleOverride { RamMb = RamMb },
             RemoveTitleOverride,
             titleName));
         Shell.ShowToast(titleName is null
@@ -482,16 +326,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
 
         TitleOverrides.Remove(item);
-    }
-
-    /// <summary>Public command: clears the persisted EEPROM state so the next boot re-seeds from the configured image.</summary>
-    [RelayCommand]
-    private void ResetEepromState()
-    {
-        var store = new EepromStateStore(SettingsFolder);
-        Shell.ShowToast(store.TryReset()
-            ? "EEPROM state cleared — the next boot reseeds from the configured image."
-            : "Could not clear the EEPROM state file.");
     }
 
     /// <summary>Public command: browses for the BIOS image.</summary>

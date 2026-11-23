@@ -44,10 +44,6 @@ public static class FixedFunctionVertex
     /// <summary>Texgen channels per stage (S, T, R, Q).</summary>
     private const int TexGenChannels = FixedFunctionVertexState.TexGenChannels;
 
-    /// <summary><c>NV097_SET_TEXGEN_*_DISABLE</c>: pass the input attribute through.</summary>
-    // ReSharper disable once UnusedMember.Global
-    public const uint TexGenDisable = 0x0000u;
-
     /// <summary><c>NV097_SET_TEXGEN_*_EYE_LINEAR</c>.</summary>
     public const uint TexGenEyeLinear = 0x2400u;
 

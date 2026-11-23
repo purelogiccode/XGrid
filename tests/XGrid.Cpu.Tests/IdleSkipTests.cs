@@ -14,8 +14,6 @@ public sealed class IdleSkipTests
 {
     private const uint PollAddress = 0x2000;
     private const uint MmioLookalikeAddress = 0x3000;
-    // ReSharper disable once UnusedMember.Local
-    private const uint LoopHead = 0x1000;
 
     // mov eax,[0x2000]; test eax,eax; jz 0x1000; hlt
     private static readonly byte[] PollLoop = [0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4];

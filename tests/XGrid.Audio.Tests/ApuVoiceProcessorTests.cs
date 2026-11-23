@@ -11,8 +11,6 @@ public sealed class ApuVoiceProcessorTests
 
     private const uint FenAddr = 0x115C;
     private const uint FetForce1 = 0x1504;
-    // ReSharper disable once UnusedMember.Local
-    private const uint IsTs = 0x1000;
     private const uint VpVaddr = 0x202C;
     private const uint VpSslAddr = 0x2034;
 
@@ -23,8 +21,6 @@ public sealed class ApuVoiceProcessorTests
     private const uint PioSetVoiceCfgFmt = 0x20304;
     private const uint PioSetVoiceSslA = 0x20320;
     private const uint PioSetVoiceSslB = 0x2035C;
-    // ReSharper disable once UnusedMember.Local
-    private const uint PioSetVoiceCfgBufLbo = 0x203A4;
     private const uint PioSetVoiceCfgBufEbo = 0x203DC;
     private const uint PioSetCurrentSsl = 0x20190;
     private const uint PioSslSegmentOffset = 0x20600;
@@ -32,8 +28,6 @@ public sealed class ApuVoiceProcessorTests
 
     private const uint TvL2D = 0x2054;
 
-    // ReSharper disable once UnusedMember.Local
-    private const uint VoiceCfgFmt = 0x04;
     private const uint VoiceParState = 0x54;
     private const uint VoiceParOffset = 0x58;
     private const uint VoiceTarPitchLink = 0x7C;

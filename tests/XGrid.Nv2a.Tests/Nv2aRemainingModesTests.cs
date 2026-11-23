@@ -19,8 +19,6 @@ public sealed class Nv2ARemainingModesTests
     private const int MacMov = 1;
     private const int MuxR = 1;
     private const int MuxV = 2;
-    // ReSharper disable once UnusedMember.Local
-    private const int MuxC = 3;
 
     private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {

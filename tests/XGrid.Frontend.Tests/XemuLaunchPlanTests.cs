@@ -137,7 +137,6 @@ public sealed class XemuLaunchPlanTests : IDisposable
             HddPath = hddPath ?? Path.Combine(_root, "firmware", "xbox_hdd.qcow2"),
             DvdPath = Path.Combine(_root, "media", "game.iso"),
             RamMb = 128,
-            Core = EmulatorSettings.CoreXemu,
             XemuCorePath = Path.Combine(_root, "firmware", "xemu.exe"),
         };
     }

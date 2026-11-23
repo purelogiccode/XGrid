@@ -40,11 +40,11 @@ the ledger complete. **Playable** means own render, live input, ≥ 0.5× guest
 time, 10 minutes, save/load, the xemu frame policy and **live host audio** - not
 an offline WAV.
 
-**Current integration step: A0 (window embedding) passed.** `XGrid.Core.Xemu`
-generates the core configuration, starts the process and reparents its window
-into the shell; `scripts/a0-shell-check.ps1` launches 007 from the shell and
-captures the picture inside the app. Next: A1 (lifecycle, per-title settings,
-pad, log dock) and the media work below.
+**Current integration step: A3 (media).** A0-A2 are done: `XGrid.Core.Xemu`
+generates the core configuration, starts the process, embeds its window (or
+presents the core's frame sink), and forwards the shell pad. A3 is half done:
+entry-form `.zar` archives play, while an `--iso` archive needs the in-memory
+XDVDFS synthesizer. Next: A4 (display filters) and A5 (release pass).
 
 **Media formats.** The core reads ISO/XISO natively (QEMU block layer). CHD and
 ZAR are **not** block formats the core can mount, so they are added as real-time
@@ -55,44 +55,37 @@ repository - not a GitHub fork - which is why the README credits the codebase.
 
 ## Status
 
-The LLE console chain boots: MCPX ROM -> 1BL -> 2BL -> kernel -> dashboard XBE.
-The NV2A runs a software rasterizer and a host-GL backend; the CPU has an
-accurate interpreter and a fast raw-JIT engine; the Avalonia frontend and CLI
-are usable and ship as self-contained packages. The APU voice processor, the
-ported xemu 0.8.139 GP/EP DSP core and the VP mixer execute the guest microcode
-and produce real PCM; the AC'97 codec path (XFP6) completes the live audio.
+The product path is the maintained xemu core: the shell starts it, embeds its
+display and drives it from settings, the library and per-title overrides. ISO,
+CHD and entry-form ZAR discs mount directly in the core; 007 boots from all
+three. The current task queue is A3 (XDVDFS synthesizer for `--iso` ZAR), then
+A4 (display filters) and A5 (release pass).
 
-**Real games: no title is playable yet.** The acceptance set is the **seven
-optimized ISOs** in `H:\Tests\XBOXReady`; the broad library is **`E:\Microsoft
-Xbox` (945 retail CHDs, 1.44 TB)**, used for title triage and the CHD path, not
-for gates. **007 - Agent Under Fire** reaches its
-own first-level driving scene, takes scripted pad input, round-trips a save state
-and matches the xemu 0.8.139 frame (`docs/compatibility.md`), but it runs at
-**0.11× guest time** (12.85 s per 1B steps) and its audio is an offline WAV - so
-it is a milestone (M1), not playability. The other six boot with no fault at the
-1B matrix budget: **Halo**, **Ninja Gaiden Black**, **Tak** and **50 Cent**
-render their own content at their anchors; **Bad Boys II** and **Destroy All
-Humans!** are documented waits. The first playable title needs the ported GL
-renderer (XFP1-XFP5), live AC'97 audio (XFP6) and, if the measurement says the
-CPU is the wall, the CPU core (XFP11) - see the speed checkpoint in E1. The
-verified homebrew surface is the corpus and the compatibility matrix in
-`docs/compatibility.md`; local retail probes are recorded in
-`docs/research-notes/real-game-probes.md`. The gates are run locally (CI is
-disabled; see `docs/ci.md`). The repository stays **private until a game is
-playable** (`docs/open-source.md`).
+The managed C# emulator is **the oracle, not the product**: it boots the LLE
+console chain (MCPX ROM -> 1BL -> 2BL -> kernel -> dashboard), runs the
+software and OpenGL NV2A backends, the raw-JIT CPU and the APU/DSP mixer, and
+keeps the four accurate 1B goldens, the ktest log and the 2,200-test suite
+green. `XGrid.Cli` remains its command-line harness.
+
+**Media.** The acceptance set is the **seven optimized ISOs** in
+`H:\Tests\XBOXReady`; the broad library is **`E:\Microsoft Xbox` (945 retail
+CHDs, 1.44 TB)**, used for triage and the CHD path, never for gates. The
+verified homebrew corpus and the title matrix are in `docs/compatibility.md`;
+retail probes are in `docs/research-notes/real-game-probes.md`. CI is disabled
+and every gate runs locally (`docs/ci.md`). The repository stays **private
+until a game is playable** (`docs/open-source.md`).
 
 ## Goals
 
-- **Playable retail titles first** (P1-P3), then seven of seven (P4)
-- **Full xemu 0.8.139 source port** to managed C#, module ledger complete (P5)
-- C# 15 / .NET 11, NativeAOT-compatible core where practical
+- **Playable retail titles** on the maintained xemu core
+- **XGrid owns the application**: shell, settings, library, per-title overrides,
+  input mapping, display filters, diagnostics and packaging
+- **The core stays a patch set**: `native/xgrid-core` + `native/xemu-patches`
+  over the pinned xemu 0.8.139 baseline, so an upstream release is a rebase
+- **The managed emulator stays the oracle**: four accurate 1B goldens, the
+  ktest log and the full test suite validate core changes
+- ISO/XISO, CHD and ZAR media without extraction; FATX and XDVDFS readers
 - Windows, Linux, and macOS support, with reproducible self-contained packages
-- CPU: accurate interpreter + raw x86-64 JIT now; ported `softmmu`/TCG (XFP11)
-- Full Xbox hardware port: MCPX, NV2A, APU/AC'97, IDE, USB/OHCI/XID, SMBus, nvnet
-- FATX and XDVDFS support, XBE loading
-- Graphics: portable software rasterizer as the exact oracle; ported OpenGL
-  renderer (Vulkan later)
-- Debugger, tracing, deterministic tests, and fuzzing
 - Reproducible releases with a reviewed license set (`docs/release-licensing-review.md`)
 
 ## Documentation
@@ -109,12 +102,14 @@ playable** (`docs/open-source.md`).
 ## Repository layout
 
 ```text
-src/          emulator core and device projects (XGrid.Core, XGrid.Cpu, ...)
+src/          the shell (XGrid.Frontend.Avalonia, XGrid.Core.Xemu, XGrid.Input,
+              XGrid.Xbe, XGrid.XboxFs) and the managed oracle projects
+native/       xemu patches, xgrid-core additions and the disposable build tree
 tests/        unit, integration, compatibility, and performance tests
 benchmarks/   BenchmarkDotNet benchmarks
-tools/        developer tools (added in later phases)
-scripts/      build/test/format scripts
-docs/         architecture and research notes
+tools/        oracle, DSP/CPU vector and ktest tooling
+scripts/      build/test/format, core sync/build and packaging scripts
+docs/         architecture, status and research notes
 ```
 
 ## Build and test
@@ -137,10 +132,11 @@ The cross-platform Avalonia GUI lives in `src/XGrid.Frontend.Avalonia`:
 dotnet run --project src/XGrid.Frontend.Avalonia
 ```
 
-It provides power/pause/stop with a live software-rendered display, a disc library,
-a settings surface (firmware, storage, memory, performance, network), an activity log,
-and runtime accent themes. Headless `XGrid.Cli` remains the default for gate and
-automation runs. See `src/XGrid.Frontend.Avalonia/README.md` and
+It provides power/stop for the embedded xemu core, a disc library, a settings
+surface (firmware, storage, guest memory, display filter), per-title overrides,
+an activity log and runtime accent themes. `XGrid.Cli` remains the harness for
+the managed oracle and the automation scripts. See
+`src/XGrid.Frontend.Avalonia/README.md` and
 `docs/research-notes/avalonia-frontend.md`.
 
 ## Release packages

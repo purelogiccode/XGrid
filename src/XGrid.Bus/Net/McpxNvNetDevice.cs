@@ -111,10 +111,6 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Link autonegotiation delay in milliseconds (xemu AUTONEG_DURATION_MS).</summary>
     private const ulong AutonegDelayMs = 250;
 
-    /// <summary>Maximum frames held in the device-side pending slot + inject path (matches loopback bound).</summary>
-    // ReSharper disable once UnusedMember.Global
-    public const int MaxPendingFrames = 64;
-
     // RX descriptor flag bits (xemu nvnet_regs.h NV_RX_*).
     private const uint RxFlagDescriptorValid = 1u << 0;
     private const uint RxFlagBit4 = 1u << 4;

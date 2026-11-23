@@ -106,8 +106,6 @@ public sealed partial class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshota
     private const uint FetForce1Se2FeIdleVoice = 1u << 15;
     private const uint Se2FeIdleVoice = 0x00008000;
 
-    // ReSharper disable once UnusedMember.Local
-    private const uint VoiceStateOffset = 0x54;
     private const uint VoiceSize = 0x80;
     private const uint PioFreeCount = 0x80;
     private const uint MaxVoices = 256;
@@ -347,10 +345,6 @@ public sealed partial class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshota
 
     /// <summary>Gets the front-end control register, for diagnostics.</summary>
     public uint FrontEndControl => _regs[Fectl >> 2];
-
-    /// <summary>Gets the voice-state page physical address, for diagnostics.</summary>
-    // ReSharper disable once UnusedMember.Global
-    public uint VoicePageAddress => _regs[VpVaddr >> 2];
 
     /// <summary>Gets the front-end decoder method register (the last FE trap method delivered to the guest).</summary>
     public uint FrontEndMethod => _regs[FedecMeth >> 2];

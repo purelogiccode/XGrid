@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace XGrid.Frontend.Avalonia.Models;
 
 /// <summary>
@@ -6,21 +8,11 @@ namespace XGrid.Frontend.Avalonia.Models;
 /// override only has to carry what the title needs.
 /// </summary>
 /// <remarks>
-/// The key is the launched image path (ISO, CHD or XBE) as recorded by the
-/// library/recent list. Title-id keying needs the XBE read out of the disc in
-/// the core layer and is the documented V2 of this feature.
+/// The key is the launched image path (ISO, CHD or XBE) or an XBE certificate
+/// title id written as <c>title:XXXXXXXX</c>.
 /// </remarks>
 public sealed class TitleOverride
 {
-    /// <summary>Gets or sets the per-title fixed-function vertex stage switch (<c>--ffp</c>).</summary>
-    public bool? FixedFunctionVertex { get; set; }
-
-    /// <summary>Gets or sets the per-title texture filter mode ("legacy" or "registers").</summary>
-    public string? TextureFilter { get; set; }
-
-    /// <summary>Gets or sets the per-title renderer ("software" or "gl"; null inherits).</summary>
-    public string? Renderer { get; set; }
-
     /// <summary>Gets or sets the per-title guest RAM size in megabytes.</summary>
     public int? RamMb { get; set; }
 
@@ -29,42 +21,17 @@ public sealed class TitleOverride
     {
         return new TitleOverride
         {
-            FixedFunctionVertex = FixedFunctionVertex,
-            TextureFilter = TextureFilter,
-            Renderer = Renderer,
             RamMb = RamMb,
         };
     }
 
     /// <summary>Returns true when the override carries no value at all.</summary>
-    public bool IsEmpty => FixedFunctionVertex is null
-        && string.IsNullOrEmpty(TextureFilter)
-        && string.IsNullOrEmpty(Renderer)
-        && RamMb is null;
+    public bool IsEmpty => RamMb is null;
 
     /// <summary>Builds a one-line summary for the settings list.</summary>
     public string Describe()
     {
-        var parts = new System.Collections.Generic.List<string>(4);
-        if (FixedFunctionVertex == true)
-        {
-            parts.Add("fixed-function vertex");
-        }
-        else if (FixedFunctionVertex == false)
-        {
-            parts.Add("resident vertex program");
-        }
-
-        if (!string.IsNullOrEmpty(TextureFilter))
-        {
-            parts.Add("filter: " + TextureFilter);
-        }
-
-        if (!string.IsNullOrEmpty(Renderer))
-        {
-            parts.Add("renderer: " + Renderer);
-        }
-
+        var parts = new List<string>(1);
         if (RamMb is not null)
         {
             parts.Add(RamMb.Value + " MB");
