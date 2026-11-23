@@ -192,6 +192,15 @@ int pic_read_irq(void *s)
             }
             return acked;
         }
+        /* The device model has no deliverable vector: answer with the spurious
+         * IRQ7 the 8259 gives a withdrawn INT. Returning -1 made QEMU call
+         * do_interrupt_x86_hardirq(env, -1) - a negative IDT index that
+         * corrupts the guest. */
+        if (getenv("XGRID_CPU_TRACE")) {
+            fprintf(stderr, "pic_read_irq spurious\n");
+            fflush(stderr);
+        }
+        return 7;
     }
     if (getenv("XGRID_CPU_TRACE")) {
         fprintf(stderr, "pic_read_irq queued=%d\n", xgc_irq_vector);
@@ -202,7 +211,7 @@ int pic_read_irq(void *s)
         xgc_irq_vector = -1;
         return vector;
     }
-    return -1;
+    return 7;
 }
 
 int pic_get_output(void *s)

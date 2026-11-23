@@ -298,11 +298,17 @@ wait is not the ATAPI probe. The captured stall state is precise: `PIC
 req=0x20` (IRQ5, the APU), `imr=0xD2` (IRQ5 unmasked), **`isr=0x00`** - the line
 is latched and deliverable but was never acknowledged - while the NV2A reports
 `notify=8`, `stalls=1`, `frames=1` and the IDE's last command is `0xC8` (READ
-DMA) with no DMA pending. The probe now counts both sides: **1259 injections, 499 acknowledged**. So the
-request is raised at nearly every slice boundary (the raw
-`MasterRequest & ~MasterMask` check) but 60% of the injections are consumed
-without an ack - `Pic.Acknowledge()` returns -1, or the CPU takes the request
-and finds no vector. Because a slice is up to 200k instructions, a device that
+DMA) with no DMA pending. The probe counts both sides: **1559 injections, 499 acknowledged**, and every
+one of those 499 acks happened *before* the first frame - during the stall the
+count never moves. So the request is raised at the slice boundary and the CPU
+never takes it, while the PIC holds `req=0x20` unmasked. `pic_read_irq()` also
+stopped returning -1: a withdrawn INT now answers spurious IRQ7 like the 8259,
+because QEMU passed -1 straight to `do_interrupt_x86_hardirq` and indexed the
+IDT with a negative vector. The next differential is why the raised
+`CPU_INTERRUPT_HARD` is not consumed: `HF_SMM_MASK` is clear, IF is set at the
+sampled EIP, so the remaining candidates are the request word being cleared by
+another path (`cpu_reset_interrupt` on a poll) or the guest masking at a moment
+the sample misses. Because a slice is up to 200k instructions, a device that
 pulses its line is gone by the time the CPU acks; the PIC's latched `req=0x20`
 at the dump says the request survives, so the next differential is `Acknowledge()`
 right after an injection vs the request word before it (a level-line pulse
