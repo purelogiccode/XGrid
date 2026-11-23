@@ -37,7 +37,7 @@ public sealed class EmulatorSettings
     /// Gets or sets a value indicating whether the core publishes frames to the
     /// shell (shared section, shell presents) instead of showing its own window.
     /// </summary>
-    public bool DisplaySink { get; init; }
+    public bool DisplaySink { get; init; } = true;
 
     /// <summary>
     /// Gets or sets the core hosting mode: <c>in-process</c> (experimental;

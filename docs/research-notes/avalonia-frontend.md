@@ -333,3 +333,17 @@ Project-local usage notes and the shortcut table live in
   them with the shell, so the host owns the streams.
 - `--autostart` powers the console on as soon as the shell is ready, which is
   how the shell's end-to-end checks drive it.
+
+## Update 2026-11-23: the shell owns the display and the pad
+
+- `EmulatorSettings.DisplaySink` now defaults to true. The shell creates the
+  display and input shared sections before starting the core, presents the
+  frames itself and detaches the embedded core window on the first frame. The
+  same path serves in-process and separate-process hosting.
+- The core binds a controller to a port only when the port's device id matches
+  (`input.bindings.port1 = 'keyboard'`); `port1_driver` is the USB device type
+  (`usb-xbox-gamepad`, `usb-xbox-gamepad-s`). The writer emits the binding when
+  the shell supplies the pad, and the sink then replaces that controller's
+  state, so the shell's keyboard and XInput mapping reaches the guest.
+- Verified through the shell: `core frame 1280x960 #1` and
+  `xgrid input: port 1 reads the shell pad`.
