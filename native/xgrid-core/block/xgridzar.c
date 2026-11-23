@@ -97,14 +97,28 @@ static bool zar_read_section(BDRVXgridZarState *s, uint64_t offset,
 static void zar_entry_name(const BDRVXgridZarState *s, uint32_t name_offset,
                            char *out, size_t out_size)
 {
-    if (name_offset + 2 >= s->name_size || out_size == 0) {
+    if (name_offset >= s->name_size || out_size == 0) {
         out[0] = '\0';
         return;
     }
 
-    uint16_t header = lduw_be_p(s->names + name_offset);
-    uint32_t length = header & 0x7FFFu;
-    uint32_t start = name_offset + 2;
+    /* One header byte carries a 7-bit length; the high bit selects the
+     * two-byte form (with the upstream quirk that the second byte is read
+     * from the header byte again). */
+    uint8_t header = s->names[name_offset];
+    uint32_t length = header & 0x7Fu;
+    uint32_t start;
+    if ((header & 0x80u) != 0) {
+        if (name_offset + 1 >= s->name_size) {
+            out[0] = '\0';
+            return;
+        }
+        length |= (uint32_t)header << 7;
+        start = name_offset + 2;
+    } else {
+        start = name_offset + 1;
+    }
+
     uint32_t available = s->name_size - start;
     if (length > available) {
         length = available;
