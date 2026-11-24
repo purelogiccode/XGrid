@@ -28,6 +28,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly SettingsStore _settingsStore;
     private readonly XemuCoreSession _core;
     private readonly DispatcherTimer _uiTimer;
+    private readonly DispatcherTimer _frameTimer;
     private readonly DispatcherTimer _toastTimer;
     private readonly Lock _coreFrameLock = new();
     private byte[]? _coreFrameBuffer;
@@ -35,6 +36,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private int _coreFrameHeight;
     private bool _coreFramePending;
     private bool _coreFrameLogged;
+    private int _framesArrived;
+    private int _framesPresented;
+    private long _presentTicks;
+    private long _lastPresentTimestamp;
+    private long _frameWindowStart;
+    private const int FrameReportPeriodMs = 5000;
     private GamepadMappingOptions _gamepadOptions = GamepadMappingOptions.Default;
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
@@ -119,6 +126,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _uiTimer.Tick += OnUiTick;
+        _frameTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FramePacing.PollIntervalMilliseconds) };
+        _frameTimer.Tick += OnFrameTick;
         _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.4) };
         _toastTimer.Tick += OnToastTick;
     }
@@ -262,6 +271,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets the gamepad options for the current configuration.</summary>
     public GamepadMappingOptions GamepadOptions => _gamepadOptions;
 
+    /// <summary>
+    /// Raised after a core frame has been copied into <see cref="FrameBitmap"/>.
+    /// A bitmap write is invisible to Avalonia on its own (the image caches a
+    /// snapshot until its visual is invalidated), so the view re-renders the
+    /// picture on this event.
+    /// </summary>
+    public event EventHandler? FramePresented;
+
     /// <summary>Maps a keyboard key to the configured player-1 action.</summary>
     /// <param name="key">Pressed key.</param>
     /// <param name="action">Mapped action.</param>
@@ -309,6 +326,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _shuttingDown = true;
         _uiTimer.Stop();
+        _frameTimer.Stop();
         _toastTimer.Stop();
         _core.Dispose();
     }
@@ -806,6 +824,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowCoreDisplay));
         OnPropertyChanged(nameof(RunStateLabel));
         StopSessionCommand.NotifyCanExecuteChanged();
+        if (value)
+        {
+            _frameTimer.Start();
+        }
+        else
+        {
+            _frameTimer.Stop();
+        }
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -821,6 +847,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     private void ResetFrame()
     {
+        lock (_coreFrameLock)
+        {
+            // A frame left pending by the previous session must not be the first
+            // picture of the next one.
+            _coreFramePending = false;
+        }
+
         FrameBitmap = null;
         HasFrame = false;
         if (_frameWidth != 0 || _frameHeight != 0)
@@ -879,6 +912,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnCoreFrameReady(object? sender, XemuDisplayFrame frame)
     {
+        Interlocked.Increment(ref _framesArrived);
         int length = frame.Width * frame.Height * 4;
         lock (_coreFrameLock)
         {
@@ -942,15 +976,53 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         });
     }
 
-    private void OnUiTick(object? sender, EventArgs e)
+    private void OnFrameTick(object? sender, EventArgs e)
     {
-        if (TryTakeCoreFrame(out FramePacket? coreFrame))
+        // The core can publish far faster than the screen refreshes (the sink
+        // poll runs every 8 ms), so a present is paced by wall clock rather than
+        // by the timer's own cadence.
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!FramePacing.ShouldPresent(now, _lastPresentTimestamp, System.Diagnostics.Stopwatch.Frequency))
         {
-            PresentFrame(coreFrame!);
-            HasFrame = true;
+            return;
         }
 
+        if (!TryTakeCoreFrame(out FramePacket? coreFrame))
+        {
+            return;
+        }
+
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        PresentFrame(coreFrame!);
+        Interlocked.Add(
+            ref _presentTicks,
+            (long)System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        _lastPresentTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        Interlocked.Increment(ref _framesPresented);
+        HasFrame = true;
+        FramePresented?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnUiTick(object? sender, EventArgs e)
+    {
         PollSaveStates();
+
+        long now = Environment.TickCount64;
+        if (_frameWindowStart == 0)
+        {
+            _frameWindowStart = now;
+        }
+        else if (now - _frameWindowStart >= FrameReportPeriodMs)
+        {
+            double seconds = (now - _frameWindowStart) / 1000.0;
+            int arrived = Interlocked.Exchange(ref _framesArrived, 0);
+            int presented = Interlocked.Exchange(ref _framesPresented, 0);
+            long ticks = Interlocked.Exchange(ref _presentTicks, 0);
+            FrontendTrace.Write(string.Create(
+                CultureInfo.InvariantCulture,
+                $"frames core={arrived / seconds:F1}/s shell={presented / seconds:F1}/s present={(presented == 0 ? 0 : (double)ticks / presented):F2}ms"));
+            _frameWindowStart = now;
+        }
 
         // The native host is only shown while the core paints into it. When the
         // frame sink takes over it must not sit above the frame image.
@@ -1036,9 +1108,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(DisplayCaption));
             OnPropertyChanged(nameof(HasDisplayCaption));
         }
-        for (int index = 0; index < packet.Bgra.Length; index += 4)
+        // Opaque presentation: one word per pixel rather than four byte writes,
+        // because this runs at the screen's refresh rate on the UI thread.
+        Span<uint> pixels = MemoryMarshal.Cast<byte, uint>(packet.Bgra.AsSpan(0, width * height * 4));
+        for (int index = 0; index < pixels.Length; index++)
         {
-            packet.Bgra[index + 3] = 255;
+            pixels[index] |= 0xFF000000u;
         }
 
         if (FrameBitmap is null
