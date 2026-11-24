@@ -57,6 +57,9 @@ The native core is built separately:
 pwsh -File scripts/build-native-xemu.ps1
 ```
 
+On Linux, `bash scripts/build-native-xemu.sh` builds the same tree and writes the
+renderer manifest.
+
 The shell tests cover launch planning, generated configuration, display/input
 sinks, save-state orchestration, filters, settings and the library. Media and
 emulation checks are described in the script headers under `scripts/`.

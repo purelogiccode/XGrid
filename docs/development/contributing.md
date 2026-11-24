@@ -23,6 +23,8 @@ Build the core when you touch native code or the integration path:
 pwsh -File scripts/build-native-xemu.ps1
 ```
 
+On Linux, build the same tree with `bash scripts/build-native-xemu.sh`.
+
 See [Building from source](building.md).
 
 ## Workflow

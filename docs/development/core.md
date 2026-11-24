@@ -112,12 +112,24 @@ frame.
 
 ## Build and validation
 
+Windows:
+
 ```powershell
 pwsh -File scripts/build-native-xemu.ps1
 ```
 
 Output: `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll`,
 `xemu/dist/xgrid-core.json` and the runtime DLLs.
+
+Linux:
+
+```bash
+bash scripts/build-native-xemu.sh
+```
+
+Output: `xemu/dist/xemu`, `xemu/dist/xgrid-core.json` and
+`xemu/dist/LICENSE.txt`. This is the standalone core; the in-process
+`xgrid_core` library and its save-state ABI are Windows-only.
 
 ### Rebase baseline
 
