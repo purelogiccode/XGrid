@@ -171,7 +171,8 @@ current title. This needs in-process hosting, like save states.
 
 ## Core capabilities
 
-`scripts/build-native-xemu.ps1` writes `xgrid-core.json` beside the core:
+The core build scripts (`scripts/build-native-xemu.ps1` on Windows and
+`scripts/build-native-xemu.sh` on Linux) write `xgrid-core.json` beside the core:
 
 ```json
 {

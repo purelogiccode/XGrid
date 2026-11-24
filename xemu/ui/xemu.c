@@ -64,8 +64,9 @@
 
 #ifdef _WIN32
 #include "xui/win32-dxgi-present.h"
-#include "../xgrid-core/display/xgrid-display.h"
 #endif
+
+#include "../xgrid-core/display/xgrid-display.h"
 
 #ifndef DEBUG_XEMU_C
 #define DEBUG_XEMU_C 0

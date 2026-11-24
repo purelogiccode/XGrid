@@ -60,7 +60,8 @@ current product roadmap; user documentation lives in `docs/`.
 
 ### Platform
 
-- [ ] Build and package the core for Linux and macOS.
+- [x] Standalone core build on Linux from the tracked tree.
+- [ ] Package the core for Linux and macOS.
 - [ ] Native display embedding on Linux/macOS.
 - [ ] Verify save states on non-Windows hosts.
 

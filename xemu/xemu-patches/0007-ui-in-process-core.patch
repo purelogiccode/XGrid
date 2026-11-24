@@ -123,13 +123,14 @@ index 47bb0a95..18fa3141 100644
  
  #include "data/xemu_64x64.png.h"
  
-@@ -63,6 +64,7 @@
+@@ -63,6 +64,8 @@
  
  #ifdef _WIN32
  #include "xui/win32-dxgi-present.h"
-+#include "../xgrid-core/display/xgrid-display.h"
  #endif
  
++#include "../xgrid-core/display/xgrid-display.h"
++
  #ifndef DEBUG_XEMU_C
 @@ -124,6 +126,14 @@ static QemuThread vblank_thread;
  static bool qemu_exiting;

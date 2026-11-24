@@ -3,10 +3,11 @@
 XGrid has two build products:
 
 1. the **Avalonia shell** (managed .NET); and
-2. the **xemu core** (native C, built with meson/ninja in MSYS2).
+2. the **xemu core** (native C, built with meson/ninja).
 
-The release build combines them. The core build is currently supported on
-Windows with MSYS2; the shell builds on Windows, Linux and macOS.
+The release build combines them. The core builds on Windows with MSYS2 and
+natively on Linux; the shell builds on Windows, Linux and macOS. macOS core
+builds are not yet supported by XGrid's scripts.
 
 ## Prerequisites
 
@@ -29,6 +30,46 @@ Windows with MSYS2; the shell builds on Windows, Linux and macOS.
 The core vendors libchdr and uses system zlib/zstd. A clean QEMU tree may still
 let meson fetch its own subprojects on the first build.
 
+### Core (Linux)
+
+- A C/C++ toolchain, `make`, `ninja`, `pkg-config`, CMake and Python 3.
+- meson 1.5 or newer. Distribution packages are often older (Ubuntu 22.04
+  ships 0.61), so use a virtual environment when in doubt.
+- Python modules: PyYAML, plus `tomli` on Python older than 3.11.
+- Development headers: GLib, zlib, zstd, libepoxy, libusb, libpcap,
+  libsamplerate, GMP, SDL3 and the X11 libraries.
+
+On Ubuntu 22.04 the tested package set is:
+
+```bash
+sudo apt install build-essential ninja-build pkg-config cmake \
+  python3-venv python3-pip libglib2.0-dev libpixman-1-dev libepoxy-dev \
+  libssl-dev libcurl4-openssl-dev libslirp-dev libzstd-dev zlib1g-dev \
+  libusb-1.0-0-dev libpcap-dev libasound2-dev libpulse-dev libx11-dev \
+  libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev \
+  libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev \
+  libsamplerate0-dev libgmp-dev
+```
+
+The core needs SDL3 3.4.x. Ubuntu 22.04 does not package it, so download and
+unpack the SDL3 source, then build it once:
+
+```bash
+cmake -S SDL3-3.4.20 -B SDL3-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/local -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+  -DSDL_WAYLAND=OFF -DSDL_KMSDRM=OFF -DSDL_X11=ON
+sudo cmake --build SDL3-build --target install -j"$(nproc)"
+```
+
+Enable `SDL_WAYLAND` instead of `SDL_X11` if your desktop has no X11/XWayland.
+Install meson and the Python modules the build scripts import:
+
+```bash
+sudo python3 -m venv /opt/xgrid-venv
+sudo /opt/xgrid-venv/bin/pip install --upgrade pip 'meson>=1.5' pyyaml tomli
+export PATH=/opt/xgrid-venv/bin:$PATH
+```
+
 ## Build the shell
 
 ```powershell
@@ -40,6 +81,8 @@ Warnings are errors. The solution also builds the managed oracle and test
 projects; they are validation infrastructure, not the product.
 
 ## Build the core
+
+### Windows
 
 ```powershell
 pwsh -File scripts/build-native-xemu.ps1
@@ -69,7 +112,25 @@ dotnet build XGrid.sln -c Release -p:BuildXemuCore=true
 
 A normal solution build only builds the empty anchor, so it stays fast.
 
+### Linux
+
+```bash
+bash scripts/build-native-xemu.sh
+```
+
+The script checks the toolchain, runs xemu's `build.sh` with the XGrid media
+drivers, builds `qemu-img`/`qemu-io` for the media checks, and writes the
+renderer manifest beside the core. Use `-j N` to set the job count and
+`--clean` for a clean rebuild.
+
+The Linux build is the standalone core. The in-process `xgrid_core` library,
+four save-state slots and embedded display remain Windows-only; on Linux the
+shell launches the core as a separate process with its own window. The recipe is
+tested on Ubuntu 22.04 with SDL3 3.4.20, also under WSL2/WSLg.
+
 ### Core output
+
+Windows:
 
 ```text
 xemu/dist/
@@ -77,6 +138,15 @@ xemu/dist/
   xgrid_core.dll
   xgrid-core.json
   <runtime DLLs>
+```
+
+Linux:
+
+```text
+xemu/dist/
+  xemu
+  xgrid-core.json
+  LICENSE.txt
 ```
 
 `qemu-img` and `qemu-io` are built in `xemu/build/` for the media checks; they
@@ -133,19 +203,27 @@ pass `-SkipCore` for a development-only archive. See [Releasing](releasing.md).
 
 ## Linux and macOS
 
-- The Avalonia shell builds normally with the .NET SDK.
-- There is no packaged core for Linux/macOS yet. The `xemu/` tree is portable C,
-  but the supported build script is Windows/MSYS2-only and the release archive is
-  the shell only.
-- Point the shell at a core built for your platform with `XGRID_XEMU_CORE` or the
-  **Emulator binary** setting.
+- The Avalonia shell builds normally with the .NET SDK on both platforms.
+- On Linux, build the core with `bash scripts/build-native-xemu.sh`. The shell
+  finds `xemu/dist/xemu` automatically, or point it there with
+  `XGRID_XEMU_CORE` or the **Emulator binary** setting.
+- The in-process core, save states and embedded display are Windows-only. On
+  Linux the shell runs the core as a separate process with its own window.
+- There is no packaged core for Linux/macOS yet; the release archives for those
+  platforms contain the shell only.
+- macOS has no XGrid core build script. You can point the shell at an upstream
+  xemu 0.8.139 build for macOS with the **Emulator binary** setting.
 
 ## Troubleshooting the build
 
 | Symptom | Fix |
 | --- | --- |
 | `MSYS2 not found` / bash path error | Install MSYS2 at `C:\msys64` or update the script path. |
-| meson/ninja missing | Install the MINGW64 packages listed above. |
+| `meson: command not found` / meson too old | Install meson 1.5+ with `pip install 'meson>=1.5'` and put it on `PATH`. |
+| `No package 'sdl3' found` | Build SDL3 3.4.x from source or install its development package. |
+| `Dependency "samplerate" not found` | Install `libsamplerate0-dev`. |
+| `Dependency "gmp" not found` | Install `libgmp-dev`. |
+| `ModuleNotFoundError: No module named 'yaml'` | Install PyYAML into the Python that runs meson. |
 | Vulkan not listed after build | The Vulkan dependencies were absent; the core still builds with OpenGL. |
 | `xgrid_core.dll` missing | Build the `xgrid_core` target; check `wt-data/xemu-build.log`. |
 | Shell cannot find the core | Set **Emulator binary** or `XGRID_XEMU_CORE`. |

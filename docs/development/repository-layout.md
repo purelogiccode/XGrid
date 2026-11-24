@@ -41,7 +41,8 @@ data/                         local firmware/media (git-ignored)
 - `src/XGrid.Core.Xemu` — launch planning, generated configuration, process and
   in-process hosting, display/input sinks, save-state wrapper.
 - `xemu/` — the native core tree.
-- `scripts/build-native-xemu.ps1` — core build.
+- `scripts/build-native-xemu.ps1` — core build (Windows/MSYS2).
+- `scripts/build-native-xemu.sh` — core build (Linux).
 - `scripts/package.ps1` — release tree.
 
 ### Validation

@@ -37,6 +37,30 @@ The solution anchor can run the same build:
 dotnet build XGrid.sln -c Release -p:BuildXemuCore=true
 ```
 
+## Native core (Linux)
+
+Prerequisites: GCC, make, ninja, pkg-config, meson 1.5+, Python with PyYAML,
+GLib, zlib, zstd, libepoxy, libusb, libpcap, libsamplerate, GMP and SDL3
+development packages. The tested Ubuntu package list and SDL3 build commands are
+in the [full guide](https://github.com/purelogiccode/XGrid/blob/master/docs/development/building.md).
+
+```bash
+bash scripts/build-native-xemu.sh
+```
+
+Output:
+
+```text
+xemu/dist/
+  xemu
+  xgrid-core.json
+  LICENSE.txt
+```
+
+The shell finds `xemu/dist/` automatically. The in-process core, save states and
+embedded display are Windows-only; on Linux the shell launches the core as a
+separate process with its own window.
+
 ## Firmware for development
 
 Put scratch firmware in `data/xemu/`:
@@ -62,8 +86,9 @@ shell-only.
 
 ## Linux and macOS
 
-The shell builds; the packaged core is Windows-only today. Set
-`XGRID_XEMU_CORE` or the **Emulator binary** setting to a core built for your
-platform.
+The Linux core can be built from source with `scripts/build-native-xemu.sh`, but
+the release archives still contain the shell only. macOS has no XGrid core build
+script; point `XGRID_XEMU_CORE` or the **Emulator binary** setting at an upstream
+xemu 0.8.139 build for your platform.
 
 Full guide: [Building from source](https://github.com/purelogiccode/XGrid/blob/master/docs/development/building.md).

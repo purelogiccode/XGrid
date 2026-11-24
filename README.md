@@ -129,13 +129,18 @@ dotnet test XGrid.sln -c Release --nologo --no-build
 # Native core (Windows + MSYS2 MINGW64)
 pwsh -File scripts/build-native-xemu.ps1
 
+# Native core (Linux)
+bash scripts/build-native-xemu.sh
+
 # Run
 dotnet run --project src/XGrid.Frontend.Avalonia
 ```
 
-The core build produces `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll` and the
-runtime DLLs. See [Building from source](docs/development/building.md) for the
-toolchain and [Quality gates](docs/development/quality-gates.md) for the checks.
+The Windows core build produces `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll`
+and the runtime DLLs; Linux produces `xemu/dist/xemu` and
+`xemu/dist/xgrid-core.json`. See [Building from source](docs/development/building.md)
+for the toolchain and [Quality gates](docs/development/quality-gates.md) for the
+checks.
 
 ## Release packages
 
