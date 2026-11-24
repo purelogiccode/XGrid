@@ -119,6 +119,20 @@ pwsh -File scripts/build-native-xemu.ps1
 Output: `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll`,
 `xemu/dist/xgrid-core.json` and the runtime DLLs.
 
+### Rebase baseline
+
+Each core rebase is checked against a tracked baseline:
+
+```powershell
+pwsh -File scripts/core-baseline.ps1
+```
+
+It compares `xemu/XEMU_VERSION`, `xemu/XEMU_COMMIT` and the exports in
+`xemu/xgrid-core/abi/xgrid-core.h` with `xemu/xgrid-core/abi-baseline.json`, and
+verifies the built `xgrid_core.dll` exports every ABI name. A deliberate rebase
+updates the baseline with `-Refresh`, then re-runs the media boot checks and the
+test suite.
+
 ### Media boot checks
 
 The CHD and ZAR drivers are checked end to end by booting a disc with the

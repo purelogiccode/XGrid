@@ -43,6 +43,7 @@ current product roadmap; user documentation lives in `docs/`.
       verified for all four release RIDs.
 - [x] Unsigned archives with documented SmartScreen/Gatekeeper behavior.
 - [x] Dependency license texts in `licenses/`, required by the package gate.
+- [x] ABI, version and upstream-commit baseline check for each core rebase.
 - [x] GPL-2.0-or-later license set, third-party notices, source availability.
 
 ## 2. Next
@@ -50,7 +51,7 @@ current product roadmap; user documentation lives in `docs/`.
 ### Compatibility
 
 - [ ] Expand the tested retail-title set.
-- [ ] Track core-level regressions against xemu 0.8.139.
+- [ ] Track title-level behavior regressions against xemu 0.8.139.
 - [ ] Keep the media drivers current with CHD/ZArchive format changes.
 
 ### Media
