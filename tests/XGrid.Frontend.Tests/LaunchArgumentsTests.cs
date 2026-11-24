@@ -162,6 +162,55 @@ public sealed class LaunchArgumentsTests
     }
 
     [Fact]
+    public void Parse_DoesNotConsumeTheNextSwitchAsAMissingValue()
+    {
+        LaunchArguments options = LaunchArguments.Parse(["--renderer", "--autostart"]);
+
+        Assert.True(options.HasErrors);
+        Assert.Contains("--renderer", options.Errors[0], StringComparison.Ordinal);
+        Assert.True(options.Autostart);
+    }
+
+    [Fact]
+    public void Parse_AcceptsInlineValues()
+    {
+        LaunchArguments options = LaunchArguments.Parse(
+            ["--renderer=null", "--scale=2", "--filter=crt", "--ram=128", "--audio=wav"]);
+
+        Assert.False(options.HasErrors);
+        Assert.Equal(GraphicsSettings.RendererNull, options.Renderer);
+        Assert.Equal(2, options.SurfaceScale);
+        Assert.Equal(FrameFilters.Crt, options.PresentationFilter);
+        Assert.Equal(128, options.RamMb);
+        Assert.Equal(AudioSettings.BackendWav, options.AudioBackend);
+    }
+
+    [Fact]
+    public void Parse_RejectsAnEmptyInlineValue()
+    {
+        LaunchArguments options = LaunchArguments.Parse(["--renderer="]);
+
+        Assert.True(options.HasErrors);
+        Assert.Contains("--renderer", options.Errors[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_RejectsOutOfRangeLimits()
+    {
+        Assert.True(LaunchArguments.Parse(["--seconds", "86401"]).HasErrors);
+        Assert.True(LaunchArguments.Parse(["--frames", "100000001"]).HasErrors);
+    }
+
+    [Fact]
+    public void Parse_ReadsTheDataDirectory()
+    {
+        LaunchArguments options = LaunchArguments.Parse(["--data-dir", "portable-data"]);
+
+        Assert.Equal(Path.GetFullPath("portable-data"), options.DataDirectory);
+        Assert.False(options.HasErrors);
+    }
+
+    [Fact]
     public void Parse_RejectsTwoDiscs()
     {
         LaunchArguments options = LaunchArguments.Parse(["one.iso", "--disc", "two.chd"]);

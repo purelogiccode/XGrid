@@ -41,6 +41,40 @@ public sealed class TeeAudioBackendTests
         Assert.Throws<ArgumentException>(() => new TeeAudioBackend());
     }
 
+    [Fact]
+    public void Tee_RetriesAFailedSinkOnTheNextBlock()
+    {
+        var flaky = new FailOnceBackend();
+        var tee = new TeeAudioBackend(flaky);
+
+        tee.Submit([1, 2]);
+        tee.Submit([3, 4]);
+
+        Assert.Equal([3, 4], flaky.Bytes);
+    }
+
+    private sealed class FailOnceBackend : IAudioBackend
+    {
+        private readonly List<byte> _bytes = [];
+        private bool _failed;
+
+        public byte[] Bytes => _bytes.ToArray();
+
+        public void Submit(ReadOnlySpan<byte> samples)
+        {
+            if (!_failed)
+            {
+                _failed = true;
+                throw new InvalidOperationException("device not ready");
+            }
+
+            foreach (byte value in samples)
+            {
+                _bytes.Add(value);
+            }
+        }
+    }
+
     private sealed class RecordingBackend : IAudioBackend
     {
         private readonly List<byte> _bytes = [];

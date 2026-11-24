@@ -111,4 +111,17 @@ public sealed class BugReportTextTests
         Assert.Contains("System.InvalidOperationException", text, StringComparison.Ordinal);
         Assert.Contains("bad", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Describe_RejectsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => BugReportText.Describe(null!));
+    }
+
+    [Fact]
+    public void CreateRequest_RejectsMissingOptions()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => BugReportText.CreateRequest("message", null, null!));
+    }
 }

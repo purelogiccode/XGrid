@@ -94,11 +94,11 @@ public sealed class DiscChangeRunnerTests
     public void Poll_AbandonsARequestThatNeverAnswers()
     {
         var discs = new FakeDiscs();
-        long now = 1000;
-        var runner = new DiscChangeRunner(discs, timeoutMs: 30_000, clock: () => now);
+        long[] now = [1000];
+        var runner = new DiscChangeRunner(discs, timeoutMs: 30_000, clock: () => now[0]);
 
         Assert.True(runner.TryLoad(@"C:\games\a.iso", out _));
-        now += 30_001;
+        now[0] += 30_001;
         DiscChangeResult? result = runner.Poll();
 
         Assert.NotNull(result);

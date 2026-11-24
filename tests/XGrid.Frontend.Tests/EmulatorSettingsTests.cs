@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using XGrid.Frontend.Avalonia.Models;
+using XGrid.Frontend.Avalonia.ViewModels;
 using Xunit;
 
 namespace XGrid.Frontend.Tests;
@@ -162,6 +163,17 @@ public sealed class EmulatorSettingsTests
     }
 
     [Fact]
+    public void WithTitleOverrideToleratesANullOverrideMap()
+    {
+        var settings = new EmulatorSettings { RamMb = 128, TitleOverrides = null! };
+
+        EmulatorSettings effective = settings.WithTitleOverride(@"C:\games\a.iso");
+
+        Assert.Equal(128, effective.RamMb);
+        Assert.Empty(effective.TitleOverrides);
+    }
+
+    [Fact]
     public void CloneCopiesTheOverrideRowsIndependently()
     {
         var settings = new EmulatorSettings();
@@ -200,5 +212,79 @@ public sealed class EmulatorSettingsTests
         // Windows path comparison is case-insensitive at the dictionary level.
         var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { [a] = 1 };
         Assert.True(map.ContainsKey(b));
+    }
+
+    [Fact]
+    public void DonationStateDefaultsToNotDonatedAndNoEmail()
+    {
+        var settings = new EmulatorSettings();
+
+        Assert.Empty(settings.DonationEmail);
+        Assert.False(settings.HasDonated);
+        Assert.Null(settings.DonationLastCheckedUtc);
+    }
+
+    [Fact]
+    public void NormalizeTrimsTheDonationEmailAndKeepsTheConfirmedFlag()
+    {
+        var settings = new EmulatorSettings
+        {
+            DonationEmail = "  donor@example.com  ",
+            HasDonated = true,
+            DonationLastCheckedUtc = new DateTime(2026, 11, 24, 8, 30, 0, DateTimeKind.Utc),
+        };
+
+        settings.Normalize();
+
+        Assert.Equal("donor@example.com", settings.DonationEmail);
+        Assert.True(settings.HasDonated);
+        Assert.Equal(new DateTime(2026, 11, 24, 8, 30, 0, DateTimeKind.Utc), settings.DonationLastCheckedUtc);
+    }
+
+    [Fact]
+    public void CloneCopiesDonationState()
+    {
+        var settings = new EmulatorSettings
+        {
+            DonationEmail = "donor@example.com",
+            HasDonated = true,
+            DonationLastCheckedUtc = new DateTime(2026, 11, 24, 8, 30, 0, DateTimeKind.Utc),
+        };
+
+        EmulatorSettings copy = settings.Clone();
+
+        Assert.Equal("donor@example.com", copy.DonationEmail);
+        Assert.True(copy.HasDonated);
+        Assert.Equal(settings.DonationLastCheckedUtc, copy.DonationLastCheckedUtc);
+    }
+
+    [Fact]
+    public void SettingsPageCopy_PreservesDonationState()
+    {
+        var live = new EmulatorSettings
+        {
+            DonationEmail = "donor@example.com",
+            HasDonated = true,
+            DonationLastCheckedUtc = new DateTime(2026, 11, 24, 8, 30, 0, DateTimeKind.Utc),
+        };
+        var next = new EmulatorSettings { RamMb = 128 };
+
+        SettingsViewModel.CopyDonationState(next, live);
+
+        Assert.Equal("donor@example.com", next.DonationEmail);
+        Assert.True(next.HasDonated);
+        Assert.Equal(live.DonationLastCheckedUtc, next.DonationLastCheckedUtc);
+        Assert.Equal(128, next.RamMb);
+    }
+
+    [Fact]
+    public void SettingsPageCopy_RejectsMissingSettings()
+    {
+        var settings = new EmulatorSettings();
+
+        Assert.Throws<ArgumentNullException>(
+            () => SettingsViewModel.CopyDonationState(null!, settings));
+        Assert.Throws<ArgumentNullException>(
+            () => SettingsViewModel.CopyDonationState(settings, null!));
     }
 }

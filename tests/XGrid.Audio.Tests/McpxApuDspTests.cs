@@ -408,24 +408,24 @@ public sealed class McpxApuDspTests
     {
         var memory = new FakeMemory();
         var apu = new McpxApuDevice(memory) { ApuDspCore = true };
-        const uint Base = McpxApuDevice.BaseAddress;
+        const uint baseAddress = McpxApuDevice.BaseAddress;
 
-        apu.Write(Base + 0x30000, 4, 0x654321);
-        apu.Write(Base + 0x3FFFC, 4, 0x3);
+        apu.Write(baseAddress + 0x30000, 4, 0x654321);
+        apu.Write(baseAddress + 0x3FFFC, 4, 0x3);
 
         // The bootstrap loads program memory only; the X window survives.
         Assert.True(apu.GpRunning);
-        Assert.Equal(0x654321u, apu.Read(Base + 0x30000, 4));
+        Assert.Equal(0x654321u, apu.Read(baseAddress + 0x30000, 4));
 
         // P:0 halts through the peripheral space, P:1 would loop.
-        apu.Write(Base + 0xA000, 4, 0x08C084);
-        apu.Write(Base + 0xA004, 4, 0x0C0000);
-        apu.Write(Base + 0x30000, 4, 1);
+        apu.Write(baseAddress + 0xA000, 4, 0x08C084);
+        apu.Write(baseAddress + 0xA004, 4, 0x0C0000);
+        apu.Write(baseAddress + 0x30000, 4, 1);
         apu.Advance(4_000_000);
 
-        Assert.Equal(1u, apu.Read(Base + 0x30000, 4));
-        Assert.Equal(0x08C084u, apu.Read(Base + 0xA000, 4));
-        Assert.Equal(0x3u, apu.Read(Base + 0x3FFFC, 4));
+        Assert.Equal(1u, apu.Read(baseAddress + 0x30000, 4));
+        Assert.Equal(0x08C084u, apu.Read(baseAddress + 0xA000, 4));
+        Assert.Equal(0x3u, apu.Read(baseAddress + 0x3FFFC, 4));
     }
 
     [Fact]
@@ -450,8 +450,8 @@ public sealed class McpxApuDspTests
         uint dspOffset,
         uint scratchOffset)
     {
-        const uint Eol = 0x4000;
-        dsp.Core.WriteMemory(Dsp56300State.SpaceP, 0, Eol);
+        const uint eol = 0x4000;
+        dsp.Core.WriteMemory(Dsp56300State.SpaceP, 0, eol);
         dsp.Core.WriteMemory(Dsp56300State.SpaceP, 1, control);
         dsp.Core.WriteMemory(Dsp56300State.SpaceP, 2, (uint)itemCount);
         dsp.Core.WriteMemory(Dsp56300State.SpaceP, 3, dspOffset);
