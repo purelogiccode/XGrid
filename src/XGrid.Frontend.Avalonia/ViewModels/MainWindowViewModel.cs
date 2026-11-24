@@ -955,7 +955,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         if (!GameLibraryService.IsGameCandidate(path))
         {
-            ShowToast("Choose an ISO, CHD, or XBE file.");
+            ShowToast("Choose an ISO/XISO, CHD, ZAR, or XBE file.");
             return;
         }
 
