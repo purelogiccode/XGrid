@@ -1,0 +1,88 @@
+# Input
+
+XGrid exposes a single Xbox controller on **player 1**. Input can come from the
+keyboard, an XInput controller, or both at once.
+
+> The shell's remapping and pad forwarding are active when **Present core frames
+> in the shell** is enabled. With the embedded core window, the core reads its
+> own SDL input instead.
+
+## Default keyboard map
+
+| Action | Key(s) |
+| --- | --- |
+| A | `A`, `Space` |
+| B | `S` |
+| X | `D` |
+| Y | `F` |
+| D-pad up | `Up` |
+| D-pad down | `Down` |
+| D-pad left | `Left` |
+| D-pad right | `Right` |
+| Start | `Enter` |
+| Back | `Backspace` |
+| White | `Q` |
+| Black | `E` |
+| Left trigger | `Z` |
+| Right trigger | `C` |
+
+Keyboard presses are overlaid on the controller report; digital buttons combine.
+The shell only publishes input while the console is running and the window is
+active.
+
+## Remapping
+
+Open **Settings → Input**.
+
+1. Click the key button beside an action.
+2. Press the new key.
+3. Press **Esc** to cancel capture.
+
+A keyboard action can hold several comma-separated keys. **Reset input defaults**
+restores the shipped map; save the settings to apply it.
+
+## XInput controllers
+
+- XGrid loads `xinput1_4`, then `xinput1_3`, then `xinput9_1_0`.
+- If no XInput library is present, the keyboard still works.
+- The first connected controller is used.
+- The physical source for each action is selected in **Settings → Input**.
+- Triggers use a configurable threshold; sticks use radial dead zones so
+  diagonals survive.
+
+### Stick and trigger options
+
+| Option | Meaning |
+| --- | --- |
+| **Left stick dead zone** | Radial percentage ignored around the left stick center. |
+| **Right stick dead zone** | Same for the right stick. |
+| **Trigger threshold** | Values below this report the trigger as released. |
+| **Invert left stick Y** | Flips vertical motion on the left stick. |
+| **Invert right stick Y** | Flips vertical motion on the right stick. |
+| **Swap left and right sticks** | Exchanges the two stick reports. |
+
+## Application shortcuts
+
+These are shell shortcuts, not gamepad bindings:
+
+| Key | Action |
+| --- | --- |
+| `F5` | Power on / off |
+| `F6` | Quick save to the selected slot |
+| `F7` | Quick load from the selected slot |
+| `F8` | Save a screenshot of the window |
+| `F11` | Toggle fullscreen |
+| `Esc` | Leave fullscreen |
+| `Ctrl+O` | Open a disc image |
+| `Ctrl+S` | Save settings (Settings page) |
+
+See [Shortcuts](../reference/shortcuts.md) for the full list.
+
+## Troubleshooting
+
+- **Controller not detected** — connect it before starting XGrid, check Windows
+  Game Controllers, and watch the Activity log.
+- **Wrong button** — remap the action or reset defaults.
+- **Stick drifts** — raise the dead zone.
+- **No input in game** — confirm the console is running, the shell window is
+  focused, and **Present core frames in the shell** is on.

@@ -1,0 +1,49 @@
+# XGrid Wiki
+
+**XGrid** is an enhanced **xemu 0.8.139** core with a modern **Avalonia** desktop
+shell. It adds a library, settings, per-title overrides, real-time CHD/ZAR media,
+save states, display/input plumbing, screenshots and packaging.
+
+> XGrid is not affiliated with Microsoft or xemu. It ships no BIOS, EEPROM, HDD
+> or game data. Supply your own legally obtained files.
+
+## Start here
+
+| Page | What it covers |
+| --- | --- |
+| [Getting started](Getting-Started) | Install, configure firmware and boot. |
+| [Game library](Game-Library) | Scan folders, search and launch titles. |
+| [Settings](Settings) | Every tab and option. |
+| [Display and filters](Display-and-Filters) | Frame sink, embedded window, filters, fullscreen. |
+| [Input](Input) | Keyboard defaults, XInput, dead zones. |
+| [Audio](Audio) | Backends, DSP, HRTF and WAV capture. |
+| [Save states](Save-States) | Four slots, F6/F7 and the in-process requirement. |
+| [Media formats](Media-Formats) | ISO, CHD, ZAR and XBE behavior. |
+| [Troubleshooting](Troubleshooting) | Common failures and fixes. |
+| [FAQ](FAQ) | Short answers. |
+| [Building from source](Building-from-Source) | Shell, native core and gates. |
+| [Licensing](Licensing) | GPL, xemu/QEMU and third-party notices. |
+
+## At a glance
+
+- **Core:** xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL,
+  MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus.
+- **Shell:** Home, Library, Settings, Activity, About.
+- **Hosting:** in-process `xgrid_core.dll` by default; separate process fallback.
+- **Media:** ISO/XISO, compressed CHD, entry-form ZArchive, raw/qcow2 HDD.
+- **Platform:** Windows x64 is the supported emulation host; the shell targets
+  Linux and macOS.
+
+## Full documentation
+
+The complete multi-page documentation lives in the repository:
+
+- [Documentation home](https://github.com/purelogiccode/XGrid/blob/master/docs/index.md)
+- [Architecture](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/architecture.md)
+- [Configuration](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/configuration.md)
+- [Compatibility](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/compatibility.md)
+
+## Status
+
+XGrid is **alpha software**. The core is mature; the shell and compatibility work
+are still evolving. Treat the compatibility page as the supported surface.

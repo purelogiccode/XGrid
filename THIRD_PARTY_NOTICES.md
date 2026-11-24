@@ -139,7 +139,7 @@ distributed emulator binaries.  Their notices remain in the package sources.
 | `src/XGrid.Nv2a/FixedFunctionVertexState.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/pgraph.c` + `glsl/vsh.c` + `glsl/vsh.h` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Latched fixed-function register state. |
 | `src/XGrid.Nv2a/SpecularPowerCurve.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/pgraph.c` `reconstruct_specular_power` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Fixed-function specular-exponent reconstruction and coefficient tables. |
 | `src/XGrid.Nv2a/S3tcDecoder.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/s3tc.c` + `s3tc.h` | MIT (xemu file header) | DXT1/DXT3/DXT5 block decompression. |
-| `src/XGrid.Nv2a/Nv097MethodTable.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/methods.h.inc` + `nv2a_regs.h` (method-surface classification via `docs/research-notes/nv097-coverage.md`) | GPL-2+ | Generated handled/declined offset table for the unknown-method counter. |
+| `src/XGrid.Nv2a/Nv097MethodTable.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/methods.h.inc` + `nv2a_regs.h` | GPL-2+ | Generated handled/declined offset table for the unknown-method counter. |
 | `src/XGrid.Nv2a/TextureFormats.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/texture.c`, `pgraph/gl/constants.h`, `pgraph/glsl/psh.c` (`shadow_comparison_map`), `pgraph/util.h` | LGPL-2+ (xemu file headers; included under GPL-2.0 via LGPL §3) | The color-format table, the Y8/AY8/A8/A8Y8/Y16/R6G5B5 word decoders, the YUV conversion, the palette entry, the mip-chain layout, and the depth-texture decode + shadow compare operators. |
 | `src/XGrid.Nv2a/Nv2aMmio.cs` (shadow-map path) | xemu 0.8.139 `hw/xbox/nv2a/pgraph/glsl/psh.c` `psh_append_shadowmap` | LGPL-2+ | Sampling and comparison wiring for depth (shadow-map) texture stages. |
 | `src/XGrid.Nv2a/Nv2aMmio.cs` (occlusion reports) | xemu 0.8.139 `hw/xbox/nv2a/pgraph/gl/reports.c` + `pgraph.c` `pgraph_write_zpass_pixel_cnt_report` | LGPL-2+ | ZPASS_PIXEL_CNT report semantics and the 16-byte report block layout. |
@@ -150,4 +150,4 @@ distributed emulator binaries.  Their notices remain in the package sources.
 | `tools/dsp-oracle/` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/` (compiled at run time, never redistributed) | GPL-2+ | Development-only differential oracle; not part of the build or distribution. |
 
 When a module is ported, add a row here and a matching entry in
-`docs/research-notes/sources.md`.
+`docs/legal/licensing.md`.

@@ -1,0 +1,41 @@
+- [Home](index.md)
+- [Wiki](https://github.com/purelogiccode/XGrid/tree/master/wiki)
+
+- **Getting started**
+  - [Requirements](getting-started/requirements.md)
+  - [Installation](getting-started/installation.md)
+  - [First boot](getting-started/first-boot.md)
+
+- **Using XGrid**
+  - [Game library](guides/library.md)
+  - [Settings](guides/settings.md)
+  - [Display and filters](guides/display.md)
+  - [Input](guides/input.md)
+  - [Audio](guides/audio.md)
+  - [Save states](guides/save-states.md)
+  - [Media formats](guides/media.md)
+
+- **Reference**
+  - [Architecture](reference/architecture.md)
+  - [Configuration](reference/configuration.md)
+  - [Shortcuts](reference/shortcuts.md)
+  - [Compatibility](reference/compatibility.md)
+  - [Troubleshooting](reference/troubleshooting.md)
+  - [FAQ](reference/faq.md)
+  - [Glossary](reference/glossary.md)
+
+- **Development**
+  - [Building from source](development/building.md)
+  - [Repository layout](development/repository-layout.md)
+  - [The XGrid core](development/core.md)
+  - [Quality gates](development/quality-gates.md)
+  - [Releasing](development/releasing.md)
+  - [Release notes](release-notes/v0.1.0.md)
+  - [Contributing](development/contributing.md)
+
+- **Legal**
+  - [Licensing](legal/licensing.md)
+  - [Porting and provenance](legal/porting-policy.md)
+  - [Release licensing](legal/release-licensing.md)
+  - [Source availability](legal/source-availability.md)
+  - [Security policy](https://github.com/purelogiccode/XGrid/blob/master/SECURITY.md)
