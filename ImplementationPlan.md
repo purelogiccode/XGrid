@@ -30,6 +30,10 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Tooltips on every interactive control in every window and page.
 - [x] Serilog rolling logs, warning/error bug reports with environment and
       exception details, startup usage statistics and a GitHub update check.
+- [x] Donationware banner with email-based donation verification; it hides only
+      after the service confirms a donation.
+- [x] Multi-page documentation for donations, accessibility, privacy, service
+      endpoints, testing and code inspection, mirrored in `wiki/`.
 - [x] XML documentation required for every public type and member.
 - [x] `Async` suffix on asynchronous methods.
 

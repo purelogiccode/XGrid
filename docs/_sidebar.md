@@ -14,6 +14,8 @@
   - [Audio](guides/audio.md)
   - [Headless and CLI](guides/headless.md)
   - [Logging and diagnostics](guides/diagnostics.md)
+  - [Supporting XGrid](guides/donations.md)
+  - [Accessibility](guides/accessibility.md)
   - [Save states](guides/save-states.md)
   - [Media formats](guides/media.md)
 
@@ -22,6 +24,8 @@
   - [Configuration](reference/configuration.md)
   - [Shortcuts](reference/shortcuts.md)
   - [Compatibility](reference/compatibility.md)
+  - [Service endpoints](reference/service-endpoints.md)
+  - [Donation API](reference/donation-api.md)
   - [Troubleshooting](reference/troubleshooting.md)
   - [FAQ](reference/faq.md)
   - [Glossary](reference/glossary.md)
@@ -31,12 +35,15 @@
   - [Repository layout](development/repository-layout.md)
   - [The XGrid core](development/core.md)
   - [Quality gates](development/quality-gates.md)
+  - [Testing](development/testing.md)
+  - [Code inspection](development/inspection.md)
   - [Releasing](development/releasing.md)
   - [Release notes](release-notes/v0.1.0.md)
   - [Contributing](development/contributing.md)
 
 - **Legal**
   - [Licensing](legal/licensing.md)
+  - [Privacy and data](legal/privacy.md)
   - [Porting and provenance](legal/porting-policy.md)
   - [Release licensing](legal/release-licensing.md)
   - [Source availability](legal/source-availability.md)

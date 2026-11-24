@@ -110,6 +110,11 @@ Set `XGRID_DISABLE_UPDATE_CHECK=1` to skip the check.
 | `XGRID_GITHUB_TOKEN` | Token for the GitHub release check. |
 | `XGRID_BUGREPORT_API_KEY` | Override the bug-report API key. |
 | `XGRID_STATS_API_KEY` | Override the statistics API key. |
+| `XGRID_DONATION_ENDPOINT` | Override the donation verification endpoint. |
+| `XGRID_DONATION_PAGE` | Override the donation page. |
+| `XGRID_DONATION_API_KEY` | Override the donation API key. |
 
 The command line still controls the emulator itself. See
 [Configuration](../reference/configuration.md) and [Headless and CLI](headless.md).
+See also [Service endpoints](../reference/service-endpoints.md),
+[Supporting XGrid](donations.md) and [Privacy and data](../legal/privacy.md).

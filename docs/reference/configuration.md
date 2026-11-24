@@ -125,6 +125,9 @@ The shell writes indented JSON. The main fields are:
 | `XemuCorePath` | Explicit core executable, or empty for auto-detect. |
 | `LibraryFolders` | Folders scanned by the Library. |
 | `TitleOverrides` | Per-title overrides keyed by `title:XXXXXXXX` or image path: RAM, renderer, texture filtering and presentation filter. |
+| `DonationEmail` | Optional email used to recognize a donation; stored locally and sent only to the donation check. |
+| `HasDonated` | `true` after the donation service confirms a completed donation; hides the banner. |
+| `DonationLastCheckedUtc` | Last successful or attempted donation check, in UTC. |
 
 Invalid values are repaired on load: RAM is 64 or 128, scale is 1–8, unknown
 renderers fall back to OpenGL, unknown filters fall back to nearest, and empty
@@ -185,6 +188,9 @@ means “unknown”; the shell keeps the configured choice and the core may fall
 | `XGRID_GITHUB_TOKEN` | Token used by the release check for a private repository. |
 | `XGRID_BUGREPORT_API_KEY` | Override the bug-report API key. |
 | `XGRID_STATS_API_KEY` | Override the statistics API key. |
+| `XGRID_DONATION_ENDPOINT` | Override the donation verification endpoint. |
+| `XGRID_DONATION_PAGE` | Override the donation page URL. |
+| `XGRID_DONATION_API_KEY` | Override the donation verification API key. |
 
 ## Save states
 

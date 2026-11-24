@@ -41,6 +41,24 @@ shell only and need an external xemu 0.8.139 build.
 No for release archives; they are self-contained. Yes for building from source
 (.NET 11 SDK).
 
+## Why is there a donation banner?
+
+XGrid is donationware. The banner stays under the toolbar until the donation
+service confirms a completed donation for the email you used on the website. It
+is hidden in fullscreen and cannot be dismissed without a confirmed donation.
+See [Supporting XGrid](../guides/donations.md).
+
+## Does donating unlock features?
+
+No. Every feature is available without a donation. The banner is the only
+difference, and it disappears after a confirmed donation.
+
+## How do I check a donation?
+
+Press **I already donated**, enter the email used on the donation page, and let
+the app check the service. The email is stored locally and is never written to
+the log or a bug report.
+
 ## Which renderer should I use?
 
 **OpenGL** is the safe default. **Vulkan** is offered only when the core build

@@ -22,6 +22,9 @@ dotnet format XGrid.sln --no-restore --verify-no-changes
   `Debug.WriteLine`, and caught exceptions are logged before they are handled.
 - Every interactive control in the Avalonia views has a tooltip.
 
+See [Testing](testing.md) for the suite layout and [Code inspection](inspection.md)
+for the InspectCode workflow.
+
 The convenience scripts wrap the same commands:
 
 ```powershell

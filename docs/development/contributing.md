@@ -36,7 +36,9 @@ See [Building from source](building.md).
    ```powershell
    dotnet test XGrid.sln -c Release --nologo --no-build
    dotnet format XGrid.sln --no-restore --verify-no-changes
+   jb inspectcode XGrid.sln --format=Text --output=wt-data/inspectcode.txt --severity=WARNING --no-swea
    ```
+   See [Testing](testing.md) and [Code inspection](inspection.md).
 5. Update the documentation in the same change.
 6. Include the licensing/provenance updates for ported code.
 
