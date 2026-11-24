@@ -135,6 +135,57 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_StartsOpenGlWhenTheCoreWasBuiltWithoutVulkan()
+    {
+        // The build writes its renderer list beside the core; the shell must not
+        // hand a Vulkan renderer to a binary that cannot start one.
+        File.WriteAllText(
+            Path.Combine(_root, "firmware", CoreCapabilities.FileName),
+            """{"version":"0.8.139","renderers":["OPENGL","NULL"]}""");
+        EmulatorSettings settings = Settings();
+        settings.Graphics.Renderer = GraphicsSettings.RendererVulkan;
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(GraphicsSettings.RendererOpenGl, launch.Renderer);
+    }
+
+    [Fact]
+    public void Create_KeepsVulkanWhenTheCoreReportsIt()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "firmware", CoreCapabilities.FileName),
+            """{"version":"0.8.139","renderers":["OPENGL","VULKAN","NULL"]}""");
+        EmulatorSettings settings = Settings();
+        settings.Graphics.Renderer = GraphicsSettings.RendererVulkan;
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(GraphicsSettings.RendererVulkan, launch.Renderer);
+    }
+
+    [Fact]
+    public void ResolveRenderer_LeavesTheOtherRenderersAlone()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "firmware", CoreCapabilities.FileName),
+            """{"renderers":["OPENGL","NULL"]}""");
+        CoreCapabilities capabilities = CoreCapabilities.ReadFromDirectory(Path.Combine(_root, "firmware"))!;
+
+        Assert.Equal(
+            GraphicsSettings.RendererNull,
+            XemuLaunchPlan.ResolveRenderer(GraphicsSettings.RendererNull, capabilities));
+        Assert.Equal(
+            GraphicsSettings.RendererOpenGl,
+            XemuLaunchPlan.ResolveRenderer(GraphicsSettings.RendererOpenGl, capabilities));
+        Assert.Equal(
+            GraphicsSettings.RendererVulkan,
+            XemuLaunchPlan.ResolveRenderer(GraphicsSettings.RendererVulkan, null));
+    }
+
+    [Fact]
     public void Create_DefaultsToTheInProcessCore()
     {
         XemuLaunchSettings launch = XemuLaunchPlan.Create(

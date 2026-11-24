@@ -51,6 +51,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _shuttingDown;
     private SaveStateRunner? _saveStates;
     private bool _saveStatesNeedRefresh;
+    private CoreCapabilities? _coreCapabilities;
 
     [ObservableProperty]
     private NavigationItem? _selectedNavigationItem;
@@ -255,7 +256,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public string LoadStateHint =>
         "Restore slot " + SelectedSaveSlot.ToString(CultureInfo.InvariantCulture) + " (F7)";
 
-    private string RendererName => Config.Graphics.Renderer switch
+    private string RendererName => XemuLaunchPlan.ResolveRenderer(Config.Graphics.Renderer, _coreCapabilities) switch
     {
         GraphicsSettings.RendererVulkan => "Vulkan",
         GraphicsSettings.RendererNull => "Null",
@@ -305,6 +306,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         AccentService.Apply(AccentPalette.Find(Config.Accent));
         Settings.LoadFrom(Config);
+        RefreshCoreCapabilities();
         AddLog(LogLevel.Info, "XGrid frontend ready - " + RuntimeInformation.FrameworkDescription);
         AddLog(
             Config.IsBiosReady ? LogLevel.Info : LogLevel.Warning,
@@ -372,12 +374,34 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _toastTimer.Start();
     }
 
+    /// <summary>
+    /// Reads what the emulator build reports about itself. The renderer options
+    /// and the labels follow this, so the shell never offers Vulkan for a core
+    /// that was built without it.
+    /// </summary>
+    private void RefreshCoreCapabilities()
+    {
+        _coreCapabilities = CoreCapabilities.Read(XemuPaths.FindCore(Config.XemuCorePath));
+        string requested = Config.Graphics.Renderer;
+        string effective = XemuLaunchPlan.ResolveRenderer(requested, _coreCapabilities);
+        if (!string.Equals(requested, effective, StringComparison.Ordinal))
+        {
+            AddLog(
+                LogLevel.Warning,
+                requested + " is not compiled into this emulator build; " + effective + " is used.");
+        }
+
+        OnPropertyChanged(nameof(RendererLabel));
+        OnPropertyChanged(nameof(DisplayCaption));
+    }
+
     /// <summary>Saves the supplied settings, applying them immediately.</summary>
     public void SaveSettings(EmulatorSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.Normalize();
         Config = settings;
+        RefreshCoreCapabilities();
         _gamepadOptions = InputMapping.Create(Config.Input);
         try
         {
@@ -525,6 +549,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _saveStates = new SaveStateRunner(_core.SaveStates);
         _saveStatesNeedRefresh = _saveStates.IsSupported;
         OnPropertyChanged(nameof(HasSaveStates));
+
+        if (!string.Equals(launch.Renderer, effective.Graphics.Renderer, StringComparison.Ordinal))
+        {
+            AddLog(
+                LogLevel.Warning,
+                effective.Graphics.Renderer + " is not compiled into this emulator build; starting with "
+                + launch.Renderer + ".");
+        }
 
         StatusText = "Running";
         StatusDetail = "Emulator - " + (game?.Title ?? "Xbox dashboard");

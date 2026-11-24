@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Avalonia.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 using XGrid.Input;
@@ -291,6 +292,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     [ObservableProperty]
     private KeyedOption? _selectedRenderer;
 
+    private IReadOnlyList<KeyedOption> _rendererOptions = [];
+    private CoreCapabilities? _coreCapabilities;
+
     [ObservableProperty]
     private int _surfaceScale = 1;
 
@@ -350,12 +354,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         [
             .. GamepadSources.All.Select(source => new KeyedOption(source.ToString(), GamepadSources.DisplayName(source))),
         ];
-        RendererOptions =
-        [
-            new KeyedOption(GraphicsSettings.RendererOpenGl, "OpenGL"),
-            new KeyedOption(GraphicsSettings.RendererVulkan, "Vulkan"),
-            new KeyedOption(GraphicsSettings.RendererNull, "Null (headless, no picture)"),
-        ];
+        RendererOptions = [.. RendererChoices.Keys(null).Select(key => new KeyedOption(key, RendererChoices.Label(key)))];
         FilteringOptions =
         [
             new KeyedOption(GraphicsSettings.FilterLinear, "Linear"),
@@ -418,7 +417,14 @@ public sealed partial class SettingsViewModel : PageViewModel
     public IReadOnlyList<KeyedOption> GamepadSourceOptions { get; }
 
     /// <summary>Gets the selectable core renderers.</summary>
-    public IReadOnlyList<KeyedOption> RendererOptions { get; }
+    public IReadOnlyList<KeyedOption> RendererOptions
+    {
+        get => _rendererOptions;
+        private set => SetProperty(ref _rendererOptions, value);
+    }
+
+    /// <summary>Gets the hint under the renderer row, describing the core's build.</summary>
+    public string RendererHint => RendererChoices.Hint(_coreCapabilities);
 
     /// <summary>Gets the selectable internal surface scales.</summary>
     public IReadOnlyList<int> SurfaceScaleOptions { get; } = [1, 2, 3, 4, 5, 6, 8];
@@ -497,6 +503,11 @@ public sealed partial class SettingsViewModel : PageViewModel
         DvdPath = settings.DvdPath;
         RamMb = settings.RamMb;
         LoadInput(settings.Input);
+
+        // The core binary decides which renderers can be offered, so capabilities
+        // are read before the saved renderer is matched against the list.
+        XemuCorePath = settings.XemuCorePath;
+        RefreshRenderers(settings.Graphics.Renderer);
         SelectedRenderer = RendererOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Graphics.Renderer, StringComparison.Ordinal))
             ?? RendererOptions[0];
@@ -528,7 +539,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         SelectedAudioBackend = AudioBackendOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Audio.Backend, StringComparison.Ordinal))
             ?? AudioBackendOptions[0];
-        XemuCorePath = settings.XemuCorePath;
         DisplaySink = settings.DisplaySink;
         SelectedCoreHosting = CoreHostingOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.CoreHosting, StringComparison.Ordinal))
@@ -916,6 +926,28 @@ public sealed partial class SettingsViewModel : PageViewModel
         OnPropertyChanged(nameof(BiosStatusText));
         OnPropertyChanged(nameof(BiosPathValid));
         OnPropertyChanged(nameof(ShowBiosWarning));
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnXemuCorePathChanged(string value)
+    {
+        RefreshRenderers();
+    }
+
+    /// <summary>
+    /// Rebuilds the renderer list from what the selected core reports, keeping
+    /// the current choice when it is still offered.
+    /// </summary>
+    /// <param name="preferredKey">Renderer key to select instead of the current choice.</param>
+    private void RefreshRenderers(string? preferredKey = null)
+    {
+        _coreCapabilities = CoreCapabilities.Read(XemuPaths.FindCore(XemuCorePath));
+        string selected = preferredKey ?? SelectedRenderer?.Key ?? CoreCapabilities.RendererOpenGl;
+        RendererOptions = [.. RendererChoices.Keys(_coreCapabilities).Select(key => new KeyedOption(key, RendererChoices.Label(key)))];
+        SelectedRenderer = RendererOptions.FirstOrDefault(
+            option => string.Equals(option.Key, selected, StringComparison.Ordinal))
+            ?? RendererOptions[0];
+        OnPropertyChanged(nameof(RendererHint));
     }
 
     partial void OnSelectedAccentChanged(AccentOption? value)

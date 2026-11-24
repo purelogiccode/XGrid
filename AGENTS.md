@@ -919,6 +919,48 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
 
+**Session 2026-11-24 (seventy-first; the picture runs at the screen's rate, the
+caption reads the real frame, and the shell stops offering a renderer the core
+does not have).**
+
+- **"The canvas is black" was the boot splash, not a fault.** At 8-12 s the sink
+  publishes the Xbox splash and F8 captures of it are byte-identical for
+  seconds (mean `(7.1,11.5,2.9)`); the dashboard arrives at ~15 s and is
+  right-side up. The 20-26 s dark frames with a 007 disc are that disc's dark
+  logo cards, not a stall.
+- **The real defect: the shell presented ten pictures a second.** With the
+  frame sink on, `OnCoreFrameReady` (8 ms sink poll) copied the latest frame but
+  `OnUiTick` (100 ms) presented it, and a `WriteableBitmap` write does not dirty
+  an `Image` visual, so the compositor often kept an older picture. Measured on
+  the rotating nxdk `mesh` sample with a 60 Hz `gdigrab` recording: core
+  publishes **125 frames/s**, the old shell presented **9.1/s** and the screen
+  changed **11.3 times/s**. Now a dedicated 8 ms frame timer presents at a
+  10 ms minimum gap, `FramePresented` makes `HomeView` invalidate the image,
+  and the alpha pass is one word per pixel; the same scene presents **58-60/s**
+  and the screen changes **44.2 times/s** (13.4/s with the invalidation
+  removed, which is why it is not optional). `FramePacingTests` (4 cases) pins
+  the cadence; the `XGRID_FRONTEND_TRACE=1` line reports
+  `frames core=N/s shell=M/s present=Xms` every five seconds.
+- **U1 (commit `c127b48d`).** The caption was hardcoded to `640 x 480` while the
+  sink publishes 1280x960; `PresentFrame` now records the packet size and
+  `DisplayCaptionText` formats it. UI Automation on the running shell reads
+  `1280 x 960 - OpenGL`, and the caption is an overlay that only appears once a
+  frame exists.
+- **U5.** `CONFIG_VULKAN` is undefined in this build (the meson dependencies are
+  absent), so `scripts/build-native-xemu.ps1` now writes
+  `xemu/dist/xgrid-core.json` with the renderers it compiled (`OPENGL`, `NULL`),
+  `XGrid.Core.Xemu.CoreCapabilities` reads it, and `RendererChoices` filters the
+  settings page (hint: "This emulator build has no Vulkan renderer, so Vulkan is
+  not offered."). A saved Vulkan choice is coerced by `XemuLaunchPlan` and
+  logged (`VULKAN is not compiled into this emulator build; OPENGL is used.`).
+  Evidence: with a Vulkan settings file the console page reads `OpenGL`, both
+  fallback lines are in the Activity log, and Save settings writes
+  `"Renderer": "OPENGL"`. `package-verify.ps1` now requires the manifest in the
+  win-x64 archive.
+- **Gates.** Build 0 warnings, suite **2,295** green, `dotnet format
+  --verify-no-changes` clean, `save-state-check.ps1` **SAVESTATE PASS** at the
+  new cadence (50 MiB slot at guest clock 0:00:21.4), `status.ps1 -Check` OK.
+
 **Session 2026-11-24 (seventieth; save states work through the shell - P1 and C4
 land, and the core does the snapshotting on its own main loop).**
 

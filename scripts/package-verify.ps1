@@ -264,7 +264,7 @@ try {
             if ($app -eq 'frontend' -and $rid -eq 'win-x64') {
                 # The archive carries the emulator itself; a frontend without it
                 # can present nothing.
-                foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll') {
+                foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll', 'core/xemu/xgrid-core.json') {
                     if (-not $archive.Names.ContainsKey($entry)) { Fail "$file is missing $entry" }
                 }
                 $coreLibraries = @($archive.Names.Keys | Where-Object { $_ -like 'core/xemu/*.dll' })

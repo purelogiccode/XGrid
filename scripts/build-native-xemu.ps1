@@ -81,4 +81,22 @@ if ($LASTEXITCODE -ne 0) {
 
 $exe = Join-Path $tree 'dist/xemu.exe'
 if (-not (Test-Path $exe)) { throw "Build finished but $exe is missing." }
-Write-Output ("core: {0} ({1:N1} MB)" -f $exe, ((Get-Item $exe).Length / 1MB))
+
+# The shell offers only the renderers this build can actually start, so the
+# build writes what it compiled beside the core. `CONFIG_VULKAN` is a meson
+# feature: when the Vulkan dependencies are absent it stays undefined.
+$configHeader = Join-Path $tree 'build/config-host.h'
+$hasVulkan = (Test-Path $configHeader) -and
+    [bool](Select-String -Path $configHeader -Pattern '^#define CONFIG_VULKAN\b' -Quiet)
+$version = if (Test-Path (Join-Path $tree 'XEMU_VERSION')) {
+    (Get-Content (Join-Path $tree 'XEMU_VERSION') -TotalCount 1).Trim()
+}
+else { '' }
+$renderers = @('OPENGL')
+if ($hasVulkan) { $renderers += 'VULKAN' }
+$renderers += 'NULL'
+[ordered]@{ core = 'xemu'; version = $version; renderers = $renderers } |
+    ConvertTo-Json |
+    Set-Content -Path (Join-Path $tree 'dist/xgrid-core.json') -Encoding utf8
+
+Write-Output ("core: {0} ({1:N1} MB, renderers {2})" -f $exe, ((Get-Item $exe).Length / 1MB), ($renderers -join ', '))
