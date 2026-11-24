@@ -92,7 +92,7 @@ public sealed class SwizzledTargetLiveTests(ITestOutputHelper output)
         var memory = new ArrayMemory();
         bool created = GlBackendFactory.TryCreate(
             memory, windowEnabled: false, replaceSoftware: true, out IPgraphBackend? backend, out string why);
-        if (!created || backend is not GlPgraphBackend live)
+        if (!created || backend is not GlPgraphBackend)
         {
             output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
@@ -124,7 +124,7 @@ public sealed class SwizzledTargetLiveTests(ITestOutputHelper output)
         var memory = new ArrayMemory();
         bool created = GlBackendFactory.TryCreate(
             memory, windowEnabled: false, replaceSoftware: true, out IPgraphBackend? backend, out string why);
-        if (!created || backend is not GlPgraphBackend live)
+        if (!created || backend is not GlPgraphBackend)
         {
             output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;

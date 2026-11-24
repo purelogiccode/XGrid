@@ -97,7 +97,7 @@ public sealed class TitleOverrideKeyTests
         settings.Normalize();
 
         Assert.True(settings.TitleOverrides.ContainsKey("title:4D530002"));
-        Assert.True(settings.TitleOverrides.ContainsKey(System.IO.Path.GetFullPath(@"relative\image.iso")));
+        Assert.True(settings.TitleOverrides.ContainsKey(Path.GetFullPath(@"relative\image.iso")));
 
         // An unparsable title key is not a path either: it stays as-is rather
         // than being expanded into a bogus full path.

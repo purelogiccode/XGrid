@@ -35,7 +35,6 @@ public sealed class XboxMachine : IIdleSkipHost
     public const uint ContiguousAliasBase = 0x80000000;
 
     private RomOverlayDevice? _overlay;
-    private byte[]? _bios;
     private ulong _nv2ARemainder;
     private bool _sevenEosQuirkParkActive;
     private ulong _sevenEosQuirkParkSinceTsc;
@@ -217,7 +216,6 @@ public sealed class XboxMachine : IIdleSkipHost
         byte[] image = new byte[flashSize];
         Array.Fill(image, (byte)0xFF);
         bios.CopyTo(image);
-        _bios = image;
 
         Memory.AddRegion(
             "Flash",

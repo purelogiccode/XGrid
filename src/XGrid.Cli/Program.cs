@@ -1899,9 +1899,9 @@ internal static class Program
         Console.WriteLine(
             $"CR3=0x{context.Cr3:X8} IDT=0x{context.Idtr.Base:X8}/{context.Idtr.Limit:X4} GDT=0x{context.Gdtr.Base:X8}/{context.Gdtr.Limit:X4}");
         Console.WriteLine($"OverlayEnabled={machine.Bus.RomOverlayEnabled}");
-        if (XGrid.Cpu.Tcg.TcgCoverage.Enabled)
+        if (Cpu.Tcg.TcgCoverage.Enabled)
         {
-            Console.WriteLine(XGrid.Cpu.Tcg.TcgCoverage.Describe());
+            Console.WriteLine(Cpu.Tcg.TcgCoverage.Describe());
         }
 
         if (XboxCpu.TcgEngineEnabled)
@@ -2293,7 +2293,7 @@ internal static class Program
                 $"swizzledTargetDraws={machine.Nv2A.SwizzledTargetDraws} " +
             $"fixedFn={machine.Nv2A.FixedFunctionDraws} fixedFnLit={machine.Nv2A.FixedFunctionLitDraws} " +
             $"fixedFnLights={machine.Nv2A.FixedFunctionLightedDraws}");
-        if (XGrid.Nv2a.Nv2AMmio.TrackingUnknownMethods)
+        if (Nv2a.Nv2AMmio.TrackingUnknownMethods)
         {
             var unknown = new System.Text.StringBuilder();
             foreach (KeyValuePair<uint, long> entry in machine.Nv2A.UnknownMethods)
@@ -2304,7 +2304,7 @@ internal static class Program
                 }
 
                 unknown.Append(string.Format(
-                    System.Globalization.CultureInfo.InvariantCulture, "0x{0:X3}={1}", entry.Key, entry.Value));
+                    CultureInfo.InvariantCulture, "0x{0:X3}={1}", entry.Key, entry.Value));
             }
 
             Console.WriteLine(
@@ -2572,7 +2572,7 @@ internal static class Program
                 size = FindNextSuperblock(image, partition);
             }
 
-            var fs = XboxFs.FatxFileSystem.Open(image, partition, size);
+            var fs = FatxFileSystem.Open(image, partition, size);
             if (list)
             {
                 foreach (var entry in fs.ListDirectory(path))
@@ -2647,7 +2647,7 @@ internal static class Program
 
         try
         {
-            using var fs = XboxFs.XdvdfsFileSystem.Open(imagePath);
+            using var fs = XdvdfsFileSystem.Open(imagePath);
             if (list)
             {
                 foreach (var entry in fs.ListDirectory(path))
@@ -2891,7 +2891,7 @@ internal static class Program
                     size = FindNextSuperblock(disk, partition);
                 }
 
-                var fs = XboxFs.FatxFileSystem.Open(disk, partition, size);
+                var fs = FatxFileSystem.Open(disk, partition, size);
                 image = fs.ReadFile(path);
             }
 

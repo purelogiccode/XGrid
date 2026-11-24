@@ -42,7 +42,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private long _lastPresentTimestamp;
     private long _frameWindowStart;
     private const int FrameReportPeriodMs = 5000;
-    private GamepadMappingOptions _gamepadOptions = GamepadMappingOptions.Default;
+    private GamepadMappingOptions _gamepadOptions;
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
     private int _frameWidth;
@@ -755,7 +755,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <param name="slot">Slot number, 1 to 4.</param>
     public void SaveStateToSlot(int slot)
     {
-        BeginSaveState(slot, static (SaveStateRunner runner, int number, out string problem) =>
+        BeginSaveState(slot, static (runner, number, out problem) =>
             runner.TrySave(number, out problem));
     }
 
@@ -763,7 +763,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <param name="slot">Slot number, 1 to 4.</param>
     public void LoadStateFromSlot(int slot)
     {
-        BeginSaveState(slot, static (SaveStateRunner runner, int number, out string problem) =>
+        BeginSaveState(slot, static (runner, number, out problem) =>
             runner.TryLoad(number, out problem));
     }
 
@@ -771,7 +771,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <param name="slot">Slot number, 1 to 4.</param>
     public void DeleteStateInSlot(int slot)
     {
-        BeginSaveState(slot, static (SaveStateRunner runner, int number, out string problem) =>
+        BeginSaveState(slot, static (runner, number, out problem) =>
             runner.TryDelete(number, out problem));
     }
 

@@ -211,15 +211,5 @@ public sealed class Nv2aVertexFormatTests
         {
             Bytes[address] = value;
         }
-
-        public void WritePhysicalBlock(uint address, ReadOnlySpan<byte> data)
-        {
-            data.CopyTo(Bytes.AsSpan((int)address));
-        }
-
-        public void ReadPhysicalBlock(uint address, Span<byte> destination)
-        {
-            Bytes.AsSpan((int)address, destination.Length).CopyTo(destination);
-        }
     }
 }

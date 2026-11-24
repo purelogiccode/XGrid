@@ -24,11 +24,11 @@ public sealed class ZarArchiveTests
 
         Assert.True(ZarArchive.TryOpen(path, out ZarArchive? archive));
         Assert.NotNull(archive);
-        Assert.True(archive!.HasDiscImage);
+        Assert.True(archive.HasDiscImage);
 
         ZarEntry? disc = archive.FindDiscImage();
         Assert.NotNull(disc);
-        Assert.Equal("hello.iso", disc!.Value.Name, ignoreCase: true);
+        Assert.Equal("hello.iso", disc.Value.Name, ignoreCase: true);
         Assert.Equal(655360UL, disc.Value.Size);
     }
 
@@ -43,7 +43,7 @@ public sealed class ZarArchiveTests
 
         Assert.True(ZarArchive.TryOpen(path, out ZarArchive? archive));
         Assert.NotNull(archive);
-        Assert.NotEmpty(archive!.Entries);
+        Assert.NotEmpty(archive.Entries);
         Assert.False(archive.HasDiscImage);
     }
 

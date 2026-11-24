@@ -23,11 +23,11 @@ public sealed class Nv2aPrimitiveAssemblyTests
         // count - 1 (NV097 packs the draw as start | (count - 1) << 24).
         (Nv2AMmio one, ArrayMemory oneMemory) = CreateChannel();
         WriteVertices(oneMemory, 4);
-        Kick(one, oneMemory, PushFrame(one, oneMemory, 0, DrawArrays(start: 0, count: 3)));
+        Kick(one, oneMemory, PushFrame(oneMemory, 0, DrawArrays(start: 0, count: 3)));
 
         (Nv2AMmio two, ArrayMemory twoMemory) = CreateChannel();
         WriteVertices(twoMemory, 6);
-        Kick(two, twoMemory, PushFrame(two, twoMemory, 0, DrawArrays(start: 0, count: 6)));
+        Kick(two, twoMemory, PushFrame(twoMemory, 0, DrawArrays(start: 0, count: 6)));
 
         Assert.Equal(1UL, one.DrawsExecuted);
         Assert.Equal(1UL, two.DrawsExecuted);
@@ -41,7 +41,7 @@ public sealed class Nv2aPrimitiveAssemblyTests
         (Nv2AMmio nv2a, ArrayMemory memory) = CreateChannel();
         WriteVertices(memory, 6);
         Kick(nv2a, memory, PushFrame(
-            nv2a, memory, 0, DrawArrays(start: 0, count: 3), DrawArrays(start: 3, count: 3)));
+            memory, 0, DrawArrays(start: 0, count: 3), DrawArrays(start: 3, count: 3)));
 
         Assert.Equal(1, nv2a.DrawArrayRangesSubmitted);
         Assert.Equal(1UL, nv2a.DrawsExecuted);
@@ -54,7 +54,7 @@ public sealed class Nv2aPrimitiveAssemblyTests
         (Nv2AMmio nv2a, ArrayMemory memory) = CreateChannel();
         WriteVertices(memory, 8);
         Kick(nv2a, memory, PushFrame(
-            nv2a, memory, 0, DrawArrays(start: 0, count: 3), DrawArrays(start: 6, count: 3)));
+            memory, 0, DrawArrays(start: 0, count: 3), DrawArrays(start: 6, count: 3)));
 
         Assert.Equal(2, nv2a.DrawArrayRangesSubmitted);
         Assert.Equal(1UL, nv2a.DrawsExecuted);
@@ -65,8 +65,8 @@ public sealed class Nv2aPrimitiveAssemblyTests
     {
         (Nv2AMmio nv2a, ArrayMemory memory) = CreateChannel();
         WriteVertices(memory, 3);
-        uint address = PushFrame(nv2a, memory, 0, DrawArrays(start: 0, count: 3));
-        address = PushFrame(nv2a, memory, address, DrawArrays(start: 0, count: 3));
+        uint address = PushFrame(memory, 0, DrawArrays(start: 0, count: 3));
+        address = PushFrame(memory, address, DrawArrays(start: 0, count: 3));
         Kick(nv2a, memory, address);
 
         Assert.Equal(2UL, nv2a.DrawsExecuted);
@@ -117,7 +117,7 @@ public sealed class Nv2aPrimitiveAssemblyTests
     }
 
     /// <summary>Appends one BEGIN/draw list/END frame; returns the next pushbuffer address.</summary>
-    private static uint PushFrame(Nv2AMmio nv2A, ArrayMemory memory, uint address, params uint[] drawParameters)
+    private static uint PushFrame(ArrayMemory memory, uint address, params uint[] drawParameters)
     {
         var pushes = new List<(uint Method, uint Parameter)>
         {

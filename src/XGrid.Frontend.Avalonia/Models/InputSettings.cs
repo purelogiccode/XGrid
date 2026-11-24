@@ -60,8 +60,8 @@ public sealed class InputSettings
     /// <summary>Repairs values loaded from disk and fills missing actions with defaults.</summary>
     public void Normalize()
     {
-        Keyboard ??= InputDefaults.Keyboard();
-        Gamepad ??= InputDefaults.Gamepad();
+        Keyboard = NullSafe.Value(Keyboard, InputDefaults.Keyboard());
+        Gamepad = NullSafe.Value(Gamepad, InputDefaults.Gamepad());
         var keyboard = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (PadAction action in PadActions.All)
         {

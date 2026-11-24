@@ -196,6 +196,7 @@ jobs:
           --output=inspectcode.sarif
           --format=Sarif
           --severity=WARNING
+          --include=**/*.cs
           --no-build
           --no-updates
 

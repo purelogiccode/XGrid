@@ -29,6 +29,24 @@ internal sealed class PgraphState
         }
     }
 
+    /// <summary>Clears every transform-program row.</summary>
+    public void ClearTransformProgram()
+    {
+        foreach (uint[] row in TransformProgram)
+        {
+            Array.Clear(row);
+        }
+    }
+
+    /// <summary>Clears every transform-constant row.</summary>
+    public void ClearTransformConstants()
+    {
+        foreach (uint[] row in TransformConstants)
+        {
+            Array.Clear(row);
+        }
+    }
+
     /// <summary>Gets the four texture slots and the bump-environment state.</summary>
     public PgraphTextureState Textures { get; } = new();
 
@@ -121,6 +139,15 @@ internal sealed class PgraphTextureState
     /// <summary>Gets the bump-environment offset per stage.</summary>
     public float[] BumpOffsets { get; } = new float[BumpStages];
 
+    /// <summary>Initializes the bump matrix rows (four floats per stage).</summary>
+    public PgraphTextureState()
+    {
+        for (int i = 0; i < BumpMatrices.Length; i++)
+        {
+            BumpMatrices[i] = new float[4];
+        }
+    }
+
     /// <summary>Clears every texture register and bump state (device reset).</summary>
     public void Clear()
     {
@@ -135,10 +162,7 @@ internal sealed class PgraphTextureState
         Array.Clear(Palette);
         foreach (float[] matrix in BumpMatrices)
         {
-            if (matrix is not null)
-            {
-                Array.Clear(matrix);
-            }
+            Array.Clear(matrix);
         }
 
         Array.Clear(BumpScales);

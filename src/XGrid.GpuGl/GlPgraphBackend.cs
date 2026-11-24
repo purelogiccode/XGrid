@@ -309,7 +309,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             {
                 location = -2;
                 Locations[name] = location;
-                System.IO.File.AppendAllText("./xgrid-loc.txt", name + Environment.NewLine);
             }
 
             return location;
@@ -2521,7 +2520,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         {
             int count = (int)Math.Min(length, _ramSize - offset);
             _probeFpRam += count / 4;
-            System.ReadOnlySpan<byte> span = ram.AsSpan((int)offset, count);
+            ReadOnlySpan<byte> span = ram.AsSpan((int)offset, count);
             for (int i = 0; i < span.Length; i++)
             {
                 hash = (hash ^ span[i]) * 16777619u;

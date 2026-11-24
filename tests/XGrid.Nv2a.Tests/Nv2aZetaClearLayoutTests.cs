@@ -247,7 +247,7 @@ public sealed class Nv2aZetaClearLayoutTests
     {
         // X8R8G8B8_Z8R8G8B8: the alpha lane is forced 0 (pgraph_get_clear_color).
         (Nv2AMmio zero, ArrayMemory zeroMemory) = CreateChannel();
-        var zeroPushes = SurfaceState(0x00000124u);
+        var zeroPushes = SurfaceState();
         PushColorClear(zeroPushes, 0xAABBCCDDu);
         PushMethods(zero, zeroMemory, [.. zeroPushes]);
         Assert.Equal(0x00BBCCDDu, ReadPixel(zeroMemory, 0, 0));

@@ -788,8 +788,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     // BuildInlineArrayLayout (xemu pgraph_gl_bind_inline_array's rule).
     private readonly int[] _inlineArrayOffset = new int[16];
     private int _inlineArrayStride;
-    private uint[][] _transformProgram => _state.TransformProgram;
-    private uint[][] _transformConstants => _state.TransformConstants;
     private uint _transformProgramStart;
     private uint _transformExecutionMode;
     private uint _transformProgramCxtWriteEn;
@@ -935,11 +933,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             _vsInputs[i] = new float[4];
             _vsOutputs[i] = new float[4];
-        }
-
-        for (int i = 0; i < _bumpMatrices.Length; i++)
-        {
-            _bumpMatrices[i] = new float[4];
         }
 
         Reset();
@@ -1103,7 +1096,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (plan is null || _vshPlanVersion != _transformProgramVersion ||
             _vshPlanStart != programStart || _vshPlanLength != programLength)
         {
-            plan = VshProgramPlan.Create(_transformProgram, programStart, programLength);
+            plan = VshProgramPlan.Create(_state.TransformProgram, programStart, programLength);
             _vshPlan = plan;
             _vshPlanVersion = _transformProgramVersion;
             _vshPlanStart = programStart;
@@ -1398,13 +1391,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Reads a transform program word (diagnostics).</summary>
     public uint ReadTransformProgramWord(uint index, int part)
     {
-        return index < MaxTransformProgramLength && part is >= 0 and < 4 ? _transformProgram[index][part] : 0;
+        return index < MaxTransformProgramLength && part is >= 0 and < 4 ? _state.TransformProgram[index][part] : 0;
     }
 
     /// <summary>Reads a transform constant word (diagnostics).</summary>
     public uint ReadTransformConstantWord(uint index, int part)
     {
-        return index < MaxVertexShaderConstants && part is >= 0 and < 4 ? _transformConstants[index][part] : 0;
+        return index < MaxVertexShaderConstants && part is >= 0 and < 4 ? _state.TransformConstants[index][part] : 0;
     }
 
 
@@ -1436,9 +1429,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private (float X, float Y, float Z) ReadEyePosition()
     {
         return (
-            BitConverter.UInt32BitsToSingle(_transformConstants[XfConstantEyePosition][0]),
-            BitConverter.UInt32BitsToSingle(_transformConstants[XfConstantEyePosition][1]),
-            BitConverter.UInt32BitsToSingle(_transformConstants[XfConstantEyePosition][2]));
+            BitConverter.UInt32BitsToSingle(_state.TransformConstants[XfConstantEyePosition][0]),
+            BitConverter.UInt32BitsToSingle(_state.TransformConstants[XfConstantEyePosition][1]),
+            BitConverter.UInt32BitsToSingle(_state.TransformConstants[XfConstantEyePosition][2]));
     }
 
     /// <summary>Advances the PTIMER free-running counter by the given core-clock ticks.</summary>
@@ -1637,15 +1630,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             value[3] = 1f;
         }
 
-        foreach (uint[] row in _transformProgram)
-        {
-            Array.Clear(row);
-        }
-
-        foreach (uint[] row in _transformConstants)
-        {
-            Array.Clear(row);
-        }
+        _state.ClearTransformProgram();
+        _state.ClearTransformConstants();
 
         TransformProgramLoadDebug = 0;
         _transformProgramStart = 0;
@@ -1793,12 +1779,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         WriteUints(writer, _vertexArrayOffset);
         for (int i = 0; i < MaxTransformProgramLength; i++)
         {
-            WriteUints(writer, _transformProgram[i]);
+            WriteUints(writer, _state.TransformProgram[i]);
         }
 
         for (int i = 0; i < MaxVertexShaderConstants; i++)
         {
-            WriteUints(writer, _transformConstants[i]);
+            WriteUints(writer, _state.TransformConstants[i]);
         }
 
         writer.Write(_transformProgramStart);
@@ -2109,12 +2095,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ReadUints(reader, _vertexArrayOffset);
         for (int i = 0; i < MaxTransformProgramLength; i++)
         {
-            ReadUints(reader, _transformProgram[i]);
+            ReadUints(reader, _state.TransformProgram[i]);
         }
 
         for (int i = 0; i < MaxVertexShaderConstants; i++)
         {
-            ReadUints(reader, _transformConstants[i]);
+            ReadUints(reader, _state.TransformConstants[i]);
         }
 
         _transformProgramStart = reader.ReadUInt32();
@@ -4512,7 +4498,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        _transformProgram[TransformProgramLoadDebug][slot & 3u] = value;
+        _state.TransformProgram[TransformProgramLoadDebug][slot & 3u] = value;
         _transformProgramVersion++;
         if ((slot & 3u) == 3u)
         {
@@ -4529,7 +4515,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         for (int i = start; i < MaxTransformProgramLength; i++)
         {
-            if ((_transformProgram[i][3] & 1u) != 0)
+            if ((_state.TransformProgram[i][3] & 1u) != 0)
             {
                 return i - start + 1;
             }
@@ -4545,7 +4531,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        _transformConstants[TransformConstantLoadDebug][slot & 3u] = value;
+        _state.TransformConstants[TransformConstantLoadDebug][slot & 3u] = value;
         if ((slot & 3u) == 3u)
         {
             TransformConstantLoadDebug++;
@@ -4569,7 +4555,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         if (index is >= 0 and < MaxVertexShaderConstants)
         {
-            _transformConstants[index][part & 3] = value;
+            _state.TransformConstants[index][part & 3] = value;
         }
     }
 
@@ -4816,7 +4802,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         for (uint y = ymin; y <= ymax; y++)
         {
-            uint row = offset + (y * pitch);
             for (uint x = xmin; x <= xmax; x++)
             {
                 uint address = offset + (swizzle
@@ -5819,7 +5804,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         for (int i = 0; i < constants.Length; i++)
         {
             float[] constant = constants[i];
-            uint[] source = _transformConstants[i];
+            uint[] source = _state.TransformConstants[i];
             constant[0] = BitConverter.UInt32BitsToSingle(source[0]);
             constant[1] = BitConverter.UInt32BitsToSingle(source[1]);
             constant[2] = BitConverter.UInt32BitsToSingle(source[2]);

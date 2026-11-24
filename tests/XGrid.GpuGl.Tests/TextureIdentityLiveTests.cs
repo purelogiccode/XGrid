@@ -28,8 +28,6 @@ public sealed class TextureIdentityLiveTests(ITestOutputHelper output)
         private readonly byte[] _data = new byte[0x10000];
         private ulong _stamp = 1;
 
-        public ulong Stamp => _stamp;
-
         public void WritePhysical(uint address, uint value)
         {
             _data[address] = (byte)value;

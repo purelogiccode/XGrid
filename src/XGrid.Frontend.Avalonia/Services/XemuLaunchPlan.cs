@@ -44,7 +44,7 @@ public static class XemuLaunchPlan
             FlashRomPath = settings.BiosPath,
             EepromPath = Resolve(settings.EepromPath, firmwareDirectory, "eeprom.bin"),
             HddPath = Resolve(settings.HddPath, firmwareDirectory, "xbox_hdd.qcow2"),
-            DvdPath = dvd ?? string.Empty,
+            DvdPath = dvd,
             RamMb = settings.RamMb,
             // The display control publishes 1x1 before its first layout pass.
             WindowWidth = Math.Max(64, width),
@@ -59,6 +59,8 @@ public static class XemuLaunchPlan
             AspectRatio = settings.Graphics.AspectRatio,
             Fit = settings.Graphics.Fit,
             AvPack = settings.Graphics.AvPack,
+            SkipBootAnimation = false,
+            ShowMenuBar = false,
             AudioDsp = settings.Audio.UseDsp,
             AudioDspJit = settings.Audio.UseDspJit,
             Hrtf = settings.Audio.Hrtf,
@@ -97,7 +99,7 @@ public static class XemuLaunchPlan
 
         // A .zar that stores the game as a file tree cannot be mounted: the
         // guest needs an XDVDFS volume and the synthesizer is not built yet.
-        string? disc = discPath ?? settings.DvdPath;
+        string disc = discPath ?? settings.DvdPath;
         if (!string.IsNullOrWhiteSpace(disc)
             && disc.EndsWith(".zar", StringComparison.OrdinalIgnoreCase)
             && ZarArchive.TryOpen(disc, out ZarArchive? archive)

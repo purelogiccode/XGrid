@@ -692,7 +692,7 @@ public sealed partial class SettingsViewModel : PageViewModel
                 StringComparer.OrdinalIgnoreCase),
             Gamepad = GamepadBindings.ToDictionary(
                 item => item.Action.ToString(),
-                item => item.SelectedSource?.Key ?? InputDefaults.DefaultGamepad(item.Action),
+                item => item.SelectedSource.Key,
                 StringComparer.OrdinalIgnoreCase),
             LeftDeadZonePercent = (int)Math.Round(LeftDeadZone),
             RightDeadZonePercent = (int)Math.Round(RightDeadZone),

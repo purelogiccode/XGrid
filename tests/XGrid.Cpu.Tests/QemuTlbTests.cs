@@ -15,7 +15,7 @@ public sealed class QemuTlbTests(ITestOutputHelper output)
     private const uint PageDirectory = 0x1000;
     private const uint PageTable = 0x2000;
 
-    private static (XboxContext Context, AddressSpace Bus, Mmu Mmu) Create()
+    private static (AddressSpace Bus, Mmu Mmu) Create()
     {
         var ram = new PhysicalMemory(0x10000);
         var bus = new AddressSpace(ram, UnmappedAccessPolicy.Throw);
@@ -24,7 +24,7 @@ public sealed class QemuTlbTests(ITestOutputHelper output)
             Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging,
             Cr3 = PageDirectory,
         };
-        return (context, bus, new Mmu(context, bus));
+        return (bus, new Mmu(context, bus));
     }
 
     private static void Map4K(AddressSpace bus, uint virtualAddress, uint physicalAddress, bool writable = true)
@@ -129,7 +129,7 @@ public sealed class QemuTlbTests(ITestOutputHelper output)
     [Fact]
     public void Probe_MatchesMmuTranslate()
     {
-        (_, AddressSpace bus, Mmu mmu) = Create();
+        (AddressSpace bus, Mmu mmu) = Create();
         Map4K(bus, 0x00401000, 0x00008000);
 
         uint page = mmu.Translate(0x00401000, false, false, out bool faulted, out _);

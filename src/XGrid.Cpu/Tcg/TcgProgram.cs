@@ -6,12 +6,11 @@ namespace XGrid.Cpu.Tcg;
 /// <summary>An immutable managed TCG program for one guest instruction or block.</summary>
 public sealed class TcgProgram
 {
-    internal TcgProgram(TcgOp[] ops, int tempCount, uint startEip, int byteLength)
+    internal TcgProgram(TcgOp[] ops, int tempCount, uint startEip)
     {
         Ops = ops;
         TempCount = tempCount;
         StartEip = startEip;
-        ByteLength = byteLength;
     }
 
     /// <summary>Gets the operations in execution order.</summary>
@@ -22,9 +21,6 @@ public sealed class TcgProgram
 
     /// <summary>Gets the guest EIP the program starts at.</summary>
     public uint StartEip { get; }
-
-    /// <summary>Gets the number of guest bytes the program covers.</summary>
-    public int ByteLength { get; }
 }
 
 /// <summary>Builds a managed TCG program (the IR side of the P1S3 port).</summary>
@@ -32,7 +28,6 @@ public sealed class TcgBuilder
 {
     private readonly List<TcgOp> _ops = [];
     private int _tempCount;
-    private int _byteLength;
 
     /// <summary>Initializes a builder for a program starting at the given guest EIP.</summary>
     /// <param name="startEip">The guest EIP the program starts at.</param>
@@ -52,13 +47,6 @@ public sealed class TcgBuilder
     public int NewTemp()
     {
         return _tempCount++;
-    }
-
-    /// <summary>Records the guest instruction length covered by the program.</summary>
-    /// <param name="length">Instruction length in bytes.</param>
-    public void NoteLength(int length)
-    {
-        _byteLength += length;
     }
 
     /// <summary>Emits a temp = immediate (masked by size).</summary>
@@ -837,6 +825,6 @@ public sealed class TcgBuilder
     /// <returns>The program.</returns>
     public TcgProgram Build()
     {
-        return new TcgProgram(_ops.ToArray(), Math.Max(1, _tempCount), StartEip, _byteLength);
+        return new TcgProgram(_ops.ToArray(), Math.Max(1, _tempCount), StartEip);
     }
 }

@@ -52,7 +52,7 @@ public sealed class AudioSettings
     /// <summary>Repairs values loaded from disk.</summary>
     public void Normalize()
     {
-        Backend = (Backend ?? string.Empty).ToLowerInvariant() switch
+        Backend = NullSafe.Text(Backend).ToLowerInvariant() switch
         {
             BackendDirectSound when OperatingSystem.IsWindows() => BackendDirectSound,
             BackendNone => BackendNone,

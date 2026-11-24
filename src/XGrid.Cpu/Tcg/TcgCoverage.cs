@@ -66,13 +66,22 @@ public static class TcgCoverage
             return "tcg-coverage: disabled";
         }
 
-        var reasons = new List<KeyValuePair<string, long>>(FallbackReasons);
+        var reasons = new List<KeyValuePair<string, long>>();
+        long translated;
+        long fallback;
+        lock (Gate)
+        {
+            translated = Translated;
+            fallback = Fallback;
+            reasons.AddRange(FallbackReasons);
+        }
+
         reasons.Sort(static (a, b) => b.Value.CompareTo(a.Value));
         var text = new System.Text.StringBuilder();
-        long total = Translated + Fallback;
-        double share = total == 0 ? 0 : (double)Translated / total;
-        text.Append("tcg-coverage: translated=").Append(Translated)
-            .Append(" fallback=").Append(Fallback)
+        long total = translated + fallback;
+        double share = total == 0 ? 0 : (double)translated / total;
+        text.Append("tcg-coverage: translated=").Append(translated)
+            .Append(" fallback=").Append(fallback)
             .Append(" share=").Append(share.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture));
         for (int i = 0; i < reasons.Count && i < 12; i++)
         {
