@@ -17,7 +17,8 @@ is a patch rebase, not a re-port.
 | `block/xgridzar.c` | QEMU block driver for ZArchive discs: serves an entry-form archive's `.iso` entry directly and synthesizes an XDVDFS volume for a file-tree archive, decoding zstd blocks on demand. |
 | `display/xgrid-display.c` | Host display sink: publishes presented frames to a named section for the shell. |
 | `input/xgrid-input.c` | Host input source: each Xbox port reads its pad record from the shell's section. |
-| `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread, exposes stop/join/version and the save-state request slot. |
+| `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread, exposes stop/join/version, playback, disc and save-state requests. |
+| `abi-baseline.json` | Version, upstream commit and ABI export list checked by `scripts/core-baseline.ps1`. |
 | `thirdparty/libchdr/` | libchdr 0.3.0 (BSD-3-Clause, Copyright Romain Tisserand) and its small LZMA decoder, vendored so the build never fetches the network. |
 
 ## In-process core
