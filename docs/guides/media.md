@@ -33,6 +33,23 @@ inside the archive as the guest DVD, decoding zstd blocks on demand.
 > contains the ISO as one file. Tools that expand the ISO into a file tree
 > produce the unsupported shape.
 
+#### Creating an entry-form archive
+
+1. Confirm the source ISO boots in XGrid on its own.
+2. Run the packer in entry (`--iso`) mode, not in file-tree mode:
+
+   ```powershell
+   ZArchiveSharp --iso game.iso game.zar
+   ```
+
+3. Add or open `game.zar`. XGrid reads the archive directory before launch and
+   exposes the largest `.iso` entry to the guest.
+4. If the core reports `no .iso entry in this archive`, the packer expanded the
+   ISO into a file tree; rebuild it in entry mode.
+
+The shell's directory reader is covered by synthetic entry-form and file-tree
+archives in `ZarArchiveTests`, so the shape check also runs on a clean checkout.
+
 ### XBE
 
 A loose Xbox executable. XGrid can list it and read its certificate title, but it

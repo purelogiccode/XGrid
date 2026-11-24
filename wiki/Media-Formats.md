@@ -17,6 +17,15 @@ not supported yet; the shell refuses them with an explanation. Pack the ISO as
 one file entry (for example, pack a folder that contains the ISO) rather than
 expanding it into game files.
 
+Build one in entry mode:
+
+```powershell
+ZArchiveSharp --iso game.iso game.zar
+```
+
+If the core says `no .iso entry in this archive`, the packer expanded the ISO
+into a file tree; rerun it in entry mode.
+
 ## Changing discs
 
 - **Ctrl+O**, the toolbar **Open** button, or clicking a Library row while the
