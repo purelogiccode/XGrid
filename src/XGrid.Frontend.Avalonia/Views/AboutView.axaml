@@ -69,7 +69,8 @@
             <TextBlock Text="{Binding SettingsPath}" Classes="mono" FontSize="11" TextTrimming="CharacterEllipsis" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="10">
-            <Button Classes="primary" Command="{Binding OpenRepositoryCommand}">
+            <Button Classes="primary" Command="{Binding OpenRepositoryCommand}"
+                    ToolTip.Tip="Open the project repository in the browser">
               <StackPanel Orientation="Horizontal" Spacing="7">
                 <PathIcon Data="{x:Static local:AppIcons.Info}"
                           Width="13"
@@ -80,13 +81,15 @@
                            FontWeight="SemiBold" />
               </StackPanel>
             </Button>
-            <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}">
+            <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}"
+                    ToolTip.Tip="Show the folder that holds settings.json">
               <StackPanel Orientation="Horizontal" Spacing="7">
                 <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
                 <TextBlock Text="Open settings folder" />
               </StackPanel>
             </Button>
-            <Button Classes="ghost" Command="{Binding OpenSettingsCommand}" Content="Edit settings" />
+            <Button Classes="ghost" Command="{Binding OpenSettingsCommand}" Content="Edit settings"
+                    ToolTip.Tip="Open the settings page" />
           </StackPanel>
           <TextBlock Classes="hint"
                      Text="XGrid does not ship copyrighted firmware, EEPROMs, or game data. Users must supply their own legally obtained files." />

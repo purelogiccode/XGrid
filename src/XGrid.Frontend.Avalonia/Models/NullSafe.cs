@@ -10,7 +10,7 @@ internal static class NullSafe
     /// <summary>Returns the value, or an empty string when it is null.</summary>
     /// <param name="value">Value from the settings file.</param>
     /// <returns>The value, never null.</returns>
-    public static string Text(string? value)
+    internal static string Text(string? value)
     {
         return value ?? string.Empty;
     }
@@ -20,7 +20,7 @@ internal static class NullSafe
     /// <param name="value">Value from the settings file.</param>
     /// <param name="fallback">Value to use when <paramref name="value"/> is null.</param>
     /// <returns>The value, never null.</returns>
-    public static T Value<T>(T? value, T fallback)
+    internal static T Value<T>(T? value, T fallback)
         where T : class
     {
         return value ?? fallback;

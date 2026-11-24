@@ -35,7 +35,8 @@
             BorderThickness="1"
             CornerRadius="4"
             ClipToBounds="True"
-            MinHeight="320">
+            MinHeight="320"
+            ToolTip.Tip="The emulated console's picture">
       <Grid>
         <Image x:Name="FrameImage"
                Source="{Binding Shell.FrameBitmap}"
@@ -116,7 +117,8 @@
                      Margin="10,0"
                      VerticalAlignment="Center"
                      Text="XGrid does not ship Microsoft firmware. Choose your own Xbox BIOS image before powering on." />
-          <Button Grid.Column="2" Classes="ghost" Command="{Binding OpenSettingsCommand}" Content="Open settings" />
+          <Button Grid.Column="2" Classes="ghost" Command="{Binding OpenSettingsCommand}" Content="Open settings"
+                  ToolTip.Tip="Open the settings page to choose a BIOS image" />
         </Grid>
       </Border>
 
@@ -139,7 +141,8 @@
 
           <Border Width="1" Margin="6,4" Background="{DynamicResource XgBorderBrush}" />
 
-          <Button Classes="chrome" Command="{Binding ChooseDiscCommand}">
+          <Button Classes="chrome" Command="{Binding ChooseDiscCommand}"
+                  ToolTip.Tip="Choose the disc that power-on will boot">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <PathIcon Data="{x:Static local:AppIcons.Disc}" Width="13" Height="13" />
               <TextBlock Text="Open disc" FontSize="11.5" />

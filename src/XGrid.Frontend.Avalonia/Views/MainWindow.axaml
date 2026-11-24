@@ -36,8 +36,10 @@
         <MenuItem Header="Exit" Click="OnMenuExit" ToolTip.Tip="Close XGrid." />
       </MenuItem>
       <MenuItem Header="Emulation" ToolTip.Tip="Power, stop, pause and save states.">
-        <MenuItem Header="Power On / Off" InputGesture="F5" Click="OnMenuPower" />
-        <MenuItem Header="Stop" Click="OnMenuStop" />
+        <MenuItem Header="Power On / Off" InputGesture="F5" Click="OnMenuPower"
+                  ToolTip.Tip="Power the console on or off (F5)" />
+        <MenuItem Header="Stop" Click="OnMenuStop"
+                  ToolTip.Tip="Stop the running console" />
         <MenuItem Header="{Binding PauseButtonText}" InputGesture="P"
                   Command="{Binding TogglePauseCommand}"
                   ToolTip.Tip="Freeze the running machine and resume it where it stopped." />
@@ -48,48 +50,70 @@
         <MenuItem Header="Save State" IsEnabled="{Binding HasSaveStates}"
                   ToolTip.Tip="Write the running machine to a slot on the hard disk image.">
           <MenuItem Header="{Binding QuickSaveHeader}" InputGesture="F6"
-                    Command="{Binding QuickSaveCommand}" />
+                    Command="{Binding QuickSaveCommand}"
+                    ToolTip.Tip="Save the running machine to the quick-save slot (F6)" />
           <Separator />
-          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuSaveState" />
-          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuSaveState" />
-          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuSaveState" />
-          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuSaveState" />
+          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuSaveState"
+                    ToolTip.Tip="Save state to slot 1" />
+          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuSaveState"
+                    ToolTip.Tip="Save state to slot 2" />
+          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuSaveState"
+                    ToolTip.Tip="Save state to slot 3" />
+          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuSaveState"
+                    ToolTip.Tip="Save state to slot 4" />
         </MenuItem>
         <MenuItem Header="Load State" IsEnabled="{Binding HasSaveStates}"
                   ToolTip.Tip="Restore the machine from a slot and keep running.">
           <MenuItem Header="{Binding QuickLoadHeader}" InputGesture="F7"
-                    Command="{Binding QuickLoadCommand}" />
+                    Command="{Binding QuickLoadCommand}"
+                    ToolTip.Tip="Load the quick-save slot and keep running (F7)" />
           <Separator />
-          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuLoadState" />
-          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuLoadState" />
-          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuLoadState" />
-          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuLoadState" />
+          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuLoadState"
+                    ToolTip.Tip="Load state from slot 1" />
+          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuLoadState"
+                    ToolTip.Tip="Load state from slot 2" />
+          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuLoadState"
+                    ToolTip.Tip="Load state from slot 3" />
+          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuLoadState"
+                    ToolTip.Tip="Load state from slot 4" />
         </MenuItem>
         <MenuItem Header="Delete State" IsEnabled="{Binding HasSaveStates}"
                   ToolTip.Tip="Remove a slot from the hard disk image.">
-          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuDeleteState" />
-          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuDeleteState" />
-          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuDeleteState" />
-          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuDeleteState" />
+          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuDeleteState"
+                    ToolTip.Tip="Delete saved state in slot 1" />
+          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuDeleteState"
+                    ToolTip.Tip="Delete saved state in slot 2" />
+          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuDeleteState"
+                    ToolTip.Tip="Delete saved state in slot 3" />
+          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuDeleteState"
+                    ToolTip.Tip="Delete saved state in slot 4" />
         </MenuItem>
         <Separator />
-        <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen" />
+        <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen"
+                  ToolTip.Tip="Toggle fullscreen (F11)" />
       </MenuItem>
       <MenuItem Header="View" ToolTip.Tip="Switch pages, the log dock and the layout.">
-        <MenuItem Header="Console" Click="OnMenuHome" />
-        <MenuItem Header="Library" Click="OnMenuLibrary" />
-        <MenuItem Header="Settings" Click="OnMenuSettings" />
-        <MenuItem Header="Activity" Click="OnMenuLogs" />
+        <MenuItem Header="Console" Click="OnMenuHome"
+                  ToolTip.Tip="Show the console page" />
+        <MenuItem Header="Library" Click="OnMenuLibrary"
+                  ToolTip.Tip="Show the game library page" />
+        <MenuItem Header="Settings" Click="OnMenuSettings"
+                  ToolTip.Tip="Show the settings page" />
+        <MenuItem Header="Activity" Click="OnMenuLogs"
+                  ToolTip.Tip="Show the activity log page" />
         <Separator />
         <MenuItem Header="Save Screenshot" InputGesture="F8" Click="OnMenuScreenshot"
                   ToolTip.Tip="Write the current frame to the screenshots folder as a PNG." />
         <MenuItem Header="Show Log Dock" ToggleType="CheckBox" IsChecked="{Binding ShowLogDock}"
-                  Click="OnMenuToggleLogDock" />
+                  Click="OnMenuToggleLogDock"
+                  ToolTip.Tip="Show or hide the log dock at the bottom" />
         <Separator />
-        <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen" />
+        <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen"
+                  ToolTip.Tip="Toggle fullscreen (F11)" />
       </MenuItem>
       <MenuItem Header="Help" ToolTip.Tip="About this build and the emulation core.">
-        <MenuItem Header="About XGrid" Click="OnMenuAbout" />
+        <MenuItem Header="About XGrid" Click="OnMenuAbout"
+                  ToolTip.Tip="Show version and project information" />
       </MenuItem>
     </Menu>
 

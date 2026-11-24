@@ -10,7 +10,8 @@
     <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,14" ColumnSpacing="12">
       <ComboBox Width="150"
                 ItemsSource="{Binding Filters}"
-                SelectedItem="{Binding SelectedFilter, Mode=TwoWay}">
+                SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
+                ToolTip.Tip="Filter log entries by level">
         <ComboBox.ItemTemplate>
           <DataTemplate DataType="vm:LogFilterOption">
             <TextBlock Text="{Binding Label}" />
@@ -21,16 +22,19 @@
       <CheckBox Grid.Column="1"
                 Content="Auto-scroll"
                 IsChecked="{Binding AutoScroll, Mode=TwoWay}"
-                VerticalAlignment="Center" />
+                VerticalAlignment="Center"
+                ToolTip.Tip="Keep the newest entries in view" />
 
       <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
-        <Button Classes="ghost" Command="{Binding CopyLogCommand}">
+        <Button Classes="ghost" Command="{Binding CopyLogCommand}"
+                ToolTip.Tip="Copy the visible log entries to the clipboard">
           <StackPanel Orientation="Horizontal" Spacing="7">
             <PathIcon Data="{x:Static local:AppIcons.Copy}" Width="13" Height="13" />
             <TextBlock Text="Copy" />
           </StackPanel>
         </Button>
-        <Button Classes="danger" Command="{Binding ClearCommand}">
+        <Button Classes="danger" Command="{Binding ClearCommand}"
+                ToolTip.Tip="Clear the activity log">
           <StackPanel Orientation="Horizontal" Spacing="7">
             <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
             <TextBlock Text="Clear" />
@@ -46,7 +50,8 @@
                  BorderThickness="0"
                  ItemsSource="{Binding Entries}"
                  Padding="8"
-                 IsVisible="{Binding !IsEmpty}">
+                 IsVisible="{Binding !IsEmpty}"
+                 ToolTip.Tip="Log entries from the shell and emulator">
           <ListBox.ItemTemplate>
             <DataTemplate DataType="model:LogEntry">
               <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10" Margin="6,3">

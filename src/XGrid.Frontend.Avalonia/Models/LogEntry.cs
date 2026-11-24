@@ -19,13 +19,11 @@ public enum LogLevel
 }
 
 /// <summary>One timestamped line in the activity log.</summary>
-/// <remarks>Creates a log entry.</remarks>
+/// <param name="timestamp">The creation timestamp.</param>
+/// <param name="level">The severity.</param>
+/// <param name="message">The message text.</param>
 public sealed class LogEntry(DateTimeOffset timestamp, LogLevel level, string message)
 {
-
-    /// <summary>Gets the creation timestamp.</summary>
-    private DateTimeOffset Timestamp { get; } = timestamp;
-
     /// <summary>Gets the severity.</summary>
     public LogLevel Level { get; } = level;
 
@@ -33,7 +31,7 @@ public sealed class LogEntry(DateTimeOffset timestamp, LogLevel level, string me
     public string Message { get; } = message;
 
     /// <summary>Gets the local-time clock label.</summary>
-    public string TimeText => Timestamp.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+    public string TimeText => timestamp.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Gets the severity label.</summary>
     public string LevelText => Level switch

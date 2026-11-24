@@ -29,22 +29,28 @@
               <TextBlock Text="BIOS image" Classes="label" VerticalAlignment="Center" />
               <TextBox Grid.Column="1"
                        Text="{Binding BiosPath, Mode=TwoWay}"
-                       PlaceholderText="Your Xbox BIOS (256 or 512 KB)" />
-              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse..." />
+                       PlaceholderText="Your Xbox BIOS (256 or 512 KB)"
+                       ToolTip.Tip="Path to your Xbox BIOS image" />
+              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse..."
+                      ToolTip.Tip="Choose your Xbox BIOS image" />
             </Grid>
             <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
               <TextBlock Text="EEPROM" Classes="label" VerticalAlignment="Center" />
               <TextBox Grid.Column="1"
                        Text="{Binding EepromPath, Mode=TwoWay}"
-                       PlaceholderText="Optional eeprom.bin" />
-              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse..." />
+                       PlaceholderText="Optional eeprom.bin"
+                       ToolTip.Tip="Path to the optional EEPROM image" />
+              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse..."
+                      ToolTip.Tip="Choose the EEPROM image file" />
             </Grid>
             <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
               <TextBlock Text="Hard disk" Classes="label" VerticalAlignment="Center" />
               <TextBox Grid.Column="1"
                        Text="{Binding HddPath, Mode=TwoWay}"
-                       PlaceholderText="Optional xbox_hdd.qcow2" />
-              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse..." />
+                       PlaceholderText="Optional xbox_hdd.qcow2"
+                       ToolTip.Tip="Path to the optional hard-disk image" />
+              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse..."
+                      ToolTip.Tip="Choose the hard-disk image file" />
             </Grid>
             <TextBlock Text="{Binding Problem}"
                        IsVisible="{Binding HasProblem}"
@@ -60,8 +66,10 @@
                        TextWrapping="Wrap"
                        Text="Add a folder of ISO/XISO, CHD, ZAR or XBE files. Subfolders are scanned; more folders can be added later." />
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <TextBox Text="{Binding LibraryFolder, Mode=TwoWay}" PlaceholderText="Optional game folder" />
-              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseLibraryCommand}" Content="Browse..." />
+              <TextBox Text="{Binding LibraryFolder, Mode=TwoWay}" PlaceholderText="Optional game folder"
+                       ToolTip.Tip="Path to a folder of games" />
+              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseLibraryCommand}" Content="Browse..."
+                      ToolTip.Tip="Choose a folder of games" />
             </Grid>
           </StackPanel>
         </Border>
@@ -89,8 +97,10 @@
                  VerticalAlignment="Center"
                  Text="You can change all of this later in Settings." />
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-        <Button Classes="ghost" Command="{Binding SetUpLaterCommand}" Content="Set up later" />
-        <Button Classes="primary" Command="{Binding FinishCommand}" Content="Finish" />
+        <Button Classes="ghost" Command="{Binding SetUpLaterCommand}" Content="Set up later"
+                ToolTip.Tip="Skip setup and configure XGrid later" />
+        <Button Classes="primary" Command="{Binding FinishCommand}" Content="Finish"
+                ToolTip.Tip="Save these paths and start using XGrid" />
       </StackPanel>
     </Grid>
   </Grid>
