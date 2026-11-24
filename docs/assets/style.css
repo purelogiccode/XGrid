@@ -1,0 +1,175 @@
+:root {
+  --xgrid-bg: #0d1117;
+  --xgrid-panel: #141a22;
+  --xgrid-panel-2: #1a2230;
+  --xgrid-border: #263141;
+  --xgrid-text: #d7e0ea;
+  --xgrid-muted: #8b9bb0;
+  --xgrid-accent: #3daee9;
+  --xgrid-accent-soft: #1f6f9e;
+}
+
+body {
+  background: var(--xgrid-bg);
+  color: var(--xgrid-text);
+}
+
+.sidebar {
+  background: var(--xgrid-panel);
+  border-right: 1px solid var(--xgrid-border);
+}
+
+.sidebar ul li a {
+  color: #b9c6d4;
+  font-size: 14px;
+}
+
+.sidebar ul li a:hover,
+.sidebar ul li.active > a {
+  color: var(--xgrid-accent);
+}
+
+.sidebar-toggle {
+  background: var(--xgrid-panel);
+}
+
+.markdown-section {
+  color: var(--xgrid-text);
+  max-width: 910px;
+}
+
+.markdown-section h1,
+.markdown-section h2,
+.markdown-section h3,
+.markdown-section h4 {
+  color: #f0f6fc;
+  letter-spacing: -0.01em;
+}
+
+.markdown-section h1 {
+  font-size: 2.05rem;
+  border-bottom: 1px solid var(--xgrid-border);
+  padding-bottom: 0.55rem;
+}
+
+.markdown-section h2 {
+  margin-top: 2.2rem;
+  border-bottom: 1px solid rgba(38, 49, 65, 0.75);
+  padding-bottom: 0.35rem;
+}
+
+.markdown-section a {
+  color: var(--xgrid-accent);
+}
+
+.markdown-section a:hover {
+  text-decoration: underline;
+}
+
+.markdown-section code {
+  background: #1b2430;
+  color: #c9e8ff;
+  border-radius: 4px;
+  padding: 0.12em 0.35em;
+}
+
+.markdown-section pre {
+  background: #10161e;
+  border: 1px solid var(--xgrid-border);
+  border-radius: 8px;
+}
+
+.markdown-section pre > code {
+  background: transparent;
+  color: #d9e6f2;
+}
+
+.markdown-section blockquote {
+  background: var(--xgrid-panel-2);
+  border-left: 4px solid var(--xgrid-accent);
+  color: #c6d3e1;
+  border-radius: 0 6px 6px 0;
+  padding: 0.7rem 1rem;
+}
+
+.markdown-section table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.94rem;
+}
+
+.markdown-section th {
+  background: var(--xgrid-panel-2);
+  color: #e8f1fa;
+  border: 1px solid var(--xgrid-border);
+}
+
+.markdown-section td {
+  border: 1px solid var(--xgrid-border);
+}
+
+.markdown-section tr:nth-child(2n) {
+  background: rgba(26, 34, 48, 0.45);
+}
+
+.markdown-section img {
+  border-radius: 10px;
+}
+
+.cover {
+  background: radial-gradient(circle at 20% 20%, #17324a 0%, #0d1117 46%, #080b10 100%);
+}
+
+.cover-main blockquote {
+  color: var(--xgrid-muted);
+}
+
+.cover-main .cover-logo {
+  width: 92px;
+  height: 92px;
+  filter: drop-shadow(0 12px 28px rgba(61, 174, 233, 0.28));
+}
+
+.cover-main h1 {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.sidebar .app-name {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.sidebar .app-name-link img {
+  max-height: 34px;
+}
+
+.search input {
+  background: #0f151d;
+  border: 1px solid var(--xgrid-border);
+  color: var(--xgrid-text);
+}
+
+.search .results-panel {
+  background: var(--xgrid-panel);
+  border: 1px solid var(--xgrid-border);
+}
+
+.search .matching-post {
+  border-bottom: 1px solid var(--xgrid-border);
+}
+
+.github-corner svg {
+  fill: var(--xgrid-accent);
+  color: var(--xgrid-bg);
+}
+
+/* GitHub-style alerts, when rendered by the host. */
+.markdown-section .note,
+.markdown-section .warning,
+.markdown-section .tip {
+  border-left: 4px solid var(--xgrid-accent);
+  background: var(--xgrid-panel-2);
+  padding: 0.75rem 1rem;
+  border-radius: 0 6px 6px 0;
+}

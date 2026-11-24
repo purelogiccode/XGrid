@@ -1,9 +1,9 @@
 # XGrid core additions
 
 These are the files we own inside the emulation core. They are **tracked in this
-repository** and compiled into the xemu tree by
-`xemu/xemu-patches/0003-meson-include-xgrid-core.patch`, which adds one
-`subdir('xgrid-core')` call after the block subsystem is initialised.
+repository** and wired into the xemu build by `meson.build` and the patch record
+in `xemu/xemu-patches/`. The build adds one `subdir('xgrid-core')` call after the
+block subsystem is initialised.
 
 `References2/xemu-0.8.139` is the pristine upstream baseline. `xemu/` is the
 tracked tree: 0.8.139 + this folder + `xemu/xemu-patches/`. A new xemu release

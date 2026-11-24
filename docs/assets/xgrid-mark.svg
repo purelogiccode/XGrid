@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="XGrid">
+  <defs>
+    <linearGradient id="edge" x1="18" y1="18" x2="110" y2="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#62c8ff"/>
+      <stop offset="1" stop-color="#2079b8"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1a2029"/>
+      <stop offset="1" stop-color="#0c1015"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#tile)" stroke="#2a3440" stroke-width="2"/>
+  <path d="M36 36 92 92M92 36 36 92" fill="none" stroke="url(#edge)" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="64" cy="64" r="8" fill="#e8f6ff"/>
+  <path d="M64 20v10M64 98v10M20 64h10M98 64h10" stroke="#3daee9" stroke-width="3" stroke-linecap="round" opacity=".65"/>
+</svg>

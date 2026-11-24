@@ -1,8 +1,8 @@
 # XGrid frontend (Avalonia)
 
-Cross-platform desktop shell for the maintained xemu core, built with
-[Avalonia](https://avaloniaui.net/) (12.1, `VersionOverride` in the project
-file). The same project runs on Windows, Linux, and macOS.
+Cross-platform desktop shell for the maintained xemu core. The same project
+builds for Windows, Linux and macOS, but the bundled emulator core is currently
+Windows-only.
 
 ## Run
 
@@ -16,94 +16,44 @@ Release build:
 dotnet build src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Release
 ```
 
-The shell talks to the core through `XGrid.Core.Xemu`: it writes the core
-configuration, starts the process, embeds the core window (or presents the
-core's frame sink) and forwards the player-1 pad. The managed C# emulator is
-not part of this application; it is the test oracle in `XGrid.Cli`.
-
 ## Pages
 
 | Page | Purpose |
 | --- | --- |
-| **Home** | Power on/off, stop, the embedded core display, current disc and core/renderer labels. |
-| **Library** | Recursive scan of configured folders for `.iso`, `.chd`, `.zar` and `.xbe` entries; search and launch. |
-| **Settings** | Tabbed: System (firmware/storage paths, guest RAM, xemu core path, display sink), Graphics (renderer, resolution scale, filtering, window, AV pack), Audio (backend, DSP/JIT/HRTF, volume), Input (keyboard/gamepad bindings), Titles, Library and Appearance. Persisted as JSON. |
-| **Activity** | Filtered emulator log with copy and clear. |
-| **About** | Build/runtime information, project links, shortcuts. |
+| **Home** | Power, stop, live display, current disc and renderer status. |
+| **Library** | Recursive scan of `.iso`, `.chd`, `.zar` and `.xbe`; search and launch. |
+| **Settings** | System, Graphics, Audio, Input, Titles, Library and Appearance. |
+| **Activity** | Filtered session log with copy and clear. |
+| **About** | Build/runtime information, project links and shortcuts. |
+
+## Integration
+
+`XGrid.Core.Xemu` owns the launch plan, generated `xemu.toml`, in-process and
+separate-process hosting, the display/input sinks and the save-state wrapper.
+
+- **In-process** loads `xgrid_core.dll`; frames and input use shared sections.
+- **Separate process** starts `xemu.exe` with the generated configuration.
+- **Frame sink** lets the shell present and filter frames.
+- **Embedded window** lets the core paint with its own swapchain.
 
 ## Configuration
 
 Settings are stored in the platform application-data folder:
 
 - Windows: `%APPDATA%\XGrid\settings.json`
-- Linux: `~/.config/XGrid/settings.json`
+- Linux: the platform application-data folder (usually `~/.config/XGrid/`)
 - macOS: `~/Library/Application Support/XGrid/settings.json`
 
-`XGRID_FRONTEND_DATA_DIR` overrides the folder (useful for portable or test runs).
-XGrid never ships firmware, EEPROMs, or game data; provide your own legally obtained
-images on the Settings page.
+`XGRID_FRONTEND_DATA_DIR` overrides the folder. The core working directory is
+`<data>/xemu/`.
 
-## Display path
+## Documentation
 
-The shell starts the xemu core and embeds its native window in the Home page
-(`XemuDisplayHost`), so the core paints with its own swapchain and the shell
-never copies a frame. When **Present core frames in the shell** is enabled, the
-patched core publishes BGRA frames into a named section instead; the shell
-copies the latest frame into a `WriteableBitmap` and can apply the presentation
-filter (nearest, bilinear, scanline, CRT). The display source and the filter are
-independent settings.
-
-The core window is found and reparented after it appears; a 250 ms poll retries
-until it exists, so the UI thread never blocks. Resizing the page resizes the
-embedded child. Stopping the console closes the process and releases the
-display.
-
-## Current scope
-
-- One engine: the maintained xemu core (ISO, CHD and entry-form ZAR media).
-- Firmware, storage, guest memory, graphics, audio and display-filter settings;
-  per-title overrides keyed by image path or XBE title id.
-- Configurable keyboard and XInput controller bindings, dead zones, trigger
-  threshold, Y inversion and stick swapping for the player-1 pad.
-- Graphics renderers: OpenGL, Vulkan and the null backend (xemu 0.8.139 has no
-  DirectX or software renderer).
-- A loose `.xbe` is listed for inspection but must be wrapped in an ISO/CHD/ZAR
-  image to boot.
-- Save states, pause/frame-step and the managed-engine renderer options belong
-  to the oracle CLI, not the shell.
-
-## Keyboard
-
-| Key | Action |
-| --- | --- |
-| `F5` | Power on / off |
-| `F11` / `Esc` | Full screen toggle / exit |
-| `Ctrl+O` | Open a disc image |
-| `Ctrl+S` | Save settings (Settings page) |
-| Arrow keys | D-pad |
-| `Enter` / `Backspace` | Start / Back |
-| `A` `S` `D` `F` | A / B / X / Y |
-| `Q` `E` | White / black |
-| `Z` `C` | Left / right trigger |
-| `Space` | A |
-
-## Code layout
-
-```text
-App.axaml(.cs)              application, theme, page data templates
-Program.cs                  Avalonia bootstrap
-Models/                     settings, game entries, log entries, frame packets
-Services/                   settings store, library scanner, xemu launch plan,
-                            core session, display host, dialogs, accents
-ViewModels/                 MVVM shell and page view models (CommunityToolkit.Mvvm)
-Views/                      MainWindow + one UserControl per page
-Styles/Theme.axaml          dark palette, typography, control styles
-Converters/                 log-level brush mapping
-AppIcons.cs                 vector icon geometries
-```
-
-Add a page by creating a `PageViewModel` + `UserControl`, adding it to
-`MainWindowViewModel.NavigationItems`, and registering a `DataTemplate` in `App.axaml`.
+- [Documentation home](../../docs/index.md)
+- [Settings](../../docs/guides/settings.md)
+- [Display and filters](../../docs/guides/display.md)
+- [Save states](../../docs/guides/save-states.md)
+- [Architecture](../../docs/reference/architecture.md)
 
 ## Validation
 
@@ -112,5 +62,5 @@ dotnet build src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Relea
 dotnet format src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj --no-restore
 ```
 
-The shell is an observation/interaction surface; it is not part of the accurate-mode
-golden gates. Gate runs continue to use `XGrid.Cli` headless.
+The shell is part of the product; the accurate-mode validation corpus uses the
+managed oracle and `XGrid.Cli`.

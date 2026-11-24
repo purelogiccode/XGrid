@@ -1,176 +1,217 @@
-# XGrid
+<p align="center">
+  <img src="docs/assets/xgrid-mark.svg" width="96" height="96" alt="XGrid">
+</p>
 
-> **CI is disabled.** This repository is currently private, with public
-> publication planned (`docs/open-source.md`), and the account's GitHub Free
-> plan has no GitHub Actions available for it, so
-> `.github/workflows/` is manual-only. Every gate still runs — locally: see
-> [Build and test](#build-and-test) and `docs/ci.md`. The **GPL-2.0-or-later
-> licence is open source**; the repository publication checklist is
-> `docs/open-source.md`.
+<h1 align="center">XGrid</h1>
 
-XGrid is a cross-platform original Xbox emulator. XGrid's own source is
-licensed under the **GNU General Public License, version 2 or later**
-(`COPYING`, `LICENSE`).
+<p align="center">
+  <strong>Xbox emulation, refined.</strong><br>
+  An enhanced <a href="https://xemu.app">xemu</a> core with a modern Avalonia desktop shell.
+</p>
 
-**Architecture (operator decision 2026-11-23, "A"): XGrid is the shell and the
-xemu 0.8.139 codebase is the emulation core.** The emulator itself — QEMU TCG
-i386, the NV2A and its OpenGL renderer, the MCPX/APU/ACI/IDE/USB devices, audio,
-input and netplay — is the vendored xemu codebase, used in place rather than
-re-implemented. XGrid provides the application: the Avalonia frontend, settings,
-library, per-title overrides, input mapping, snapshot orchestration, the
-diagnostics/corpus tooling and the packaging pipeline.
+<p align="center">
+  <a href="https://github.com/purelogiccode/XGrid/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/purelogiccode/XGrid/actions/workflows/ci.yml/badge.svg?branch=master"></a>
+  <a href="https://github.com/purelogiccode/XGrid/releases"><img alt="Release" src="https://img.shields.io/github/v/release/purelogiccode/XGrid?display_name=tag&sort=semver"></a>
+  <a href="COPYING"><img alt="License: GPL-2.0-or-later" src="https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg"></a>
+  <img alt=".NET 11" src="https://img.shields.io/badge/.NET-11-512BD4">
+  <img alt="Avalonia 12.2" src="https://img.shields.io/badge/Avalonia-12.2-8B44AC">
+  <a href="xemu/XEMU_VERSION"><img alt="Core: xemu 0.8.139" src="https://img.shields.io/badge/core-xemu%200.8.139-2E7D32"></a>
+  <img alt="Platform: Windows, Linux, macOS" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey">
+  <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange">
+  <a href="docs/index.md"><img alt="Documentation" src="https://img.shields.io/badge/docs-multipage-3DAEE9"></a>
+</p>
 
-This repository is the **single codebase**: the maintained xemu 0.8.139 tree
-is tracked under `xemu/` with its original per-file GPL/LGPL/MIT notices,
-XGrid's core additions live in `xemu/xgrid-core/`, and the edits to upstream
-files are recorded in `xemu/xemu-patches/`. A new xemu release is a patch
-rebase rather than a re-port. The core is built twice from the same objects:
-`xemu/dist/xemu.exe` for the standalone path and `xemu/dist/xgrid_core.dll` for
-the shell's **in-process** hosting, the default (Settings → System → Core hosting; the
-separate process is the fallback and a setting). xemu and QEMU are credited here and in
-`THIRD_PARTY_NOTICES.md`; the release ships the core source and our patches.
+---
 
-The earlier program — a **full source port of xemu to managed C#** — is now the
-**reference and oracle**, not the product path: the managed emulator
-(`--cpu managed`), its four 1B goldens, the ktest byte-identical log and the
-full test suite stay in the tree to validate the core and catch regressions.
+XGrid is a maintained **in-tree fork of xemu 0.8.139** with a first-class desktop
+application around it. The emulator itself — QEMU TCG i386, the NV2A and its
+renderers, MCPX, APU/ACI, IDE, USB and the rest of the Xbox — is the xemu core
+tracked in [`xemu/`](xemu/). XGrid adds the Avalonia shell, real-time CHD/ZAR
+media, save states, display and input plumbing, per-title settings, diagnostics
+and packaging.
 
-## Program: playable first, xemu core as the performance path
+> XGrid is not affiliated with Microsoft or the xemu project. It ships no
+> firmware, BIOS images, EEPROMs or game data. You must supply your own legally
+> obtained files.
 
-The program is **playable first on the xemu core**. The shell launches the
-vendored core, embeds its display and drives it from settings, the library and
-per-title overrides; the managed emulator remains the oracle. The gates are
-**M1** 007's own render/input milestone (met), **P1** at least one game
-playable, **P2/P3** a second and third title, **P4** seven of seven and **P5**
-the ledger complete. **Playable** means own render, live input, ≥ 0.5× guest
-time, 10 minutes, save/load, the xemu frame policy and **live host audio** - not
-an offline WAV.
+## Why XGrid?
 
-**Current integration step: A3 (media).** A0-A2 are done: `XGrid.Core.Xemu`
-generates the core configuration, starts the process, embeds its window (or
-presents the core's frame sink), and forwards the shell pad. A3 is half done:
-entry-form `.zar` archives play, while an `--iso` archive needs the in-memory
-XDVDFS synthesizer. Next: A4 (display filters) and A5 (release pass).
+- **A real desktop application.** Home, Library, Settings, Activity and About
+  pages instead of a bare emulator window.
+- **The core is the proven one.** xemu 0.8.139 with a small, documented patch
+  set — not a re-implementation.
+- **No extraction for compressed media.** CHD and entry-form ZArchive discs are
+  decoded on demand by `xgridchd` and `xgridzar`.
+- **Save states that belong to the machine.** Four QEMU/xemu snapshot slots,
+  saved through the in-process core ABI.
+- **Display your way.** Shell frame sink with nearest, bilinear, scanline and CRT
+  filters, or the core's own embedded window.
+- **Input your way.** Keyboard and XInput mapping, dead zones, trigger threshold,
+  Y inversion and stick swap for player 1.
+- **Per-title overrides.** Guest memory (64/128 MB) keyed by XBE title ID or
+  image path.
 
-**Media formats.** The core reads ISO/XISO natively (QEMU block layer). CHD and
-ZAR are **not** block formats the core can mount, so they are added as real-time
-drivers rather than an extraction step: a tracked patch in `native/xemu-patches/`
-implements `xgridchd` (vendored libchdr) and `xgridzar` (zstd, already a QEMU
-dependency), and the guest reads the disc directly. This is a patch inside this
-repository - not a GitHub fork - which is why the README credits the codebase.
+## Feature summary
 
-## Status
+| Area | Support |
+| --- | --- |
+| **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
+| **Media** | ISO/XISO, CHD, entry-form ZAR; raw/qcow2 HDD |
+| **Hosting** | In-process core (`xgrid_core.dll`) by default; separate process fallback |
+| **Display** | Shell frame sink or embedded core window; filters, resolution scale, aspect/fit, fullscreen |
+| **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
+| **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
+| **Quality of life** | Four save-state slots, library scan, per-title overrides, screenshots, activity log, accent themes |
+| **Platform** | Windows 10/11 x64 fully supported; shell targets Linux/macOS |
 
-The product path is the maintained xemu core: the shell starts it, embeds its
-display and drives it from settings, the library and per-title overrides. ISO,
-CHD and entry-form ZAR discs mount directly in the core; 007 boots from all
-three. The current task queue is A3 (XDVDFS synthesizer for `--iso` ZAR), then
-A4 (display filters) and A5 (release pass).
+## Quick start
 
-The managed C# emulator is **the oracle, not the product**: it boots the LLE
-console chain (MCPX ROM -> 1BL -> 2BL -> kernel -> dashboard), runs the
-software and OpenGL NV2A backends, the raw-JIT CPU and the APU/DSP mixer, and
-keeps the four accurate 1B goldens, the ktest log and the 2,200-test suite
-green. `XGrid.Cli` remains its command-line harness.
+1. **Download** the [latest release](https://github.com/purelogiccode/XGrid/releases).
+   The Windows x64 frontend archive includes the emulator under `core/xemu/`.
+2. **Extract** it anywhere and run `XGrid.Frontend.Avalonia`.
+3. Open **Settings → System** and set your **BIOS**, **MCPX ROM**, **EEPROM** and
+   **HDD** image.
+4. Add your game folders in **Settings → Library**.
+5. Pick a title in **Library**, or press **Power on** to reach the dashboard.
 
-**Media.** The acceptance set is the **seven optimized ISOs** in
-`H:\Tests\XBOXReady`; the broad library is **`E:\Microsoft Xbox` (945 retail
-CHDs, 1.44 TB)**, used for triage and the CHD path, never for gates. The
-verified homebrew corpus and the title matrix are in `docs/compatibility.md`;
-retail probes are in `docs/research-notes/real-game-probes.md`. CI is disabled
-and every gate runs locally (`docs/ci.md`). The repository stays **private
-until a game is playable** (`docs/open-source.md`).
+Full walkthrough: [First boot](docs/getting-started/first-boot.md).
 
-## Goals
+### Keyboard essentials
 
-- **Playable retail titles** on the maintained xemu core
-- **XGrid owns the application**: shell, settings, library, per-title overrides,
-  input mapping, display filters, diagnostics and packaging
-- **The core stays a patch set**: `native/xgrid-core` + `native/xemu-patches`
-  over the pinned xemu 0.8.139 baseline, so an upstream release is a rebase
-- **The managed emulator stays the oracle**: four accurate 1B goldens, the
-  ktest log and the full test suite validate core changes
-- ISO/XISO, CHD and ZAR media without extraction; FATX and XDVDFS readers
-- Windows, Linux, and macOS support, with reproducible self-contained packages
-- Reproducible releases with a reviewed license set (`docs/release-licensing-review.md`)
+| Key | Action |
+| --- | --- |
+| `F5` | Power on / off |
+| `F6` | Quick save |
+| `F7` | Quick load |
+| `F8` | Screenshot the window |
+| `F11` | Fullscreen |
+| `Ctrl+O` | Open a disc |
+| `Ctrl+S` | Save settings (Settings page) |
 
-## Documentation
+Default player-1 controls: `A`/`Space` = A, `S` = B, `D` = X, `F` = Y, arrows =
+D-pad, `Enter` = Start, `Backspace` = Back, `Q`/`E` = White/Black, `Z`/`C` =
+triggers.
 
-- `ImplementationPlan.md` - full implementation plan; the current program is E1 (XFP)
-- `docs/xemu-port-manifest.md` - the full-port module ledger and out-of-scope list
-- `docs/open-source.md` - GPL-2.0 status and the publication checklist
-- `docs/porting-policy.md` - how a port is taken, tested and recorded
-- `docs/ci.md` - continuous integration (currently disabled), the quality gates, their local equivalents and the release process
-- `docs/release-licensing-review.md` - GPL-2.0 and third-party licensing review behind the packaged release
-- `docs/release-notes/` - release notes, one file per version
-- `docs/research-notes/` - extracted facts from reference projects and the licensing inventory
-
-## Repository layout
+## Architecture
 
 ```text
-src/          the shell (XGrid.Frontend.Avalonia, XGrid.Core.Xemu, XGrid.Input,
-              XGrid.Xbe, XGrid.XboxFs) and the managed oracle projects
-native/       xemu patches, xgrid-core additions and the disposable build tree
-tests/        unit, integration, compatibility, and performance tests
-benchmarks/   BenchmarkDotNet benchmarks
-tools/        oracle, DSP/CPU vector and ktest tooling
-scripts/      build/test/format, core sync/build and packaging scripts
-docs/         architecture, status and research notes
+┌───────────────────────────────────────────────────────┐
+│ Avalonia shell                                        │
+│ Home · Library · Settings · Activity · About          │
+│ settings → launch plan → generated xemu.toml          │
+│ frame sink ← core        shell pad → input sink       │
+│ save-state requests → core ABI                        │
+└───────────────────────┬───────────────────────────────┘
+                        │ in-process DLL or separate process
+┌───────────────────────▼───────────────────────────────┐
+│ xemu core (xemu 0.8.139 + XGrid additions)            │
+│ TCG CPU · NV2A · MCPX · APU/ACI · IDE · USB · SMBus   │
+└───────────────────────────────────────────────────────┘
 ```
 
-## Build and test
+- `xemu/xgrid-core/` — XGrid's native additions (media drivers, sinks, ABI).
+- `xemu/xemu-patches/` — the record of upstream edits.
+- `src/XGrid.Core.Xemu/` — launch planning, hosting, sinks, save-state wrapper.
+- `src/XGrid.Frontend.Avalonia/` — the shell.
+- Managed C# emulator projects — the validation oracle, not the product path.
+
+Read [Architecture](docs/reference/architecture.md) for the details.
+
+## Build from source
 
 ```powershell
-dotnet build XGrid.sln -c Release
-dotnet test XGrid.sln -c Release
-dotnet format XGrid.sln --verify-no-changes
-```
+# Shell and tests
+dotnet restore XGrid.sln
+dotnet build XGrid.sln -c Release --no-restore --nologo
+dotnet test XGrid.sln -c Release --nologo --no-build
 
-These commands are the gate while CI is disabled. `docs/ci.md` lists the rest of
-it (InspectCode, package audit, coverage floors, deterministic build) as local
-equivalents, and what has to be restored before the workflows run again.
+# Native core (Windows + MSYS2 MINGW64)
+pwsh -File scripts/build-native-xemu.ps1
 
-## Desktop frontend
-
-The cross-platform Avalonia GUI lives in `src/XGrid.Frontend.Avalonia`:
-
-```powershell
+# Run
 dotnet run --project src/XGrid.Frontend.Avalonia
 ```
 
-It provides power/stop for the embedded xemu core, a disc library, a settings
-surface (firmware, storage, guest memory, graphics renderer/resolution/filter,
-audio backend/DSP/volume, keyboard and gamepad bindings), per-title overrides,
-an activity log and runtime accent themes. `XGrid.Cli` remains the harness for
-the managed oracle and the automation scripts. See
-`src/XGrid.Frontend.Avalonia/README.md` and
-`docs/research-notes/avalonia-frontend.md`.
+The core build produces `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll` and the
+runtime DLLs. See [Building from source](docs/development/building.md) for the
+toolchain and [Quality gates](docs/development/quality-gates.md) for the checks.
 
 ## Release packages
 
-The release tree (CLI + frontend, self-contained for Windows, Linux and macOS,
-with the GPL-2.0 license set, release notes, checksums and a manifest) is built
-by one command:
-
 ```powershell
 pwsh -File scripts/package.ps1
+pwsh -File scripts/package-verify.ps1
 ```
 
-Release notes live in `docs/release-notes/`; the licensing obligations behind the
-packaged file set are reviewed in `docs/release-licensing-review.md`. The
-`release.yml` workflow runs the same steps when CI is re-enabled.
+The release tree contains self-contained archives for `win-x64`, `linux-x64`,
+`osx-x64` and `osx-arm64`, checksums, a package manifest and the full license
+set. The **Windows x64 frontend archive includes the emulator**; the Linux and
+macOS archives currently contain the shell only.
 
-## Firmware
+## Documentation
 
-XGrid does not ship copyrighted firmware, BIOS images, EEPROMs, or game data. Users must supply
-their own legally obtained files.
+- **Documentation site** — [`docs/index.md`](docs/index.md), served by
+  [`docs/index.html`](docs/index.html) (Docsify; no build step).
+- **Wiki** — [`wiki/Home.md`](wiki/Home.md). The `wiki/` folder is wiki-ready
+  and can be published as the repository wiki.
+- **Getting started** — [requirements](docs/getting-started/requirements.md),
+  [installation](docs/getting-started/installation.md),
+  [first boot](docs/getting-started/first-boot.md).
+- **Guides** — [library](docs/guides/library.md), [settings](docs/guides/settings.md),
+  [display](docs/guides/display.md), [input](docs/guides/input.md),
+  [audio](docs/guides/audio.md), [save states](docs/guides/save-states.md),
+  [media](docs/guides/media.md).
+- **Reference** — [architecture](docs/reference/architecture.md),
+  [configuration](docs/reference/configuration.md),
+  [shortcuts](docs/reference/shortcuts.md),
+  [compatibility](docs/reference/compatibility.md),
+  [troubleshooting](docs/reference/troubleshooting.md), [FAQ](docs/reference/faq.md),
+  [glossary](docs/reference/glossary.md).
+- **Development** — [building](docs/development/building.md),
+  [layout](docs/development/repository-layout.md),
+  [core](docs/development/core.md),
+  [quality gates](docs/development/quality-gates.md),
+  [releasing](docs/development/releasing.md),
+  [contributing](docs/development/contributing.md).
+- **Legal** — [licensing](docs/legal/licensing.md),
+  [porting](docs/legal/porting-policy.md),
+  [release licensing](docs/legal/release-licensing.md),
+  [source availability](docs/legal/source-availability.md).
+
+Preview the documentation site locally with any static server:
+
+```bash
+python -m http.server 8000 -d docs
+# open http://localhost:8000
+```
+
+## Project status
+
+XGrid is **alpha software**. The core is mature, but the shell, media drivers and
+compatibility work are still evolving. The Windows x64 release is the supported
+emulation package today; the Linux/macOS shells are built and published, but the
+core and display embedding are Windows-first.
+
+Known limitations:
+
+- ZArchive archives must store the disc as an `.iso` entry.
+- Save states require in-process hosting.
+- The shell exposes player 1 only and no netplay UI.
+- No software or DirectX renderer; OpenGL (and Vulkan when compiled) only.
+
+See [Compatibility](docs/reference/compatibility.md).
 
 ## License
 
-XGrid's own source is free software under the **GNU General Public License,
-version 2 or later**. See `COPYING` for the full text and `LICENSE` for the
-project notice. The vendored xemu tree keeps its own GPL-2.0/LGPL/MIT notices;
-third-party reference projects and ported modules are recorded in
-`THIRD_PARTY_NOTICES.md`, `docs/porting-policy.md` and
-`docs/research-notes/sources.md`. Ported files keep their original copyright
-and license notices.
+XGrid's own source is **GPL-2.0-or-later**. The vendored xemu tree keeps its
+original GPL-2.0, LGPL and MIT notices. Every third-party component and ported
+module is recorded in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). See
+[Licensing](docs/legal/licensing.md).
+
+## Contributing and security
+
+- [Contributing](docs/development/contributing.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`SECURITY.md`](SECURITY.md)
+
+Do not commit firmware, BIOS images, EEPROMs, HDD images or game data.
