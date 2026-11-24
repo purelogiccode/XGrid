@@ -44,6 +44,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private long _frameWindowStart;
     private const int FrameReportPeriodMs = 5000;
     private GamepadMappingOptions _gamepadOptions;
+    private readonly XInputGamepadReader?[] _gamepads = new XInputGamepadReader?[XemuInputSink.PadCount];
+    private readonly HostPad[] _gamepadPads = CreateNeutralPads();
+    private readonly bool[] _gamepadLogged = new bool[XemuInputSink.PadCount];
+    private IReadOnlyList<Key> _pressedKeys = [];
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
     private int _frameWidth;
@@ -113,6 +117,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Config = settingsStore.Load();
         _firstRunPending = !settingsStore.ExistedAtLoad && !App.Autostart;
         _gamepadOptions = InputMapping.Create(Config.Input);
+        ConfigureGamepads();
         _core = new XemuCoreSession();
         _core.Log += OnCoreLog;
         _core.FrameReady += OnCoreFrameReady;
@@ -313,9 +318,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     private string ActiveFilter => _sessionFilter ?? Config.Filter;
 
-    /// <summary>Gets the gamepad options for the current configuration.</summary>
-    public GamepadMappingOptions GamepadOptions => _gamepadOptions;
-
     /// <summary>
     /// Raised after a core frame has been copied into <see cref="FrameBitmap"/>.
     /// A bitmap write is invisible to Avalonia on its own (the image caches a
@@ -330,14 +332,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool TryMapKey(Key key, out PadAction action)
     {
         return InputMapping.TryMapKey(Config.Input, key, out action);
-    }
-
-    /// <summary>Overlays the pressed keyboard keys on the gamepad report.</summary>
-    /// <param name="gamepad">Gamepad report.</param>
-    /// <param name="pressed">Pressed keys.</param>
-    public HostPad MergeKeyboard(HostPad gamepad, IEnumerable<Key> pressed)
-    {
-        return InputMapping.MergeKeyboard(gamepad, Config.Input, pressed);
     }
 
     /// <summary>Attaches the shell to the main window and performs first-run initialization.</summary>
@@ -460,6 +454,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _toastTimer.Stop();
         _core.Dispose();
         Library.Dispose();
+        foreach (XInputGamepadReader? reader in _gamepads)
+        {
+            reader?.Dispose();
+        }
     }
 
     /// <inheritdoc />
@@ -532,6 +530,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Config = settings;
         RefreshCoreCapabilities();
         _gamepadOptions = InputMapping.Create(Config.Input);
+        ConfigureGamepads();
         try
         {
             _settingsStore.Save(Config);
@@ -594,16 +593,102 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         NavigateTo(kind);
     }
 
-    /// <summary>Forwards the current keyboard/controller pad state to the core.</summary>
-    public void SetPad(ushort buttons, ReadOnlySpan<byte> analog, ReadOnlySpan<short> sticks)
+    /// <summary>
+    /// Polls the gamepad assigned to each Xbox port and publishes all four pads.
+    /// Player 1 also gets the keyboard overlay.
+    /// </summary>
+    /// <param name="active">True while the shell window is focused.</param>
+    public void PollGamepads(bool active)
     {
-        ForwardCorePad(buttons, analog, sticks);
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        for (int port = 0; port < _gamepads.Length; port++)
+        {
+            HostPad pad = HostPad.Neutral;
+            XInputGamepadReader? reader = _gamepads[port];
+            if (active && reader is not null && reader.TryRead(out HostPad read, _gamepadOptions))
+            {
+                pad = read;
+                if (!_gamepadLogged[port])
+                {
+                    _gamepadLogged[port] = true;
+                    AddLog(
+                        LogLevel.Info,
+                        $"XInput slot {reader.AssignedSlot + 1} drives player {port + 1}.");
+                }
+            }
+            else
+            {
+                _gamepadLogged[port] = false;
+            }
+
+            _gamepadPads[port] = pad;
+            PublishPad(port);
+        }
+    }
+
+    /// <summary>Stores the pressed keyboard keys and republishes player 1.</summary>
+    /// <param name="pressed">Currently pressed shell keys.</param>
+    public void SetKeyboardKeys(IEnumerable<Key> pressed)
+    {
+        _pressedKeys = [.. pressed];
+        if (IsRunning)
+        {
+            PublishPad(0);
+        }
+    }
+
+    private void PublishPad(int port)
+    {
+        HostPad pad = port == 0
+            ? InputMapping.MergeKeyboard(_gamepadPads[0], Config.Input, _pressedKeys)
+            : _gamepadPads[port];
+        ForwardCorePad(port, pad);
+    }
+
+    /// <summary>Creates one reader per assigned slot; unassigned ports stay neutral.</summary>
+    private void ConfigureGamepads()
+    {
+        for (int port = 0; port < _gamepads.Length; port++)
+        {
+            _gamepads[port]?.Dispose();
+            _gamepads[port] = null;
+            _gamepadPads[port] = HostPad.Neutral;
+            _gamepadLogged[port] = false;
+        }
+
+        int[] slots = Config.Input.PlayerGamepads;
+        for (int port = 0; port < _gamepads.Length && port < slots.Length; port++)
+        {
+            if (slots[port] is >= 0 and < XInputGamepadReader.MaxUsers)
+            {
+                _gamepads[port] = new XInputGamepadReader(slots[port]);
+            }
+        }
+    }
+
+    private static HostPad[] CreateNeutralPads()
+    {
+        var pads = new HostPad[XemuInputSink.PadCount];
+        Array.Fill(pads, HostPad.Neutral);
+        return pads;
     }
 
     /// <summary>Maps the shell pad onto xemu's XID mask and publishes it to the core.</summary>
-    private void ForwardCorePad(ushort buttons, ReadOnlySpan<byte> analog, ReadOnlySpan<short> sticks)
+    private void ForwardCorePad(int port, HostPad pad)
     {
-        if (!IsRunning || analog.Length < 8 || sticks.Length < 4)
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        ushort buttons = pad.Buttons;
+        ReadOnlySpan<byte> analog = pad.Analog;
+        ReadOnlySpan<short> sticks = pad.Sticks;
+        if (analog.Length < 8 || sticks.Length < 4)
         {
             return;
         }
@@ -626,7 +711,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         int lt = analog[6] * 32767 / 255;
         int rt = analog[7] * 32767 / 255;
-        _core.SetPad(mask, sticks[0], sticks[1], sticks[2], sticks[3], lt, rt);
+        _core.SetPad(port, mask, sticks[0], sticks[1], sticks[2], sticks[3], lt, rt);
     }
 
     /// <summary>

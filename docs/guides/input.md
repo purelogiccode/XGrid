@@ -1,7 +1,7 @@
 # Input
 
-XGrid exposes a single Xbox controller on **player 1**. Input can come from the
-keyboard, an XInput controller, or both at once.
+XGrid exposes up to four Xbox controllers, one per port. The keyboard always
+drives **player 1**; an XInput controller can drive any player.
 
 > The shell's remapping and pad forwarding are active when **Present core frames
 > in the shell** is enabled. With the embedded core window, the core reads its
@@ -45,8 +45,13 @@ restores the shipped map; save the settings to apply it.
 
 - XGrid loads `xinput1_4`, then `xinput1_3`, then `xinput9_1_0`.
 - If no XInput library is present, the keyboard still works.
-- The first connected controller is used.
-- The physical source for each action is selected in **Settings → Input**.
+- **Settings → Input → Players** assigns one XInput slot to each Xbox port. The
+  default maps slot 1 to player 1, slot 2 to player 2, and so on; choose
+  **No gamepad** to leave a port empty.
+- Player 1 merges the keyboard and its assigned gamepad; players 2–4 use their
+  gamepad only.
+- The physical source for each action is selected in **Settings → Input** and
+  applies to every player.
 - Triggers use a configurable threshold; sticks use radial dead zones so
   diagonals survive.
 

@@ -16,7 +16,7 @@ is a patch rebase, not a re-port.
 | `block/xgridchd.c` | QEMU block driver that decodes CHD hunks on demand, so a compressed disc plays without extraction. |
 | `block/xgridzar.c` | QEMU block driver that exposes a ZArchive's disc image as the guest DVD, decoding zstd blocks on demand. |
 | `display/xgrid-display.c` | Host display sink: publishes presented frames to a named section for the shell. |
-| `input/xgrid-input.c` | Host input source: port 1 reads the shell's pad state. |
+| `input/xgrid-input.c` | Host input source: each Xbox port reads its pad record from the shell's section. |
 | `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread, exposes stop/join/version and the save-state request slot. |
 | `thirdparty/libchdr/` | libchdr 0.3.0 (BSD-3-Clause, Copyright Romain Tisserand) and its small LZMA decoder, vendored so the build never fetches the network. |
 
@@ -47,6 +47,15 @@ because then no frame is published.
 medium change; `xgrid_core_disc_status` and `xgrid_core_disc_error` report it.
 The load picks the driver from the extension (`xgridchd`, `xgridzar`, or raw)
 and cycles the tray so the guest notices. No power cycle is involved.
+
+### Input
+
+`xgrid_input_read(port, ...)` serves one 32-byte record per Xbox port from the
+shell's section: buttons, four stick axes, two triggers and a sequence word.
+When the sink is enabled, `ui/xemu-input.c` binds a synthetic controller to
+every port the keyboard did not take (recorded in
+`xemu-patches/0008-ui-shell-pads.patch`), so players 2-4 can be driven from the
+shell. The bindings are not saved to the core configuration.
 
 ### Save states
 

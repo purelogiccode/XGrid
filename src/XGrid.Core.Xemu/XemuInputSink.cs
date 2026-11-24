@@ -4,20 +4,29 @@ using System.IO.MemoryMappedFiles;
 namespace XGrid.Core.Xemu;
 
 /// <summary>
-/// Publishes the shell's pad state to the core. The core reads port 1 from this
-/// section when it is started with <c>XGRID_INPUT_SHM</c>, which is the only
-/// input path that works while the shell owns presentation (no SDL window).
+/// Publishes the shell's pad states to the core. The core reads one record per
+/// Xbox port from this section when it is started with <c>XGRID_INPUT_SHM</c>,
+/// which is the only input path that works while the shell owns presentation
+/// (no SDL window).
 /// </summary>
 /// <remarks>
-/// Layout is defined in <c>xemu/xgrid-core/input/xgrid-input.h</c>: magic,
-/// xemu's XID button mask, four stick axes, two triggers and a sequence word.
+/// Layout is defined in <c>xemu/xgrid-core/input/xgrid-input.h</c>: a 16-byte
+/// header (magic, version, pad count, reserved) followed by four 32-byte pad
+/// records (button mask, four stick axes, two triggers and a sequence word).
 /// </remarks>
 public sealed class XemuInputSink : IDisposable
 {
+    /// <summary>The number of pads the shell publishes, one per Xbox port.</summary>
+    public const int PadCount = 4;
+
     private const uint Magic = 0x49444758; // 'XGDI'
-    private const int Size = 32;
+    private const uint Version = 2;
+    private const uint HeaderSize = 16;
+    private const uint PadStride = 32;
+    private const int Size = (int)(HeaderSize + (PadStride * PadCount));
 
     private readonly string _name;
+    private readonly uint[] _sequence = new uint[PadCount];
     private MemoryMappedFile? _mapping;
     private MemoryMappedViewAccessor? _view;
     private bool _disposed;
@@ -38,6 +47,7 @@ public sealed class XemuInputSink : IDisposable
     }
 
     /// <summary>Publishes one pad state.</summary>
+    /// <param name="pad">Xbox port index, 0 to <see cref="PadCount"/> - 1.</param>
     /// <param name="buttons">xemu's XID button mask (see the core header).</param>
     /// <param name="lx">Left stick X, -32768..32767.</param>
     /// <param name="ly">Left stick Y, -32768..32767.</param>
@@ -45,9 +55,11 @@ public sealed class XemuInputSink : IDisposable
     /// <param name="ry">Right stick Y, -32768..32767.</param>
     /// <param name="lt">Left trigger, 0..32767.</param>
     /// <param name="rt">Right trigger, 0..32767.</param>
-    public void Write(uint buttons, int lx, int ly, int rx, int ry, int lt, int rt)
+    public void Write(int pad, uint buttons, int lx, int ly, int rx, int ry, int lt, int rt)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentOutOfRangeException.ThrowIfNegative(pad);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(pad, PadCount);
 
         if (!EnsureOpen())
         {
@@ -55,16 +67,31 @@ public sealed class XemuInputSink : IDisposable
         }
 
         MemoryMappedViewAccessor view = _view!;
+        uint offset = HeaderSize + ((uint)pad * PadStride);
+        _sequence[pad]++;
         view.Write(0, Magic);
-        view.Write(4, buttons);
-        view.Write(8, lx);
-        view.Write(12, ly);
-        view.Write(16, rx);
-        view.Write(20, ry);
-        view.Write(24, lt);
-        view.Write(28, rt);
-        // The core reads all eight words at once.
-        view.Flush();
+        view.Write(4, Version);
+        view.Write(8, (uint)PadCount);
+        view.Write(12, 0u);
+        view.Write(offset, buttons);
+        view.Write(offset + 4, lx);
+        view.Write(offset + 8, ly);
+        view.Write(offset + 12, rx);
+        view.Write(offset + 16, ry);
+        view.Write(offset + 20, lt);
+        view.Write(offset + 24, rt);
+        view.Write(offset + 28, _sequence[pad]);
+        // The section is pagefile-backed and shared with the core, so the
+        // writes are already coherent; FlushViewOfFile would only add latency.
+    }
+
+    /// <summary>Publishes a neutral state for every pad.</summary>
+    public void WriteNeutral()
+    {
+        for (int pad = 0; pad < PadCount; pad++)
+        {
+            Write(pad, 0, 0, 0, 0, 0, 0, 0);
+        }
     }
 
     /// <summary>Releases the section.</summary>

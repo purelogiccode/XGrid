@@ -1,0 +1,63 @@
+diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
+index a14acdea..54595e1b 100644
+--- a/xemu/ui/xemu-input.c
++++ b/xemu/ui/xemu-input.c
+@@ -320,6 +320,29 @@ void xemu_input_init(void)
+     }
+ 
+     QTAILQ_INSERT_TAIL(&available_controllers, new_con, entry);
++
++    /*
++     * XGrid: the shell supplies up to four pads through the input sink. Bind a
++     * controller to every port the keyboard did not take, so the sink can feed
++     * players 2-4. The bindings are not saved: a launch without the shell
++     * keeps the configured controller layout.
++     */
++    if (xgrid_input_enabled()) {
++        for (int i = 0; i < 4; i++) {
++            if (bound_controllers[i] != NULL) {
++                continue;
++            }
++
++            ControllerState *shell_con = calloc(1, sizeof(ControllerState));
++            shell_con->type = INPUT_DEVICE_XGRID;
++            shell_con->name = "XGrid pad";
++            shell_con->bound = -1;
++            shell_con->peripheral_types[0] = PERIPHERAL_NONE;
++            shell_con->peripheral_types[1] = PERIPHERAL_NONE;
++            QTAILQ_INSERT_TAIL(&available_controllers, shell_con, entry);
++            xemu_input_bind(i, shell_con, 0);
++        }
++    }
+ }
+ 
+ int xemu_input_get_controller_default_bind_port(ControllerState *state, int start)
+@@ -513,12 +536,12 @@ void xemu_input_update_controller(ControllerState *state)
+         return;
+     }
+ 
+-    /* XGrid: port 1 comes from the shell when the input sink is enabled. */
+-    if (xgrid_input_enabled() && state == bound_controllers[0]) {
++    /* XGrid: the shell supplies every bound pad when the input sink is on. */
++    if (xgrid_input_enabled() && state->bound >= 0) {
+         uint32_t xg_buttons = 0;
+         int32_t xg_lx = 0, xg_ly = 0, xg_rx = 0, xg_ry = 0, xg_lt = 0, xg_rt = 0;
+-        if (xgrid_input_read(&xg_buttons, &xg_lx, &xg_ly, &xg_rx, &xg_ry,
+-                             &xg_lt, &xg_rt)) {
++        if (xgrid_input_read(state->bound, &xg_buttons, &xg_lx, &xg_ly, &xg_rx,
++                             &xg_ry, &xg_lt, &xg_rt)) {
+             state->buttons = xg_buttons;
+             memset(state->axis, 0, sizeof(state->axis));
+             state->axis[CONTROLLER_AXIS_LSTICK_X] = xg_lx;
+diff --git a/xemu/ui/xemu-input.h b/xemu/ui/xemu-input.h
+index 7023e30e..168a0ae4 100644
+--- a/xemu/ui/xemu-input.h
++++ b/xemu/ui/xemu-input.h
+@@ -71,6 +71,7 @@ enum controller_state_axis_index {
+ enum controller_input_device_type {
+     INPUT_DEVICE_SDL_KEYBOARD,
+     INPUT_DEVICE_SDL_GAMEPAD,
++    INPUT_DEVICE_XGRID,
+ };
+ 
+ enum peripheral_type { PERIPHERAL_NONE, PERIPHERAL_XMU, PERIPHERAL_TYPE_COUNT };

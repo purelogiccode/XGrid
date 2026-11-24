@@ -18,6 +18,7 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Disc swap and eject through the in-process ABI.
 - [x] Screenshot strip in the Library.
 - [x] First-run wizard with a shortcut sheet.
+- [x] Controller assignment for players 1–4.
 - [x] Whole-window screenshots (F8).
 - [x] Power, stop, fullscreen, disc-open and settings shortcuts.
 
@@ -54,10 +55,6 @@ current product roadmap; user documentation lives in `docs/`.
 
 - [ ] XDVDFS synthesizer for file-tree `--iso` ZArchive files.
 - [ ] Re-verify CHD/ZAR boot paths on each core rebase.
-
-### Shell
-
-- [ ] Controller assignment beyond player 1.
 
 ### Platform
 

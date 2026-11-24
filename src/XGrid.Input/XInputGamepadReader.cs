@@ -19,17 +19,32 @@ namespace XGrid.Input;
 public sealed class XInputGamepadReader : IDisposable
 {
     private const uint ErrorSuccess = 0;
-    private const int MaxUsers = 4;
+
+    /// <summary>The number of XInput user slots.</summary>
+    public const int MaxUsers = 4;
 
     private delegate uint XInputGetState(uint userIndex, out XInputState state);
 
     private readonly XInputGetState? _getState;
+    private readonly int _fixedUser;
     private IntPtr _library;
     private bool _disposed;
 
     /// <summary>Creates a reader, loading the XInput runtime if the platform has one.</summary>
     public XInputGamepadReader()
     {
+        _fixedUser = -1;
+        (_getState, _library) = Load();
+    }
+
+    /// <summary>Creates a reader pinned to one XInput user slot.</summary>
+    /// <param name="userIndex">User slot, 0 to <see cref="MaxUsers"/> - 1.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="userIndex"/> is outside the slots.</exception>
+    public XInputGamepadReader(int userIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(userIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(userIndex, MaxUsers);
+        _fixedUser = userIndex;
         (_getState, _library) = Load();
     }
 
@@ -38,6 +53,9 @@ public sealed class XInputGamepadReader : IDisposable
 
     /// <summary>Gets the user slot of the last connected controller, or -1.</summary>
     public int UserIndex { get; private set; } = -1;
+
+    /// <summary>Gets the user slot this reader polls, or -1 when it scans.</summary>
+    public int AssignedSlot => _fixedUser >= 0 ? _fixedUser : UserIndex;
 
     /// <summary>
     /// Polls for controller state.
@@ -51,6 +69,18 @@ public sealed class XInputGamepadReader : IDisposable
         if (_disposed || _getState is null)
         {
             return false;
+        }
+
+        if (_fixedUser >= 0)
+        {
+            if (!TryPoll(_fixedUser, out pad, options))
+            {
+                pad = HostPad.Neutral;
+                return false;
+            }
+
+            UserIndex = _fixedUser;
+            return true;
         }
 
         // Stick to the first slot that answered: re-scanning every poll would

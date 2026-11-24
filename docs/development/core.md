@@ -21,7 +21,7 @@ xemu/
 | `block/xgridchd.c` | CHD block driver; decodes hunks on demand through libchdr. |
 | `block/xgridzar.c` | ZArchive block driver; decodes zstd blocks and exposes the largest `.iso` entry. |
 | `display/xgrid-display.c` | Frame sink; publishes BGRA frames to a named shared section. |
-| `input/xgrid-input.c` | Input sink; reads the shell's player-1 pad. |
+| `input/xgrid-input.c` | Input sink; reads one pad record per Xbox port. |
 | `abi/xgrid-core.c` | In-process host ABI and save-state request bridge. |
 | `thirdparty/libchdr/` | Vendored libchdr 0.3.0 (BSD-3-Clause). |
 | `meson.build` | Wires the additions into the xemu build. |
@@ -29,8 +29,9 @@ xemu/
 ### `xemu-patches/`
 
 Edits to upstream files are kept as patches. The current patch record includes
-the in-process host changes: the Windows `sigsetjmp`/`siglongjmp` shim, the
-QEMU thread stack size and the xemu run entry point.
+the in-process host changes (the Windows `sigsetjmp`/`siglongjmp` shim, the
+QEMU thread stack size and the xemu run entry point) and the shell-pad binding
+in `ui/xemu-input.c` that gives players 2-4 a controller to feed.
 
 A new xemu release is handled by rebasing the patch set and the `xgrid-core/`
 additions, not by re-porting the emulator.

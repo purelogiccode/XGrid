@@ -126,6 +126,7 @@ public sealed class XemuCoreSession : IDisposable
     }
 
     /// <summary>Forwards one pad state to the core.</summary>
+    /// <param name="port">Xbox port index, 0 to 3.</param>
     /// <param name="buttons">xemu XID button mask.</param>
     /// <param name="lx">Left stick X.</param>
     /// <param name="ly">Left stick Y.</param>
@@ -133,9 +134,9 @@ public sealed class XemuCoreSession : IDisposable
     /// <param name="ry">Right stick Y.</param>
     /// <param name="lt">Left trigger 0..32767.</param>
     /// <param name="rt">Right trigger 0..32767.</param>
-    public void SetPad(uint buttons, int lx, int ly, int rx, int ry, int lt, int rt)
+    public void SetPad(int port, uint buttons, int lx, int ly, int rx, int ry, int lt, int rt)
     {
-        _input?.Write(buttons, lx, ly, rx, ry, lt, rt);
+        _input?.Write(port, buttons, lx, ly, rx, ry, lt, rt);
     }
 
     /// <summary>Shows or hides the core picture without stopping the core.</summary>
@@ -178,8 +179,8 @@ public sealed class XemuCoreSession : IDisposable
         if (!string.IsNullOrWhiteSpace(launch.InputSinkName))
         {
             _input = new XemuInputSink(launch.InputSinkName);
-            // Publish a neutral pad immediately so the core never reads garbage.
-            _input.Write(0, 0, 0, 0, 0, 0, 0);
+            // Publish neutral states immediately so the core never reads garbage.
+            _input.WriteNeutral();
         }
 
         IXemuCoreRuntime runtime;

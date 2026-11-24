@@ -19,7 +19,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Vulkan renderer | Only when the core build includes it |
 | NULL/headless renderer | Supported, no picture |
 | Keyboard input | Supported |
-| XInput controller, player 1 | Supported on Windows |
+| XInput controllers, players 1–4 | Supported on Windows |
 | Live host audio and WAV capture | Supported through the core |
 | Four save-state slots | Supported with in-process hosting |
 | Shell filters (nearest, bilinear, scanlines, CRT) | Supported with the frame sink |
