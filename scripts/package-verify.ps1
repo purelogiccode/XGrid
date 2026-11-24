@@ -131,6 +131,18 @@ try {
     if ($portedCount -eq 0) { Fail 'no ported source file was found; the notices check is meaningless' }
     Write-Host ("  notices      {0} ported files recorded" -f $portedCount)
 
+    # --- dependency license texts ---------------------------------------------
+    $licenseDir = Join-Path $repo 'licenses'
+    if (-not (Test-Path $licenseDir)) { Fail 'licenses/ is missing from the repository' }
+    $licenseTexts = @(Get-ChildItem $licenseDir -File | Sort-Object Name | ForEach-Object { $_.Name })
+    if ($licenseTexts.Count -lt 10) { Fail "licenses/ only has $($licenseTexts.Count) files" }
+    foreach ($text in $licenseTexts) {
+        if ((Get-Item (Join-Path $licenseDir $text)).Length -lt 500) {
+            Fail "licenses/$text is too small to be a license text"
+        }
+    }
+    Write-Host ("  license texts {0} files" -f $licenseTexts.Count)
+
     # --- archives -------------------------------------------------------------
     Write-Host 'PACKAGE CONTENTS'
     $required = @('COPYING', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'RELEASE-NOTES.md', 'VERSION')
@@ -233,6 +245,11 @@ try {
             if ($archive.Names.Count -eq 0) { Fail "$file is empty" }
             foreach ($entry in $required) {
                 if (-not $archive.Names.ContainsKey($entry)) { Fail "$file is missing $entry" }
+            }
+            foreach ($text in $licenseTexts) {
+                if (-not $archive.Names.ContainsKey("licenses/$text")) {
+                    Fail "$file is missing licenses/$text"
+                }
             }
             $exe = if ($app -eq 'cli') { 'XGrid.Cli' } else { 'XGrid.Frontend.Avalonia' }
             $exeName = if ($isWindowsRid) { "$exe.exe" } else { $exe }

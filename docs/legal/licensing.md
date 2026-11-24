@@ -47,8 +47,8 @@ GPL-2.0, which that combination permits.
 
 If you redistribute XGrid binaries:
 
-- include `COPYING`, `LICENSE` and `THIRD_PARTY_NOTICES.md`;
-- include the dependency license texts required by the notices;
+- include `COPYING`, `LICENSE`, `THIRD_PARTY_NOTICES.md` and the `licenses/`
+  texts;
 - provide the corresponding source, including `xemu/` and
   `xemu/xemu-patches/` (see [Source availability](source-availability.md));
 - do not add firmware, BIOS images, EEPROMs or game data.

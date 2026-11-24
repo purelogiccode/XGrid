@@ -41,6 +41,7 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Package gate: licenses, archive contents, checksums, manifest, CLI smoke,
       verified for all four release RIDs.
 - [x] Unsigned archives with documented SmartScreen/Gatekeeper behavior.
+- [x] Dependency license texts in `licenses/`, required by the package gate.
 - [x] GPL-2.0-or-later license set, third-party notices, source availability.
 
 ## 2. Next
@@ -61,10 +62,6 @@ current product roadmap; user documentation lives in `docs/`.
 - [ ] Build and package the core for Linux and macOS.
 - [ ] Native display embedding on Linux/macOS.
 - [ ] Verify save states on non-Windows hosts.
-
-### Release
-
-- [ ] Ship dependency license texts with the archive.
 
 ## 3. Non-goals
 

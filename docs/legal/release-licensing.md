@@ -58,10 +58,13 @@ core, checksums and the manifest.
 
 ## Dependency license texts
 
-Some redistributed libraries require their license text to travel with the
-binary. Ship the texts listed in `THIRD_PARTY_NOTICES.md` and the release
-licensing checklist. This is a release-manager obligation, not something the
-application can enforce at runtime.
+The full license texts of the redistributed libraries ship in `licenses/` in
+every release archive. `licenses/README.md` maps each component to its text; the
+copyright lines remain in `THIRD_PARTY_NOTICES.md`. The package gate requires
+every text in the folder in every archive.
+
+When a dependency's license text changes, or a component is added or removed,
+update the folder and the mapping in the same change.
 
 ## Changes to the license set
 
