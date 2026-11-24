@@ -17,6 +17,7 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Pause, resume and single-frame stepping.
 - [x] Disc swap and eject through the in-process ABI.
 - [x] Screenshot strip in the Library.
+- [x] First-run wizard with a shortcut sheet.
 - [x] Whole-window screenshots (F8).
 - [x] Power, stop, fullscreen, disc-open and settings shortcuts.
 
@@ -57,7 +58,6 @@ current product roadmap; user documentation lives in `docs/`.
 ### Shell
 
 - [ ] Controller assignment beyond player 1.
-- [ ] First-run wizard and shortcut sheet.
 
 ### Platform
 

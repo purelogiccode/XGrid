@@ -18,6 +18,7 @@ using CommunityToolkit.Mvvm.Input;
 using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
+using XGrid.Frontend.Avalonia.Views;
 using XGrid.Input;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
@@ -53,6 +54,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private PlaybackController? _playback;
     private DiscChangeRunner? _discs;
     private string? _sessionFilter;
+    private bool _firstRunPending;
     private bool _saveStatesNeedRefresh;
     private CoreCapabilities? _coreCapabilities;
 
@@ -109,6 +111,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         _settingsStore = settingsStore;
         Config = settingsStore.Load();
+        _firstRunPending = !settingsStore.ExistedAtLoad && !App.Autostart;
         _gamepadOptions = InputMapping.Create(Config.Input);
         _core = new XemuCoreSession();
         _core.Log += OnCoreLog;
@@ -357,6 +360,90 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _uiTimer.Start();
         _ = Library.RefreshAsync();
+
+        if (_firstRunPending)
+        {
+            if (window.IsVisible)
+            {
+                _ = ShowFirstRunAsync(window);
+            }
+            else
+            {
+                window.Opened += OnMainWindowOpened;
+            }
+        }
+    }
+
+    private void OnMainWindowOpened(object? sender, EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            window.Opened -= OnMainWindowOpened;
+            _ = ShowFirstRunAsync(window);
+        }
+    }
+
+    /// <summary>Shows the first-run wizard once, on a fresh settings folder.</summary>
+    /// <param name="owner">The main window.</param>
+    private async Task ShowFirstRunAsync(Window owner)
+    {
+        try
+        {
+            var wizard = new FirstRunWindow();
+            var model = new FirstRunViewModel(this, wizard);
+            model.Completed += (_, _) => wizard.Close();
+            wizard.DataContext = model;
+            await wizard.ShowDialog(owner);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException)
+        {
+            AddLog(LogLevel.Warning, "Could not show the first-run setup: " + exception.Message);
+        }
+        finally
+        {
+            // Closing the window with the title-bar button is "set up later";
+            // saving now keeps the wizard from returning on every launch.
+            if (_firstRunPending)
+            {
+                CompleteFirstRun(null, null, null, null);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies the first-run choices, saves the settings and refreshes the
+    /// pages that read firmware and library state.
+    /// </summary>
+    /// <param name="biosPath">Chosen BIOS image, or null to keep the current one.</param>
+    /// <param name="eepromPath">Chosen EEPROM image, or null to keep the current one.</param>
+    /// <param name="hddPath">Chosen hard-disk image, or null to keep the current one.</param>
+    /// <param name="libraryFolder">Game folder to add, or null.</param>
+    public void CompleteFirstRun(
+        string? biosPath, string? eepromPath, string? hddPath, string? libraryFolder)
+    {
+        _firstRunPending = false;
+        FirstRunSetup.Apply(Config, biosPath, eepromPath, hddPath, libraryFolder);
+        try
+        {
+            _settingsStore.Save(Config);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Warning, "Could not save the first-run settings: " + exception.Message);
+        }
+
+        RefreshCoreCapabilities();
+        Settings.LoadFrom(Config);
+        NotifyConfigChanged();
+        AddLog(LogLevel.Info, Config.IsBiosReady
+            ? "First-run setup finished; firmware configured: " + Config.BiosPath
+            : "First-run setup finished; add a BIOS image in Settings to power on.");
+        if (Config.LibraryFolders.Count > 0)
+        {
+            _ = Library.RefreshAsync();
+        }
+
+        ShowToast("Welcome to XGrid");
     }
 
     /// <summary>Stops the emulator and releases resources.</summary>

@@ -87,10 +87,10 @@ keyboard and XInput mapping is XGrid's, not the core's.
    archive includes the emulator under `core/xemu/`.
 2. **Extract** it anywhere. The applications are portable and self-contained.
 3. **Start** `XGrid.Frontend.Avalonia`.
-4. Open **Settings → System** and point XGrid at your BIOS, MCPX ROM, EEPROM and
-   HDD image.
-5. Add your game folders in **Settings → Library**.
-6. Pick a title in **Library**, or press **Power on** to reach the dashboard.
+4. The first-run wizard asks for the BIOS, EEPROM, hard-disk image and an optional
+   game folder. Everything can also be set later in **Settings → System** and
+   **Settings → Library**.
+5. Pick a title in **Library**, or press **Power on** to reach the dashboard.
 
 Full details: [Installation](getting-started/installation.md) and
 [First boot](getting-started/first-boot.md).

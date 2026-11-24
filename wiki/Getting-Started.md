@@ -26,6 +26,11 @@ Release archives are self-contained; no .NET runtime is needed.
 
 ## First boot
 
+On a fresh install, a first-run wizard opens and asks for the BIOS, EEPROM and
+hard-disk images plus an optional game folder. **Finish** saves them; **Set up
+later** leaves everything for Settings. The same fields stay available in
+**Settings → System**:
+
 1. Open **Settings → System**.
 2. Set **BIOS image**, **MCPX boot ROM**, **EEPROM image** and **Hard-disk image**.
 3. Leave **Guest memory** at 64 MB for a retail console.

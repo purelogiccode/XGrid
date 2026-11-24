@@ -1,0 +1,97 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
+        x:Class="XGrid.Frontend.Avalonia.Views.FirstRunWindow"
+        x:DataType="vm:FirstRunViewModel"
+        Title="Welcome to XGrid"
+        Width="680"
+        Height="660"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource XgBackgroundBrush}">
+  <Grid RowDefinitions="*,Auto" Margin="26">
+    <ScrollViewer>
+      <StackPanel Spacing="16">
+        <StackPanel Spacing="5">
+          <TextBlock Text="Welcome to XGrid" Classes="h1" />
+          <TextBlock Classes="body"
+                     TextWrapping="Wrap"
+                     Text="XGrid emulates the Xbox with the xemu core. It does not ship firmware, EEPROMs, hard-disk images or games, so the first step is to point it at your own files." />
+        </StackPanel>
+
+        <Border Classes="card">
+          <StackPanel Spacing="9">
+            <TextBlock Text="Firmware and storage" Classes="h3" />
+            <TextBlock Classes="hint"
+                       TextWrapping="Wrap"
+                       Text="The BIOS image is required to power on. The EEPROM and hard-disk image provide the dashboard and save states; a packaged core also finds files named eeprom.bin and xbox_hdd.qcow2 beside itself." />
+            <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
+              <TextBlock Text="BIOS image" Classes="label" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1"
+                       Text="{Binding BiosPath, Mode=TwoWay}"
+                       PlaceholderText="Your Xbox BIOS (256 or 512 KB)" />
+              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse..." />
+            </Grid>
+            <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
+              <TextBlock Text="EEPROM" Classes="label" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1"
+                       Text="{Binding EepromPath, Mode=TwoWay}"
+                       PlaceholderText="Optional eeprom.bin" />
+              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse..." />
+            </Grid>
+            <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
+              <TextBlock Text="Hard disk" Classes="label" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1"
+                       Text="{Binding HddPath, Mode=TwoWay}"
+                       PlaceholderText="Optional xbox_hdd.qcow2" />
+              <Button Grid.Column="2" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse..." />
+            </Grid>
+            <TextBlock Text="{Binding Problem}"
+                       IsVisible="{Binding HasProblem}"
+                       Foreground="{DynamicResource XgWarningBrush}"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="9">
+            <TextBlock Text="Games" Classes="h3" />
+            <TextBlock Classes="hint"
+                       TextWrapping="Wrap"
+                       Text="Add a folder of ISO/XISO, CHD, ZAR or XBE files. Subfolders are scanned; more folders can be added later." />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Text="{Binding LibraryFolder, Mode=TwoWay}" PlaceholderText="Optional game folder" />
+              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseLibraryCommand}" Content="Browse..." />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="9">
+            <TextBlock Text="Shortcuts" Classes="h3" />
+            <Grid ColumnDefinitions="160,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+              <TextBlock Text="Power on / off" Classes="caption" />
+              <TextBlock Grid.Column="1" Text="F5" Classes="mono" FontSize="11.5" />
+              <TextBlock Grid.Row="1" Text="Pause / step" Classes="caption" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="P  ·  F10 (while paused)" Classes="mono" FontSize="11.5" />
+              <TextBlock Grid.Row="2" Text="Screenshot" Classes="caption" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="F8" Classes="mono" FontSize="11.5" />
+              <TextBlock Grid.Row="3" Text="Disc" Classes="caption" />
+              <TextBlock Grid.Row="3" Grid.Column="1" Text="Ctrl+O  ·  Ctrl+E" Classes="mono" FontSize="11.5" />
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,18,0,0">
+      <TextBlock Classes="hint"
+                 VerticalAlignment="Center"
+                 Text="You can change all of this later in Settings." />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Classes="ghost" Command="{Binding SetUpLaterCommand}" Content="Set up later" />
+        <Button Classes="primary" Command="{Binding FinishCommand}" Content="Finish" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

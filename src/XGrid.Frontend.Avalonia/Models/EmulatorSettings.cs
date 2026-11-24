@@ -16,16 +16,16 @@ namespace XGrid.Frontend.Avalonia.Models;
 public sealed class EmulatorSettings
 {
     /// <summary>Gets or sets the MCPX BIOS image path (required to power on).</summary>
-    public string BiosPath { get; init; } = string.Empty;
+    public string BiosPath { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the optional 512-byte MCPX boot ROM path.</summary>
     public string McpxRomPath { get; init; } = string.Empty;
 
     /// <summary>Gets or sets the optional 256-byte EEPROM image path.</summary>
-    public string EepromPath { get; init; } = string.Empty;
+    public string EepromPath { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the optional hard-disk image path.</summary>
-    public string HddPath { get; init; } = string.Empty;
+    public string HddPath { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the disc image inserted at power-on (ISO/XISO, CHD or ZAR).</summary>
     public string DvdPath { get; init; } = string.Empty;

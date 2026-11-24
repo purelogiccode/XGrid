@@ -6,7 +6,11 @@ game.
 ## 1. Start the shell
 
 Launch `XGrid.Frontend.Avalonia`. The Home page opens with the console powered
-off. If no BIOS is configured, XGrid shows a setup warning.
+off. On a fresh install, a **first-run wizard** asks for the BIOS, EEPROM and
+hard-disk images and an optional game folder. **Finish** saves the choices;
+**Set up later** leaves everything for the Settings page.
+
+If no BIOS is configured, XGrid keeps showing a setup warning on Home.
 
 ## 2. Configure firmware and storage
 
@@ -34,6 +38,7 @@ Open **Settings → Library** and add one or more folders. XGrid scans them
 recursively for:
 
 - `.iso`
+- `.xiso`
 - `.chd`
 - `.zar`
 - `.xbe` (listed for inspection; not directly bootable)
@@ -55,7 +60,8 @@ shows whether the console is running.
 ## 5. Launch a game
 
 Open **Library**, find the title and click it. If the console is already running,
-power it off first; XGrid refuses to launch a second disc into a running core.
+the disc is swapped into the running machine (in-process hosting, like save
+states); use **Emulation → Power On / Off** to restart instead.
 
 Loose XBE files are not launchable on their own. Wrap them in an ISO or CHD.
 
