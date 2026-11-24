@@ -148,7 +148,7 @@ public sealed class ZarArchiveTests
         tree.CopyTo(file, treeOffset);
 
         Span<byte> footer = file.AsSpan(footerOffset, footerSize);
-        BinaryPrimitives.WriteUInt64BigEndian(footer[32..], (ulong)namesOffset);
+        BinaryPrimitives.WriteUInt64BigEndian(footer[32..], namesOffset);
         BinaryPrimitives.WriteUInt64BigEndian(footer[40..], (ulong)names.Count);
         BinaryPrimitives.WriteUInt64BigEndian(footer[48..], (ulong)treeOffset);
         BinaryPrimitives.WriteUInt64BigEndian(footer[56..], (ulong)tree.Length);

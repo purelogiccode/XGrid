@@ -809,7 +809,7 @@ public sealed class PshCombinerTests
     /// </summary>
     private static int ComparableBits(float value)
     {
-        return float.IsNaN(value) ? unchecked((int)0x7FC0_0000) : BitConverter.SingleToInt32Bits(value);
+        return float.IsNaN(value) ? unchecked((int)0x7FC0_0000u) : BitConverter.SingleToInt32Bits(value);
     }
 
     private static bool CheckDivergence(PshCombiner combiner, Random rng, int samples)

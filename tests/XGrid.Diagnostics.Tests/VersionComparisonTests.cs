@@ -23,4 +23,37 @@ public sealed class VersionComparisonTests
         Assert.True(VersionComparison.TryParse("v10.20.30-rc.1", out System.Version? version));
         Assert.Equal(new System.Version(10, 20, 30, 0), version);
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("v")]
+    [InlineData("1.2.3.4.5")]
+    [InlineData("-1.2.3")]
+    [InlineData("1.-2.3")]
+    [InlineData("1.2.x")]
+    [InlineData("999999999999.1")]
+    public void TryParse_RejectsInvalidVersions(string? text)
+    {
+        Assert.False(VersionComparison.TryParse(text, out System.Version? version));
+        Assert.Null(version);
+    }
+
+    [Fact]
+    public void TryParse_AcceptsFourNumericParts()
+    {
+        Assert.True(VersionComparison.TryParse("1.2.3.4", out System.Version? version));
+        Assert.Equal(new System.Version(1, 2, 3, 4), version);
+    }
+
+    [Theory]
+    [InlineData("v1.0.0", null, false)]
+    [InlineData(null, "1.0.0", false)]
+    [InlineData("1.0.0", "not-a-version", false)]
+    [InlineData("1.10.0", "1.9.0", true)]
+    public void IsNewer_ReturnsFalseWhenEitherSideIsInvalid(string? candidate, string? current, bool expected)
+    {
+        Assert.Equal(expected, VersionComparison.IsNewer(candidate, current));
+    }
 }

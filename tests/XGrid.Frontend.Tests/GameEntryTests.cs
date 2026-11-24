@@ -75,6 +75,77 @@ public sealed class GameEntryTests : IDisposable
         Assert.False(entry.HasDistinctTitleId);
     }
 
+    [Theory]
+    [InlineData(".iso", GameFormat.Iso, true)]
+    [InlineData(".xiso", GameFormat.Iso, true)]
+    [InlineData(".chd", GameFormat.Chd, true)]
+    [InlineData(".zar", GameFormat.Zar, true)]
+    [InlineData(".xbe", GameFormat.Xbe, false)]
+    public void FromFile_MapsContainersAndLaunchability(
+        string extension,
+        GameFormat expectedFormat,
+        bool launchable)
+    {
+        string path = Path.Combine(_root, "some_game" + extension);
+        File.WriteAllBytes(
+            path,
+            string.Equals(extension, ".xbe", StringComparison.Ordinal)
+                ? BuildXbe("Some Game", 0x4D530002u)
+                : [0]);
+
+        GameEntry? entry = GameEntry.FromFile(path);
+
+        Assert.NotNull(entry);
+        Assert.Equal(expectedFormat, entry.Format);
+        Assert.Equal(launchable, entry.IsLaunchable);
+        Assert.Equal(
+            string.Equals(extension, ".xbe", StringComparison.Ordinal) ? "Some Game" : "some game",
+            entry.Title);
+        Assert.Equal(_root, entry.Folder);
+    }
+
+    [Fact]
+    public void FromFile_PrettifiesUnderscoresAndDots()
+    {
+        string path = Path.Combine(_root, "halo_2.combat.evolved.iso");
+        File.WriteAllBytes(path, [0]);
+
+        GameEntry? entry = GameEntry.FromFile(path);
+
+        Assert.NotNull(entry);
+        Assert.Equal("halo 2 combat evolved", entry.Title);
+    }
+
+    [Theory]
+    [InlineData(0, "0 B")]
+    [InlineData(1023, "1023 B")]
+    [InlineData(1024, "1.0 KB")]
+    [InlineData(1536, "1.5 KB")]
+    [InlineData(1048576, "1.0 MB")]
+    public void SizeText_FormatsBinaryUnits(long length, string expected)
+    {
+        string path = Path.Combine(_root, "size.iso");
+        File.WriteAllBytes(path, new byte[length]);
+
+        GameEntry entry = Assert.IsType<GameEntry>(GameEntry.FromFile(path));
+
+        Assert.Equal(expected, entry.SizeText);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void FromFile_RejectsBlankPaths(string path)
+    {
+        Assert.Null(GameEntry.FromFile(path));
+    }
+
+    [Fact]
+    public void FromFile_ReturnsNullForAMissingFile()
+    {
+        Assert.Null(GameEntry.FromFile(Path.Combine(_root, "missing.iso")));
+    }
+
     private string WriteXbe(string name, string title, uint titleId)
     {
         string path = Path.Combine(_root, name);
@@ -90,29 +161,29 @@ public sealed class GameEntryTests : IDisposable
     /// </summary>
     private static byte[] BuildXbe(string title, uint titleId)
     {
-        const uint Base = 0x00010000u;
-        const uint Cert = 0x200u;
+        const uint baseAddress = 0x00010000u;
+        const uint certOffset = 0x200u;
         byte[] image = new byte[0x1000];
         WriteAscii(image, 0x00, "XBEH");
-        WriteU32(image, 0x104, Base);
+        WriteU32(image, 0x104, baseAddress);
         WriteU32(image, 0x108, 0x688u);
         WriteU32(image, 0x110, 0x178u);
-        WriteU32(image, 0x118, Base + Cert);
+        WriteU32(image, 0x118, baseAddress + certOffset);
         WriteU32(image, 0x11C, 1u);
-        WriteU32(image, 0x120, Base + 0x300u);
+        WriteU32(image, 0x120, baseAddress + 0x300u);
         WriteU32(image, 0x128, 0x11000u);
-        WriteU32(image, 0x12C, Base + 0x380u);
+        WriteU32(image, 0x12C, baseAddress + 0x380u);
 
-        WriteU32(image, (int)Cert + 0x08, titleId);
+        WriteU32(image, (int)certOffset + 0x08, titleId);
         byte[] name = System.Text.Encoding.Unicode.GetBytes(title);
-        Array.Copy(name, 0, image, (int)Cert + 0x0C, Math.Min(name.Length, 0x40));
+        Array.Copy(name, 0, image, (int)certOffset + 0x0C, Math.Min(name.Length, 0x40));
 
         WriteU32(image, 0x300, 0x4u);
         WriteU32(image, 0x304, 0x11000u);
         WriteU32(image, 0x308, 0x200u);
         WriteU32(image, 0x30C, 0x400u);
         WriteU32(image, 0x310, 0x200u);
-        WriteU32(image, 0x314, Base + 0x360u);
+        WriteU32(image, 0x314, baseAddress + 0x360u);
         WriteAscii(image, 0x360, ".text");
         return image;
     }

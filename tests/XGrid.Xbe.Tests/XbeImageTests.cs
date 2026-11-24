@@ -81,6 +81,50 @@ public sealed class XbeImageTests
         Assert.Throws<InvalidDataException>(() => XbeImage.Load(image));
     }
 
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(257u)]
+    public void Load_SectionCountOutOfRange_Throws(uint count)
+    {
+        byte[] image = BuildImage(XbeImage.ImageType.Retail, out _, out _);
+        WriteU32(image, 0x11C, count);
+
+        Assert.Throws<InvalidDataException>(() => XbeImage.Load(image));
+    }
+
+    [Fact]
+    public void Load_CertificatePastEnd_Throws()
+    {
+        byte[] image = BuildImage(XbeImage.ImageType.Retail, out _, out _);
+        WriteU32(image, 0x118, Base + 0xFF0u);
+
+        Assert.Throws<InvalidDataException>(() => XbeImage.Load(image));
+    }
+
+    [Fact]
+    public void Load_TlsPastEnd_Throws()
+    {
+        byte[] image = BuildImage(XbeImage.ImageType.Retail, out _, out _);
+        WriteU32(image, 0x12C, Base + 0xFF0u);
+
+        Assert.Throws<InvalidDataException>(() => XbeImage.Load(image));
+    }
+
+    [Fact]
+    public void Load_LibraryTablePastEnd_Throws()
+    {
+        byte[] image = BuildImage(XbeImage.ImageType.Retail, out _, out _);
+        WriteU32(image, 0x164, Base + 0xFF8u);
+
+        Assert.Throws<InvalidDataException>(() => XbeImage.Load(image));
+    }
+
+    [Fact]
+    public void Load_RejectsAnEmptyImage()
+    {
+        Assert.Throws<InvalidDataException>(() => XbeImage.Load([]));
+    }
+
     private static byte[] BuildImage(XbeImage.ImageType type, out uint entry, out uint thunk)
     {
         const int headersSize = 0x688;

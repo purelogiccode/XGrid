@@ -16,7 +16,7 @@ public sealed class FrameFiltersTests
     [InlineData(FrameFilters.Bilinear)]
     public void SamplingFiltersLeaveTheFrameUntouched(string filter)
     {
-        byte[] pixels = Frame4x2(255);
+        byte[] pixels = Frame4X2(255);
 
         FrameFilters.Apply(filter, pixels, 4, 2);
 
@@ -26,7 +26,7 @@ public sealed class FrameFiltersTests
     [Fact]
     public void ScanlineDarkensEveryOtherRowOnly()
     {
-        byte[] pixels = Frame4x4(255);
+        byte[] pixels = Frame4X4(255);
 
         FrameFilters.Apply(FrameFilters.Scanline, pixels, 4, 4);
 
@@ -39,7 +39,7 @@ public sealed class FrameFiltersTests
     [Fact]
     public void CrtAddsThePhosphorColumnMask()
     {
-        byte[] pixels = Frame3x2(255);
+        byte[] pixels = Frame3X2(255);
 
         FrameFilters.Apply(FrameFilters.Crt, pixels, 3, 2);
 
@@ -104,7 +104,7 @@ public sealed class FrameFiltersTests
     [Fact]
     public void CrtAppliesTheScanlineAndPhosphorMasksTogether()
     {
-        byte[] pixels = Frame3x3(255);
+        byte[] pixels = Frame3X3(255);
 
         FrameFilters.Apply(FrameFilters.Crt, pixels, 3, 3);
 
@@ -135,7 +135,7 @@ public sealed class FrameFiltersTests
     [Fact]
     public void ZeroOrNegativeGeometryIsSafe()
     {
-        byte[] pixels = Frame4x2(255);
+        byte[] pixels = Frame4X2(255);
 
         FrameFilters.Apply(FrameFilters.Crt, pixels, 0, 2);
         FrameFilters.Apply(FrameFilters.Crt, pixels, 4, 0);
@@ -144,22 +144,22 @@ public sealed class FrameFiltersTests
         Assert.All(pixels, value => Assert.Equal(255, value));
     }
 
-    private static byte[] Frame4x2(byte value)
+    private static byte[] Frame4X2(byte value)
     {
         return Frame(4, 2, value);
     }
 
-    private static byte[] Frame4x4(byte value)
+    private static byte[] Frame4X4(byte value)
     {
         return Frame(4, 4, value);
     }
 
-    private static byte[] Frame3x2(byte value)
+    private static byte[] Frame3X2(byte value)
     {
         return Frame(3, 2, value);
     }
 
-    private static byte[] Frame3x3(byte value)
+    private static byte[] Frame3X3(byte value)
     {
         return Frame(3, 3, value);
     }

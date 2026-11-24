@@ -69,6 +69,16 @@ public sealed class FirstRunSetupTests : IDisposable
     }
 
     [Fact]
+    public void ApplyRepairsANullLibraryList()
+    {
+        var settings = new EmulatorSettings { LibraryFolders = null! };
+
+        FirstRunSetup.Apply(settings, null, null, null, "games");
+
+        Assert.Equal(["games"], settings.LibraryFolders);
+    }
+
+    [Fact]
     public void ValidateRequiresEveryEnteredPathToExist()
     {
         string existing = Touch("exists.bin");
