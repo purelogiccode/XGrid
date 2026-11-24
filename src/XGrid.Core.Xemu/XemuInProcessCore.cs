@@ -70,6 +70,10 @@ public sealed class XemuInProcessCore : IDisposable
     private readonly IndexedStringDelegate? _snapshotName;
     private readonly PauseDelegate? _setPaused;
     private readonly NoArgIntDelegate? _frameStep;
+    private readonly NameRequestDelegate? _discLoad;
+    private readonly NoArgIntDelegate? _discEject;
+    private readonly NoArgIntDelegate? _discStatus;
+    private readonly NoArgStringDelegate? _discError;
     private bool _started;
     private bool _disposed;
 
@@ -100,6 +104,13 @@ public sealed class XemuInProcessCore : IDisposable
             // boots, the shell just has no pause control for it.
             _setPaused = TryGet<PauseDelegate>("xgrid_core_set_paused");
             _frameStep = TryGet<NoArgIntDelegate>("xgrid_core_frame_step");
+
+            // Disc change is also optional: a core built before the disc ABI
+            // still boots, the shell just cannot swap while it runs.
+            _discLoad = TryGet<NameRequestDelegate>("xgrid_core_disc_load");
+            _discEject = TryGet<NoArgIntDelegate>("xgrid_core_disc_eject");
+            _discStatus = TryGet<NoArgIntDelegate>("xgrid_core_disc_status");
+            _discError = TryGet<NoArgStringDelegate>("xgrid_core_disc_error");
         }
         catch
         {
@@ -128,6 +139,10 @@ public sealed class XemuInProcessCore : IDisposable
 
     /// <summary>Gets a value indicating whether the core can pause and step.</summary>
     public bool SupportsPlayback => _setPaused is not null && _frameStep is not null;
+
+    /// <summary>Gets a value indicating whether the core can change discs while it runs.</summary>
+    public bool SupportsDiscChange =>
+        _discLoad is not null && _discEject is not null && _discStatus is not null && _discError is not null;
 
     /// <summary>
     /// Loads the core DLL when it exists beside the executable, returning null
@@ -257,6 +272,26 @@ public sealed class XemuInProcessCore : IDisposable
     {
         return _disposed || _frameStep is null ? -1 : _frameStep();
     }
+
+    /// <summary>Queues a disc change (0 accepted, negative refused).</summary>
+    /// <param name="path">ISO/XISO, CHD or ZArchive image.</param>
+    public int DiscLoad(string path)
+    {
+        return _disposed || _discLoad is null ? -1 : _discLoad(path);
+    }
+
+    /// <summary>Queues a disc eject (0 accepted, negative refused).</summary>
+    public int DiscEject()
+    {
+        return _disposed || _discEject is null ? -1 : _discEject();
+    }
+
+    /// <summary>Gets the last disc request's state.</summary>
+    public int DiscStatus => _disposed || _discStatus is null ? 0 : _discStatus();
+
+    /// <summary>Gets the last disc request's error text, or an empty string.</summary>
+    public string DiscError =>
+        _disposed || _discError is null ? string.Empty : Marshal.PtrToStringUTF8(_discError()) ?? string.Empty;
 
     /// <summary>Queues a snapshot save (0 accepted, negative refused).</summary>
     /// <param name="name">Snapshot name; an existing one is replaced.</param>

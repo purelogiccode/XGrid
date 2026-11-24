@@ -130,6 +130,12 @@ public sealed class XemuCoreProcess : IXemuCoreRuntime
     /// </summary>
     public ICorePlayback? Playback => null;
 
+    /// <summary>
+    /// Gets the core's disc-change controls. A separate process exposes no ABI,
+    /// so changing a disc without a restart needs the in-process core.
+    /// </summary>
+    public ICoreDiscs? Discs => null;
+
     /// <summary>Gets the process exit code once it has exited, or -1 before then.</summary>
     public int ExitCode
     {

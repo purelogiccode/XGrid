@@ -17,6 +17,14 @@ not supported yet; the shell refuses them with an explanation. Pack the ISO as
 one file entry (for example, pack a folder that contains the ISO) rather than
 expanding it into game files.
 
+## Changing discs
+
+- **Ctrl+O**, the toolbar **Open** button, or clicking a Library row while the
+  console runs swaps the disc; no power cycle.
+- **Ctrl+E** ejects and leaves the tray empty.
+- ISO/XISO, CHD and ZArchive images can be swapped in.
+- Needs in-process core hosting, like save states.
+
 ## HDD
 
 - Raw or qcow2.

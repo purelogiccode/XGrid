@@ -57,5 +57,6 @@ Keyboard presses are overlaid on the controller report; digital buttons combine.
 | `F10` | Step one frame (while paused) |
 | `F11` | Fullscreen |
 | `P` | Pause / resume |
-| `Ctrl+O` | Open disc |
+| `Ctrl+O` | Open disc (swaps while running) |
+| `Ctrl+E` | Eject disc |
 | `Ctrl+S` | Save settings |

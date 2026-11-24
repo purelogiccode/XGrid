@@ -24,6 +24,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Four save-state slots | Supported with in-process hosting |
 | Shell filters (nearest, bilinear, scanlines, CRT) | Supported with the frame sink |
 | Per-title override (memory, renderer, filters) | Supported |
+| Disc swap while running | Supported with in-process hosting |
 | Whole-window screenshots | Supported |
 
 ## Known limitations

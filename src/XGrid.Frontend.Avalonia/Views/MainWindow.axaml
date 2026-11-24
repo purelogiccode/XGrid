@@ -21,9 +21,12 @@
     <Menu Grid.Row="0" IsVisible="{Binding !IsFullscreen}">
       <MenuItem Header="File" ToolTip.Tip="Choose a disc image or leave XGrid.">
         <MenuItem Header="Open Disc..." InputGesture="Ctrl+O" Click="OnMenuOpenDisc"
-                  ToolTip.Tip="Choose an ISO or CHD image and power the console on." />
+                  ToolTip.Tip="Choose an ISO, CHD or ZArchive image. With the console running this swaps the disc." />
         <MenuItem Header="Choose Disc Image..." Click="OnMenuChooseDisc"
                   ToolTip.Tip="Select the disc that the power button will boot." />
+        <MenuItem Header="Eject Disc" InputGesture="Ctrl+E"
+                  Command="{Binding EjectDiscCommand}"
+                  ToolTip.Tip="{Binding EjectDiscHint}" />
         <Separator />
         <MenuItem Header="Open Config Folder" Click="OnMenuOpenConfigFolder"
                   ToolTip.Tip="Show the folder with settings.json and the generated core configuration." />
@@ -99,7 +102,7 @@
             BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button Classes="toolbar" Click="OnMenuChooseDisc" ToolTip.Tip="Choose the disc image to boot">
+          <Button Classes="toolbar" Click="OnMenuChooseDisc" ToolTip.Tip="{Binding OpenDiscHint}">
             <StackPanel Spacing="2">
               <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Disc}" />
               <TextBlock Text="Open" FontSize="10.5" HorizontalAlignment="Center" />

@@ -41,6 +41,13 @@ the next frame the display path publishes, and a step resumes from that boundary
 and stops after the next frame. A 50 ms timer does the same when the sink is off,
 because then no frame is published.
 
+### Disc change
+
+`xgrid_core_disc_load(path)` and `xgrid_core_disc_eject` queue a block-layer
+medium change; `xgrid_core_disc_status` and `xgrid_core_disc_error` report it.
+The load picks the driver from the extension (`xgridchd`, `xgridzar`, or raw)
+and cycles the tray so the guest notices. No power cycle is involved.
+
 ### Save states
 
 `xgrid_core_snapshot_save/load/delete/refresh` queue one request at a time;

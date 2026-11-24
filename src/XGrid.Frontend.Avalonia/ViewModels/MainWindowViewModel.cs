@@ -51,6 +51,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _shuttingDown;
     private SaveStateRunner? _saveStates;
     private PlaybackController? _playback;
+    private DiscChangeRunner? _discs;
     private string? _sessionFilter;
     private bool _saveStatesNeedRefresh;
     private CoreCapabilities? _coreCapabilities;
@@ -249,6 +250,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets a value indicating whether the running core can pause and step.</summary>
     public bool HasPlayback => _playback?.IsSupported == true;
+
+    /// <summary>Gets a value indicating whether the running core can change discs.</summary>
+    public bool HasDiscChange => _discs?.IsSupported == true;
+
+    /// <summary>Gets the disc button hint for the current state.</summary>
+    public string OpenDiscHint => IsRunning
+        ? HasDiscChange
+            ? "Change the inserted disc (Ctrl+O)"
+            : "Choose a disc image; changing discs needs in-process hosting"
+        : "Choose the disc image to boot";
+
+    /// <summary>Gets the eject hint for the current state.</summary>
+    public string EjectDiscHint => HasDiscChange
+        ? "Eject the inserted disc (Ctrl+E)"
+        : "Ejecting needs the in-process emulator core";
 
     /// <summary>Gets the pause button label for the current state.</summary>
     public string PauseButtonText => IsPaused ? "Resume" : "Pause";
@@ -582,6 +598,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasPlayback));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StepFrameCommand.NotifyCanExecuteChanged();
+        _discs = new DiscChangeRunner(_core.Discs);
+        OnPropertyChanged(nameof(HasDiscChange));
+        OnPropertyChanged(nameof(OpenDiscHint));
+        OnPropertyChanged(nameof(EjectDiscHint));
+        EjectDiscCommand.NotifyCanExecuteChanged();
 
         if (!string.Equals(launch.Renderer, effective.Graphics.Renderer, StringComparison.Ordinal))
         {
@@ -749,9 +770,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void StartGame(GameEntry? game)
     {
+        if (game is not null && !game.IsLaunchable)
+        {
+            ShowToast("Loose XBE files must be wrapped in an ISO or CHD image.");
+            return;
+        }
+
         if (_core.IsRunning)
         {
-            ShowToast("Power off the console before launching another disc.");
+            // Clicking another game in the Library is a disc swap, not a launch.
+            if (game is not null && _discs?.IsSupported == true)
+            {
+                InsertDisc(game.Path);
+                return;
+            }
+
+            ShowToast("Power off the console before changing discs.");
             return;
         }
 
@@ -760,12 +794,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             AddLog(LogLevel.Warning, "Power-on refused: no BIOS image is configured.");
             ShowToast("Choose a BIOS image first.");
             NavigateTo(PageKind.Settings);
-            return;
-        }
-
-        if (game is not null && !game.IsLaunchable)
-        {
-            ShowToast("Loose XBE files must be wrapped in an ISO or CHD image.");
             return;
         }
 
@@ -797,8 +825,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             _playback = null;
             IsPaused = false;
             _sessionFilter = null;
+            _discs = null;
             OnPropertyChanged(nameof(HasPlayback));
+            OnPropertyChanged(nameof(HasDiscChange));
+            OnPropertyChanged(nameof(OpenDiscHint));
+            OnPropertyChanged(nameof(EjectDiscHint));
             OnPropertyChanged(nameof(SmoothFrame));
+            EjectDiscCommand.NotifyCanExecuteChanged();
             StatusText = "Idle";
             StatusDetail = "Power-on failed";
             AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
@@ -910,7 +943,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task OpenDiscAsync()
     {
-        string? path = await Dialogs.PickFileAsync("Choose a disc image", FileDialogService.DiscTypes);
+        string? path = await Dialogs.PickFileAsync(
+            IsRunning ? "Choose a disc image to insert" : "Choose a disc image",
+            FileDialogService.DiscTypes);
         if (string.IsNullOrWhiteSpace(path))
         {
             return;
@@ -922,6 +957,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (IsRunning)
+        {
+            InsertDisc(path);
+            return;
+        }
+
         GameEntry? entry = GameEntry.FromFile(path);
         if (entry is null)
         {
@@ -930,6 +971,98 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         StartGame(entry);
+    }
+
+    /// <summary>Public command: ejects the inserted disc while the console runs.</summary>
+    [RelayCommand(CanExecute = nameof(CanEjectDisc))]
+    private void EjectDisc()
+    {
+        DiscChangeRunner? discs = _discs;
+        if (discs is null || !discs.IsSupported)
+        {
+            ShowToast("Changing discs needs the in-process emulator core.");
+            return;
+        }
+
+        if (!discs.TryEject(out string problem))
+        {
+            AddLog(LogLevel.Warning, "Eject refused: " + problem);
+            ShowToast(problem);
+            return;
+        }
+
+        StatusText = "Ejecting";
+        StatusDetail = "Opening the disc tray";
+        AddLog(LogLevel.Info, "Ejecting the disc...");
+    }
+
+    private bool CanEjectDisc()
+    {
+        return IsRunning && _discs?.IsSupported == true;
+    }
+
+    /// <summary>Inserts a disc into the running console through the core ABI.</summary>
+    /// <param name="path">ISO/XISO, CHD or ZArchive image.</param>
+    private void InsertDisc(string path)
+    {
+        DiscChangeRunner? discs = _discs;
+        if (discs is null || !discs.IsSupported)
+        {
+            ShowToast("Changing discs needs the in-process emulator core.");
+            return;
+        }
+
+        if (!discs.TryLoad(path, out string problem))
+        {
+            AddLog(LogLevel.Warning, "Disc change refused: " + problem);
+            ShowToast(problem);
+            return;
+        }
+
+        StatusText = "Changing disc";
+        StatusDetail = "Inserting " + Path.GetFileName(path);
+        AddLog(LogLevel.Info, "Changing disc to " + Path.GetFileName(path) + "...");
+        NavigateTo(PageKind.Home);
+    }
+
+    /// <summary>
+    /// Reports the finished disc request, if one arrived. The core changes the
+    /// block backend on its own loop, so the shell only polls the status.
+    /// </summary>
+    private void PollDiscChange()
+    {
+        DiscChangeRunner? discs = _discs;
+        if (discs is null)
+        {
+            return;
+        }
+
+        DiscChangeResult? result = discs.Poll();
+        if (result is null)
+        {
+            return;
+        }
+
+        AddLog(result.Succeeded ? LogLevel.Info : LogLevel.Error, result.Message);
+        ShowToast(result.Message);
+
+        string detail = result.Succeeded
+            ? result.Operation == DiscChangeOperation.Load
+                ? (CurrentGame?.Title ?? "Xbox dashboard") + " - disc changed"
+                : "No disc inserted"
+            : CurrentGame?.Title ?? "Xbox dashboard";
+        if (result.Succeeded && result.Operation == DiscChangeOperation.Load)
+        {
+            CurrentGame = GameEntry.FromFile(result.Path);
+            detail = (CurrentGame?.Title ?? "Xbox dashboard") + " - disc changed";
+        }
+        else if (result.Succeeded)
+        {
+            CurrentGame = null;
+        }
+
+        StatusText = IsPaused ? "Paused" : "Running";
+        StatusDetail = IsPaused ? detail + " - paused" : detail;
     }
 
     private bool CanStop()
@@ -945,9 +1078,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(ShowCoreDisplay));
         OnPropertyChanged(nameof(RunStateLabel));
+        OnPropertyChanged(nameof(OpenDiscHint));
         StopSessionCommand.NotifyCanExecuteChanged();
         TogglePauseCommand.NotifyCanExecuteChanged();
         StepFrameCommand.NotifyCanExecuteChanged();
+        EjectDiscCommand.NotifyCanExecuteChanged();
         if (value)
         {
             _frameTimer.Start();
@@ -1108,9 +1243,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             _playback = null;
             IsPaused = false;
             _sessionFilter = null;
+            _discs = null;
             OnPropertyChanged(nameof(HasSaveStates));
             OnPropertyChanged(nameof(HasPlayback));
+            OnPropertyChanged(nameof(HasDiscChange));
+            OnPropertyChanged(nameof(OpenDiscHint));
+            OnPropertyChanged(nameof(EjectDiscHint));
             OnPropertyChanged(nameof(SmoothFrame));
+            EjectDiscCommand.NotifyCanExecuteChanged();
             StatusText = e.Faulted ? "Faulted" : "Off";
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
@@ -1147,6 +1287,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private void OnUiTick(object? sender, EventArgs e)
     {
         PollSaveStates();
+        PollDiscChange();
 
         long now = Environment.TickCount64;
         if (_frameWindowStart == 0)

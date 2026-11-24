@@ -22,9 +22,12 @@
 #include "qemu/timer.h"
 #include "block/aio.h"
 #include "qapi/error.h"
+#include "qapi/qapi-commands-block.h"
 #include "system/runstate.h"
 #include "ui/xemu-run.h"
+#include "ui/xemu-settings.h"
 #include "ui/xemu-snapshots.h"
+#include "hw/xbox/smbus.h"
 #include "xemu-version.h"
 #include "xgrid-core.h"
 #include "../display/xgrid-display.h"
@@ -379,6 +382,178 @@ static void xgrid_core_start_step(void *opaque)
     vm_start();
 }
 
+/*
+ * Disc change.
+ *
+ * The request slot accepts one operation at a time and runs as a bottom half
+ * on the core's main loop, where the block layer expects it. The medium format
+ * follows the file extension: a CHD or ZArchive needs the XGrid block driver,
+ * while ISO/XISO images are raw.
+ */
+typedef enum XGridDiscRequest {
+    XGRID_DISC_REQUEST_NONE = 0,
+    XGRID_DISC_REQUEST_LOAD,
+    XGRID_DISC_REQUEST_EJECT,
+} XGridDiscRequest;
+
+static QemuMutex g_disc_mutex;
+static bool g_disc_mutex_ready;
+
+/* Guarded by g_disc_mutex. */
+static XGridDiscRequest g_disc_request;
+static char *g_disc_request_path;
+static int g_disc_status;
+static char g_disc_error[1024];
+
+static void xgrid_core_disc_lock(void)
+{
+    if (!g_disc_mutex_ready) {
+        qemu_mutex_init(&g_disc_mutex);
+        g_disc_mutex_ready = true;
+    }
+    qemu_mutex_lock(&g_disc_mutex);
+}
+
+static void xgrid_core_disc_unlock(void)
+{
+    qemu_mutex_unlock(&g_disc_mutex);
+}
+
+static void xgrid_core_disc_set_failed(const char *message)
+{
+    xgrid_core_disc_lock();
+    g_disc_status = XGRID_DISC_FAILED;
+    snprintf(g_disc_error, sizeof(g_disc_error), "%s",
+             message != NULL && message[0] != '\0' ? message : "Disc change failed");
+    xgrid_core_disc_unlock();
+}
+
+static const char *xgrid_core_disc_format(const char *path)
+{
+    size_t length = strlen(path);
+
+    if (length > 4 && g_ascii_strcasecmp(path + length - 4, ".chd") == 0) {
+        return "xgridchd";
+    }
+    if (length > 4 && g_ascii_strcasecmp(path + length - 4, ".zar") == 0) {
+        return "xgridzar";
+    }
+
+    return "raw";
+}
+
+static void xgrid_core_disc_change(const char *path, Error **errp)
+{
+    Error *err = NULL;
+
+    /* The tray cycle makes Xbox software notice the new medium. */
+    xbox_smc_eject_button();
+    xemu_settings_set_string(&g_config.sys.files.dvd_path, "");
+
+    qmp_blockdev_change_medium("ide0-cd1", NULL, path,
+                               xgrid_core_disc_format(path), false, false,
+                               false, 0, &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+    } else {
+        xemu_settings_set_string(&g_config.sys.files.dvd_path, path);
+    }
+
+    xbox_smc_update_tray_state();
+}
+
+static void xgrid_core_disc_eject_medium(Error **errp)
+{
+    Error *err = NULL;
+
+    xbox_smc_eject_button();
+    xemu_settings_set_string(&g_config.sys.files.dvd_path, "");
+
+    qmp_eject("ide0-cd1", NULL, true, false, &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+    }
+
+    xbox_smc_update_tray_state();
+}
+
+/* Runs on the core's main loop, with the BQL held. */
+static void xgrid_core_disc_run(void *opaque)
+{
+    XGridDiscRequest request;
+    char *path;
+    Error *err = NULL;
+
+    (void)opaque;
+
+    xgrid_core_disc_lock();
+    request = g_disc_request;
+    path = g_disc_request_path;
+    g_disc_request = XGRID_DISC_REQUEST_NONE;
+    g_disc_request_path = NULL;
+    xgrid_core_disc_unlock();
+
+    switch (request) {
+    case XGRID_DISC_REQUEST_LOAD:
+        xgrid_core_disc_change(path, &err);
+        break;
+
+    case XGRID_DISC_REQUEST_EJECT:
+        xgrid_core_disc_eject_medium(&err);
+        break;
+
+    case XGRID_DISC_REQUEST_NONE:
+        break;
+    }
+
+    if (err != NULL) {
+        char *message = g_strdup(error_get_pretty(err));
+        error_free(err);
+        xgrid_core_disc_set_failed(message);
+        g_free(message);
+    } else if (request != XGRID_DISC_REQUEST_NONE) {
+        xgrid_core_disc_lock();
+        g_disc_status = XGRID_DISC_COMPLETED;
+        g_disc_error[0] = '\0';
+        xgrid_core_disc_unlock();
+    }
+
+    g_free(path);
+}
+
+static int xgrid_core_disc_request_start(XGridDiscRequest request,
+                                         const char *path)
+{
+    if (!qatomic_read(&g_running)) {
+        return -1;
+    }
+    if (qemu_get_aio_context() == NULL) {
+        /* The core thread has not set up its main loop yet; retry later. */
+        return -1;
+    }
+    if (request == XGRID_DISC_REQUEST_LOAD && path == NULL) {
+        return -2;
+    }
+    if (path != NULL && (path[0] == '\0' || strlen(path) > 4095)) {
+        return -2;
+    }
+
+    xgrid_core_disc_lock();
+    if (g_disc_request != XGRID_DISC_REQUEST_NONE) {
+        xgrid_core_disc_unlock();
+        return -3;
+    }
+
+    g_disc_request = request;
+    g_disc_request_path = path != NULL ? g_strdup(path) : NULL;
+    g_disc_status = XGRID_DISC_PENDING;
+    g_disc_error[0] = '\0';
+    xgrid_core_disc_unlock();
+
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), xgrid_core_disc_run, NULL);
+    return 0;
+}
+
 /**
  * Starts the machine on a background thread.
  *
@@ -411,6 +586,12 @@ XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
     g_snapshot_error[0] = '\0';
     g_snapshot_request = XGRID_SNAPSHOT_REQUEST_NONE;
     xgrid_core_snapshot_unlock();
+
+    xgrid_core_disc_lock();
+    g_disc_status = XGRID_DISC_IDLE;
+    g_disc_error[0] = '\0';
+    g_disc_request = XGRID_DISC_REQUEST_NONE;
+    xgrid_core_disc_unlock();
 
     /*
      * The host owns the process streams: redirecting them here would capture
@@ -535,6 +716,40 @@ XGRID_CORE_EXPORT int xgrid_core_frame_step(void)
     aio_bh_schedule_oneshot(qemu_get_aio_context(), xgrid_core_start_step,
                             NULL);
     return 0;
+}
+
+/** Queues a change of the inserted disc. */
+XGRID_CORE_EXPORT int xgrid_core_disc_load(const char *path)
+{
+    return xgrid_core_disc_request_start(XGRID_DISC_REQUEST_LOAD, path);
+}
+
+/** Queues an eject, leaving the drive connected and empty. */
+XGRID_CORE_EXPORT int xgrid_core_disc_eject(void)
+{
+    return xgrid_core_disc_request_start(XGRID_DISC_REQUEST_EJECT, NULL);
+}
+
+/** Returns one of the XGRID_DISC_* status values. */
+XGRID_CORE_EXPORT int xgrid_core_disc_status(void)
+{
+    int status;
+
+    xgrid_core_disc_lock();
+    status = g_disc_status;
+    xgrid_core_disc_unlock();
+    return status;
+}
+
+/** Returns the last disc request's error text, or an empty string. */
+XGRID_CORE_EXPORT const char *xgrid_core_disc_error(void)
+{
+    static char copy[sizeof(g_disc_error)];
+
+    xgrid_core_disc_lock();
+    snprintf(copy, sizeof(copy), "%s", g_disc_error);
+    xgrid_core_disc_unlock();
+    return copy;
 }
 
 /** Queues a snapshot save under @p name. */

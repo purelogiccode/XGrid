@@ -71,6 +71,20 @@ int xgrid_core_is_paused(void);
 int xgrid_core_frame_step(void);
 ```
 
+Disc functions:
+
+```c
+int xgrid_core_disc_load(const char *path);
+int xgrid_core_disc_eject(void);
+int xgrid_core_disc_status(void);
+const char *xgrid_core_disc_error(void);
+```
+
+A disc load opens the medium through the block layer with the format the file
+extension names: `.chd` uses `xgridchd`, `.zar` uses `xgridzar`, everything else
+is raw. The tray is cycled so Xbox software notices the change; no power cycle
+is involved.
+
 Pause and frame step are queued like the save-state requests and applied on the
 core's main loop. A pause stops the machine on the next published frame, and a
 step resumes from that boundary and stops after the next frame. A 50 ms timer is

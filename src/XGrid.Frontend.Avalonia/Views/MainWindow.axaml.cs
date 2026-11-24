@@ -245,6 +245,13 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 return;
             }
+
+            if (e.Key == Key.E)
+            {
+                ExecuteShellCommand(static viewModel => viewModel.EjectDiscCommand.Execute(null));
+                e.Handled = true;
+                return;
+            }
         }
 
         if (IsTypingTarget())
