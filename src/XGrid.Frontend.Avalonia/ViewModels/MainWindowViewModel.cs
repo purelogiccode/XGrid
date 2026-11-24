@@ -260,11 +260,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsFpsOverlayVisible));
+            if (value && IsRunning && !_core.IsFrameSinkActive)
+            {
+                ShowToast("The FPS overlay needs 'Present core frames in the shell'.");
+            }
         }
     }
 
     /// <summary>Gets a value indicating whether the overlay is drawn over a running console.</summary>
-    public bool IsFpsOverlayVisible => ShowFpsOverlay && IsRunning;
+    /// <remarks>
+    /// The meter counts frames the shell presents. With the embedded core window
+    /// the shell never sees a frame, so the overlay stays hidden instead of
+    /// showing a permanent placeholder.
+    /// </remarks>
+    public bool IsFpsOverlayVisible => ShowFpsOverlay && IsRunning && _core.IsFrameSinkActive;
 
     /// <summary>Gets the supporting copy shown on the home page.</summary>
     public string HomeDetail
@@ -2008,6 +2017,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _lastFrameSinkActive = sinkActive;
             OnPropertyChanged(nameof(ShowCoreDisplay));
+            OnPropertyChanged(nameof(IsFpsOverlayVisible));
         }
 
         // The core owns the picture, its pacing and its input; the shell only
