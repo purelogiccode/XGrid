@@ -4,7 +4,7 @@
              xmlns:local="using:XGrid.Frontend.Avalonia"
              x:Class="XGrid.Frontend.Avalonia.Views.LibraryView"
              x:DataType="vm:LibraryViewModel">
-  <Grid RowDefinitions="Auto,*">
+  <Grid RowDefinitions="Auto,*,Auto">
     <!-- ===================== Toolbar ===================== -->
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
       <StackPanel Orientation="Horizontal" Spacing="10">
@@ -149,5 +149,61 @@
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
+
+    <!-- ===================== Screenshots ===================== -->
+    <Border Grid.Row="2" Classes="card" Margin="0,14,0,0" IsVisible="{Binding HasScreenshots}">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Screenshots" Classes="h3" />
+            <TextBlock Text="Recent captures (F8). Click a picture to open it."
+                       Classes="hint" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" Command="{Binding RefreshScreenshotsCommand}"
+                  Content="Refresh" ToolTip.Tip="Re-read the screenshots folder" />
+          <Button Grid.Column="2" Classes="ghost"
+                  Command="{Binding Shell.OpenScreenshotsFolderCommand}"
+                  Content="Open folder" ToolTip.Tip="Show the screenshots folder in the file manager" />
+        </Grid>
+
+        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled"
+                      MaxHeight="132">
+          <ItemsControl ItemsSource="{Binding Screenshots}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="10" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:ScreenshotItem">
+                <Button Classes="subtle"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Command="{Binding OpenCommand}"
+                        ToolTip.Tip="{Binding FileName}">
+                  <StackPanel Spacing="4">
+                    <Border Width="168"
+                            Height="94"
+                            CornerRadius="4"
+                            ClipToBounds="True"
+                            Background="#050608">
+                      <Image Source="{Binding Thumbnail}"
+                             Stretch="UniformToFill"
+                             RenderOptions.BitmapInterpolationMode="HighQuality" />
+                    </Border>
+                    <TextBlock Text="{Binding CapturedText}"
+                               Classes="mono"
+                               FontSize="10"
+                               HorizontalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
+    </Border>
   </Grid>
 </UserControl>

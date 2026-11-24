@@ -372,6 +372,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _frameTimer.Stop();
         _toastTimer.Stop();
         _core.Dispose();
+        Library.Dispose();
     }
 
     /// <inheritdoc />
@@ -721,6 +722,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
             AddLog(LogLevel.Info, "Screenshot saved to " + path);
             ShowToast("Screenshot saved: " + Path.GetFileName(path));
+            Library.RefreshScreenshots();
         }
         catch (Exception exception) when (exception is IOException
                                               or UnauthorizedAccessException
@@ -1157,6 +1159,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         // A native child window is not clipped by the shell's visual tree; hide
         // it while another page is on top so it cannot cover the settings tabs.
         _core.SetDisplayVisible(value?.Kind == PageKind.Home);
+
+        // Captures can appear while the console page is open; refresh when the
+        // Library is shown. Unchanged files reuse their decoded thumbnails.
+        if (value?.Kind == PageKind.Library)
+        {
+            Library.RefreshScreenshots();
+        }
 
         OnPropertyChanged(nameof(IsHomePage));
         OnPropertyChanged(nameof(IsLibraryPage));

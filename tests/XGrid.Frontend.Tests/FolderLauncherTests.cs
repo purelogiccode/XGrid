@@ -14,4 +14,12 @@ public sealed class FolderLauncherTests
     {
         Assert.Throws<ArgumentException>(() => FolderLauncher.Open(path));
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void OpenFile_RejectsABlankPathWithoutLaunching(string path)
+    {
+        Assert.Throws<ArgumentException>(() => FolderLauncher.OpenFile(path));
+    }
 }
