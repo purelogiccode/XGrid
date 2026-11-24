@@ -12,7 +12,12 @@ public static class FramePacing
     public const int PollIntervalMilliseconds = 8;
 
     /// <summary>Gets the minimum gap between two presents in milliseconds.</summary>
-    public const int PresentIntervalMilliseconds = 10;
+    /// <remarks>
+    /// The 8 ms poll already caps the rate; this guard only stops a tight timer
+    /// loop from presenting the same pending frame twice. A larger gate (the
+    /// old 10 ms value) let timer jitter skip whole refreshes.
+    /// </remarks>
+    public const int PresentIntervalMilliseconds = 1;
 
     /// <summary>
     /// Returns whether a frame may be presented now. The first call after a

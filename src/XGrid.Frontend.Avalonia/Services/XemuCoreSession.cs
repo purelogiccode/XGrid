@@ -266,7 +266,8 @@ public sealed class XemuCoreSession : IDisposable
         {
             core.Dispose();
             Serilog.Log.Error(exception, "The in-process core did not start");
-            Log?.Invoke(this, "The in-process core did not start: " + exception.Message);
+            Log?.Invoke(this, "The in-process core did not start: " + exception.Message
+                              + " Starting a separate core process for this session.");
             return null;
         }
     }
@@ -381,17 +382,25 @@ public sealed class XemuCoreSession : IDisposable
             }
 
             XemuCoreProcess? process = _runtime as XemuCoreProcess;
-            if (process is null || _displayHost == IntPtr.Zero || _embedder?.IsEmbedded == true)
+            XemuInProcessRuntime? inProcess = _runtime as XemuInProcessRuntime;
+            if ((process is null && inProcess is null)
+                || _displayHost == IntPtr.Zero
+                || _embedder?.IsEmbedded == true)
             {
                 return;
             }
 
-            // The window appears a second or two after the process starts; the
-            // 250 ms poll retries, so the UI thread never blocks on it.
-            IntPtr window = process.TryFindWindow();
+            // The window appears a second or two after the core starts; the
+            // 250 ms poll retries, so the UI thread never blocks on it. The
+            // in-process host shares this process, so only its own core window
+            // is eligible for embedding.
+            IntPtr window = process is not null
+                ? process.TryFindWindow()
+                : inProcess!.TryFindWindow();
             if (window == IntPtr.Zero)
             {
-                FrontendTrace.Write($"core window not found yet (pid {process.ProcessId})");
+                int processId = process?.ProcessId ?? Environment.ProcessId;
+                FrontendTrace.Write($"core window not found yet (pid {processId})");
                 return;
             }
 

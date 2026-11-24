@@ -179,6 +179,67 @@ internal static unsafe partial class XemuWindowLocator
         return IntPtr.Zero;
     }
 
+    /// <summary>
+    /// Finds the largest visible top-level window of a given window class.
+    /// </summary>
+    /// <param name="processId">Process id.</param>
+    /// <param name="className">Exact Win32 class name, for example <c>SDL_app</c>.</param>
+    /// <returns>The handle, or zero when the process owns no matching window.</returns>
+    /// <remarks>
+    /// The in-process core shares the shell's process, so a class filter is the
+    /// only safe way to pick its SDL window instead of the Avalonia main window.
+    /// </remarks>
+    internal static IntPtr FindClass(int processId, string className)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(className);
+        var candidates = new List<IntPtr>(4);
+        GCHandle state = GCHandle.Alloc(candidates);
+        try
+        {
+            EnumWindows(&CollectWindow, GCHandle.ToIntPtr(state));
+        }
+        finally
+        {
+            state.Free();
+        }
+
+        IntPtr best = IntPtr.Zero;
+        long bestArea = 0;
+        foreach (IntPtr handle in candidates)
+        {
+            _ = Win32Window.GetWindowThreadProcessId(handle, out uint owner);
+            if (owner != processId
+                || !string.Equals(ReadClassName(handle), className, StringComparison.Ordinal)
+                || !Win32Window.IsWindowVisible(handle))
+            {
+                continue;
+            }
+
+            int style = Win32Window.GetWindowLongW(handle, Win32Window.GwlStyle);
+            if (!Win32Window.IsEmbeddable(unchecked((uint)style))
+                || !Win32Window.GetWindowRect(handle, out Win32Window.Rect rect))
+            {
+                continue;
+            }
+
+            long area = (long)(rect.Right - rect.Left) * (rect.Bottom - rect.Top);
+            if (area > bestArea)
+            {
+                bestArea = area;
+                best = handle;
+            }
+        }
+
+        return best;
+    }
+
+    private static string ReadClassName(IntPtr handle)
+    {
+        char* buffer = stackalloc char[256];
+        int copied = Win32Window.GetClassNameW(handle, buffer, 256);
+        return copied <= 0 ? string.Empty : new string(buffer, 0, copied);
+    }
+
     private static string ReadTitle(IntPtr handle)
     {
         int length = Win32Window.GetWindowTextLengthW(handle);

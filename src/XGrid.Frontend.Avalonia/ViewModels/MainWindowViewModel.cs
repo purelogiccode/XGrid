@@ -36,6 +36,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _toastTimer;
     private readonly Lock _coreFrameLock = new();
     private byte[]? _coreFrameBuffer;
+    private byte[]? _coreFrameSpare;
     private int _coreFrameWidth;
     private int _coreFrameHeight;
     private bool _coreFramePending;
@@ -1769,6 +1770,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             // A frame left pending by the previous session must not be the first
             // picture of the next one.
             _coreFramePending = false;
+            _coreFrameBuffer = null;
+            _coreFrameSpare = null;
         }
 
         FrameBitmap = null;
@@ -1875,14 +1878,31 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             _coreFramePending = false;
-            packet = new FramePacket((uint)_coreFrameWidth, (uint)_coreFrameHeight, _coreFrameBuffer);
+
+            // Hand the UI the buffer the sink just filled and give the sink the
+            // previous one to write next. A single buffer let the next frame
+            // overwrite the pixels while PresentFrame was still reading them.
+            byte[] present = _coreFrameBuffer;
+            _coreFrameBuffer = _coreFrameSpare;
+            _coreFrameSpare = present;
+            packet = new FramePacket((uint)_coreFrameWidth, (uint)_coreFrameHeight, present);
             return true;
         }
     }
 
     private void OnCoreLog(object? sender, string message)
     {
-        Dispatcher.UIThread.Post(() => AddLog(LogLevel.Info, message));
+        Dispatcher.UIThread.Post(() =>
+        {
+            AddLog(LogLevel.Info, message);
+            if (message.Contains("Starting a separate core process", StringComparison.Ordinal))
+            {
+                // In-process QEMU state is single-use; the fallback is normal
+                // after the first session, but the user should know why save
+                // states and pause are no longer available.
+                ShowToast("In-process core already ran; this game uses a separate process.");
+            }
+        });
     }
 
     private void OnCoreStopped(object? sender, XemuCoreStoppedEventArgs e)

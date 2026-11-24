@@ -39,6 +39,9 @@ internal static partial class Win32Window
     internal const uint SwpNoActivate = 0x0010;
     internal const uint SwpFrameChanged = 0x0020;
     internal const uint SwpShowWindow = 0x0040;
+    internal const uint SwpNoSize = 0x0001;
+    internal const uint SwpHideWindow = 0x0080;
+    internal const uint SwpAsyncWindowPos = 0x4000;
 
     internal const int SwShow = 5;
 
@@ -94,6 +97,9 @@ internal static partial class Win32Window
 
     [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW")]
     internal static unsafe partial int GetWindowTextW(IntPtr hWnd, char* text, int maxCount);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW")]
+    internal static unsafe partial int GetClassNameW(IntPtr hWnd, char* className, int maxCount);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
