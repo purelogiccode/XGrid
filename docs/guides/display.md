@@ -79,6 +79,16 @@ example `1280 x 960 - OpenGL`. It appears only after the first frame.
 (`screenshot-YYYYMMDD-HHMMSS.png`), with a suffix if two captures land in the same
 second.
 
+## Pause and frame step
+
+- **P** (or **Emulation → Pause / Resume**) stops the machine on the next frame
+  boundary and keeps the last picture on screen with a **Paused** badge.
+- **F10** (or **Emulation → Step One Frame**) advances exactly one frame while
+  paused.
+
+Both controls need in-process core hosting, like save states. The status bar
+shows **Paused** and the picture stays until the next step or resume.
+
 ## Performance notes
 
 - Prefer **OpenGL** unless your build reports Vulkan and your driver is stable.

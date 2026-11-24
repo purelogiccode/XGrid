@@ -29,6 +29,7 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
         _core = core;
         _configPath = XemuCoreProcess.WriteConfiguration(settings);
         SaveStates = new InProcessSaveStateService(core);
+        Playback = core.SupportsPlayback ? new InProcessPlayback(core) : null;
     }
 
     /// <summary>Gets the core version string.</summary>
@@ -85,6 +86,9 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
 
     /// <inheritdoc />
     public ISaveStateService SaveStates { get; }
+
+    /// <inheritdoc />
+    public ICorePlayback? Playback { get; }
 
     /// <inheritdoc />
     public void Start()

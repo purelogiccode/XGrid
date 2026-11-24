@@ -124,6 +124,12 @@ public sealed class XemuCoreProcess : IXemuCoreRuntime
     /// </summary>
     public ISaveStateService? SaveStates => null;
 
+    /// <summary>
+    /// Gets the core's pause/step controls. A separate process exposes no ABI,
+    /// so pause and frame step need the in-process core.
+    /// </summary>
+    public ICorePlayback? Playback => null;
+
     /// <summary>Gets the process exit code once it has exited, or -1 before then.</summary>
     public int ExitCode
     {

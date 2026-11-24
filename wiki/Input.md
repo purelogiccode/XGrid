@@ -54,6 +54,8 @@ Keyboard presses are overlaid on the controller report; digital buttons combine.
 | `F6` | Quick save |
 | `F7` | Quick load |
 | `F8` | Screenshot |
+| `F10` | Step one frame (while paused) |
 | `F11` | Fullscreen |
+| `P` | Pause / resume |
 | `Ctrl+O` | Open disc |
 | `Ctrl+S` | Save settings |

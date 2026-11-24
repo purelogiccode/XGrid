@@ -69,6 +69,23 @@
                      HorizontalAlignment="Center" />
         </StackPanel>
 
+        <!-- Paused is a shell state, not a frame: the core keeps presenting the
+             last picture, so the badge sits over it. -->
+        <Border HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="10"
+                Padding="8,3"
+                CornerRadius="3"
+                Background="#B3000000"
+                BorderBrush="{DynamicResource XgAccentBrush}"
+                BorderThickness="1"
+                IsVisible="{Binding Shell.IsPaused}">
+          <TextBlock Text="PAUSED"
+                     Classes="mono"
+                     FontSize="10"
+                     Foreground="{DynamicResource XgAccentBrush}" />
+        </Border>
+
         <!-- The caption reports the frame the core actually published; it is
              not shown until there is one. -->
         <Border HorizontalAlignment="Left"

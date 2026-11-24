@@ -31,6 +31,16 @@ presentation path does not change. The ABI is
 `xgrid_core_request_stop`, `xgrid_core_is_running`, `xgrid_core_exit_code`,
 `xgrid_core_join` and `xgrid_core_version`.
 
+### Playback control
+
+`xgrid_core_set_paused(1/0)` pauses or resumes the machine, `xgrid_core_is_paused`
+reports the shell's intent and `xgrid_core_frame_step` runs one frame while
+paused. The requests are queued and applied as a bottom half on the core's main
+loop, where the run-state transition is allowed. A pause stops the machine on
+the next frame the display path publishes, and a step resumes from that boundary
+and stops after the next frame. A 50 ms timer does the same when the sink is off,
+because then no frame is published.
+
 ### Save states
 
 `xgrid_core_snapshot_save/load/delete/refresh` queue one request at a time;

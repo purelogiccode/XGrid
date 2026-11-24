@@ -40,6 +40,16 @@ void xgrid_display_set_sink(const char *name);
 bool xgrid_display_enabled(void);
 
 /**
+ * Called after a frame has been published, so the core can react to a new
+ * picture (a single-frame step stops here). May run on any thread.
+ */
+typedef void (*XGridDisplayFrameCallback)(void *opaque);
+
+/** Registers the frame callback, or clears it with NULL. */
+void xgrid_display_set_frame_callback(XGridDisplayFrameCallback callback,
+                                      void *opaque);
+
+/**
  * Copies one BGRA frame into the shared section, top row first.
  *
  * The section is created on the first call and recreated when the geometry

@@ -61,6 +61,12 @@ XGrid does not invent a snapshot format. It exposes xemu/QEMU snapshots as four
 named slots (`xgrid-slot-1` … `xgrid-slot-4`), saved inside the hard-disk image.
 F6 saves, F7 loads, and the core performs the work on its own main loop.
 
+### Pause and frame step
+
+**P** pauses a running console where it stands and resumes it; the last frame
+stays on screen with a **Paused** badge. **F10** advances exactly one frame while
+paused. Both need in-process core hosting, like save states.
+
 ### Display and input done in the shell
 
 When **Present core frames in the shell** is enabled, the core publishes BGRA

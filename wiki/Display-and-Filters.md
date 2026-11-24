@@ -45,6 +45,15 @@ Filters are applied at source resolution by the shell.
 - **F11** toggles fullscreen; **Esc** leaves it.
 - **F8** saves the whole window as a PNG in `<data>/screenshots/`.
 
+## Pause and frame step
+
+- **P** pauses on the next frame and keeps the last picture, with a **Paused**
+  badge over it.
+- **F10** advances exactly one frame.
+
+Both need in-process core hosting, like save states. While paused, the status
+bar reads **Paused**.
+
 ## If the picture is black
 
 1. Check **Activity**.

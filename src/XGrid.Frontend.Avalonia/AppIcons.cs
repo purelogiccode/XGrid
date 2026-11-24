@@ -45,6 +45,10 @@ public static class AppIcons
     /// <summary>Pause glyph.</summary>
     public static Geometry Pause { get; } = Geometry.Parse("M6 5h4v14H6zm8 0h4v14h-4z");
 
+    /// <summary>Step-one-frame glyph.</summary>
+    public static Geometry StepForward { get; } = Geometry.Parse(
+        "M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z");
+
     /// <summary>Stop glyph.</summary>
     public static Geometry Stop { get; } = Geometry.Parse("M6 6h12v12H6z");
 

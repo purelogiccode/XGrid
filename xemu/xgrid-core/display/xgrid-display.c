@@ -30,6 +30,15 @@ static uint32_t g_height;
 static uint32_t g_stride;
 static uint64_t g_frame;
 static char g_configured_name[256];
+static XGridDisplayFrameCallback g_frame_callback;
+static void *g_frame_callback_opaque;
+
+void xgrid_display_set_frame_callback(XGridDisplayFrameCallback callback,
+                                      void *opaque)
+{
+    g_frame_callback = callback;
+    g_frame_callback_opaque = opaque;
+}
 
 void xgrid_display_set_sink(const char *name)
 {
@@ -152,6 +161,10 @@ void xgrid_display_publish(const void *pixels, uint32_t width, uint32_t height,
      * without also seeing the matching count. */
     g_frame++;
     memcpy(base + 16, &g_frame, 8);
+
+    if (g_frame_callback != NULL) {
+        g_frame_callback(g_frame_callback_opaque);
+    }
 }
 
 #else
@@ -164,6 +177,13 @@ bool xgrid_embed_enabled(void)
 void xgrid_display_set_sink(const char *name)
 {
     (void)name;
+}
+
+void xgrid_display_set_frame_callback(XGridDisplayFrameCallback callback,
+                                      void *opaque)
+{
+    (void)callback;
+    (void)opaque;
 }
 
 bool xgrid_display_enabled(void)

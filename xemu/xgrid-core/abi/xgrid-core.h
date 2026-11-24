@@ -59,6 +59,39 @@ XGRID_CORE_EXPORT int xgrid_core_join(void);
 XGRID_CORE_EXPORT const char *xgrid_core_version(void);
 
 /*
+ * Playback control.
+ *
+ * Pause, resume and single-frame step are requested from the shell's thread
+ * and applied on the core's main loop: a run-state change needs the BQL, and
+ * a step has to stop on the frame boundary the display path publishes.
+ *
+ * The shell reads the intent it asked for; a step resumes the machine and
+ * pauses it again after the next frame.
+ */
+
+/**
+ * Queues a pause (@p paused non-zero) or a resume (@p paused zero). A pause
+ * stops the machine on the next frame the display path publishes.
+ *
+ * @return 0 when queued, -1 when no machine is running, -2 for a bad value.
+ */
+XGRID_CORE_EXPORT int xgrid_core_set_paused(int paused);
+
+/** Returns 1 while the shell has the machine paused, 0 otherwise. */
+XGRID_CORE_EXPORT int xgrid_core_is_paused(void);
+
+/**
+ * Runs one frame while paused and pauses again after that frame. A pause that
+ * is still waiting for its frame boundary is reported the same way as a
+ * running machine.
+ *
+ * @return 0 when queued, -1 when no machine is running, -2 when the machine
+ *         is not paused (or the pause is still settling), -3 while the
+ *         previous step is still running.
+ */
+XGRID_CORE_EXPORT int xgrid_core_frame_step(void);
+
+/*
  * Save states.
  *
  * xemu keeps a save state as an internal snapshot of the hard disk image, so

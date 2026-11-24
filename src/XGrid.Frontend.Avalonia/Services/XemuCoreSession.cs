@@ -70,6 +70,12 @@ public sealed class XemuCoreSession : IDisposable
     /// </summary>
     public ISaveStateService? SaveStates => _runtime?.SaveStates;
 
+    /// <summary>
+    /// Gets the core's pause/step controls, or null when the running core
+    /// cannot reach them (a separate process or an older build).
+    /// </summary>
+    public ICorePlayback? Playback => _runtime?.Playback;
+
     /// <summary>Gets the process id that hosts the core, or 0.</summary>
     public int ProcessId => _runtime?.ProcessId ?? 0;
 
