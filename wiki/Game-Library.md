@@ -38,6 +38,9 @@ A scan:
 Click a row to launch. Power off a running console first. XGrid applies the
 global settings plus any matching per-title override.
 
+While the console runs, clicking a different game inserts that disc instead of
+power-cycling. **Ctrl+E** ejects. Both need in-process core hosting.
+
 ## Missing games
 
 1. Check the extension.

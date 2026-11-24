@@ -67,6 +67,13 @@ F6 saves, F7 loads, and the core performs the work on its own main loop.
 stays on screen with a **Paused** badge. **F10** advances exactly one frame while
 paused. Both need in-process core hosting, like save states.
 
+### Disc swap without a restart
+
+While the console runs, **Ctrl+O**, the toolbar **Open** button, or a Library row
+inserts the chosen disc; **Ctrl+E** ejects and leaves the tray empty. The core
+changes the block medium on its own loop, so the guest sees a tray cycle rather
+than a reboot. In-process hosting only, like save states.
+
 ### Display and input done in the shell
 
 When **Present core frames in the shell** is enabled, the core publishes BGRA

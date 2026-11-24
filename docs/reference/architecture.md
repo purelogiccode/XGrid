@@ -146,6 +146,21 @@ off), a short timer stops the machine instead. The shell keeps the paused state
 it asked for and reports it in the status bar, the toolbar and a badge over the
 picture.
 
+## Disc change
+
+The running console can change its disc without a power cycle:
+
+```text
+xgrid_core_disc_load(path)   xgrid_core_disc_eject()
+xgrid_core_disc_status()     xgrid_core_disc_error()
+```
+
+The request runs as a bottom half on the core's main loop, where the block
+layer expects it. The medium format follows the file extension (`.chd` and
+`.zar` through the XGrid block drivers, everything else raw), and the tray is
+cycled so the guest notices. The shell polls the status, then updates the
+current title. This needs in-process hosting, like save states.
+
 ## Core capabilities
 
 `scripts/build-native-xemu.ps1` writes `xgrid-core.json` beside the core:

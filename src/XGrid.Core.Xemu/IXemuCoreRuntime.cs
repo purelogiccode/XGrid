@@ -35,6 +35,12 @@ public interface IXemuCoreRuntime : IDisposable
     /// </summary>
     ICorePlayback? Playback { get; }
 
+    /// <summary>
+    /// Gets the core's disc-change controls, or null when this hosting mode
+    /// (or an older core build) cannot reach them.
+    /// </summary>
+    ICoreDiscs? Discs { get; }
+
     /// <summary>Starts the machine.</summary>
     void Start();
 

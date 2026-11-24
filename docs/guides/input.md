@@ -75,7 +75,8 @@ These are shell shortcuts, not gamepad bindings:
 | `F11` | Toggle fullscreen |
 | `Esc` | Leave fullscreen |
 | `P` | Pause or resume the console |
-| `Ctrl+O` | Open a disc image |
+| `Ctrl+O` | Open a disc image (swaps the disc while running) |
+| `Ctrl+E` | Eject the inserted disc |
 | `Ctrl+S` | Save settings (Settings page) |
 
 Pause and frame step need in-process core hosting, like save states: the shell

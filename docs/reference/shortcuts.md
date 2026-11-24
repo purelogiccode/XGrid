@@ -12,7 +12,8 @@
 | `F11` | Toggle fullscreen |
 | `Esc` | Leave fullscreen (when fullscreen) |
 | `P` | Pause or resume the console |
-| `Ctrl+O` | Open a disc image |
+| `Ctrl+O` | Open a disc image (swaps the disc while running) |
+| `Ctrl+E` | Eject the inserted disc |
 | `Ctrl+S` | Save settings (Settings page only) |
 
 ## Default player-1 controls
@@ -37,7 +38,7 @@ All bindings are configurable in **Settings → Input**. See [Input](../guides/i
 
 | Menu | Entries |
 | --- | --- |
-| **File** | Open Disc, Choose Disc Image, Open Config Folder, Open Screenshots Folder, Exit |
+| **File** | Open Disc, Choose Disc Image, Eject Disc, Open Config Folder, Open Screenshots Folder, Exit |
 | **Emulation** | Power On / Off, Stop, Pause / Resume, Step One Frame, Save State, Load State, Delete State, Fullscreen |
 | **View** | Console, Library, Settings, Activity, Save Screenshot, Show Log Dock, Fullscreen |
 | **Help** | About XGrid |

@@ -92,6 +92,44 @@ XGRID_CORE_EXPORT int xgrid_core_is_paused(void);
 XGRID_CORE_EXPORT int xgrid_core_frame_step(void);
 
 /*
+ * Disc change.
+ *
+ * The standalone emulator changes the inserted disc through its own menu; the
+ * shell has no menu, so it queues the same block-layer operation here. The
+ * request runs on the core's main loop and the shell polls the status, exactly
+ * like a save-state request. The medium format follows the file extension:
+ * .chd and .zar open through the XGrid block drivers, everything else is raw.
+ *
+ * Status values returned by xgrid_core_disc_status().
+ */
+#define XGRID_DISC_IDLE 0
+#define XGRID_DISC_PENDING 1
+#define XGRID_DISC_COMPLETED 2
+#define XGRID_DISC_FAILED 3
+
+/**
+ * Queues a change of the inserted disc.
+ *
+ * @return 0 when queued, -1 when no machine is running, -2 for a bad path,
+ *         -3 when another disc request is still in flight.
+ */
+XGRID_CORE_EXPORT int xgrid_core_disc_load(const char *path);
+
+/**
+ * Queues an eject, leaving the drive connected and empty.
+ *
+ * @return 0 when queued, -1 when no machine is running, -3 when another disc
+ *         request is still in flight.
+ */
+XGRID_CORE_EXPORT int xgrid_core_disc_eject(void);
+
+/** Returns one of the XGRID_DISC_* status values. */
+XGRID_CORE_EXPORT int xgrid_core_disc_status(void);
+
+/** Returns the last disc request's error text, or an empty string. */
+XGRID_CORE_EXPORT const char *xgrid_core_disc_error(void);
+
+/*
  * Save states.
  *
  * xemu keeps a save state as an internal snapshot of the hard disk image, so

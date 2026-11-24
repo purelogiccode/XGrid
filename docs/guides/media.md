@@ -38,6 +38,20 @@ inside the archive as the guest DVD, decoding zstd blocks on demand.
 A loose Xbox executable. XGrid can list it and read its certificate title, but it
 is **not a disc** and cannot boot on its own. Wrap it in an ISO or CHD.
 
+## Changing discs while the console runs
+
+**File → Open Disc** (Ctrl+O), the toolbar **Open** button, or clicking another
+game in the Library inserts the new disc without power-cycling. **File → Eject
+Disc** (Ctrl+E) opens the tray and leaves it empty. The core runs the block-layer
+change on its own loop, so the picture keeps running while the disc is swapped.
+
+Both actions need in-process core hosting, like save states. With a separate
+core process, power off before changing the disc.
+
+A multi-disc game that asks for the next disc accepts the swap directly. The new
+image can be ISO/XISO, CHD or ZArchive, and the tray cycle makes the guest notice
+the change.
+
 ## Hard-disk images
 
 The HDD image is the console's storage. Raw and qcow2 images are supported.

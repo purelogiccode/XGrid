@@ -57,8 +57,10 @@ Click a library row to launch it. XGrid powers on the core with:
 - any matching per-title override;
 - the library title in the status bar and session log.
 
-If the console is already running, power it off before launching another disc.
-Use **Emulation → Power On / Off** (F5) or the Home page.
+If the console is already running, clicking a library row **swaps the disc**
+instead of restarting it. Use **File → Eject Disc** (Ctrl+E) to leave the tray
+empty, or **Emulation → Power On / Off** (F5) to power off. Swapping needs
+in-process core hosting, like save states.
 
 ## Per-title overrides
 
