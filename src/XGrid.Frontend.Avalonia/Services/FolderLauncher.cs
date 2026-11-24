@@ -17,6 +17,20 @@ public static class FolderLauncher
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         _ = Directory.CreateDirectory(path);
+        Start(path);
+    }
+
+    /// <summary>Opens a file with the desktop's default application.</summary>
+    /// <param name="path">File to open.</param>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is blank.</exception>
+    public static void OpenFile(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        Start(path);
+    }
+
+    private static void Start(string path)
+    {
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose();
     }
 }

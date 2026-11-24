@@ -79,6 +79,10 @@ example `1280 x 960 - OpenGL`. It appears only after the first frame.
 (`screenshot-YYYYMMDD-HHMMSS.png`), with a suffix if two captures land in the same
 second.
 
+The Library page shows the newest captures as a thumbnail strip. Click a picture
+to open it in the default viewer, use **Refresh** to re-read the folder after
+adding files, and **Open folder** to browse the PNGs directly.
+
 ## Pause and frame step
 
 - **P** (or **Emulation → Pause / Resume**) stops the machine on the next frame

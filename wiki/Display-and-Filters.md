@@ -44,6 +44,8 @@ Filters are applied at source resolution by the shell.
 
 - **F11** toggles fullscreen; **Esc** leaves it.
 - **F8** saves the whole window as a PNG in `<data>/screenshots/`.
+- The Library page shows a strip of recent captures; click one to open it,
+  **Refresh** to re-read the folder.
 
 ## Pause and frame step
 

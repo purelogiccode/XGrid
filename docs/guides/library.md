@@ -85,3 +85,14 @@ If a game does not appear:
 
 If a game appears but does not boot, see [Compatibility](../reference/compatibility.md)
 and [Troubleshooting](../reference/troubleshooting.md).
+
+## Screenshots
+
+The bottom of the library page shows the newest captures from
+`<data>/screenshots/` as thumbnails:
+
+- Click a picture to open it in the default image viewer.
+- **Refresh** re-reads the folder after captures are added or removed.
+- **Open folder** shows the PNGs in the file manager.
+
+**F8** captures the whole shell window. See [Display](display.md#captions-and-screenshots).

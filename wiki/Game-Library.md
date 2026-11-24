@@ -50,3 +50,9 @@ power-cycling. **Ctrl+E** ejects. Both need in-process core hosting.
 
 For boot failures, see [Media formats](Media-Formats) and
 [Troubleshooting](Troubleshooting).
+
+## Screenshots
+
+The newest captures appear as a thumbnail strip at the bottom of the page.
+Click a picture to open it, **Refresh** to re-read the folder, or **Open folder**
+to browse the PNGs. **F8** captures the whole window.
