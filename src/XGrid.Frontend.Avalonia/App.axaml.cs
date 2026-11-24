@@ -2,11 +2,14 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using Serilog;
+using XGrid.Frontend.Avalonia.Services;
 using XGrid.Frontend.Avalonia.ViewModels;
 using XGrid.Frontend.Avalonia.Views;
 
 namespace XGrid.Frontend.Avalonia;
 
+/// <summary>Creates the Avalonia application, the main window and the startup tasks.</summary>
 public class App : Application
 {
     /// <summary>
@@ -28,19 +31,28 @@ public class App : Application
     /// </summary>
     public static bool Fullscreen => LaunchOptions.Fullscreen;
 
+    /// <inheritdoc />
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
     }
 
+    /// <inheritdoc />
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            Dispatcher.UIThread.UnhandledException += (_, args) =>
+                Log.Error(args.Exception, "Unhandled UI dispatcher exception");
+
             var viewModel = new MainWindowViewModel();
             var window = new MainWindow { DataContext = viewModel };
             desktop.MainWindow = window;
             viewModel.Attach(window);
+
+            // The window is shown before the network work starts, so statistics
+            // and the update check never delay the first frame.
+            window.Opened += async (_, _) => await StartupTasks.RunAsync(window);
 
             if (Fullscreen)
             {

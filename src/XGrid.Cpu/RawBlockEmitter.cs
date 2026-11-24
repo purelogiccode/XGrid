@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using Iced.Intel;
+using Serilog;
 
 namespace XGrid.Cpu;
 
@@ -372,9 +373,9 @@ internal static unsafe class RawBlockEmitter
                 string path = Path.Combine(Path.GetTempPath(), "xgrid-raw-" + headEip.ToString("X8") + ".txt");
                 File.WriteAllText(path, output.ToString());
             }
-            catch (IOException)
+            catch (IOException exception)
             {
-                // Diagnostics only.
+                Log.Debug(exception, "The raw emission trace could not be written");
             }
         }
 

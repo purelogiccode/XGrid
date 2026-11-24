@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
+using Serilog;
 
 namespace XGrid.Core.Xemu;
 
@@ -174,14 +175,16 @@ public sealed partial class XemuDisplaySink : IDisposable
             _view = _mapping.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
             return true;
         }
-        catch (FileNotFoundException)
+        catch (FileNotFoundException exception)
         {
+            Log.Debug(exception, "The display section has not been created yet: {Name}", _name);
             _mapping?.Dispose();
             _mapping = null;
             return false;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            Log.Debug(exception, "The display section could not be opened: {Name}", _name);
             _mapping?.Dispose();
             _mapping = null;
             return false;
@@ -229,6 +232,7 @@ public sealed partial class XemuDisplaySink : IDisposable
         }
         catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException)
         {
+            Log.Debug(exception, "POSIX shared memory is not available on this host");
             return false;
         }
         finally

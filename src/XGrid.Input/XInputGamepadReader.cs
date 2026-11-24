@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using Serilog;
 
 namespace XGrid.Input;
 
@@ -132,13 +133,14 @@ public sealed class XInputGamepadReader : IDisposable
                 options);
             return true;
         }
-        catch (DllNotFoundException)
+        catch (DllNotFoundException exception)
         {
-            // The runtime disappeared between load and poll; treat as absent.
+            Log.Debug(exception, "The XInput runtime disappeared between load and poll");
             return false;
         }
-        catch (EntryPointNotFoundException)
+        catch (EntryPointNotFoundException exception)
         {
+            Log.Debug(exception, "The XInput runtime has no expected entry point");
             return false;
         }
     }

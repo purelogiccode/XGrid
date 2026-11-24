@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Serilog;
 
 namespace XGrid.Core.Xemu;
 
@@ -117,6 +118,7 @@ public sealed class CoreCapabilities
         {
             // A malformed manifest must never stop the shell from starting; it
             // means "this build does not report anything", the same as no file.
+            Log.Debug(exception, "The core manifest could not be read");
             return null;
         }
     }

@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\XGrid.Diagnostics\XGrid.Diagnostics.csproj" />
     <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
     <ProjectReference Include="..\XGrid.Graphics\XGrid.Graphics.csproj" />
     <ProjectReference Include="..\XGrid.GpuGl\XGrid.GpuGl.csproj" />

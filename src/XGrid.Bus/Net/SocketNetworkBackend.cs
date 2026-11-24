@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using Serilog;
 
 namespace XGrid.Bus.Net;
 
@@ -340,8 +341,9 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
                     EnableBroadcast = true
                 };
             }
-            catch (SocketException)
+            catch (SocketException exception)
             {
+                Log.Debug(exception, "A guest UDP socket could not be created");
                 DroppedPackets++;
                 return;
             }
@@ -359,8 +361,9 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
             mapping.LastActivity = Environment.TickCount64;
             UdpRelayed++;
         }
-        catch (SocketException)
+        catch (SocketException exception)
         {
+            Log.Debug(exception, "A guest UDP datagram could not be relayed");
             DroppedPackets++;
         }
     }
@@ -394,12 +397,14 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
                     return;
                 }
             }
-            catch (SocketException)
+            catch (SocketException exception)
             {
+                Log.Debug(exception, "A NAT mapping failed");
                 mapping.Failed = true;
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException exception)
             {
+                Log.Debug(exception, "A NAT mapping was used after its socket closed");
                 mapping.Failed = true;
             }
         }

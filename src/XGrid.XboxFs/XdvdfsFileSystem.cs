@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Serilog;
 using XISOSharp;
 using XISOSharp.Models;
 
@@ -79,6 +80,7 @@ public sealed class XdvdfsFileSystem : IDisposable
         }
         catch (XisoFormatException exception)
         {
+            Log.Debug(exception, "The image is not an XDVDFS volume: {Path}", isoPath);
             throw new InvalidDataException($"Not an XDVDFS volume: '{isoPath}'.", exception);
         }
     }

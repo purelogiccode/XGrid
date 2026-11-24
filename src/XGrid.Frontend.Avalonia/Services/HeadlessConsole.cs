@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using Serilog;
 
 namespace XGrid.Frontend.Avalonia.Services;
 
@@ -17,7 +18,7 @@ internal static partial class HeadlessConsole
     private static bool _attached;
 
     /// <summary>Attaches to the parent console, once per process.</summary>
-    public static void Attach()
+    internal static void Attach()
     {
         if (_attached)
         {
@@ -34,7 +35,7 @@ internal static partial class HeadlessConsole
 
     /// <summary>Writes a line to standard output, ignoring a missing console.</summary>
     /// <param name="line">Line to write.</param>
-    public static void WriteLine(string line)
+    internal static void WriteLine(string line)
     {
         try
         {
@@ -42,13 +43,13 @@ internal static partial class HeadlessConsole
         }
         catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
-            // No usable console: the summary file is the caller's fallback.
+            Log.Debug(exception, "No usable console for standard output");
         }
     }
 
     /// <summary>Writes a line to standard error, ignoring a missing console.</summary>
     /// <param name="line">Line to write.</param>
-    public static void WriteError(string line)
+    internal static void WriteError(string line)
     {
         try
         {
@@ -56,7 +57,7 @@ internal static partial class HeadlessConsole
         }
         catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
-            // No usable console.
+            Log.Debug(exception, "No usable console for standard error");
         }
     }
 
@@ -75,7 +76,7 @@ internal static partial class HeadlessConsole
                                               or UnauthorizedAccessException
                                               or NotSupportedException)
         {
-            // Output stays unavailable; the caller still has the summary file.
+            Log.Debug(exception, "The console streams could not be reopened");
         }
     }
 

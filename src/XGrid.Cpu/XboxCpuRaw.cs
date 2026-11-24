@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using Serilog;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -310,9 +311,9 @@ public sealed unsafe partial class XboxCpu
                 System.IO.Path.Combine(System.IO.Path.GetTempPath(), "xgrid-raw-trace.txt"),
                 line + Environment.NewLine);
         }
-        catch (System.IO.IOException)
+        catch (System.IO.IOException exception)
         {
-            // Diagnostics only.
+            Log.Debug(exception, "The raw trace line could not be appended");
         }
     }
 

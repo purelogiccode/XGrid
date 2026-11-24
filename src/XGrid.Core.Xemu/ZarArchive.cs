@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
+using Serilog;
 
 namespace XGrid.Core.Xemu;
 
@@ -124,12 +125,14 @@ public sealed class ZarArchive
             archive = new ZarArchive(entries);
             return true;
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            Log.Debug(exception, "The ZArchive could not be read: {Path}", path);
             return false;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            Log.Debug(exception, "The ZArchive is not accessible: {Path}", path);
             return false;
         }
     }

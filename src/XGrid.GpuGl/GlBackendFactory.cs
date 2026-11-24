@@ -1,4 +1,5 @@
 using System;
+using Serilog;
 using Silk.NET.Core.Contexts;
 using Silk.NET.OpenGL;
 using XGrid.Nv2a;
@@ -70,6 +71,7 @@ public static class GlBackendFactory
         }
         catch (Exception exception)
         {
+            Log.Error(exception, "The OpenGL backend could not be created");
             why = exception.GetType().Name + ": " + exception.Message;
             glContext?.Dispose();
             context.Dispose();

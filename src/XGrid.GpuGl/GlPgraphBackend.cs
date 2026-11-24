@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using Serilog;
 using Silk.NET.Core.Contexts;
 using Silk.NET.OpenGL;
 using XGrid.Memory;
@@ -667,6 +668,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         catch (Exception exception)
         {
             // Fail loud and stop issuing GL calls rather than storming.
+            Log.Error(exception, "The OpenGL backend stopped drawing after a fatal error");
             BackendUnsupported++;
             _fatalCount++;
             _fatalError = exception.GetType().Name + ": " + exception.Message;
@@ -760,6 +762,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
         catch (Exception exception)
         {
+            Log.Error(exception, "The OpenGL backend could not flush a draw batch");
             BackendUnsupported++;
             _fatalCount++;
             _fatalError = exception.GetType().Name + ": " + exception.Message;
@@ -789,6 +792,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
         catch (Exception exception)
         {
+            Log.Error(exception, "The OpenGL backend could not clear the surface");
             BackendUnsupported++;
             _fatalError = exception.GetType().Name + ": " + exception.Message;
         }
@@ -810,6 +814,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
         catch (Exception exception)
         {
+            Log.Error(exception, "The OpenGL backend could not present a frame");
             BackendUnsupported++;
             _fatalError = exception.GetType().Name + ": " + exception.Message;
         }

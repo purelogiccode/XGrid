@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using Serilog;
 using XGrid.Frontend.Avalonia.Models;
 
 namespace XGrid.Frontend.Avalonia.Services;
@@ -75,17 +76,20 @@ public sealed class SettingsStore
             settings.Normalize();
             return settings;
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
+            Log.Warning(exception, "The settings file is not valid JSON; defaults are used: {Path}", FilePath);
             BackupCorruptFile();
             return new EmulatorSettings();
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            Log.Warning(exception, "The settings file could not be read; defaults are used: {Path}", FilePath);
             return new EmulatorSettings();
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            Log.Warning(exception, "The settings file is not accessible; defaults are used: {Path}", FilePath);
             return new EmulatorSettings();
         }
     }
@@ -105,13 +109,13 @@ public sealed class SettingsStore
         {
             File.Move(FilePath, FilePath + ".bak", overwrite: true);
         }
-        catch (IOException)
+        catch (IOException exception)
         {
-            // A failed backup must never block startup.
+            Log.Debug(exception, "The corrupt settings file could not be backed up");
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
-            // Read-only profile: start with defaults.
+            Log.Debug(exception, "The corrupt settings file could not be backed up");
         }
     }
 }

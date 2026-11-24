@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media.Imaging;
+using Serilog;
 
 namespace XGrid.Frontend.Avalonia.Services;
 
@@ -78,6 +79,7 @@ public sealed class CoverArtCache : IDisposable
                                               or ArgumentException or NotSupportedException
                                               or InvalidOperationException)
         {
+            Log.Debug(exception, "Could not decode cover art {Path}", path);
             return null;
         }
     }

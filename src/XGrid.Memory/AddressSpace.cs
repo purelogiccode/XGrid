@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using XGrid.Core.Diagnostics;
+using Serilog;
+using Serilog.Events;
 
 namespace XGrid.Memory;
 
@@ -273,9 +274,9 @@ public sealed class AddressSpace : IMemoryBus
             throw new MemoryAccessException($"Unmapped memory read at 0x{address:X8} ({size} bytes).");
         }
 
-        if (XGridLog.IsEnabled(LogCategory.Mmio, LogLevel.Debug))
+        if (Log.IsEnabled(LogEventLevel.Debug))
         {
-            XGridLog.Write(LogCategory.Mmio, LogLevel.Debug, $"Unmapped read at 0x{address:X8} ({size} bytes)");
+            Log.Debug("Unmapped read at 0x{Address:X8} ({Size} bytes)", address, size);
         }
 
         return size switch
@@ -295,12 +296,13 @@ public sealed class AddressSpace : IMemoryBus
                 $"Unmapped memory write at 0x{address:X8} ({size} bytes) = 0x{value:X}.");
         }
 
-        if (XGridLog.IsEnabled(LogCategory.Mmio, LogLevel.Debug))
+        if (Log.IsEnabled(LogEventLevel.Debug))
         {
-            XGridLog.Write(
-                LogCategory.Mmio,
-                LogLevel.Debug,
-                $"Unmapped write at 0x{address:X8} ({size} bytes) = 0x{value:X}");
+            Log.Debug(
+                "Unmapped write at 0x{Address:X8} ({Size} bytes) = 0x{Value:X}",
+                address,
+                size,
+                value);
         }
     }
 }

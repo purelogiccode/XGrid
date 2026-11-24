@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
+        x:Class="XGrid.Frontend.Avalonia.Views.UpdatePromptWindow"
+        x:DataType="vm:UpdatePromptViewModel"
+        Title="Update available"
+        Width="520"
+        Height="330"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource XgBackgroundBrush}">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="26">
+    <StackPanel Spacing="6">
+      <TextBlock Text="{Binding Heading}" Classes="h2" />
+      <TextBlock Text="A newer build is published on GitHub. You can keep using this version or open the release page to download it."
+                 Classes="body"
+                 TextWrapping="Wrap" />
+    </StackPanel>
+
+    <Border Grid.Row="1" Classes="card" Margin="0,18" VerticalAlignment="Center">
+      <StackPanel Spacing="7">
+        <TextBlock Text="{Binding CurrentVersion}" Classes="mono" FontSize="11.5" />
+        <TextBlock Text="{Binding LatestVersion}" Classes="mono" FontSize="11.5" />
+        <TextBlock Text="{Binding ReleaseName}" Classes="hint" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <TextBlock Text="The check runs once per launch and can be disabled with XGRID_DISABLE_UPDATE_CHECK=1."
+                 Classes="hint"
+                 VerticalAlignment="Center"
+                 TextWrapping="Wrap" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Classes="ghost" Click="OnLater" Content="Later"
+                ToolTip.Tip="Keep this version and ask again on the next launch" />
+        <Button Classes="primary" Click="OnOpen" Content="Open GitHub"
+                ToolTip.Tip="Open the release page in your browser" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

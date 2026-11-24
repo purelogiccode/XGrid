@@ -1,4 +1,5 @@
 using System;
+using Serilog;
 
 namespace XGrid.Audio;
 
@@ -10,6 +11,7 @@ namespace XGrid.Audio;
 public sealed class TeeAudioBackend : IAudioBackend
 {
     private readonly IAudioBackend[] _sinks;
+    private readonly bool[] _reportedFailures;
 
     /// <summary>Initializes a new instance of the <see cref="TeeAudioBackend"/> class.</summary>
     /// <param name="sinks">The sinks that receive every submitted block.</param>
@@ -22,21 +24,33 @@ public sealed class TeeAudioBackend : IAudioBackend
         }
 
         _sinks = sinks;
+        _reportedFailures = new bool[sinks.Length];
     }
 
     /// <inheritdoc/>
     public void Submit(ReadOnlySpan<byte> samples)
     {
-        foreach (IAudioBackend sink in _sinks)
+        for (int i = 0; i < _sinks.Length; i++)
         {
             try
             {
-                sink.Submit(samples);
+                _sinks[i].Submit(samples);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 // One sink (for example a removed audio device) must not take
-                // the emulation path down with it.
+                // the emulation path down with it. Report the first failure as
+                // a warning; later buffers would otherwise flood the log and
+                // the bug-report queue.
+                if (_reportedFailures[i])
+                {
+                    Log.Debug(exception, "An audio sink failed again and was skipped");
+                }
+                else
+                {
+                    _reportedFailures[i] = true;
+                    Log.Warning(exception, "An audio sink failed and was skipped");
+                }
             }
         }
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
+using Serilog;
 
 namespace XGrid.Core.Xemu;
 
@@ -192,6 +193,7 @@ public sealed class XemuInProcessCore : IDisposable
         }
         catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
         {
+            Log.Debug(exception, "The in-process core library could not be loaded: {Path}", candidate);
             return null;
         }
     }

@@ -265,6 +265,7 @@ public sealed class XemuCoreSession : IDisposable
         catch (XemuConfigurationException exception)
         {
             core.Dispose();
+            Serilog.Log.Error(exception, "The in-process core did not start");
             Log?.Invoke(this, "The in-process core did not start: " + exception.Message);
             return null;
         }
@@ -407,6 +408,7 @@ public sealed class XemuCoreSession : IDisposable
             }
             catch (XemuConfigurationException exception)
             {
+                Serilog.Log.Warning(exception, "The core display could not be attached");
                 FrontendTrace.Write("embed failed: " + exception.Message);
                 Log?.Invoke(this, "Could not attach the core display: " + exception.Message);
             }
@@ -440,9 +442,9 @@ public sealed class XemuCoreSession : IDisposable
 
             Finish(runtime);
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException exception)
         {
-            // The shell disposed the session while the timer was queued.
+            Serilog.Log.Debug(exception, "The core session was disposed while the start timer was queued");
         }
     }
 
@@ -468,9 +470,9 @@ public sealed class XemuCoreSession : IDisposable
                 FrameReady?.Invoke(this, frame);
             }
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException exception)
         {
-            // The shell disposed the session while a read was queued.
+            Serilog.Log.Debug(exception, "The core session was disposed while a frame read was queued");
         }
     }
 

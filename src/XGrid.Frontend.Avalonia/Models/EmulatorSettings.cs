@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text.Json.Serialization;
+using Serilog;
 
 namespace XGrid.Frontend.Avalonia.Models;
 
@@ -160,8 +161,9 @@ public sealed class EmulatorSettings
         {
             return Path.GetFullPath(trimmed);
         }
-        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
         {
+            Log.Debug(exception, "The configured path is not valid: {Path}", trimmed);
             return trimmed;
         }
     }
