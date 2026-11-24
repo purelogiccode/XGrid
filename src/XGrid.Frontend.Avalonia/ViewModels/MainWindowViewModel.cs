@@ -51,6 +51,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _shuttingDown;
     private SaveStateRunner? _saveStates;
     private PlaybackController? _playback;
+    private string? _sessionFilter;
     private bool _saveStatesNeedRefresh;
     private CoreCapabilities? _coreCapabilities;
 
@@ -285,7 +286,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public string RunStateLabel => IsRunning ? (IsPaused ? "Paused" : "Running") : "Ready";
 
     /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
-    public bool SmoothFrame => FrameFilters.UsesBilinearSampling(Config.Filter);
+    public bool SmoothFrame => FrameFilters.UsesBilinearSampling(ActiveFilter);
+
+    /// <summary>
+    /// Gets the presentation filter for the session: the per-title value the
+    /// launch resolved, or the global setting when nothing is running.
+    /// </summary>
+    private string ActiveFilter => _sessionFilter ?? Config.Filter;
 
     /// <summary>Gets the gamepad options for the current configuration.</summary>
     public GamepadMappingOptions GamepadOptions => _gamepadOptions;
@@ -556,6 +563,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             throw new InvalidOperationException(problem);
         }
 
+        _sessionFilter = effective.Filter;
+        OnPropertyChanged(nameof(SmoothFrame));
+
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
             effective,
             game?.Path,
@@ -786,7 +796,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             _playback?.Reset();
             _playback = null;
             IsPaused = false;
+            _sessionFilter = null;
             OnPropertyChanged(nameof(HasPlayback));
+            OnPropertyChanged(nameof(SmoothFrame));
             StatusText = "Idle";
             StatusDetail = "Power-on failed";
             AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
@@ -1095,8 +1107,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             _playback?.Reset();
             _playback = null;
             IsPaused = false;
+            _sessionFilter = null;
             OnPropertyChanged(nameof(HasSaveStates));
             OnPropertyChanged(nameof(HasPlayback));
+            OnPropertyChanged(nameof(SmoothFrame));
             StatusText = e.Faulted ? "Faulted" : "Off";
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
@@ -1224,7 +1238,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void PresentFrame(FramePacket packet)
     {
-        FrameFilters.Apply(Config.Filter, packet.Bgra, (int)packet.Width, (int)packet.Height);
+        FrameFilters.Apply(ActiveFilter, packet.Bgra, (int)packet.Width, (int)packet.Height);
         int width = (int)packet.Width;
         int height = (int)packet.Height;
         int rowBytes = width * 4;

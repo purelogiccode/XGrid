@@ -51,8 +51,9 @@ The Settings page is a draft editor. Change values, then click **Save settings**
 
 ## Titles
 
-Per-title **guest memory** (64/128/inherit), keyed by title ID when readable,
-otherwise by image path.
+Per-title overrides for guest memory (64/128/inherit), renderer, texture
+filtering and presentation filter, keyed by title ID when readable, otherwise by
+image path. Unset values inherit the global configuration.
 
 ## Library
 

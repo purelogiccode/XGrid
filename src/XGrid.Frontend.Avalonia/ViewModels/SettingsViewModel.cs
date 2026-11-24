@@ -40,16 +40,26 @@ public sealed class TitleOverrideItem : ObservableObject
     ];
 
     private KeyedOption _selectedRam;
+    private KeyedOption _selectedRenderer;
+    private KeyedOption _selectedFiltering;
+    private KeyedOption _selectedFilter;
 
     /// <summary>Creates a row for a launched image path or an XBE title id.</summary>
     /// <param name="key">Override dictionary key (image path or <c>title:XXXXXXXX</c>).</param>
     /// <param name="value">Persisted override values.</param>
     /// <param name="remove">Removal callback.</param>
+    /// <param name="rendererKeys">Renderers the selected core reports.</param>
     /// <param name="titleName">Certificate title name when the key is a title id.</param>
-    public TitleOverrideItem(string key, TitleOverride value, Action<TitleOverrideItem> remove, string? titleName = null)
+    public TitleOverrideItem(
+        string key,
+        TitleOverride value,
+        Action<TitleOverrideItem> remove,
+        IReadOnlyList<string> rendererKeys,
+        string? titleName = null)
     {
         ArgumentNullException.ThrowIfNull(value);
         ArgumentNullException.ThrowIfNull(remove);
+        ArgumentNullException.ThrowIfNull(rendererKeys);
         Path = key;
         TitleName = titleName ?? string.Empty;
         _selectedRam = RamChoices.FirstOrDefault(
@@ -57,6 +67,25 @@ public sealed class TitleOverrideItem : ObservableObject
                 && int.TryParse(option.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ram)
                 && ram == value.RamMb)
             ?? RamChoices[0];
+        RendererOptions =
+        [
+            new KeyedOption(string.Empty, "inherit"),
+            .. rendererKeys.Select(renderer => new KeyedOption(renderer, ShortRendererLabel(renderer))),
+        ];
+        FilteringOptions =
+        [
+            new KeyedOption(string.Empty, "inherit"),
+            new KeyedOption(GraphicsSettings.FilterLinear, "Linear"),
+            new KeyedOption(GraphicsSettings.FilterNearest, "Nearest"),
+        ];
+        FilterOptions =
+        [
+            new KeyedOption(string.Empty, "inherit"),
+            .. FrameFilters.All.Select(filter => new KeyedOption(filter.Key, filter.Label)),
+        ];
+        _selectedRenderer = Pick(RendererOptions, value.Renderer);
+        _selectedFiltering = Pick(FilteringOptions, value.Filtering);
+        _selectedFilter = Pick(FilterOptions, value.Filter);
         RemoveCommand = new RelayCommand(() => remove(this));
     }
 
@@ -90,11 +119,41 @@ public sealed class TitleOverrideItem : ObservableObject
     /// <summary>Gets the guest-memory choices this row can pick from ("inherit", "64", "128").</summary>
     public IReadOnlyList<KeyedOption> RamOptions { get; } = RamChoices;
 
+    /// <summary>Gets the renderer choices this row can pick from ("inherit" plus the core's renderers).</summary>
+    public IReadOnlyList<KeyedOption> RendererOptions { get; }
+
+    /// <summary>Gets the core texture-filter choices this row can pick from ("inherit", linear, nearest).</summary>
+    public IReadOnlyList<KeyedOption> FilteringOptions { get; }
+
+    /// <summary>Gets the presentation-filter choices this row can pick from ("inherit" plus the shell filters).</summary>
+    public IReadOnlyList<KeyedOption> FilterOptions { get; }
+
     /// <summary>Gets or sets the guest memory this title uses (the "inherit" row keeps the global one).</summary>
     public KeyedOption SelectedRam
     {
         get => _selectedRam;
         set => SetProperty(ref _selectedRam, value);
+    }
+
+    /// <summary>Gets or sets the renderer this title uses (the "inherit" row keeps the global one).</summary>
+    public KeyedOption SelectedRenderer
+    {
+        get => _selectedRenderer;
+        set => SetProperty(ref _selectedRenderer, value);
+    }
+
+    /// <summary>Gets or sets the core texture filter this title uses.</summary>
+    public KeyedOption SelectedFiltering
+    {
+        get => _selectedFiltering;
+        set => SetProperty(ref _selectedFiltering, value);
+    }
+
+    /// <summary>Gets or sets the presentation filter this title uses.</summary>
+    public KeyedOption SelectedFilter
+    {
+        get => _selectedFilter;
+        set => SetProperty(ref _selectedFilter, value);
     }
 
     /// <summary>Projects the row back into the persisted model.</summary>
@@ -105,6 +164,33 @@ public sealed class TitleOverrideItem : ObservableObject
             RamMb = int.TryParse(_selectedRam.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ram)
                 ? ram
                 : null,
+            Renderer = OptionalKey(_selectedRenderer),
+            Filtering = OptionalKey(_selectedFiltering),
+            Filter = OptionalKey(_selectedFilter),
+        };
+    }
+
+    private static KeyedOption Pick(IReadOnlyList<KeyedOption> options, string? key)
+    {
+        return options.FirstOrDefault(
+            option => option.Key.Length > 0
+                && string.Equals(option.Key, key, StringComparison.OrdinalIgnoreCase))
+            ?? options[0];
+    }
+
+    private static string? OptionalKey(KeyedOption option)
+    {
+        return option.Key.Length == 0 ? null : option.Key;
+    }
+
+    private static string ShortRendererLabel(string key)
+    {
+        return key switch
+        {
+            GraphicsSettings.RendererOpenGl => "OpenGL",
+            GraphicsSettings.RendererVulkan => "Vulkan",
+            GraphicsSettings.RendererNull => "Null",
+            _ => key,
         };
     }
 }
@@ -549,7 +635,11 @@ public sealed partial class SettingsViewModel : PageViewModel
         TitleOverrides.Clear();
         foreach (KeyValuePair<string, TitleOverride> pair in settings.TitleOverrides)
         {
-            TitleOverrides.Add(new TitleOverrideItem(pair.Key, pair.Value, RemoveTitleOverride));
+            TitleOverrides.Add(new TitleOverrideItem(
+                pair.Key,
+                pair.Value,
+                RemoveTitleOverride,
+                OfferableRenderers()));
         }
 
         string accentKey = settings.Accent;
@@ -777,6 +867,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             key,
             new TitleOverride { RamMb = RamMb },
             RemoveTitleOverride,
+            OfferableRenderers(),
             titleName));
         Shell.ShowToast(titleName is null
             ? "Override added for this image (no XBE title id could be read)."
@@ -793,6 +884,12 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
 
         TitleOverrides.Remove(item);
+    }
+
+    /// <summary>Returns the renderer keys a new or loaded override row can offer.</summary>
+    private IReadOnlyList<string> OfferableRenderers()
+    {
+        return [.. RendererOptions.Select(option => option.Key)];
     }
 
     /// <summary>Public command: browses for the BIOS image.</summary>

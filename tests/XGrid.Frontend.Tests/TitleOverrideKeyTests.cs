@@ -109,19 +109,28 @@ public sealed class TitleOverrideKeyTests
     public void OverrideRowShowsTheTitleIdentity()
     {
         var item = new TitleOverrideItem(
-            EmulatorSettings.TitleIdKey(HaloTitleId), new TitleOverride { RamMb = 128 }, _ => { }, "HALO");
+            EmulatorSettings.TitleIdKey(HaloTitleId),
+            new TitleOverride { RamMb = 128 },
+            _ => { },
+            ["OPENGL", "NULL"],
+            "HALO");
 
         Assert.Equal("HALO (Title 4D530002)", item.DisplayName);
         Assert.Equal("applies wherever this title id is launched", item.PathText);
 
-        var unnamed = new TitleOverrideItem(EmulatorSettings.TitleIdKey(HaloTitleId), new TitleOverride(), _ => { });
+        var unnamed = new TitleOverrideItem(
+            EmulatorSettings.TitleIdKey(HaloTitleId),
+            new TitleOverride(),
+            _ => { },
+            ["OPENGL", "NULL"]);
         Assert.Equal("Title 4D530002", unnamed.DisplayName);
 
         // The row key is a host path: the display name is Path.GetFileName, which
         // only recognises the running platform's separator, so a Windows literal
         // would not split on Linux.
         string pathRowKey = Path.Combine("games", "a.iso");
-        var pathRow = new TitleOverrideItem(pathRowKey, new TitleOverride(), _ => { });
+        var pathRow = new TitleOverrideItem(
+            pathRowKey, new TitleOverride(), _ => { }, ["OPENGL", "NULL"]);
         Assert.Equal("a.iso", pathRow.DisplayName);
         Assert.Equal(pathRowKey, pathRow.PathText);
     }

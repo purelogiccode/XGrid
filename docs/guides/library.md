@@ -66,8 +66,11 @@ Open **Settings → Titles → Add override**. XGrid tries to key the override b
 XBE certificate title ID, so it follows the title across renamed, moved or
 re-wrapped images. If no ID can be read, the override is keyed by the image path.
 
-The override currently carries **guest memory** (64 or 128 MB). Unset values
-inherit the global configuration.
+The override carries **guest memory** (64 or 128 MB), the **renderer** (OpenGL,
+Vulkan or Null), the **texture filtering** (linear or nearest) and the
+**presentation filter** (nearest, bilinear, scanlines or CRT). Each row offers
+only the renderers the selected core was built with. Unset values inherit the
+global configuration.
 
 ## Missing games
 

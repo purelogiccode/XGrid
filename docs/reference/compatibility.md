@@ -23,7 +23,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Live host audio and WAV capture | Supported through the core |
 | Four save-state slots | Supported with in-process hosting |
 | Shell filters (nearest, bilinear, scanlines, CRT) | Supported with the frame sink |
-| Per-title guest-memory override | Supported |
+| Per-title override (memory, renderer, filters) | Supported |
 | Whole-window screenshots | Supported |
 
 ## Known limitations

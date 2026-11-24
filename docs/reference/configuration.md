@@ -53,11 +53,11 @@ The shell writes indented JSON. The main fields are:
 | `Accent` | Accent palette key. |
 | `XemuCorePath` | Explicit core executable, or empty for auto-detect. |
 | `LibraryFolders` | Folders scanned by the Library. |
-| `TitleOverrides` | Per-title overrides keyed by `title:XXXXXXXX` or image path. |
+| `TitleOverrides` | Per-title overrides keyed by `title:XXXXXXXX` or image path: RAM, renderer, texture filtering and presentation filter. |
 
 Invalid values are repaired on load: RAM is 64 or 128, scale is 1–8, unknown
 renderers fall back to OpenGL, unknown filters fall back to nearest, and empty
-override keys are dropped.
+override keys or rows are dropped.
 
 A corrupt settings file is moved to `settings.json.bak` and defaults are used.
 
