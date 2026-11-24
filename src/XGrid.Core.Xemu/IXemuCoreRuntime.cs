@@ -23,6 +23,12 @@ public interface IXemuCoreRuntime : IDisposable
     /// <summary>Gets a value indicating whether the machine shares the shell's process.</summary>
     bool IsInProcess { get; }
 
+    /// <summary>
+    /// Gets the core's save-state controls, or null when this hosting mode
+    /// cannot reach them.
+    /// </summary>
+    ISaveStateService? SaveStates { get; }
+
     /// <summary>Starts the machine.</summary>
     void Start();
 

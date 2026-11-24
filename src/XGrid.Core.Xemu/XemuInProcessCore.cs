@@ -38,6 +38,18 @@ public sealed class XemuInProcessCore : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr VersionDelegate();
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int NameRequestDelegate([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int NoArgIntDelegate();
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr NoArgStringDelegate();
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr IndexedStringDelegate(int index);
+
     private readonly IntPtr _library;
     private readonly StartDelegate _start;
     private readonly StopDelegate _requestStop;
@@ -45,6 +57,14 @@ public sealed class XemuInProcessCore : IDisposable
     private readonly IntDelegate _exitCode;
     private readonly IntDelegate _join;
     private readonly VersionDelegate _version;
+    private readonly NameRequestDelegate? _snapshotSave;
+    private readonly NameRequestDelegate? _snapshotLoad;
+    private readonly NameRequestDelegate? _snapshotDelete;
+    private readonly NoArgIntDelegate? _snapshotRefresh;
+    private readonly NoArgIntDelegate? _snapshotStatus;
+    private readonly NoArgIntDelegate? _snapshotCount;
+    private readonly NoArgStringDelegate? _snapshotError;
+    private readonly IndexedStringDelegate? _snapshotName;
     private bool _started;
     private bool _disposed;
 
@@ -59,6 +79,17 @@ public sealed class XemuInProcessCore : IDisposable
             _exitCode = Get<IntDelegate>("xgrid_core_exit_code");
             _join = Get<IntDelegate>("xgrid_core_join");
             _version = Get<VersionDelegate>("xgrid_core_version");
+
+            // Save states are optional: a core built before the ABI existed
+            // still runs, and the shell reports that it cannot save.
+            _snapshotSave = TryGet<NameRequestDelegate>("xgrid_core_snapshot_save");
+            _snapshotLoad = TryGet<NameRequestDelegate>("xgrid_core_snapshot_load");
+            _snapshotDelete = TryGet<NameRequestDelegate>("xgrid_core_snapshot_delete");
+            _snapshotRefresh = TryGet<NoArgIntDelegate>("xgrid_core_snapshot_refresh");
+            _snapshotStatus = TryGet<NoArgIntDelegate>("xgrid_core_snapshot_status");
+            _snapshotCount = TryGet<NoArgIntDelegate>("xgrid_core_snapshot_count");
+            _snapshotError = TryGet<NoArgStringDelegate>("xgrid_core_snapshot_error");
+            _snapshotName = TryGet<IndexedStringDelegate>("xgrid_core_snapshot_name");
         }
         catch
         {
@@ -79,6 +110,11 @@ public sealed class XemuInProcessCore : IDisposable
 
     /// <summary>Gets the core DLL that is loaded, or an empty string.</summary>
     public string LibraryPath { get; private set; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether the core can save and load states.</summary>
+    public bool SupportsSaveStates =>
+        _snapshotSave is not null && _snapshotLoad is not null && _snapshotDelete is not null
+        && _snapshotStatus is not null && _snapshotError is not null;
 
     /// <summary>
     /// Loads the core DLL when it exists beside the executable, returning null
@@ -196,6 +232,94 @@ public sealed class XemuInProcessCore : IDisposable
         return _disposed ? -1 : _join();
     }
 
+    /// <summary>Queues a snapshot save (0 accepted, negative refused).</summary>
+    /// <param name="name">Snapshot name; an existing one is replaced.</param>
+    public int SnapshotSave(string name)
+    {
+        return _disposed || _snapshotSave is null ? -1 : _snapshotSave(name);
+    }
+
+    /// <summary>Queues a snapshot load (0 accepted, negative refused).</summary>
+    /// <param name="name">Snapshot name.</param>
+    public int SnapshotLoad(string name)
+    {
+        return _disposed || _snapshotLoad is null ? -1 : _snapshotLoad(name);
+    }
+
+    /// <summary>Queues a snapshot delete (0 accepted, negative refused).</summary>
+    /// <param name="name">Snapshot name.</param>
+    public int SnapshotDelete(string name)
+    {
+        return _disposed || _snapshotDelete is null ? -1 : _snapshotDelete(name);
+    }
+
+    /// <summary>Queues a refresh of the snapshot list (0 accepted).</summary>
+    public int SnapshotRefresh()
+    {
+        return _disposed || _snapshotRefresh is null ? -1 : _snapshotRefresh();
+    }
+
+    /// <summary>Gets the last request's state.</summary>
+    public XemuSaveStateStatus SnapshotStatus
+    {
+        get
+        {
+            if (_disposed || _snapshotStatus is null)
+            {
+                return XemuSaveStateStatus.Idle;
+            }
+
+            int status = _snapshotStatus();
+            return Enum.IsDefined(typeof(XemuSaveStateStatus), status)
+                ? (XemuSaveStateStatus)status
+                : XemuSaveStateStatus.Failed;
+        }
+    }
+
+    /// <summary>Gets the last request's error text, or an empty string.</summary>
+    public string SnapshotError
+    {
+        get
+        {
+            if (_disposed || _snapshotError is null)
+            {
+                return string.Empty;
+            }
+
+            return Marshal.PtrToStringUTF8(_snapshotError()) ?? string.Empty;
+        }
+    }
+
+    /// <summary>Gets the snapshot names the last refresh found.</summary>
+    public IReadOnlyList<string> SnapshotNames
+    {
+        get
+        {
+            if (_disposed || _snapshotCount is null || _snapshotName is null)
+            {
+                return Array.Empty<string>();
+            }
+
+            int count = _snapshotCount();
+            if (count <= 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var names = new List<string>(count);
+            for (int i = 0; i < count; i++)
+            {
+                string? name = Marshal.PtrToStringUTF8(_snapshotName(i));
+                if (!string.IsNullOrEmpty(name))
+                {
+                    names.Add(name);
+                }
+            }
+
+            return names;
+        }
+    }
+
     /// <summary>Releases the wrapper. The module stays loaded for the process.</summary>
     public void Dispose()
     {
@@ -206,5 +330,16 @@ public sealed class XemuInProcessCore : IDisposable
         where T : Delegate
     {
         return Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(_library, name));
+    }
+
+    private T? TryGet<T>(string name)
+        where T : Delegate
+    {
+        if (!NativeLibrary.TryGetExport(_library, name, out IntPtr address) || address == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        return Marshal.GetDelegateForFunctionPointer<T>(address);
     }
 }

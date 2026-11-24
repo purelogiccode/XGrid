@@ -58,6 +58,56 @@ XGRID_CORE_EXPORT int xgrid_core_join(void);
 /** Returns the core version string (for example "0.8.139"). */
 XGRID_CORE_EXPORT const char *xgrid_core_version(void);
 
+/*
+ * Save states.
+ *
+ * xemu keeps a save state as an internal snapshot of the hard disk image, so
+ * the state survives the process. Snapshot work touches the block layer and
+ * the renderer's GL context, which only the core's own main loop may do, so
+ * every request is queued and runs there. The shell starts one request and
+ * polls its status; a request is accepted only while no other one is running.
+ *
+ * Status values returned by xgrid_core_snapshot_status().
+ */
+#define XGRID_SNAPSHOT_IDLE 0
+#define XGRID_SNAPSHOT_PENDING 1
+#define XGRID_SNAPSHOT_COMPLETED 2
+#define XGRID_SNAPSHOT_FAILED 3
+
+/**
+ * Queues a snapshot save under @p name (overwriting a snapshot of that name).
+ *
+ * @return 0 when queued, -1 when no machine is running, -2 for a bad name,
+ *         -3 when another request is still in flight.
+ */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_save(const char *name);
+
+/** Queues a snapshot load. Same return values as the save call. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_load(const char *name);
+
+/** Queues a snapshot delete. Same return values as the save call. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_delete(const char *name);
+
+/**
+ * Queues a refresh of the snapshot list.
+ *
+ * @return 0 when queued, -1 when no machine is running, -3 when another
+ *         request is still in flight.
+ */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_refresh(void);
+
+/** Returns one of the XGRID_SNAPSHOT_* status values. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_status(void);
+
+/** Returns the last request's error text, or an empty string. */
+XGRID_CORE_EXPORT const char *xgrid_core_snapshot_error(void);
+
+/** Returns how many snapshots the last refresh found. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_count(void);
+
+/** Returns the name of snapshot @p index, or NULL when out of range. */
+XGRID_CORE_EXPORT const char *xgrid_core_snapshot_name(int index);
+
 #ifdef __cplusplus
 }
 #endif

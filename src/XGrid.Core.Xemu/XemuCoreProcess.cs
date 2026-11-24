@@ -118,6 +118,12 @@ public sealed class XemuCoreProcess : IXemuCoreRuntime
     /// <summary>Gets a value indicating whether the core shares the shell's process.</summary>
     public bool IsInProcess => false;
 
+    /// <summary>
+    /// Gets the core's save-state controls. A separate process exposes no ABI,
+    /// so the shell can only save states with the in-process core.
+    /// </summary>
+    public ISaveStateService? SaveStates => null;
+
     /// <summary>Gets the process exit code once it has exited, or -1 before then.</summary>
     public int ExitCode
     {

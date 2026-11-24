@@ -64,6 +64,12 @@ public sealed class XemuCoreSession : IDisposable
     /// <summary>Gets a value indicating whether the shell is presenting core frames itself.</summary>
     public bool IsFrameSinkActive => _sink is not null && _lastFrameCounter != 0;
 
+    /// <summary>
+    /// Gets the core's save-state controls, or null when the running core
+    /// cannot reach them (a separate process today).
+    /// </summary>
+    public ISaveStateService? SaveStates => _runtime?.SaveStates;
+
     /// <summary>Gets the process id that hosts the core, or 0.</summary>
     public int ProcessId => _runtime?.ProcessId ?? 0;
 

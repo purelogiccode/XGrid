@@ -63,12 +63,21 @@ The previous 6,695-line plan for the managed C# emulator is archived at
 
 ## 2. Missing - player features
 
-- [ ] **P1. Save states.** The core has snapshots
-      (`xemu_snapshots_save/load`, `general.snapshots.shortcuts.f5…f8`) but the
-      shell never exposes them: F5/F8 belong to the shell and the core window is
-      hidden.
+- [x] **P1. Save states.** The core writes a save state as an internal snapshot
+      of the hard disk image (QEMU `savevm`), so the shell exposes slots rather
+      than a private format. `Emulation -> Save State / Load State / Delete
+      State` offer four slots; F6 saves and F7 loads the selected slot; the
+      console page has *Save state* and *Load state* buttons. Each request runs
+      on the core's own main loop and the shell polls it, so the UI never
+      blocks.
       **Done when:** a slot menu (and F6/F7) saves and loads a snapshot through
       the shell, a load resumes the same frame, and a test pins the round trip.
+      **Done (2026-11-24):** `scripts/save-state-check.ps1` boots the console
+      through the real shell, F6 writes `xgrid-slot-1` (50 MiB VM state at guest
+      clock 0:00:21.7, `qemu-img snapshot -l`), the guest runs on, F7 restores it
+      and the post-load capture is the dashboard again with the same guest
+      clock; `SaveStateRunnerTests` (11 tests) pins the queue, the slots and the
+      completion messages.
 
 - [ ] **P2. Pause, resume, frame step.** Today only power on/off exist.
       **Done when:** pause freezes guest time, resume continues, and frame step
@@ -153,9 +162,18 @@ The previous 6,695-line plan for the managed C# emulator is archived at
       **Done when:** a boot with a title that plays audio produces non-zero
       samples at the host sink and a WAV capture is non-silent.
 
-- [ ] **C4. Save-state bridge.** Core side of **P1**.
+- [x] **C4. Save-state bridge.** Core side of **P1**. The ABI exposes
+      `xgrid_core_snapshot_save/load/delete/refresh`, `_status`, `_error`,
+      `_count` and `_name`. The calls only queue: snapshot work touches the
+      block layer and the renderer's GL context, which only the core's main
+      loop may do, so a bottom half runs it there and the shell polls.
       **Done when:** the core exposes save/load over the ABI (or a documented
       command) and the shell can call it without stopping the machine.
+      **Done (2026-11-24):** the shell saves and loads while the machine keeps
+      running; the request never blocks the UI and the snapshot survives in the
+      qcow2 (`qemu-img snapshot -l`). A separate-process core reports no
+      save-state service, and the shell disables the feature instead of
+      pretending.
 
 - [ ] **C5. Netplay plumbing.** Core side of **P4**.
       **Done when:** the core's netplay session can be started and stopped from
@@ -238,9 +256,10 @@ The previous 6,695-line plan for the managed C# emulator is archived at
 - [ ] **Q3. CI re-enabled.** Every workflow is `workflow_dispatch`-only.
       **Done when:** push/PR run build, test, format and the package gate.
 
-- [ ] **Q4. Shell test coverage.** 49 of 2,258 tests cover the frontend.
-      **Done when:** the settings model, launch plan, input mapping, screenshots
-      and folder menu are covered, and a smoke test drives a real session.
+- [ ] **Q4. Shell test coverage.** 63 of 2,272 tests cover the frontend.
+      **Done when:** the settings model, launch plan, input mapping, screenshots,
+      save states and folder menu are covered, and a smoke test drives a real
+      session.
 
 - [ ] **Q5. User guide.** No end-user documentation exists outside the release
       notes.
@@ -358,6 +377,7 @@ is in `docs/status.json`.
 ## 11. Suggested order
 
 1. **P1 + C4** - save states; the one thing a player misses immediately.
+   **Done 2026-11-24.**
 2. **U1 + U5** - the two UI inconsistencies (caption size, Vulkan option).
 3. **Q1** - re-baseline the status queue so the repository stops pointing at
    the retired emulator.

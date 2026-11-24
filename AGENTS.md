@@ -919,6 +919,64 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
 
+**Session 2026-11-24 (seventieth; save states work through the shell - P1 and C4
+land, and the core does the snapshotting on its own main loop).**
+
+- **The design.** A save state is xemu's own internal snapshot of the hard disk
+  image (QEMU `savevm`), so the shell does not invent a format: it saves to one
+  of four named slots (`xgrid-slot-1` … `-4`) and the guest resumes from the
+  same image it booted from. The core work has to happen on the core's thread -
+  the block layer asserts the main thread and the snapshot thumbnail reads the
+  renderer's GL context - so the ABI only *queues* and the shell polls.
+- **C4 (`xemu/xgrid-core/abi/xgrid-core.c`).** `xgrid_core_snapshot_save`,
+  `_load`, `_delete`, `_refresh`, `_status`, `_error`, `_count` and `_name`
+  behind one mutex-guarded request slot; the active request runs as a
+  `aio_bh_schedule_oneshot` bottom half on `qemu_get_aio_context()`. A request
+  made before the main loop exists (the first moments after `start`) returns
+  `-1` instead of touching a null aio context - the first cut crashed the shell
+  with 0xC0000005 exactly there, and the shell now retries the initial list
+  request from its 100 ms UI tick.
+- **Display sink flip (bug fix found by the check).** `glReadPixels` returns
+  rows bottom-up (the GL origin is the lower-left corner) and
+  `xgrid_display_publish` copied them straight into the shared section, so every
+  frame the shell presented was **upside down**. The boot animation hides it -
+  it is nearly symmetric - and the nxdk demo's labels showed it at once. The
+  publish now writes the rows in reverse; the dashboard (EvoX, with its clock,
+  BIOS line and menu) and the demo are right-side up.
+- **P1 (shell).** `ISaveStateService` + `InProcessSaveStateService` in
+  `XGrid.Core.Xemu`; `SaveStateRunner` (frontend service) owns the one-at-a-time
+  request, the slot names and the completion message. `Emulation -> Save State /
+  Load State / Delete State` list slots 1-4, F6 saves and F7 loads the selected
+  slot, and the console page has *Save state* / *Load state* buttons. A
+  separate-process core has no ABI to call, so `HasSaveStates` is false there
+  and the entries are disabled with a hint rather than silently doing nothing.
+- **Evidence (`scripts/save-state-check.ps1`, new).** Drives the real shell with
+  `--autostart`, waits 20 s so the boot animation is over, posts F6/F8/F7 and
+  reads `XGRID_FRONTEND_TRACE=1` lines plus `qemu-img snapshot -l` after the
+  shell closes: **`SAVESTATE PASS`**, snapshot `xgrid-slot-1` **50 MiB** at guest
+  clock `0:00:21.7`. All three captures are rendered frames (~70,000 colours,
+  0% black), and the post-load capture is the dashboard again - same menu, same
+  guest clock (`Time: 01:22:56`) - while the frame taken 6 s before the load had
+  moved on. The dmean numbers over the display crop (11.1 before the load, 9.2
+  after) are **reported, not asserted**: the dashboard's background animates, so
+  a single number cannot separate the restore from the animation. The script
+  retries the save until the capture is a rendered frame, because the boot
+  animation has black stages.
+- **Also.** `scripts/build-native-xemu.ps1` now builds `qemu-img`/`qemu-io`
+  into `xemu/build/` (they were never built by the default targets, so the media
+  checks had no tool); `scripts/frame-diff.py` is the per-pixel companion to
+  `frame-compare.py`. `SaveStateRunnerTests` (11 cases) pins the round trip, the
+  busy refusal, the missing-service refusal and the abandonment of a request
+  the core never answers.
+- **Gates.** Solution build 0 warnings, suite **2,272** green, `dotnet format
+  --verify-no-changes` clean, `status.ps1 -Check` OK. The managed emulator and
+  its anchors are untouched (no file under `src/XGrid.Cpu`/`Nv2a` changed).
+- **Next.** U1 (the display caption still says 640x480 while the sink publishes
+  1280x960) and U5 (the Vulkan option is offered by a build without
+  `CONFIG_VULKAN`), then Q1 to re-baseline `docs/status.json` - its queue still
+  points at the retired managed emulator and its ids collide with the product
+  plan (`P1` is already a done id from the old sprint).
+
 **Session 2026-11-23 (sixty-ninth; DirectX is in the plan as a renderer port).**
 
 - **C6 in `ImplementationPlan.md`.** A D3D11 backend is scoped as six

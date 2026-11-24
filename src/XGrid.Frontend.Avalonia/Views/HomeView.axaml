@@ -116,6 +116,21 @@
               <TextBlock Text="Open disc" FontSize="11.5" />
             </StackPanel>
           </Button>
+
+          <Border Width="1" Margin="6,4" Background="{DynamicResource XgBorderBrush}" />
+
+          <Button Classes="chrome"
+                  Command="{Binding Shell.QuickSaveCommand}"
+                  IsEnabled="{Binding Shell.HasSaveStates}"
+                  ToolTip.Tip="{Binding Shell.SaveStateHint}">
+            <TextBlock Text="Save state" FontSize="11.5" />
+          </Button>
+          <Button Classes="chrome"
+                  Command="{Binding Shell.QuickLoadCommand}"
+                  IsEnabled="{Binding Shell.HasSaveStates}"
+                  ToolTip.Tip="{Binding Shell.LoadStateHint}">
+            <TextBlock Text="Load state" FontSize="11.5" />
+          </Button>
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
