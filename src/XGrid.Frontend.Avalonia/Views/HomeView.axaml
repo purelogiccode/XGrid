@@ -67,10 +67,22 @@
                      Classes="muted"
                      TextAlignment="Center"
                      HorizontalAlignment="Center" />
-          <TextBlock Text="{Binding Shell.DisplayCaption}"
-                     Classes="caption"
-                     HorizontalAlignment="Center" />
         </StackPanel>
+
+        <!-- The caption reports the frame the core actually published; it is
+             not shown until there is one. -->
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="10"
+                Padding="7,3"
+                CornerRadius="3"
+                Background="#99000000"
+                IsVisible="{Binding Shell.HasDisplayCaption}">
+          <TextBlock Text="{Binding Shell.DisplayCaption}"
+                     Classes="mono"
+                     FontSize="10"
+                     Foreground="#D8FFFFFF" />
+        </Border>
       </Grid>
     </Border>
 
