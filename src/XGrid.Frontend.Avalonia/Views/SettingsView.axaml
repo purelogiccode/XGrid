@@ -643,7 +643,7 @@
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="3">
                     <TextBlock Text="Per-title overrides" Classes="h3" />
-                    <TextBlock Text="Guest memory applied when a specific disc or XBE is launched. Unset values inherit the global configuration."
+                    <TextBlock Text="Guest memory and graphics applied when a specific disc or XBE is launched. Unset values inherit the global configuration."
                                Classes="hint" />
                   </StackPanel>
                   <Button Grid.Column="1" Classes="ghost" Command="{Binding AddTitleOverrideCommand}">
@@ -658,7 +658,7 @@
                 <ItemsControl ItemsSource="{Binding TitleOverrides}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="vm:TitleOverrideItem">
-                      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
+                      <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,8">
                         <StackPanel Spacing="1" VerticalAlignment="Center">
                           <TextBlock Text="{Binding DisplayName}" Classes="label" TextTrimming="CharacterEllipsis" />
                           <TextBlock Text="{Binding PathText}" Classes="mono" FontSize="10.5"
@@ -666,7 +666,7 @@
                                      Foreground="{DynamicResource XgTextMutedBrush}" />
                         </StackPanel>
                         <ComboBox Grid.Column="1"
-                                  Width="140"
+                                  Width="105"
                                   ItemsSource="{Binding RamOptions}"
                                   SelectedItem="{Binding SelectedRam, Mode=TwoWay}"
                                   ToolTip.Tip="Guest memory for this title"
@@ -677,7 +677,43 @@
                             </DataTemplate>
                           </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <Button Grid.Column="2"
+                        <ComboBox Grid.Column="2"
+                                  Width="115"
+                                  ItemsSource="{Binding RendererOptions}"
+                                  SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                                  ToolTip.Tip="Renderer for this title"
+                                  VerticalAlignment="Center">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="vm:KeyedOption">
+                              <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox Grid.Column="3"
+                                  Width="105"
+                                  ItemsSource="{Binding FilteringOptions}"
+                                  SelectedItem="{Binding SelectedFiltering, Mode=TwoWay}"
+                                  ToolTip.Tip="Core texture filtering for this title"
+                                  VerticalAlignment="Center">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="vm:KeyedOption">
+                              <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox Grid.Column="4"
+                                  Width="135"
+                                  ItemsSource="{Binding FilterOptions}"
+                                  SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
+                                  ToolTip.Tip="Presentation filter for this title"
+                                  VerticalAlignment="Center">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="vm:KeyedOption">
+                              <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="5"
                                 Classes="subtle icon"
                                 Width="32"
                                 Height="32"
@@ -691,7 +727,7 @@
                 </ItemsControl>
 
                 <TextBlock IsVisible="{Binding !HasTitleOverrides}"
-                           Text="No overrides yet. Add one for a title that needs different guest memory."
+                           Text="No overrides yet. Add one for a title that needs different guest memory or graphics."
                            Classes="hint" />
               </StackPanel>
             </Border>

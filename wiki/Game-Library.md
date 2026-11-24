@@ -30,6 +30,8 @@ A scan:
 - Disc images use the file name as the display title.
 - When readable, the XBE title ID (`Title XXXXXXXX`) keys per-title overrides.
 - Otherwise the image path keys the override.
+- An override can set guest memory, the renderer, texture filtering and the
+  presentation filter; unset values inherit the global configuration.
 
 ## Launch
 

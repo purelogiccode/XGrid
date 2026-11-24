@@ -177,11 +177,34 @@ public sealed class EmulatorSettings
     {
         EmulatorSettings effective = Clone();
         TitleOverride? title = FindTitleOverride(gamePath, titleId);
-        if (title?.RamMb is { } ram)
+        if (title is null)
+        {
+            return effective;
+        }
+
+        if (title.RamMb is { } ram)
         {
             effective.RamMb = ram is 128 ? 128 : 64;
         }
 
+        if (title.Renderer is { } renderer)
+        {
+            effective.Graphics.Renderer = renderer;
+        }
+
+        if (title.Filtering is { } filtering)
+        {
+            effective.Graphics.Filtering = filtering;
+        }
+
+        if (title.Filter is { } filter)
+        {
+            effective.Filter = filter;
+        }
+
+        // The override came from disk or the settings page, so invalid values
+        // fall back to the global ones instead of failing the launch.
+        effective.Normalize();
         return effective;
     }
 
@@ -238,15 +261,16 @@ public sealed class EmulatorSettings
         var overrides = new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
         {
-            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null || pair.Value.IsEmpty)
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null)
             {
                 continue;
             }
 
             TitleOverride value = pair.Value;
-            if (value.RamMb is { } ram && ram is not (64 or 128))
+            value.Normalize();
+            if (value.IsEmpty)
             {
-                value.RamMb = null;
+                continue;
             }
 
             // A title key that does not parse can never match a launch;

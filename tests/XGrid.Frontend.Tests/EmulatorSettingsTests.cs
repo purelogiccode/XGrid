@@ -43,10 +43,9 @@ public sealed class EmulatorSettingsTests
         Assert.Equal("nearest", settings.Filter);
         Assert.Equal(64, settings.RamMb);
 
-        // The empty key and the empty override are dropped; the remaining row
-        // keeps only the value that survived validation.
-        TitleOverride row = Assert.Single(settings.TitleOverrides).Value;
-        Assert.Null(row.RamMb);
+        // The empty key, the empty override and the row whose only value was
+        // invalid are all dropped.
+        Assert.Empty(settings.TitleOverrides);
     }
 
     [Fact]
@@ -75,6 +74,80 @@ public sealed class EmulatorSettingsTests
         EmulatorSettings effective = settings.WithTitleOverride(image.ToUpperInvariant());
 
         Assert.Equal(128, effective.RamMb);
+        Assert.Equal(GraphicsSettings.RendererOpenGl, effective.Graphics.Renderer);
+        Assert.Equal(GraphicsSettings.FilterLinear, effective.Graphics.Filtering);
+        Assert.Equal("nearest", effective.Filter);
+    }
+
+    [Fact]
+    public void WithTitleOverrideAppliesTheGraphicsMembers()
+    {
+        var settings = new EmulatorSettings();
+        settings.Graphics.Renderer = GraphicsSettings.RendererVulkan;
+        settings.Graphics.Filtering = GraphicsSettings.FilterLinear;
+        settings.Filter = "bilinear";
+
+        string image = Path.Combine(Path.GetTempPath(), "xgrid-games", "panzer.iso");
+        settings.TitleOverrides[image] = new TitleOverride
+        {
+            Renderer = GraphicsSettings.RendererOpenGl,
+            Filtering = GraphicsSettings.FilterNearest,
+            Filter = "crt",
+        };
+
+        EmulatorSettings effective = settings.WithTitleOverride(image);
+
+        Assert.Equal(GraphicsSettings.RendererOpenGl, effective.Graphics.Renderer);
+        Assert.Equal(GraphicsSettings.FilterNearest, effective.Graphics.Filtering);
+        Assert.Equal("crt", effective.Filter);
+
+        // The source settings keep their global values.
+        Assert.Equal(GraphicsSettings.RendererVulkan, settings.Graphics.Renderer);
+        Assert.Equal("bilinear", settings.Filter);
+    }
+
+    [Fact]
+    public void WithTitleOverrideIgnoresUnknownGraphicsValues()
+    {
+        var settings = new EmulatorSettings();
+        string image = Path.Combine(Path.GetTempPath(), "xgrid-games", "broken.iso");
+        settings.TitleOverrides[image] = new TitleOverride
+        {
+            Renderer = "D3D12",
+            Filtering = "trilinear",
+            Filter = "vhs",
+        };
+
+        EmulatorSettings effective = settings.WithTitleOverride(image);
+
+        Assert.Equal(GraphicsSettings.RendererOpenGl, effective.Graphics.Renderer);
+        Assert.Equal(GraphicsSettings.FilterLinear, effective.Graphics.Filtering);
+        Assert.Equal("nearest", effective.Filter);
+    }
+
+    [Fact]
+    public void NormalizeDropsUnknownOverrideGraphics()
+    {
+        var settings = new EmulatorSettings();
+        settings.TitleOverrides[@"C:\games\a.iso"] = new TitleOverride
+        {
+            Renderer = "d3d12",
+            Filtering = "trilinear",
+            Filter = "vhs",
+        };
+        settings.TitleOverrides[@"C:\games\b.iso"] = new TitleOverride
+        {
+            Renderer = GraphicsSettings.RendererVulkan,
+            Filtering = GraphicsSettings.FilterNearest,
+            Filter = "crt",
+        };
+
+        settings.Normalize();
+
+        TitleOverride row = Assert.Single(settings.TitleOverrides).Value;
+        Assert.Equal(GraphicsSettings.RendererVulkan, row.Renderer);
+        Assert.Equal(GraphicsSettings.FilterNearest, row.Filtering);
+        Assert.Equal("crt", row.Filter);
     }
 
     [Fact]
@@ -105,6 +178,15 @@ public sealed class EmulatorSettingsTests
     {
         Assert.Equal("inherit everything", new TitleOverride().Describe());
         Assert.Equal("128 MB", new TitleOverride { RamMb = 128 }.Describe());
+        Assert.Equal(
+            "128 MB, OpenGL, nearest texture filtering, CRT mask",
+            new TitleOverride
+            {
+                RamMb = 128,
+                Renderer = GraphicsSettings.RendererOpenGl,
+                Filtering = GraphicsSettings.FilterNearest,
+                Filter = "crt",
+            }.Describe());
     }
 
     [Fact]

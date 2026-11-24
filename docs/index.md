@@ -20,7 +20,7 @@ diagnostics, packaging and the documentation you are reading.
 | **Media** | ISO/XISO, compressed CHD, entry-form ZArchive and raw/qcow2 HDD images |
 | **Display** | Shell frame sink with nearest, bilinear, scanline and CRT filters; embedded core window mode; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
-| **Quality of life** | Four save-state slots, per-title guest-memory overrides, whole-window screenshots, activity log, accent themes |
+| **Quality of life** | Four save-state slots, per-title overrides, whole-window screenshots, activity log, accent themes |
 | **Platform** | Windows x64 is the fully supported emulation host today; the shell targets Linux and macOS |
 
 ## Why a native core?

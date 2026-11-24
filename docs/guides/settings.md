@@ -97,7 +97,9 @@ Per-title overrides:
 - Click **Add override** and choose a disc or XBE image.
 - XGrid keys the override by the XBE certificate title ID when possible,
   otherwise by the image path.
-- Choose **64 MB**, **128 MB** or **inherit**.
+- Each row sets guest memory (64, 128 or inherit), renderer, texture filtering
+  and the presentation filter. Unset values inherit the global configuration.
+- The renderer list follows the selected core's build.
 - Remove a row with its remove button.
 
 Overrides apply when the title is launched from the Library or **Open Disc**.
