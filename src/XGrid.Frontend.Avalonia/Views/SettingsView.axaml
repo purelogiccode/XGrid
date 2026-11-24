@@ -14,13 +14,15 @@
           <TextBlock Text="{Binding SettingsFolder}" Classes="mono" FontSize="10.5" TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-          <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}">
+          <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}"
+                  ToolTip.Tip="Show the folder that holds settings.json">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
               <TextBlock Text="Open folder" />
             </StackPanel>
           </Button>
-          <Button Classes="primary" Command="{Binding SaveCommand}">
+          <Button Classes="primary" Command="{Binding SaveCommand}"
+                  ToolTip.Tip="Write these settings to disk (Ctrl+S)">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <PathIcon Data="{x:Static local:AppIcons.Save}"
                         Width="13"
@@ -39,7 +41,7 @@
     <TabControl Grid.Row="1" Name="SettingsTabs" Classes="settings">
 
       <!-- ===================== System ===================== -->
-      <TabItem Header="System">
+      <TabItem Header="System" ToolTip.Tip="Firmware, storage and emulator options">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
 
@@ -60,13 +62,15 @@
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <TextBox Classes="path"
                              Text="{Binding BiosPath, Mode=TwoWay}"
-                             PlaceholderText="Path to the BIOS image" />
-                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…" />
+                             PlaceholderText="Path to the BIOS image"
+                             ToolTip.Tip="Path to the retail MCPX BIOS image" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…"
+                            ToolTip.Tip="Choose the BIOS image file" />
                     <Button Grid.Column="2"
                             Classes="subtle icon"
                             Command="{Binding ClearFieldCommand}"
                             CommandParameter="bios"
-                            ToolTip.Tip="Clear">
+                            ToolTip.Tip="Clear the BIOS path">
                       <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
                     </Button>
                   </Grid>
@@ -89,13 +93,15 @@
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <TextBox Classes="path"
                              Text="{Binding McpxRomPath, Mode=TwoWay}"
-                             PlaceholderText="Optional" />
-                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…" />
+                             PlaceholderText="Optional"
+                             ToolTip.Tip="Path to the optional MCPX boot ROM" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…"
+                            ToolTip.Tip="Choose the MCPX boot ROM file" />
                     <Button Grid.Column="2"
                             Classes="subtle icon"
                             Command="{Binding ClearFieldCommand}"
                             CommandParameter="mcpx"
-                            ToolTip.Tip="Clear">
+                            ToolTip.Tip="Clear the MCPX ROM path">
                       <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
                     </Button>
                   </Grid>
@@ -109,13 +115,15 @@
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <TextBox Classes="path"
                              Text="{Binding EepromPath, Mode=TwoWay}"
-                             PlaceholderText="Optional" />
-                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…" />
+                             PlaceholderText="Optional"
+                             ToolTip.Tip="Path to the optional EEPROM image" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…"
+                            ToolTip.Tip="Choose the EEPROM image file" />
                     <Button Grid.Column="2"
                             Classes="subtle icon"
                             Command="{Binding ClearFieldCommand}"
                             CommandParameter="eeprom"
-                            ToolTip.Tip="Clear">
+                            ToolTip.Tip="Clear the EEPROM path">
                       <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
                     </Button>
                   </Grid>
@@ -141,13 +149,15 @@
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <TextBox Classes="path"
                              Text="{Binding HddPath, Mode=TwoWay}"
-                             PlaceholderText="Optional" />
-                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…" />
+                             PlaceholderText="Optional"
+                             ToolTip.Tip="Path to the optional hard-disk image" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…"
+                            ToolTip.Tip="Choose the hard-disk image file" />
                     <Button Grid.Column="2"
                             Classes="subtle icon"
                             Command="{Binding ClearFieldCommand}"
                             CommandParameter="hdd"
-                            ToolTip.Tip="Clear">
+                            ToolTip.Tip="Clear the hard-disk path">
                       <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
                     </Button>
                   </Grid>
@@ -162,13 +172,15 @@
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <TextBox Classes="path"
                              Text="{Binding DvdPath, Mode=TwoWay}"
-                             PlaceholderText="Optional" />
-                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…" />
+                             PlaceholderText="Optional"
+                             ToolTip.Tip="Path to the disc image inserted at power-on" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…"
+                            ToolTip.Tip="Choose the default disc image" />
                     <Button Grid.Column="2"
                             Classes="subtle icon"
                             Command="{Binding ClearFieldCommand}"
                             CommandParameter="dvd"
-                            ToolTip.Tip="Clear">
+                            ToolTip.Tip="Clear the default disc path">
                       <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
                     </Button>
                   </Grid>
@@ -193,7 +205,8 @@
                   </StackPanel>
                   <TextBox Classes="path"
                            Text="{Binding XemuCorePath, Mode=TwoWay}"
-                           PlaceholderText="Auto-detect" />
+                           PlaceholderText="Auto-detect"
+                           ToolTip.Tip="Path to an emulator binary; empty uses the bundled core" />
                 </StackPanel>
 
                 <Border Classes="divider" />
@@ -207,7 +220,8 @@
                             Width="180"
                             ItemsSource="{Binding RamOptions}"
                             SelectedItem="{Binding RamMb, Mode=TwoWay}"
-                            VerticalAlignment="Center" />
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Guest memory size for the console" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto">
@@ -220,7 +234,8 @@
                                 IsChecked="{Binding DisplaySink, Mode=TwoWay}"
                                 OnContent=""
                                 OffContent=""
-                                VerticalAlignment="Center" />
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Draw the picture in the shell instead of the core window" />
                 </Grid>
 
                 <Border Classes="divider" />
@@ -235,7 +250,8 @@
                             Width="220"
                             ItemsSource="{Binding CoreHostingOptions}"
                             SelectedItem="{Binding SelectedCoreHosting, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose whether the core runs in-process or separately">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -250,7 +266,7 @@
       </TabItem>
 
       <!-- ===================== Graphics ===================== -->
-      <TabItem Header="Graphics">
+      <TabItem Header="Graphics" ToolTip.Tip="Renderer, filtering and display options">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
             <Border Classes="card">
@@ -270,7 +286,8 @@
                   <ComboBox Grid.Column="1" Width="220"
                             ItemsSource="{Binding RendererOptions}"
                             SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the graphics renderer">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -287,7 +304,8 @@
                   <ComboBox Grid.Column="1" Width="180"
                             ItemsSource="{Binding SurfaceScaleOptions}"
                             SelectedItem="{Binding SurfaceScale, Mode=TwoWay}"
-                            VerticalAlignment="Center" />
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the internal resolution multiplier" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto">
@@ -298,7 +316,8 @@
                   <ComboBox Grid.Column="1" Width="220"
                             ItemsSource="{Binding FilteringOptions}"
                             SelectedItem="{Binding SelectedFiltering, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the core texture filter">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -315,7 +334,8 @@
                   <ComboBox Grid.Column="1" Width="220"
                             ItemsSource="{Binding StartupSizeOptions}"
                             SelectedItem="{Binding SelectedStartupSize, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the window size used when the core starts">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -330,7 +350,8 @@
                     <TextBlock Text="Waits for the display refresh. Leave off for lowest input latency." Classes="hint" />
                   </StackPanel>
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding GraphicsVSync, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Wait for the display refresh to avoid tearing" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto">
@@ -339,7 +360,8 @@
                     <TextBlock Text="The embedded window follows the core's own mode." Classes="hint" />
                   </StackPanel>
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding FullscreenOnStartup, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Start the console in fullscreen" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto">
@@ -348,7 +370,8 @@
                     <TextBlock Text="Only used when fullscreen starts." Classes="hint" />
                   </StackPanel>
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding FullscreenExclusive, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Use exclusive fullscreen when starting" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto">
@@ -359,7 +382,8 @@
                   <ComboBox Grid.Column="1" Width="220"
                             ItemsSource="{Binding AspectRatioOptions}"
                             SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the picture aspect ratio">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -376,7 +400,8 @@
                   <ComboBox Grid.Column="1" Width="220"
                             ItemsSource="{Binding FitOptions}"
                             SelectedItem="{Binding SelectedFit, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose how the picture fills its window">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -393,7 +418,8 @@
                   <ComboBox Grid.Column="1" Width="220"
                             ItemsSource="{Binding AvPackOptions}"
                             SelectedItem="{Binding SelectedAvPack, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the reported video output standard">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -414,7 +440,8 @@
                             Width="220"
                             ItemsSource="{Binding FilterOptions}"
                             SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the shell presentation filter">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -429,7 +456,7 @@
       </TabItem>
 
       <!-- ===================== Audio ===================== -->
-      <TabItem Header="Audio">
+      <TabItem Header="Audio" ToolTip.Tip="Audio backend and mixer options">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
             <Border Classes="card">
@@ -449,7 +476,8 @@
                   <ComboBox Grid.Column="1" Width="220"
                             ItemsSource="{Binding AudioBackendOptions}"
                             SelectedItem="{Binding SelectedAudioBackend, Mode=TwoWay}"
-                            VerticalAlignment="Center">
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the host audio output backend">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />
@@ -464,7 +492,8 @@
                     <TextBlock Text="Runs the APU's GP/EP microcode. Required for game audio." Classes="hint" />
                   </StackPanel>
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseDsp, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Enable the guest DSP for game audio" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding UseDsp}">
@@ -473,7 +502,8 @@
                     <TextBlock Text="Native code generation for the DSP. Off keeps the interpreter." Classes="hint" />
                   </StackPanel>
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseDspJit, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Compile DSP microcode to native code" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto">
@@ -482,7 +512,8 @@
                     <TextBlock Text="Head-related filtering for 3D voices." Classes="hint" />
                   </StackPanel>
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding Hrtf, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Enable head-related filtering for 3D voices" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
@@ -491,7 +522,8 @@
                     <TextBlock Text="Caps the mixed output; 100% is the core default." Classes="hint" />
                   </StackPanel>
                   <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="1" TickFrequency="0.05"
-                          Value="{Binding VolumeLimit, Mode=TwoWay}" />
+                          Value="{Binding VolumeLimit, Mode=TwoWay}"
+                          ToolTip.Tip="Set the maximum mixed output volume" />
                   <TextBlock Grid.Column="2" Width="48" Classes="mono" FontSize="11"
                              VerticalAlignment="Center" TextAlignment="Right"
                              Text="{Binding VolumeLimit, StringFormat={}{0:P0}}" />
@@ -505,7 +537,8 @@
                   <ComboBox Grid.Column="1" Width="180"
                             ItemsSource="{Binding VoiceWorkerOptions}"
                             SelectedItem="{Binding VoiceWorkers, Mode=TwoWay}"
-                            VerticalAlignment="Center" />
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose how many threads mix APU voices" />
                 </Grid>
               </StackPanel>
             </Border>
@@ -514,7 +547,7 @@
       </TabItem>
 
       <!-- ===================== Input ===================== -->
-      <TabItem Header="Input">
+      <TabItem Header="Input" ToolTip.Tip="Keyboard, gamepad and player bindings">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
             <Border Classes="card">
@@ -537,7 +570,8 @@
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Left"
                                 Command="{Binding CaptureCommand}"
-                                Content="{Binding KeysDisplay}" />
+                                Content="{Binding KeysDisplay}"
+                                ToolTip.Tip="Click, then press the new key; Esc cancels" />
                         <Button Grid.Column="2"
                                 Classes="subtle icon"
                                 Width="32"
@@ -562,7 +596,8 @@
                         <ComboBox Grid.Column="1"
                                   HorizontalAlignment="Stretch"
                                   ItemsSource="{Binding Sources}"
-                                  SelectedItem="{Binding SelectedSource, Mode=TwoWay}">
+                                  SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                                  ToolTip.Tip="Choose the gamepad input for this action">
                           <ComboBox.ItemTemplate>
                             <DataTemplate DataType="vm:KeyedOption">
                               <TextBlock Text="{Binding Label}" />
@@ -589,7 +624,8 @@
                                     Width="200"
                                     HorizontalAlignment="Left"
                                     ItemsSource="{Binding Options}"
-                                    SelectedItem="{Binding Selected, Mode=TwoWay}">
+                                    SelectedItem="{Binding Selected, Mode=TwoWay}"
+                                    ToolTip.Tip="Choose the XInput slot for this player">
                             <ComboBox.ItemTemplate>
                               <DataTemplate DataType="vm:KeyedOption">
                                 <TextBlock Text="{Binding Label}" />
@@ -608,7 +644,8 @@
                     <TextBlock Text="Radial dead zone applied before the report is published." Classes="hint" />
                   </StackPanel>
                   <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="50" TickFrequency="1"
-                          IsSnapToTickEnabled="True" Value="{Binding LeftDeadZone, Mode=TwoWay}" />
+                          IsSnapToTickEnabled="True" Value="{Binding LeftDeadZone, Mode=TwoWay}"
+                          ToolTip.Tip="Set the left stick dead zone" />
                   <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
                              VerticalAlignment="Center" TextAlignment="Right"
                              Text="{Binding LeftDeadZone, StringFormat={}{0:0}%}" />
@@ -620,7 +657,8 @@
                     <TextBlock Text="Radial dead zone applied before the report is published." Classes="hint" />
                   </StackPanel>
                   <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="50" TickFrequency="1"
-                          IsSnapToTickEnabled="True" Value="{Binding RightDeadZone, Mode=TwoWay}" />
+                          IsSnapToTickEnabled="True" Value="{Binding RightDeadZone, Mode=TwoWay}"
+                          ToolTip.Tip="Set the right stick dead zone" />
                   <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
                              VerticalAlignment="Center" TextAlignment="Right"
                              Text="{Binding RightDeadZone, StringFormat={}{0:0}%}" />
@@ -632,7 +670,8 @@
                     <TextBlock Text="Values below this are reported as released." Classes="hint" />
                   </StackPanel>
                   <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="100" TickFrequency="1"
-                          IsSnapToTickEnabled="True" Value="{Binding TriggerThreshold, Mode=TwoWay}" />
+                          IsSnapToTickEnabled="True" Value="{Binding TriggerThreshold, Mode=TwoWay}"
+                          ToolTip.Tip="Set the trigger press threshold" />
                   <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
                              VerticalAlignment="Center" TextAlignment="Right"
                              Text="{Binding TriggerThreshold, StringFormat={}{0:0}%}" />
@@ -641,21 +680,25 @@
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBlock Text="Invert left stick Y" Classes="label" VerticalAlignment="Center" />
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding InvertLeftY, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Invert the left stick vertical axis" />
                 </Grid>
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBlock Text="Invert right stick Y" Classes="label" VerticalAlignment="Center" />
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding InvertRightY, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Invert the right stick vertical axis" />
                 </Grid>
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBlock Text="Swap left and right sticks" Classes="label" VerticalAlignment="Center" />
                   <ToggleSwitch Grid.Column="1" IsChecked="{Binding SwapSticks, Mode=TwoWay}"
-                                OnContent="" OffContent="" VerticalAlignment="Center" />
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Swap the left and right stick axes" />
                 </Grid>
 
                 <Button Classes="ghost" Command="{Binding ResetInputDefaultsCommand}"
-                        HorizontalAlignment="Left" Content="Reset input defaults" />
+                        HorizontalAlignment="Left" Content="Reset input defaults"
+                        ToolTip.Tip="Restore the default keyboard and gamepad bindings" />
               </StackPanel>
             </Border>
           </StackPanel>
@@ -663,7 +706,7 @@
       </TabItem>
 
       <!-- ===================== Per-title overrides ===================== -->
-      <TabItem Header="Titles">
+      <TabItem Header="Titles" ToolTip.Tip="Per-title memory and graphics overrides">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
             <Border Classes="card">
@@ -674,7 +717,8 @@
                     <TextBlock Text="Guest memory and graphics applied when a specific disc or XBE is launched. Unset values inherit the global configuration."
                                Classes="hint" />
                   </StackPanel>
-                  <Button Grid.Column="1" Classes="ghost" Command="{Binding AddTitleOverrideCommand}">
+                  <Button Grid.Column="1" Classes="ghost" Command="{Binding AddTitleOverrideCommand}"
+                          ToolTip.Tip="Add a per-title settings override">
                     <StackPanel Orientation="Horizontal" Spacing="7">
                       <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
                       <TextBlock Text="Add override" />
@@ -764,7 +808,7 @@
       </TabItem>
 
       <!-- ===================== Library ===================== -->
-      <TabItem Header="Library">
+      <TabItem Header="Library" ToolTip.Tip="Library folders and cover art">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
             <Border Classes="card">
@@ -774,7 +818,8 @@
                     <TextBlock Text="Game library" Classes="h3" />
                     <TextBlock Text="Folders scanned recursively for ISO, CHD, and XBE files." Classes="hint" />
                   </StackPanel>
-                  <Button Grid.Column="1" Classes="ghost" Command="{Binding AddLibraryFolderCommand}">
+                  <Button Grid.Column="1" Classes="ghost" Command="{Binding AddLibraryFolderCommand}"
+                          ToolTip.Tip="Add a folder to scan for games">
                     <StackPanel Orientation="Horizontal" Spacing="7">
                       <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
                       <TextBlock Text="Add folder" />
@@ -826,7 +871,8 @@
                                Classes="hint"
                                TextWrapping="Wrap" />
                   </StackPanel>
-                  <Button Grid.Column="1" Classes="ghost" Command="{Binding Shell.OpenCoversFolderCommand}">
+                  <Button Grid.Column="1" Classes="ghost" Command="{Binding Shell.OpenCoversFolderCommand}"
+                          ToolTip.Tip="Show the folder that holds cover images">
                     <StackPanel Orientation="Horizontal" Spacing="7">
                       <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
                       <TextBlock Text="Open folder" />
@@ -842,7 +888,7 @@
       </TabItem>
 
       <!-- ===================== Appearance ===================== -->
-      <TabItem Header="Appearance">
+      <TabItem Header="Appearance" ToolTip.Tip="Accent color and theme options">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
             <Border Classes="card">
@@ -856,7 +902,8 @@
 
                 <ListBox Classes="swatches"
                          ItemsSource="{Binding AccentOptions}"
-                         SelectedItem="{Binding SelectedAccent, Mode=TwoWay}">
+                         SelectedItem="{Binding SelectedAccent, Mode=TwoWay}"
+                         ToolTip.Tip="Choose the accent color for highlights and controls">
                   <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
                       <WrapPanel Orientation="Horizontal" />

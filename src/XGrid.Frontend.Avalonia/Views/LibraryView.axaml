@@ -11,14 +11,17 @@
         <TextBox Width="300"
                  PlaceholderText="Search games…"
                  Text="{Binding SearchText, Mode=TwoWay}"
-                 VerticalAlignment="Center" />
-        <Button Classes="primary" Command="{Binding AddFolderCommand}">
+                 VerticalAlignment="Center"
+                 ToolTip.Tip="Search the library by title or folder" />
+        <Button Classes="primary" Command="{Binding AddFolderCommand}"
+                ToolTip.Tip="Add a folder to scan for games">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
             <TextBlock Text="Add folder" />
           </StackPanel>
         </Button>
-        <Button Classes="ghost" Command="{Binding RescanCommand}">
+        <Button Classes="ghost" Command="{Binding RescanCommand}"
+                ToolTip.Tip="Rescan library folders for new games">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <PathIcon Data="{x:Static local:AppIcons.Refresh}" Width="14" Height="14" />
             <TextBlock Text="Rescan" />
@@ -67,13 +70,15 @@
                    TextWrapping="Wrap"
                    Text="{Binding EmptyDetail}" />
         <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-          <Button Classes="primary" Command="{Binding AddFolderCommand}">
+          <Button Classes="primary" Command="{Binding AddFolderCommand}"
+                  ToolTip.Tip="Add a folder to scan for games">
             <StackPanel Orientation="Horizontal" Spacing="8">
               <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
               <TextBlock Text="Add a folder" />
             </StackPanel>
           </Button>
-          <Button Classes="ghost" Command="{Binding RescanCommand}" Content="Rescan" />
+          <Button Classes="ghost" Command="{Binding RescanCommand}" Content="Rescan"
+                  ToolTip.Tip="Rescan library folders for new games" />
         </StackPanel>
       </StackPanel>
     </Border>
@@ -83,7 +88,8 @@
              Classes="rows"
              ItemsSource="{Binding Games}"
              IsVisible="{Binding !ShowEmptyState}"
-             SelectionMode="Single">
+             SelectionMode="Single"
+             ToolTip.Tip="Games found in your library folders">
       <ListBox.ItemTemplate>
         <DataTemplate DataType="vm:GameListItem">
           <Border Classes="card tight" Padding="14">
@@ -154,7 +160,7 @@
                 <Button Classes="primary"
                         Command="{Binding LaunchCommand}"
                         IsEnabled="{Binding IsLaunchable}"
-                        ToolTip.Tip="Loose XBE files need an ISO or CHD wrapper to boot."
+                        ToolTip.Tip="Launch this game; loose XBE files need an ISO or CHD wrapper to boot"
                         ToolTip.ShowOnDisabled="True">
                   <StackPanel Orientation="Horizontal" Spacing="7">
                     <PathIcon Data="{x:Static local:AppIcons.Play}" Width="12" Height="12" />
@@ -200,7 +206,7 @@
                         Background="Transparent"
                         BorderThickness="0"
                         Command="{Binding OpenCommand}"
-                        ToolTip.Tip="{Binding FileName}">
+                        ToolTip.Tip="Open this screenshot in the default image viewer">
                   <StackPanel Spacing="4">
                     <Border Width="168"
                             Height="94"

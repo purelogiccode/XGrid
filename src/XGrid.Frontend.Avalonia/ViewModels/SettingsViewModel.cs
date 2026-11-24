@@ -214,7 +214,6 @@ public sealed class PlayerPadItem : ObservableObject
     /// <param name="slot">XInput user slot, or -1 for none.</param>
     public PlayerPadItem(int player, int slot)
     {
-        Player = player;
         Label = "Player " + player.ToString(CultureInfo.InvariantCulture);
         _selected = Choices.FirstOrDefault(
             option => int.TryParse(
@@ -222,9 +221,6 @@ public sealed class PlayerPadItem : ObservableObject
                       && value == slot)
             ?? Choices[0];
     }
-
-    /// <summary>Gets the player number, 1 to 4.</summary>
-    public int Player { get; }
 
     /// <summary>Gets the label shown in the list.</summary>
     public string Label { get; }
