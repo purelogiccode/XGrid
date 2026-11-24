@@ -195,6 +195,59 @@ public sealed class TitleOverrideItem : ObservableObject
     }
 }
 
+/// <summary>One player's XInput slot assignment in Settings → Input.</summary>
+public sealed class PlayerPadItem : ObservableObject
+{
+    private static readonly KeyedOption[] Choices =
+    [
+        new("-1", "No gamepad"),
+        new("0", "XInput slot 1"),
+        new("1", "XInput slot 2"),
+        new("2", "XInput slot 3"),
+        new("3", "XInput slot 4"),
+    ];
+
+    private KeyedOption _selected;
+
+    /// <summary>Creates an assignment row.</summary>
+    /// <param name="player">Player number, 1 to 4.</param>
+    /// <param name="slot">XInput user slot, or -1 for none.</param>
+    public PlayerPadItem(int player, int slot)
+    {
+        Player = player;
+        Label = "Player " + player.ToString(CultureInfo.InvariantCulture);
+        _selected = Choices.FirstOrDefault(
+            option => int.TryParse(
+                          option.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)
+                      && value == slot)
+            ?? Choices[0];
+    }
+
+    /// <summary>Gets the player number, 1 to 4.</summary>
+    public int Player { get; }
+
+    /// <summary>Gets the label shown in the list.</summary>
+    public string Label { get; }
+
+    /// <summary>Gets the selectable slots.</summary>
+    public IReadOnlyList<KeyedOption> Options { get; } = Choices;
+
+    /// <summary>Gets or sets the selected slot.</summary>
+    public KeyedOption Selected
+    {
+        get => _selected;
+        set => SetProperty(ref _selected, value);
+    }
+
+    /// <summary>Projects the row back into the persisted slot (-1 for none).</summary>
+    public int ToSlot()
+    {
+        return int.TryParse(_selected.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot)
+            ? slot
+            : -1;
+    }
+}
+
 /// <summary>One keyboard binding row: an action and its comma-separated keys.</summary>
 public sealed class KeyboardBindingItem : ObservableObject
 {
@@ -542,6 +595,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the gamepad binding rows.</summary>
     public ObservableCollection<GamepadBindingItem> GamepadBindings { get; } = [];
 
+    /// <summary>Gets the four player-to-XInput-slot assignments.</summary>
+    public ObservableCollection<PlayerPadItem> PlayerPads { get; } = [];
+
     /// <summary>Gets the row currently waiting for a key, or null.</summary>
     public KeyboardBindingItem? CapturingBinding => KeyboardBindings.FirstOrDefault(item => item.IsCapturing);
 
@@ -761,6 +817,14 @@ public sealed partial class SettingsViewModel : PageViewModel
             GamepadBindings.Add(new GamepadBindingItem(action, source, GamepadSourceOptions));
         }
 
+        PlayerPads.Clear();
+        int[] slots = input.PlayerGamepads;
+        for (int port = 0; port < 4; port++)
+        {
+            int slot = slots is not null && port < slots.Length ? slots[port] : port;
+            PlayerPads.Add(new PlayerPadItem(port + 1, slot));
+        }
+
         LeftDeadZone = input.LeftDeadZonePercent;
         RightDeadZone = input.RightDeadZonePercent;
         TriggerThreshold = input.TriggerThresholdPercent;
@@ -784,6 +848,7 @@ public sealed partial class SettingsViewModel : PageViewModel
                 item => item.Action.ToString(),
                 item => item.SelectedSource.Key,
                 StringComparer.OrdinalIgnoreCase),
+            PlayerGamepads = [.. PlayerPads.Select(item => item.ToSlot())],
             LeftDeadZonePercent = (int)Math.Round(LeftDeadZone),
             RightDeadZonePercent = (int)Math.Round(RightDeadZone),
             TriggerThresholdPercent = (int)Math.Round(TriggerThreshold),

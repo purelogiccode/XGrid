@@ -521,7 +521,7 @@
               <StackPanel Spacing="16">
                 <StackPanel Spacing="3">
                   <TextBlock Text="Input" Classes="h3" />
-                  <TextBlock Text="Player-1 keyboard and gamepad bindings. Click a key button, then press the new key; Esc cancels."
+                  <TextBlock Text="Keyboard and gamepad bindings for players 1 to 4. Click a key button, then press the new key; Esc cancels."
                              Classes="hint" TextWrapping="Wrap" />
                 </StackPanel>
                 <Border Classes="divider" />
@@ -573,6 +573,34 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <Border Classes="divider" />
+
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Players" Classes="label" />
+                  <TextBlock Text="Assign one XInput slot to each Xbox port. The keyboard always drives player 1; the gamepad map and stick options above apply to every player."
+                             Classes="hint" TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding PlayerPads}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="vm:PlayerPadItem">
+                        <Grid ColumnDefinitions="170,*" ColumnSpacing="10" Margin="0,0,0,6">
+                          <TextBlock Text="{Binding Label}" Classes="caption" VerticalAlignment="Center" />
+                          <ComboBox Grid.Column="1"
+                                    Width="200"
+                                    HorizontalAlignment="Left"
+                                    ItemsSource="{Binding Options}"
+                                    SelectedItem="{Binding Selected, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate DataType="vm:KeyedOption">
+                                <TextBlock Text="{Binding Label}" />
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
 
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                   <StackPanel Spacing="2" VerticalAlignment="Center">

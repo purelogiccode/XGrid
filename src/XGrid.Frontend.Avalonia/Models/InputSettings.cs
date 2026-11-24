@@ -23,6 +23,12 @@ public sealed class InputSettings
     /// <summary>Gets or sets the gamepad bindings (action name to source name).</summary>
     public Dictionary<string, string> Gamepad { get; set; } = InputDefaults.Gamepad();
 
+    /// <summary>
+    /// Gets or sets the XInput slot assigned to each Xbox port (player 1 to 4).
+    /// A value of -1 leaves the port to the keyboard or to no controller.
+    /// </summary>
+    public int[] PlayerGamepads { get; set; } = [0, 1, 2, 3];
+
     /// <summary>Gets or sets the left-stick radial dead zone (0-100%).</summary>
     public int LeftDeadZonePercent { get; set; } = GamepadMappingOptions.DefaultLeftDeadZonePercent;
 
@@ -48,6 +54,7 @@ public sealed class InputSettings
         {
             Keyboard = new Dictionary<string, string>(Keyboard, StringComparer.OrdinalIgnoreCase),
             Gamepad = new Dictionary<string, string>(Gamepad, StringComparer.OrdinalIgnoreCase),
+            PlayerGamepads = [.. PlayerGamepads],
             LeftDeadZonePercent = LeftDeadZonePercent,
             RightDeadZonePercent = RightDeadZonePercent,
             TriggerThresholdPercent = TriggerThresholdPercent,
@@ -85,9 +92,23 @@ public sealed class InputSettings
         }
 
         Gamepad = gamepad;
+        PlayerGamepads = NormalizePlayerGamepads(PlayerGamepads);
         LeftDeadZonePercent = Math.Clamp(LeftDeadZonePercent, 0, 100);
         RightDeadZonePercent = Math.Clamp(RightDeadZonePercent, 0, 100);
         TriggerThresholdPercent = Math.Clamp(TriggerThresholdPercent, 0, 100);
+    }
+
+    private static int[] NormalizePlayerGamepads(int[]? slots)
+    {
+        int[] defaults = [0, 1, 2, 3];
+        var result = new int[4];
+        for (int index = 0; index < result.Length; index++)
+        {
+            int value = slots is not null && index < slots.Length ? slots[index] : defaults[index];
+            result[index] = value is >= -1 and <= 3 ? value : -1;
+        }
+
+        return result;
     }
 }
 

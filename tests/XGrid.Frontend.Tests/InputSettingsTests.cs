@@ -66,6 +66,39 @@ public sealed class InputSettingsTests
     }
 
     [Fact]
+    public void PlayerGamepads_DefaultToTheMatchingSlotAndCloneIndependently()
+    {
+        var settings = new InputSettings();
+        Assert.Equal([0, 1, 2, 3], settings.PlayerGamepads);
+
+        InputSettings copy = settings.Clone();
+        copy.PlayerGamepads[0] = -1;
+
+        Assert.Equal(0, settings.PlayerGamepads[0]);
+        Assert.Equal(-1, copy.PlayerGamepads[0]);
+    }
+
+    [Fact]
+    public void Normalize_RepairsThePlayerAssignments()
+    {
+        var settings = new InputSettings { PlayerGamepads = [7, -2, 2, 3] };
+
+        settings.Normalize();
+
+        Assert.Equal([-1, -1, 2, 3], settings.PlayerGamepads);
+    }
+
+    [Fact]
+    public void Normalize_FillsAMissingPlayerAssignment()
+    {
+        var settings = new InputSettings { PlayerGamepads = [1] };
+
+        settings.Normalize();
+
+        Assert.Equal([1, 1, 2, 3], settings.PlayerGamepads);
+    }
+
+    [Fact]
     public void KeyboardKeys_ParseFormatAndAliasBackspace()
     {
         Assert.True(KeyboardKeys.TryParse("Backspace", out Key back));

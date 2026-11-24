@@ -6,24 +6,19 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
-using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.ViewModels;
-using XGrid.Input;
 
 namespace XGrid.Frontend.Avalonia.Views;
 
-/// <summary>Main shell window; maps keyboard and XInput controller input to the emulated Xbox pad.</summary>
+/// <summary>Main shell window; maps keyboard input to the emulated Xbox pad.</summary>
 [SuppressMessage(
     "Design",
     "CA1001:Types that own disposable fields should be disposable",
-    Justification = "A Window's lifetime is the process's; the reader is released in the Closed handler, the only point Avalonia offers.")]
+    Justification = "A Window's lifetime is the process's; timers are stopped in the Closed handler, the only point Avalonia offers.")]
 public partial class MainWindow : Window
 {
     private readonly HashSet<Key> _pressed = [];
-    private readonly XInputGamepadReader _gamepad = new();
-    private HostPad _hostPad = HostPad.Neutral;
     private DispatcherTimer? _padTimer;
-    private bool _gamepadLogged;
     private WindowState _restoreState = WindowState.Normal;
 
     /// <summary>Creates the window and installs global key handlers and the controller poll.</summary>
@@ -169,52 +164,19 @@ public partial class MainWindow : Window
 
     private void OnPadTimer(object? sender, EventArgs e)
     {
-        // Match the keyboard rule: a background window must not drive the game.
-        if (!IsActive || DataContext is not MainWindowViewModel { IsRunning: true })
+        if (DataContext is MainWindowViewModel viewModel)
         {
-            if (!_hostPad.IsNeutral)
-            {
-                _hostPad = HostPad.Neutral;
-                PublishPad();
-            }
-
-            return;
+            // The view model polls the assigned slots and publishes all four
+            // pads; an inactive window publishes neutral so it cannot drive a
+            // game from the background.
+            viewModel.PollGamepads(IsActive);
         }
-
-        GamepadMappingOptions options = DataContext is MainWindowViewModel current
-            ? current.GamepadOptions
-            : GamepadMappingOptions.Default;
-        if (!_gamepad.TryRead(out HostPad pad, options))
-        {
-            if (!_hostPad.IsNeutral)
-            {
-                _hostPad = HostPad.Neutral;
-                PublishPad();
-            }
-
-            return;
-        }
-
-        _hostPad = pad;
-        if (!_gamepadLogged)
-        {
-            _gamepadLogged = true;
-            if (DataContext is MainWindowViewModel viewModel)
-            {
-                viewModel.AddLog(
-                    LogLevel.Info,
-                    $"XInput controller {_gamepad.UserIndex} connected (analog + sticks).");
-            }
-        }
-
-        PublishPad();
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
         _padTimer?.Stop();
         _padTimer = null;
-        _gamepad.Dispose();
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
@@ -303,7 +265,7 @@ public partial class MainWindow : Window
         if (viewModel.TryMapKey(e.Key, out _))
         {
             _pressed.Add(e.Key);
-            PublishPad();
+            PublishKeyboard();
             e.Handled = true;
         }
     }
@@ -317,7 +279,7 @@ public partial class MainWindow : Window
 
         if (_pressed.Remove(e.Key))
         {
-            PublishPad();
+            PublishKeyboard();
             e.Handled = true;
         }
     }
@@ -330,7 +292,7 @@ public partial class MainWindow : Window
         }
 
         _pressed.Clear();
-        PublishPad();
+        PublishKeyboard();
     }
 
     private bool IsTypingTarget()
@@ -364,17 +326,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void PublishPad()
+    private void PublishKeyboard()
     {
-        if (DataContext is not MainWindowViewModel viewModel)
+        if (DataContext is MainWindowViewModel viewModel)
         {
-            return;
+            viewModel.SetKeyboardKeys(_pressed);
         }
-
-        HostPad pad = viewModel.MergeKeyboard(_hostPad, _pressed);
-        ushort buttons = pad.Buttons;
-        var analog = (byte[])pad.Analog.Clone();
-        var sticks = (short[])pad.Sticks.Clone();
-        viewModel.SetPad(buttons, analog, sticks);
     }
 }

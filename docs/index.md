@@ -78,8 +78,8 @@ than a reboot. In-process hosting only, like save states.
 
 When **Present core frames in the shell** is enabled, the core publishes BGRA
 frames to a shared section and the shell presents them with pacing, scaling and
-filters. The same session publishes a 32-byte pad report to the core, so the
-keyboard and XInput mapping is XGrid's, not the core's.
+filters. The same session publishes one 32-byte pad record per Xbox port, so the
+keyboard and XInput mapping for players 1–4 is XGrid's, not the core's.
 
 ## Quick start
 

@@ -19,7 +19,8 @@
 #include <windows.h>
 
 #define XGRID_INPUT_MAGIC 0x49444758u /* 'XGDI' little endian */
-#define XGRID_INPUT_SIZE 32u
+#define XGRID_INPUT_SIZE \
+    (XGRID_INPUT_HEADER + XGRID_INPUT_STRIDE * XGRID_INPUT_PADS)
 
 static HANDLE g_mapping;
 static const uint8_t *g_view;
@@ -88,51 +89,62 @@ static bool ensure_open(void)
     return true;
 }
 
-bool xgrid_input_read(uint32_t *buttons, int32_t *lx, int32_t *ly,
+bool xgrid_input_read(int pad, uint32_t *buttons, int32_t *lx, int32_t *ly,
                       int32_t *rx, int32_t *ry, int32_t *lt, int32_t *rt)
 {
+    uint32_t header[4];
+    uint32_t values[8];
+
+    if (pad < 0 || pad >= XGRID_INPUT_PADS) {
+        return false;
+    }
+
     if (!ensure_open()) {
         return false;
     }
 
-    uint32_t values[8];
-    memcpy(values, g_view, sizeof(values));
-
-    if (values[0] != XGRID_INPUT_MAGIC) {
+    memcpy(header, g_view, sizeof(header));
+    if (header[0] != XGRID_INPUT_MAGIC ||
+        header[1] != XGRID_INPUT_VERSION ||
+        header[2] != XGRID_INPUT_PADS) {
         return false;
     }
 
+    memcpy(values, g_view + XGRID_INPUT_HEADER + (size_t)pad * XGRID_INPUT_STRIDE,
+           sizeof(values));
+
     if (buttons != NULL) {
-        *buttons = values[1];
+        *buttons = values[0];
     }
 
     if (lx != NULL) {
-        *lx = (int32_t)values[2];
+        *lx = (int32_t)values[1];
     }
 
     if (ly != NULL) {
-        *ly = (int32_t)values[3];
+        *ly = (int32_t)values[2];
     }
 
     if (rx != NULL) {
-        *rx = (int32_t)values[4];
+        *rx = (int32_t)values[3];
     }
 
     if (ry != NULL) {
-        *ry = (int32_t)values[5];
+        *ry = (int32_t)values[4];
     }
 
     if (lt != NULL) {
-        *lt = (int32_t)values[6];
+        *lt = (int32_t)values[5];
     }
 
     if (rt != NULL) {
-        *rt = (int32_t)values[7];
+        *rt = (int32_t)values[6];
     }
 
     if (!g_announced) {
         g_announced = true;
-        fprintf(stderr, "xgrid input: port 1 reads the shell pad\n");
+        fprintf(stderr, "xgrid input: %d pads read the shell state\n",
+                XGRID_INPUT_PADS);
     }
 
     return true;
@@ -150,9 +162,10 @@ bool xgrid_input_enabled(void)
     return false;
 }
 
-bool xgrid_input_read(uint32_t *buttons, int32_t *lx, int32_t *ly,
+bool xgrid_input_read(int pad, uint32_t *buttons, int32_t *lx, int32_t *ly,
                       int32_t *rx, int32_t *ry, int32_t *lt, int32_t *rt)
 {
+    (void)pad;
     (void)buttons;
     (void)lx;
     (void)ly;

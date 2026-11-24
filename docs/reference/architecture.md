@@ -98,20 +98,28 @@ minimum 10 ms cadence. A slow UI drops frames instead of building latency.
 
 ## Input sink
 
-The shell publishes a 32-byte pad report:
+The shell publishes a 144-byte section with one 32-byte record per Xbox pad:
 
 ```text
 uint32 magic   'XGDI'
-uint32 buttons xemu XID mask
-int32  lx, ly, rx, ry
-int32  lt, rt
+uint32 version 2
+uint32 pads    4
+uint32 reserved
+per pad:
+  uint32 buttons  xemu XID mask
+  int32  lx, ly, rx, ry
+  int32  lt, rt
+  uint32 sequence increments once per shell update
 ```
 
-The shell publishes a neutral report immediately at start, so the core never
-reads uninitialized state.
+Player 1 merges the keyboard with its assigned gamepad; players 2-4 carry their
+gamepad only. The shell publishes neutral records immediately at start, so the
+core never reads uninitialized state.
 
-The core reads it only when the input sink is configured. With the embedded core
-window, the core uses SDL input instead.
+The core reads the section only when the input sink is configured. It binds a
+controller to every port the keyboard did not take, so all four records reach
+the guest; the bindings are not persisted. With the embedded core window, the
+core uses SDL input instead.
 
 ## Save states
 

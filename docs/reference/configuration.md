@@ -49,7 +49,7 @@ The shell writes indented JSON. The main fields are:
 | `Filter` | `nearest`, `bilinear`, `scanline` or `crt`. |
 | `Graphics` | Renderer, scale, filtering, window, aspect, fit, AV pack. |
 | `Audio` | Backend, DSP, JIT, HRTF, volume, workers. |
-| `Input` | Keyboard and gamepad maps, dead zones, trigger threshold, inversion, stick swap. |
+| `Input` | Keyboard and gamepad maps, player-to-XInput-slot assignments, dead zones, trigger threshold, inversion, stick swap. |
 | `Accent` | Accent palette key. |
 | `XemuCorePath` | Explicit core executable, or empty for auto-detect. |
 | `LibraryFolders` | Folders scanned by the Library. |
