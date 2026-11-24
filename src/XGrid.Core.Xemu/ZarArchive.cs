@@ -16,9 +16,10 @@ public readonly record struct ZarEntry(string Name, ulong Size);
 /// or stores the game as a file tree.
 /// </summary>
 /// <remarks>
-/// The format facts are in <c>docs/research-notes/zarchive-format.md</c> (from
-/// the operator's ZArchiveSharp port of ZArchive 0.1.2). Everything is
-/// big-endian on disk; the footer is the last 144 bytes.
+/// The layout is pinned by <c>tests/XGrid.Core.Tests/ZarArchiveTests.cs</c>
+/// (synthetic entry-form and file-tree archives) and the entry-form creation
+/// recipe in <c>docs/guides/media.md</c>. Everything is big-endian on disk and
+/// the footer is the last 144 bytes.
 /// </remarks>
 public sealed class ZarArchive
 {
