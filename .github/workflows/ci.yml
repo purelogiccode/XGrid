@@ -311,38 +311,7 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
-  # Master builds: self-contained binaries for every release platform.
-  # Tagged releases are produced by release.yml.
+  # Packaging is not a CI job: the win-x64 archive carries the emulator core,
+  # which is built on the Windows development host (xemu/dist is not tracked).
+  # Run scripts/package.ps1 there; release.yml covers tagged releases.
   # ---------------------------------------------------------------------------
-  package:
-    name: Package (${{ matrix.rid }})
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [build-test, format, inspectcode]
-    runs-on: [self-hosted, Linux, X64, repofleet-ci]
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        rid: [win-x64, linux-x64, osx-x64, osx-arm64]
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "11.0.x"
-          cache: true
-          cache-dependency-path: |
-            Directory.Packages.props
-            **/*.csproj
-
-      - name: Build the release tree
-        shell: pwsh
-        run: ./scripts/package.ps1 -Rids ${{ matrix.rid }}
-
-      - name: Upload package
-        uses: actions/upload-artifact@v7
-        with:
-          name: xgrid-${{ matrix.rid }}
-          path: dist/*
-          if-no-files-found: error
-          retention-days: 14

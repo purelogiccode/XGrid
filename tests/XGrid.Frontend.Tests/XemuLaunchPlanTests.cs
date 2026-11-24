@@ -199,10 +199,16 @@ public sealed class XemuLaunchPlanTests : IDisposable
     {
         string work = Path.Combine(_root, "work");
 
-        // A fresh configuration has no BIOS, which blocks before anything else.
+        // With a core present, a configuration without a BIOS is refused for that
+        // reason; the fixture core keeps this independent of the build layout.
+        var noBios = new EmulatorSettings
+        {
+            XemuCorePath = Path.Combine(_root, "firmware", "xemu.exe"),
+            BiosPath = string.Empty,
+        };
         Assert.Contains(
             "BIOS",
-            XemuLaunchPlan.DescribeProblem(new EmulatorSettings(), null, work),
+            XemuLaunchPlan.DescribeProblem(noBios, null, work),
             StringComparison.OrdinalIgnoreCase);
 
         Assert.Null(XemuLaunchPlan.DescribeProblem(Settings(), null, work));
