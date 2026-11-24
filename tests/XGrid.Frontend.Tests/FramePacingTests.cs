@@ -23,8 +23,8 @@ public sealed class FramePacingTests
     {
         const long last = 5_000;
 
-        Assert.False(FramePacing.ShouldPresent(last + Milliseconds(9), last, Frequency));
-        Assert.True(FramePacing.ShouldPresent(last + Milliseconds(10), last, Frequency));
+        Assert.False(FramePacing.ShouldPresent(last, last, Frequency));
+        Assert.True(FramePacing.ShouldPresent(last + Milliseconds(1), last, Frequency));
         Assert.True(FramePacing.ShouldPresent(last + Milliseconds(25), last, Frequency));
     }
 
@@ -40,7 +40,7 @@ public sealed class FramePacingTests
         // The regression this pins: a 100 ms presentation tick is ten pictures
         // a second however fast the guest renders.
         Assert.True(FramePacing.PollIntervalMilliseconds <= 16);
-        Assert.InRange(FramePacing.PresentIntervalMilliseconds, 10, 33);
+        Assert.InRange(FramePacing.PresentIntervalMilliseconds, 1, 8);
     }
 
     private static long Milliseconds(int milliseconds)
