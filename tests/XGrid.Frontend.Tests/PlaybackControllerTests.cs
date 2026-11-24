@@ -72,15 +72,55 @@ public sealed class PlaybackControllerTests
     }
 
     [Fact]
-    public void Reset_ForgetsThePausedState()
+    public void Reset_ForgetsThePausedStateAndSpeed()
     {
         var playback = new FakePlayback();
         var controller = new PlaybackController(playback);
 
         Assert.True(controller.SetPaused(true, out _));
+        Assert.True(controller.TrySetSpeed(4, out _));
         controller.Reset();
 
         Assert.False(controller.IsPaused);
+        Assert.Equal(1, controller.SpeedMultiplier);
+    }
+
+    [Fact]
+    public void SetSpeed_ChangesThePaceAndReturnsToRealTime()
+    {
+        var playback = new FakePlayback();
+        var controller = new PlaybackController(playback);
+
+        Assert.Equal(1, controller.SpeedMultiplier);
+        Assert.True(controller.TrySetSpeed(4, out string problem));
+        Assert.Empty(problem);
+        Assert.Equal(4, controller.SpeedMultiplier);
+
+        Assert.True(controller.TrySetSpeed(1, out problem));
+        Assert.Empty(problem);
+        Assert.Equal(1, controller.SpeedMultiplier);
+        Assert.Equal([4, 1], playback.SpeedRequests);
+    }
+
+    [Fact]
+    public void SetSpeed_KeepsThePreviousPaceWhenTheCoreRefuses()
+    {
+        var playback = new FakePlayback { Accept = false, Refusal = "The emulator is not running." };
+        var controller = new PlaybackController(playback);
+
+        Assert.False(controller.TrySetSpeed(4, out string problem));
+        Assert.Equal("The emulator is not running.", problem);
+        Assert.Equal(1, controller.SpeedMultiplier);
+    }
+
+    [Fact]
+    public void SetSpeed_WithoutACoreReportsTheHostingRequirement()
+    {
+        var controller = new PlaybackController(null);
+
+        Assert.False(controller.TrySetSpeed(4, out string problem));
+        Assert.Equal("Pausing needs the in-process emulator core.", problem);
+        Assert.Equal(1, controller.SpeedMultiplier);
     }
 
     private sealed class FakePlayback : ICorePlayback
@@ -90,6 +130,8 @@ public sealed class PlaybackControllerTests
         public string Refusal { get; set; } = "refused";
 
         public List<bool> PauseRequests { get; } = [];
+
+        public List<int> SpeedRequests { get; } = [];
 
         public int Steps { get; private set; }
 
@@ -103,6 +145,13 @@ public sealed class PlaybackControllerTests
         public bool TryStepFrame(out string problem)
         {
             Steps++;
+            problem = Accept ? string.Empty : Refusal;
+            return Accept;
+        }
+
+        public bool TrySetSpeed(int multiplier, out string problem)
+        {
+            SpeedRequests.Add(multiplier);
             problem = Accept ? string.Empty : Refusal;
             return Accept;
         }

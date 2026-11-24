@@ -602,6 +602,7 @@ XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
     qatomic_set(&g_pause_pending, 0);
     qatomic_set(&g_step_pending, 0);
     qatomic_set(&g_step_armed, 0);
+    xemu_set_speed_multiplier(1);
     xgrid_display_set_frame_callback(xgrid_core_display_frame, NULL);
     xgrid_display_set_sink(display_sink);
     xgrid_input_set_sink(input_sink);
@@ -716,6 +717,26 @@ XGRID_CORE_EXPORT int xgrid_core_frame_step(void)
     aio_bh_schedule_oneshot(qemu_get_aio_context(), xgrid_core_start_step,
                             NULL);
     return 0;
+}
+
+/** Sets the presentation pace used for fast-forward. */
+XGRID_CORE_EXPORT int xgrid_core_set_speed(int multiplier)
+{
+    if (multiplier < 1 || multiplier > 8) {
+        return -2;
+    }
+    if (!qatomic_read(&g_running)) {
+        return -1;
+    }
+
+    xemu_set_speed_multiplier(multiplier);
+    return 0;
+}
+
+/** Returns the current speed multiplier (1 is real time). */
+XGRID_CORE_EXPORT int xgrid_core_get_speed(void)
+{
+    return xemu_get_speed_multiplier();
 }
 
 /** Queues a change of the inserted disc. */

@@ -44,6 +44,12 @@ public static class InputMapping
     /// <param name="action">Mapped action.</param>
     public static bool TryMapKey(InputSettings settings, Key key, out PadAction action)
     {
+        if (KeyboardKeys.IsReserved(key))
+        {
+            action = default;
+            return false;
+        }
+
         foreach (PadAction candidate in PadActions.All)
         {
             if (!settings.Keyboard.TryGetValue(candidate.ToString(), out string? keys))

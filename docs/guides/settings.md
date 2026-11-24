@@ -80,8 +80,8 @@ See [Audio](audio.md) for details and troubleshooting.
 Player-1 keyboard and controller bindings.
 
 - Click a key button, then press the new key. **Esc** cancels capture.
-- Keyboard rows accept one or more comma-separated key names; the default A row
-  keeps both `A` and `Space`.
+- Keyboard rows accept one or more comma-separated key names. `Space` is
+  reserved for fast-forward, so it is never stored as a pad binding.
 - Gamepad rows select a physical source (A, B, X, Y, D-pad, triggers, sticks,
   etc.).
 - **Dead zones** are radial percentages applied before the report is published.

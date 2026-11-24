@@ -88,12 +88,14 @@ Full walkthrough: [First boot](docs/getting-started/first-boot.md).
 | `F7` | Quick load |
 | `F8` | Screenshot the window |
 | `F11` | Fullscreen |
+| `Space` | Toggle 4x fast-forward |
+| `Esc` | Fullscreen: pause, then close on the next press |
 | `Ctrl+O` | Open a disc |
 | `Ctrl+S` | Save settings (Settings page) |
 
-Default player-1 controls: `A`/`Space` = A, `S` = B, `D` = X, `F` = Y, arrows =
-D-pad, `Enter` = Start, `Backspace` = Back, `Q`/`E` = White/Black, `Z`/`C` =
-triggers.
+Default player-1 controls: `A` = A, `S` = B, `D` = X, `F` = Y, arrows = D-pad,
+`Enter` = Start, `Backspace` = Back, `Q`/`E` = White/Black, `Z`/`C` = triggers.
+Space is reserved for fast-forward.
 
 ## Architecture
 

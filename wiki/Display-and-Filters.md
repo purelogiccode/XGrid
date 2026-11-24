@@ -51,7 +51,9 @@ left unfiltered.
 
 ## Fullscreen and screenshots
 
-- **F11** toggles fullscreen; **Esc** leaves it.
+- **F11** toggles fullscreen.
+- In fullscreen, **Esc** pauses a running game on the first press. Press **Esc**
+  again to close XGrid. With no game running, Esc returns to the windowed shell.
 - **F8** saves the whole window as a PNG in `<data>/screenshots/`.
 - The Library page shows a strip of recent captures; click one to open it,
   **Refresh** to re-read the folder.
@@ -64,6 +66,9 @@ left unfiltered.
 
 Both need in-process core hosting, like save states. While paused, the status
 bar reads **Paused**.
+
+Press **Space** while a game runs to toggle **4x fast-forward**; press it again
+to return to normal speed. The status bar reads **Running 4x** while it is on.
 
 ## If the picture is black
 

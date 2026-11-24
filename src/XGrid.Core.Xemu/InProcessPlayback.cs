@@ -46,4 +46,18 @@ public sealed class InProcessPlayback : ICorePlayback
         };
         return status == 0;
     }
+
+    /// <inheritdoc />
+    public bool TrySetSpeed(int multiplier, out string problem)
+    {
+        int status = _core.SetSpeed(multiplier);
+        problem = status switch
+        {
+            0 => string.Empty,
+            -1 => "The emulator is not running.",
+            -2 => "Fast-forward runs from 1x to 8x.",
+            _ => $"The emulator refused the speed request (status {status}).",
+        };
+        return status == 0;
+    }
 }

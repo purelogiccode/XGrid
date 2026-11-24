@@ -20,6 +20,21 @@ XGRID_FRONTEND_DATA_DIR=/path/to/folder
 
 Useful for portable installs and automated tests.
 
+## Command line
+
+| Argument | Meaning |
+| --- | --- |
+| `--autostart` | Power on the console as soon as the shell is ready. |
+| `-fullscreen`, `--fullscreen`, `-f` | Open the shell in fullscreen. |
+
+Arguments the shell does not recognize are passed through unchanged for
+Avalonia and the platform. The switches are case-insensitive and can be
+combined:
+
+```text
+XGrid.Frontend.Avalonia.exe --autostart -f
+```
+
 ## Files
 
 ```text

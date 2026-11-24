@@ -64,12 +64,14 @@ int  xgrid_core_snapshot_count(void);
 const char *xgrid_core_snapshot_name(int index);
 ```
 
-Playback functions:
+Playback and speed functions:
 
 ```c
 int xgrid_core_set_paused(int paused);
 int xgrid_core_is_paused(void);
 int xgrid_core_frame_step(void);
+int xgrid_core_set_speed(int multiplier);
+int xgrid_core_get_speed(void);
 ```
 
 Disc functions:
@@ -90,6 +92,11 @@ Pause and frame step are queued like the save-state requests and applied on the
 core's main loop. A pause stops the machine on the next published frame, and a
 step resumes from that boundary and stops after the next frame. A 50 ms timer is
 the fallback when the display sink is off, because then no frame is published.
+
+The speed multiplier scales the vblank pace the display path presents at; it
+does not change the guest clock. The value is atomic, so the shell can set 4x
+while the vblank thread reads it. The shell toggles 4x with Space and returns to
+1x on the next press, pause or session end.
 
 One process hosts one machine. Start is accepted once; join releases the thread
 handle after the run loop stops.

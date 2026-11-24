@@ -31,4 +31,14 @@ int xemu_run(int argc, char **argv, bool library_mode);
  */
 void xemu_request_shutdown(void);
 
+/**
+ * Sets the vblank pace multiplier used by the shell's fast-forward control.
+ * 1 is real time; 4 presents four times as many frames per real second. Safe
+ * to call from any thread while the machine runs.
+ */
+void xemu_set_speed_multiplier(int multiplier);
+
+/** Returns the current vblank pace multiplier (1 is real time). */
+int xemu_get_speed_multiplier(void);
+
 #endif /* XEMU_RUN_H */

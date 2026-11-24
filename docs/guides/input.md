@@ -12,7 +12,7 @@ drives **player 1**; an XInput controller can drive any player.
 
 | Action | Key(s) |
 | --- | --- |
-| A | `A`, `Space` |
+| A | `A` |
 | B | `S` |
 | X | `D` |
 | Y | `F` |
@@ -31,6 +31,9 @@ Keyboard presses are overlaid on the controller report; digital buttons combine.
 The shell only publishes input while the console is running and the window is
 active.
 
+**Space** is reserved: press it to toggle 4x fast-forward while a game runs. It
+is never stored as a pad binding, even if an older settings file listed it.
+
 ## Remapping
 
 Open **Settings → Input**.
@@ -39,8 +42,9 @@ Open **Settings → Input**.
 2. Press the new key.
 3. Press **Esc** to cancel capture.
 
-A keyboard action can hold several comma-separated keys. **Reset input defaults**
-restores the shipped map; save the settings to apply it.
+A keyboard action can hold several comma-separated keys. **Space** is owned by
+the shell, so it is removed from captured and stored bindings. **Reset input
+defaults** restores the shipped map; save the settings to apply it.
 
 ## XInput controllers
 
@@ -79,14 +83,16 @@ These are shell shortcuts, not gamepad bindings:
 | `F8` | Save a screenshot of the window |
 | `F10` | Step one frame while paused |
 | `F11` | Toggle fullscreen |
-| `Esc` | Leave fullscreen |
+| `Space` | Toggle 4x fast-forward |
+| `Esc` | Fullscreen: pause a game, then close XGrid on the next press |
 | `P` | Pause or resume the console |
 | `Ctrl+O` | Open a disc image (swaps the disc while running) |
 | `Ctrl+E` | Eject the inserted disc |
 | `Ctrl+S` | Save settings (Settings page) |
 
-Pause and frame step need in-process core hosting, like save states: the shell
-calls the core's ABI to stop the machine and to run exactly one frame.
+Pause, frame step and fast-forward need in-process core hosting, like save
+states: the shell calls the core's ABI to stop the machine, to run exactly one
+frame, or to scale the vblank pace.
 
 See [Shortcuts](../reference/shortcuts.md) for the full list.
 

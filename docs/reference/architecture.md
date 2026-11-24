@@ -155,10 +155,11 @@ shell polls the status and reports completion.
 
 ## Playback control
 
-Pause, resume and frame step use the in-process ABI:
+Pause, resume, frame step and fast-forward use the in-process ABI:
 
 ```text
 xgrid_core_set_paused(bool)   xgrid_core_is_paused()   xgrid_core_frame_step()
+xgrid_core_set_speed(int)     xgrid_core_get_speed()
 ```
 
 A request is queued and applied as a bottom half on the core's main loop, so the
@@ -168,6 +169,10 @@ the same way after the next one. When no frame is published (the display sink is
 off), a short timer stops the machine instead. The shell keeps the paused state
 it asked for and reports it in the status bar, the toolbar and a badge over the
 picture.
+
+Fast-forward does not touch the guest clock: it scales the vblank interval the
+display path uses, so the core presents more frames per real second. The shell
+toggles 4x with Space and restores 1x on the next press, pause or session end.
 
 ## Disc change
 

@@ -91,6 +91,18 @@ XGRID_CORE_EXPORT int xgrid_core_is_paused(void);
  */
 XGRID_CORE_EXPORT int xgrid_core_frame_step(void);
 
+/**
+ * Sets the presentation pace used for fast-forward (1 is real time, up to 8).
+ * The guest clock is unchanged; the vblank pace scales instead.
+ *
+ * @return 0 when accepted, -1 when no machine is running, -2 for a multiplier
+ *         outside 1..8.
+ */
+XGRID_CORE_EXPORT int xgrid_core_set_speed(int multiplier);
+
+/** Returns the current speed multiplier (1 is real time). */
+XGRID_CORE_EXPORT int xgrid_core_get_speed(void);
+
 /*
  * Disc change.
  *

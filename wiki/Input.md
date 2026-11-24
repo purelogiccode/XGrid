@@ -11,7 +11,7 @@ player 1.
 
 | Action | Key(s) |
 | --- | --- |
-| A | `A`, `Space` |
+| A | `A` |
 | B | `S` |
 | X | `D` |
 | Y | `F` |
@@ -24,6 +24,8 @@ player 1.
 | Right trigger | `C` |
 
 Keyboard presses are overlaid on the controller report; digital buttons combine.
+**Space** toggles 4x fast-forward while a game runs and is never stored as a pad
+binding.
 
 ## Remapping
 
@@ -33,7 +35,8 @@ Keyboard presses are overlaid on the controller report; digital buttons combine.
 2. Press the new key.
 3. **Esc** cancels.
 
-**Reset input defaults** restores the shipped map.
+**Space** is reserved for fast-forward, so it is ignored as a pad key. **Reset
+input defaults** restores the shipped map.
 
 ## XInput
 
@@ -62,6 +65,8 @@ Keyboard presses are overlaid on the controller report; digital buttons combine.
 | `F8` | Screenshot |
 | `F10` | Step one frame (while paused) |
 | `F11` | Fullscreen |
+| `Space` | Toggle 4x fast-forward |
+| `Esc` | Fullscreen: pause, then close on the next press |
 | `P` | Pause / resume |
 | `Ctrl+O` | Open disc (swaps while running) |
 | `Ctrl+E` | Eject disc |

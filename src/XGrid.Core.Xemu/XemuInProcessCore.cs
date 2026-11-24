@@ -42,7 +42,7 @@ public sealed class XemuInProcessCore : IDisposable
     private delegate int NameRequestDelegate([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate int PauseDelegate(int paused);
+    private delegate int IntValueDelegate(int value);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int NoArgIntDelegate();
@@ -68,8 +68,10 @@ public sealed class XemuInProcessCore : IDisposable
     private readonly NoArgIntDelegate? _snapshotCount;
     private readonly NoArgStringDelegate? _snapshotError;
     private readonly IndexedStringDelegate? _snapshotName;
-    private readonly PauseDelegate? _setPaused;
+    private readonly IntValueDelegate? _setPaused;
     private readonly NoArgIntDelegate? _frameStep;
+    private readonly IntValueDelegate? _setSpeed;
+    private readonly NoArgIntDelegate? _getSpeed;
     private readonly NameRequestDelegate? _discLoad;
     private readonly NoArgIntDelegate? _discEject;
     private readonly NoArgIntDelegate? _discStatus;
@@ -102,8 +104,13 @@ public sealed class XemuInProcessCore : IDisposable
 
             // Playback is optional for the same reason: an older core still
             // boots, the shell just has no pause control for it.
-            _setPaused = TryGet<PauseDelegate>("xgrid_core_set_paused");
+            _setPaused = TryGet<IntValueDelegate>("xgrid_core_set_paused");
             _frameStep = TryGet<NoArgIntDelegate>("xgrid_core_frame_step");
+
+            // Fast-forward is optional too: the shell keeps the key reserved
+            // but reports that the core cannot change its pace.
+            _setSpeed = TryGet<IntValueDelegate>("xgrid_core_set_speed");
+            _getSpeed = TryGet<NoArgIntDelegate>("xgrid_core_get_speed");
 
             // Disc change is also optional: a core built before the disc ABI
             // still boots, the shell just cannot swap while it runs.
@@ -139,6 +146,9 @@ public sealed class XemuInProcessCore : IDisposable
 
     /// <summary>Gets a value indicating whether the core can pause and step.</summary>
     public bool SupportsPlayback => _setPaused is not null && _frameStep is not null;
+
+    /// <summary>Gets a value indicating whether the core can change its pace.</summary>
+    public bool SupportsSpeed => _setSpeed is not null && _getSpeed is not null;
 
     /// <summary>Gets a value indicating whether the core can change discs while it runs.</summary>
     public bool SupportsDiscChange =>
@@ -272,6 +282,16 @@ public sealed class XemuInProcessCore : IDisposable
     {
         return _disposed || _frameStep is null ? -1 : _frameStep();
     }
+
+    /// <summary>Sets the presentation pace (1 is real time); 0 accepted, negative refused.</summary>
+    /// <param name="multiplier">Speed multiplier from 1 to 8.</param>
+    public int SetSpeed(int multiplier)
+    {
+        return _disposed || _setSpeed is null ? -1 : _setSpeed(multiplier);
+    }
+
+    /// <summary>Gets the current presentation pace (1 is real time).</summary>
+    public int Speed => _disposed || _getSpeed is null ? 1 : _getSpeed();
 
     /// <summary>Queues a disc change (0 accepted, negative refused).</summary>
     /// <param name="path">ISO/XISO, CHD or ZArchive image.</param>
