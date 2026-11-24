@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using Serilog;
 
 namespace XGrid.Frontend.Avalonia.Services;
 
@@ -62,13 +63,13 @@ public sealed class CoverArtIndex
                 }
             }
         }
-        catch (IOException)
+        catch (IOException exception)
         {
-            // A covers folder disappearing mid-scan is an empty index.
+            Log.Debug(exception, "The covers folder disappeared during the scan");
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
-            // An unreadable covers folder is an empty index.
+            Log.Debug(exception, "The covers folder is not readable");
         }
 
         // A deterministic order keeps the same cover when two files normalize

@@ -15,6 +15,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Serilog;
 using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
@@ -493,9 +494,31 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Appends a log line and mirrors it to the activity page.</summary>
+    /// <summary>
+    /// Appends a line to the activity page and routes it through Serilog so the
+    /// rolling file, the debugger and warnings or errors in the bug-report
+    /// pipeline all see the same event.
+    /// </summary>
+    /// <param name="level">The severity shown in the activity page.</param>
+    /// <param name="message">The message text.</param>
     public void AddLog(LogLevel level, string message)
     {
+        switch (level)
+        {
+            case LogLevel.Warning:
+                Log.Warning("{Message}", message);
+                break;
+            case LogLevel.Error:
+                Log.Error("{Message}", message);
+                break;
+            case LogLevel.Debug:
+                Log.Debug("{Message}", message);
+                break;
+            default:
+                Log.Information("{Message}", message);
+                break;
+        }
+
         var entry = new LogEntry(DateTimeOffset.Now, level, message);
         LogEntries.Add(entry);
         while (LogEntries.Count > 2000)

@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using Serilog;
 using XGrid.Frontend.Avalonia.Services;
 using XGrid.Xbe;
 using XGrid.XboxFs;
@@ -140,12 +141,14 @@ public sealed class GameEntry
                 TitleId = resolvedTitleId,
             };
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            Log.Debug(exception, "Could not inspect disc {Path}", path);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            Log.Debug(exception, "Could not read disc {Path}", path);
             return null;
         }
     }
@@ -164,16 +167,19 @@ public sealed class GameEntry
             string title = image.TitleName.Trim();
             return title.Length == 0 ? null : title;
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            Log.Debug(exception, "The XBE header is not readable: {Path}", path);
             return null;
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            Log.Debug(exception, "Could not read the XBE {Path}", path);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            Log.Debug(exception, "Could not access the XBE {Path}", path);
             return null;
         }
     }

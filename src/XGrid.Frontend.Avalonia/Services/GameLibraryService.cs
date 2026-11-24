@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Serilog;
 using XGrid.Frontend.Avalonia.Models;
 
 namespace XGrid.Frontend.Avalonia.Services;
@@ -62,13 +63,13 @@ public static class GameLibraryService
                     }
                 }
             }
-            catch (IOException)
+            catch (IOException exception)
             {
-                // A folder disappearing mid-scan must not abort the scan.
+                Log.Debug(exception, "A library folder disappeared during the scan: {Folder}", folder);
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException exception)
             {
-                // Ignore unreadable roots.
+                Log.Debug(exception, "A library folder is not readable: {Folder}", folder);
             }
         }
 

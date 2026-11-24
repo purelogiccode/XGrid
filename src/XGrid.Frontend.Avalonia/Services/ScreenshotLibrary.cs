@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Serilog;
 
 namespace XGrid.Frontend.Avalonia.Services;
 
@@ -47,7 +48,7 @@ public static class ScreenshotLibrary
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                // A capture removed between the listing and the stat.
+                Log.Debug(exception, "A screenshot disappeared during the listing");
             }
         }
 

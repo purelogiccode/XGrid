@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Serilog;
 using XGrid.Storage;
 using XGrid.Xbe;
 
@@ -71,6 +72,7 @@ public static class DiscTitleId
                                               or InvalidOperationException)
         {
             // An unreadable image simply has no title id; the caller keys by path.
+            Log.Debug(exception, "The disc title id could not be read: {Path}", imagePath);
         }
 
         return false;
@@ -100,6 +102,7 @@ public static class DiscTitleId
                                               or ArgumentException
                                               or InvalidOperationException)
         {
+            Log.Debug(exception, "The disc image has no readable title executable");
         }
 
         return false;
@@ -120,8 +123,9 @@ public static class DiscTitleId
             titleName = parsed.TitleName.Trim();
             return titleId != 0;
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            Log.Debug(exception, "The XBE certificate is not readable");
             return false;
         }
     }

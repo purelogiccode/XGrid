@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using Serilog;
 using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.XboxFs;
@@ -192,7 +193,7 @@ public static class HeadlessRunner
                                               or InvalidOperationException
                                               or PlatformNotSupportedException)
         {
-            // A GUI process without a console cannot receive Ctrl+C.
+            Log.Debug(exception, "The headless run cannot receive Ctrl+C");
         }
 
         try
@@ -203,12 +204,14 @@ public static class HeadlessRunner
             }
             catch (XemuConfigurationException exception)
             {
+                Log.Error(exception, "The headless core configuration is invalid");
                 return Fail(exception.Message);
             }
             catch (Exception exception) when (exception is IOException
                                                   or UnauthorizedAccessException
                                                   or InvalidOperationException)
             {
+                Log.Error(exception, "The headless emulator could not start");
                 HeadlessConsole.WriteError("xgrid: the emulator could not start: " + exception.Message);
                 return CoreFailure;
             }
@@ -335,6 +338,7 @@ public static class HeadlessRunner
                                               or ArgumentException
                                               or NotSupportedException)
         {
+            Log.Error(exception, "Could not write the headless summary to {Path}", path);
             HeadlessConsole.WriteError("xgrid: could not write the summary: " + exception.Message);
             return false;
         }

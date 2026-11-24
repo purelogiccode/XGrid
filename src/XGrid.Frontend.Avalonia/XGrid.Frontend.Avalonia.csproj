@@ -8,8 +8,8 @@
     <!-- The source-generated LibraryImport marshalling for the host console
          attachment uses unsafe code. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- UI types are not a public API surface; XAML is the documentation. -->
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Public view-model and service members carry XML documentation. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Required by Avalonia's Win32 native-control host (the embedded core display). -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -30,6 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\XGrid.Diagnostics\XGrid.Diagnostics.csproj" />
     <ProjectReference Include="..\XGrid.Core.Xemu\XGrid.Core.Xemu.csproj" />
     <ProjectReference Include="..\XGrid.Input\XGrid.Input.csproj" />
     <ProjectReference Include="..\XGrid.Xbe\XGrid.Xbe.csproj" />

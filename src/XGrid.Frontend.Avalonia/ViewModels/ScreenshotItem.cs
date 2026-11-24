@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
+using Serilog;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 
@@ -68,6 +69,7 @@ public sealed class ScreenshotItem : IDisposable
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                               or ArgumentException or NotSupportedException)
         {
+            Log.Debug(exception, "Could not decode the screenshot thumbnail: {Path}", path);
             return null;
         }
     }
@@ -85,6 +87,7 @@ public sealed class ScreenshotItem : IDisposable
                                               or NotSupportedException
                                               or Win32Exception)
         {
+            Log.Error(exception, "Could not open the screenshot: {Path}", Path);
             _shell.AddLog(LogLevel.Error, "Could not open the screenshot: " + exception.Message);
             _shell.ShowToast("Could not open the screenshot.");
         }

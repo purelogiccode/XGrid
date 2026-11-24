@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\XGrid.Diagnostics\XGrid.Diagnostics.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Meziantou.Analyzer">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

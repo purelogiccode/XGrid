@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using Serilog;
 
 namespace XGrid.Bus.Net;
 
@@ -94,8 +95,9 @@ public sealed class TcpProxy : IDisposable
         {
             _listener.Stop();
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException exception)
         {
+            Log.Debug(exception, "The TCP proxy listener was already disposed");
         }
 
         Socket[] snapshot;
@@ -136,12 +138,14 @@ public sealed class TcpProxy : IDisposable
             {
                 client = _listener.AcceptSocket();
             }
-            catch (SocketException)
+            catch (SocketException exception)
             {
+                Log.Debug(exception, "The TCP proxy accept loop stopped");
                 break;
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException exception)
             {
+                Log.Debug(exception, "The TCP proxy listener was disposed");
                 break;
             }
 
@@ -172,15 +176,17 @@ public sealed class TcpProxy : IDisposable
         {
             target.Connect(TargetHost, TargetPort);
         }
-        catch (SocketException)
+        catch (SocketException exception)
         {
+            Log.Debug(exception, "The TCP proxy target did not accept the connection");
             Interlocked.Increment(ref _failedConnections);
             target.Dispose();
             RemoveAndClose(client);
             return;
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException exception)
         {
+            Log.Debug(exception, "The TCP proxy target socket was disposed");
             target.Dispose();
             RemoveAndClose(client);
             return;
@@ -236,11 +242,13 @@ public sealed class TcpProxy : IDisposable
                 Interlocked.Add(ref _relayedBytes, sent);
             }
         }
-        catch (SocketException)
+        catch (SocketException exception)
         {
+            Log.Debug(exception, "A proxied TCP relay stopped");
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException exception)
         {
+            Log.Debug(exception, "A proxied TCP socket was disposed");
         }
         finally
         {
@@ -248,11 +256,13 @@ public sealed class TcpProxy : IDisposable
             {
                 to.Shutdown(SocketShutdown.Send);
             }
-            catch (SocketException)
+            catch (SocketException exception)
             {
+                Log.Debug(exception, "The proxied TCP send side could not be shut down");
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException exception)
             {
+                Log.Debug(exception, "The proxied TCP send side was already closed");
             }
         }
     }
@@ -272,11 +282,13 @@ public sealed class TcpProxy : IDisposable
         {
             socket.Shutdown(SocketShutdown.Both);
         }
-        catch (SocketException)
+        catch (SocketException exception)
         {
+            Log.Debug(exception, "A proxied TCP socket could not be shut down");
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException exception)
         {
+            Log.Debug(exception, "A proxied TCP socket was already closed");
         }
 
         socket.Dispose();

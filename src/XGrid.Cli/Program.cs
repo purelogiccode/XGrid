@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
+using Serilog;
 using XGrid.Audio;
 using XGrid.Bus.Net;
 using XGrid.Bus.Smbus;
 using XGrid.Bus.Usb;
 using XGrid.Core.Diagnostics;
 using XGrid.Cpu;
+using XGrid.Diagnostics;
 using XGrid.Graphics;
 using XGrid.Host;
 using XGrid.Memory;
@@ -28,40 +30,57 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        if (args.Length == 0)
+        DiagnosticsOptions diagnostics = DiagnosticsOptions.CreateDefault(Version);
+        AppDiagnostics.Initialize(diagnostics, console: true);
+        try
         {
-            PrintUsage();
-            return 0;
-        }
+            AppDiagnostics.LogStartup(null, string.Join(' ', args));
+            if (args.Length == 0)
+            {
+                PrintUsage();
+                return 0;
+            }
 
-        switch (args[0])
+            switch (args[0])
+            {
+                case "--help":
+                case "-h":
+                    PrintUsage();
+                    return 0;
+                case "--version":
+                case "-v":
+                    Console.WriteLine($"XGrid {Version}");
+                    return 0;
+                case "boot":
+                    return Boot(args);
+                case "testrom":
+                    return TestRom(args);
+                case "fatx":
+                    return Fatx(args);
+                case "xdvdfs":
+                    return Xdvdfs(args);
+                case "sector":
+                    return Sector(args);
+                case "xbe":
+                    return Xbe(args);
+                case "disc":
+                    return Disc(args);
+                default:
+                    Console.Error.WriteLine($"Unknown command: {args[0]}");
+                    Log.Warning("Unknown command: {Command}", args[0]);
+                    PrintUsage();
+                    return 1;
+            }
+        }
+        catch (Exception exception)
         {
-            case "--help":
-            case "-h":
-                PrintUsage();
-                return 0;
-            case "--version":
-            case "-v":
-                Console.WriteLine($"XGrid {Version}");
-                return 0;
-            case "boot":
-                return Boot(args);
-            case "testrom":
-                return TestRom(args);
-            case "fatx":
-                return Fatx(args);
-            case "xdvdfs":
-                return Xdvdfs(args);
-            case "sector":
-                return Sector(args);
-            case "xbe":
-                return Xbe(args);
-            case "disc":
-                return Disc(args);
-            default:
-                Console.Error.WriteLine($"Unknown command: {args[0]}");
-                PrintUsage();
-                return 1;
+            Log.Fatal(exception, "The CLI stopped unexpectedly");
+            Console.Error.WriteLine($"xgrid: fatal error: {exception.Message}");
+            return 1;
+        }
+        finally
+        {
+            AppDiagnostics.Shutdown();
         }
     }
 
@@ -496,7 +515,7 @@ internal static class Program
                 }
                 catch (Exception exception) when (exception is not OutOfMemoryException)
                 {
-                    Console.Error.WriteLine($"APU live audio unavailable: {exception.Message} (use --audio-out)");
+                    Log.Warning("{Message}", $"APU live audio unavailable: {exception.Message} (use --audio-out)");
                 }
             }
 
@@ -702,12 +721,12 @@ internal static class Program
                 }
                 catch (InvalidDataException exception)
                 {
-                    Console.Error.WriteLine($"Cannot load snapshot: {exception.Message}");
+                    Log.Error("{Message}", $"Cannot load snapshot: {exception.Message}");
                     return 6;
                 }
                 catch (EndOfStreamException)
                 {
-                    Console.Error.WriteLine($"Cannot load snapshot: {loadStatePath} is truncated.");
+                    Log.Error("Cannot load snapshot: {Path} is truncated.", loadStatePath);
                     return 6;
                 }
 
@@ -1061,7 +1080,7 @@ internal static class Program
                 }
                 catch (IOException exception)
                 {
-                    Console.Error.WriteLine($"Cannot save snapshot: {exception.Message}");
+                    Log.Error("{Message}", $"Cannot save snapshot: {exception.Message}");
                     return 6;
                 }
 
@@ -1085,7 +1104,7 @@ internal static class Program
                 }
                 catch (FormatException)
                 {
-                    Console.Error.WriteLine("Invalid --net-inject hex (expected even-length hex bytes)");
+                    Log.Error("Invalid --net-inject hex (expected even-length hex bytes)");
                     return 1;
                 }
 
@@ -1215,7 +1234,7 @@ internal static class Program
         }
         catch (UnsupportedInstructionException exception)
         {
-            Console.Error.WriteLine($"Unsupported instruction: {exception.Message}");
+            Log.Error("{Message}", $"Unsupported instruction: {exception.Message}");
             if (machine is not null)
             {
                 PrintState(machine, 0, dumps);
@@ -1226,13 +1245,13 @@ internal static class Program
         }
         catch (MemoryAccessException exception)
         {
-            Console.Error.WriteLine($"Memory error: {exception.Message}");
+            Log.Error("{Message}", $"Memory error: {exception.Message}");
             CloseAudio();
             return 3;
         }
         catch (UnhandledGuestException exception)
         {
-            Console.Error.WriteLine($"Unhandled guest exception: {exception.Message}");
+            Log.Error("{Message}", $"Unhandled guest exception: {exception.Message}");
             if (machine is not null)
             {
                 PrintState(machine, 0, dumps);
@@ -1243,7 +1262,7 @@ internal static class Program
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Cannot read firmware: {exception.Message}");
+            Log.Error("{Message}", $"Cannot read firmware: {exception.Message}");
             CloseAudio();
             return 4;
         }
@@ -1363,7 +1382,7 @@ internal static class Program
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Cannot read test ROM: {exception.Message}");
+            Log.Error("{Message}", $"Cannot read test ROM: {exception.Message}");
             return 4;
         }
 
@@ -1389,7 +1408,7 @@ internal static class Program
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Cannot attach media: {exception.Message}");
+            Log.Error("{Message}", $"Cannot attach media: {exception.Message}");
             return 4;
         }
 
@@ -1400,7 +1419,7 @@ internal static class Program
         }
         catch (ArgumentException exception)
         {
-            Console.Error.WriteLine($"Cannot load test ROM: {exception.Message}");
+            Log.Error("{Message}", $"Cannot load test ROM: {exception.Message}");
             return 1;
         }
 
@@ -1486,21 +1505,21 @@ internal static class Program
         }
         catch (UnsupportedInstructionException exception)
         {
-            Console.Error.WriteLine($"Unsupported instruction: {exception.Message}");
+            Log.Error("{Message}", $"Unsupported instruction: {exception.Message}");
             Console.WriteLine(TestRomVerdict(runner, CountPresentedNonZero(machine)));
             PrintState(machine, executed, dumps);
             return 2;
         }
         catch (MemoryAccessException exception)
         {
-            Console.Error.WriteLine($"Memory error: {exception.Message}");
+            Log.Error("{Message}", $"Memory error: {exception.Message}");
             Console.WriteLine(TestRomVerdict(runner, CountPresentedNonZero(machine)));
             PrintState(machine, executed, dumps);
             return 3;
         }
         catch (UnhandledGuestException exception)
         {
-            Console.Error.WriteLine($"Unhandled guest exception: {exception.Message}");
+            Log.Error("{Message}", $"Unhandled guest exception: {exception.Message}");
             Console.WriteLine(TestRomVerdict(runner, CountPresentedNonZero(machine)));
             PrintState(machine, executed, dumps);
             return 5;
@@ -2600,7 +2619,7 @@ internal static class Program
                                               or InvalidDataException or FileNotFoundException
                                               or DirectoryNotFoundException)
         {
-            Console.Error.WriteLine($"FATX error: {exception.Message}");
+            Log.Error("{Message}", $"FATX error: {exception.Message}");
             return 4;
         }
     }
@@ -2675,7 +2694,7 @@ internal static class Program
                                               or InvalidDataException or FileNotFoundException
                                               or DirectoryNotFoundException)
         {
-            Console.Error.WriteLine($"XDVDFS error: {exception.Message}");
+            Log.Error("{Message}", $"XDVDFS error: {exception.Message}");
             return 4;
         }
     }
@@ -2758,7 +2777,7 @@ internal static class Program
                                               or InvalidDataException or FileNotFoundException
                                               or DirectoryNotFoundException or ArgumentOutOfRangeException)
         {
-            Console.Error.WriteLine($"Sector error: {exception.Message}");
+            Log.Error("{Message}", $"Sector error: {exception.Message}");
             return 4;
         }
     }
@@ -2919,7 +2938,7 @@ internal static class Program
                                               or InvalidDataException or FileNotFoundException
                                               or DirectoryNotFoundException)
         {
-            Console.Error.WriteLine($"XBE error: {exception.Message}");
+            Log.Error("{Message}", $"XBE error: {exception.Message}");
             return 4;
         }
     }

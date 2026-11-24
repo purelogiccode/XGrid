@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using Serilog;
 
 namespace XGrid.Core.Xemu;
 
@@ -108,8 +109,9 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
             {
                 return !process.HasExited;
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException exception)
             {
+                Log.Debug(exception, "The core process ended while its running state was read");
                 return false;
             }
         }
@@ -160,8 +162,9 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
             {
                 return process.HasExited ? process.ExitCode : -1;
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException exception)
             {
+                Log.Debug(exception, "The core exit code is not available yet");
                 return -1;
             }
         }
@@ -238,6 +241,7 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
         }
         catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
+            Log.Error(exception, "The core could not be started");
             throw new XemuConfigurationException("The core could not be started: " + exception.Message, exception);
         }
     }
@@ -348,9 +352,9 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
                 _ = KillUnix(process.Id, SigTerm);
             }
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
-            // Exited between the check and the signal: nothing left to stop.
+            Log.Debug(exception, "The core exited before the stop signal was sent");
         }
     }
 
@@ -371,9 +375,9 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
             process.Kill(entireProcessTree: true);
             _ = process.WaitForExit(TimeSpan.FromSeconds(5));
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
-            // Already gone.
+            Log.Debug(exception, "The core was already gone when it was killed");
         }
         finally
         {
@@ -419,9 +423,9 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
             _stoppedAt = Stopwatch.GetTimestamp();
             return killed;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
-            // Exited between the checks: nothing left to stop.
+            Log.Debug(exception, "The core exited between the stop checks");
             RecordExit(process);
             _stoppedAt = Stopwatch.GetTimestamp();
             return true;
@@ -440,9 +444,9 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
         {
             _exitCode = process.ExitCode;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
-            // Not exited yet, or the handle is gone; a later read can retry.
+            Log.Debug(exception, "The core exit code could not be recorded yet");
         }
     }
 
@@ -464,12 +468,14 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
             using var reader = new StreamReader(stream);
             return reader.ReadToEnd();
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            Log.Debug(exception, "Could not read the core output stream");
             return string.Empty;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            Log.Debug(exception, "The core output stream is not accessible");
             return string.Empty;
         }
     }

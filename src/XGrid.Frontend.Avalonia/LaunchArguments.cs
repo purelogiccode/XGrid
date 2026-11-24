@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using Serilog;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 
@@ -555,6 +556,7 @@ public sealed record LaunchArguments
                                                   or NotSupportedException
                                                   or PathTooLongException)
             {
+                Log.Warning(exception, "The command-line path for {Option} is not valid: {Value}", name, value);
                 Errors.Add($"{name} is not a valid path: {value}");
                 return null;
             }
