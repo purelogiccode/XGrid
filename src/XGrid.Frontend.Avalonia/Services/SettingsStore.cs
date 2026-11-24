@@ -17,8 +17,16 @@ public sealed class SettingsStore
 
     /// <summary>Initializes a store rooted at the platform application-data folder.</summary>
     public SettingsStore()
+        : this(ResolveDirectory())
     {
-        DirectoryPath = ResolveDirectory();
+    }
+
+    /// <summary>Initializes a store rooted at an explicit folder (tests and tools).</summary>
+    /// <param name="directoryPath">Folder that holds <c>settings.json</c>.</param>
+    internal SettingsStore(string directoryPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
+        DirectoryPath = directoryPath;
     }
 
     /// <summary>Resolves the per-user data folder (honors <c>XGRID_FRONTEND_DATA_DIR</c>).</summary>
@@ -100,7 +108,12 @@ public sealed class SettingsStore
         ArgumentNullException.ThrowIfNull(settings);
         settings.Normalize();
         Directory.CreateDirectory(DirectoryPath);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
+        string temporaryPath = FilePath + ".tmp";
+        File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings, JsonOptions));
+
+        // Replace the live file only after the new body is on disk, so a crash
+        // or a full disk cannot truncate the user's settings.
+        File.Move(temporaryPath, FilePath, overwrite: true);
     }
 
     private void BackupCorruptFile()

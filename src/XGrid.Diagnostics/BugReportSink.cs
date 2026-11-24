@@ -17,10 +17,19 @@ public sealed class BugReportSink : ILogEventSink, IDisposable
     /// <summary>Creates the sink.</summary>
     /// <param name="options">The bug-report endpoint and application identity.</param>
     public BugReportSink(DiagnosticsOptions options)
+        : this(options, new BugReportQueue(options))
+    {
+    }
+
+    /// <summary>Creates the sink with an explicit queue (tests and tools).</summary>
+    /// <param name="options">The bug-report endpoint and application identity.</param>
+    /// <param name="queue">The queue that receives warning and error reports.</param>
+    internal BugReportSink(DiagnosticsOptions options, BugReportQueue queue)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(queue);
         _options = options;
-        _queue = new BugReportQueue(options);
+        _queue = queue;
     }
 
     /// <inheritdoc />

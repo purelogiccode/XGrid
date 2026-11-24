@@ -43,7 +43,21 @@ public static class GitHubUpdateChecker
         DiagnosticsOptions options,
         CancellationToken cancellationToken = default)
     {
+        return await CheckAsync(options, Client, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Queries the configured repository with an injected HTTP client (tests and tools).</summary>
+    /// <param name="options">The repository, version and optional token.</param>
+    /// <param name="client">HTTP client to use.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The release, or <see langword="null"/> when the check cannot run.</returns>
+    internal static async Task<GitHubUpdateInfo?> CheckAsync(
+        DiagnosticsOptions options,
+        HttpClient client,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(client);
         if (!options.UpdateChecksEnabled)
         {
             return null;
@@ -51,8 +65,9 @@ public static class GitHubUpdateChecker
 
         try
         {
-            GitHubUpdateInfo? release = await CheckReleasesAsync(options, cancellationToken).ConfigureAwait(false);
-            return release ?? await CheckTagsAsync(options, cancellationToken).ConfigureAwait(false);
+            GitHubUpdateInfo? release = await CheckReleasesAsync(options, client, cancellationToken)
+                .ConfigureAwait(false);
+            return release ?? await CheckTagsAsync(options, client, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is HttpRequestException
                                               or TaskCanceledException
@@ -66,9 +81,14 @@ public static class GitHubUpdateChecker
 
     private static async Task<GitHubUpdateInfo?> CheckReleasesAsync(
         DiagnosticsOptions options,
+        HttpClient client,
         CancellationToken cancellationToken)
     {
-        using JsonDocument? document = await GetJsonAsync(options, options.UpdateApiUrl, cancellationToken)
+        using JsonDocument? document = await GetJsonAsync(
+                options,
+                options.UpdateApiUrl,
+                client,
+                cancellationToken)
             .ConfigureAwait(false);
         if (document is null)
         {
@@ -103,15 +123,23 @@ public static class GitHubUpdateChecker
 
     private static async Task<GitHubUpdateInfo?> CheckTagsAsync(
         DiagnosticsOptions options,
+        HttpClient client,
         CancellationToken cancellationToken)
     {
-        using JsonDocument? document = await GetJsonAsync(options, options.TagsApiUrl, cancellationToken)
+        using JsonDocument? document = await GetJsonAsync(
+                options,
+                options.TagsApiUrl,
+                client,
+                cancellationToken)
             .ConfigureAwait(false);
         if (document is null || document.RootElement.ValueKind != JsonValueKind.Array)
         {
             return null;
         }
 
+        GitHubUpdateInfo? first = null;
+        GitHubUpdateInfo? newest = null;
+        Version? newestVersion = null;
         foreach (JsonElement tag in document.RootElement.EnumerateArray())
         {
             string? name = ReadString(tag, "name");
@@ -120,20 +148,31 @@ public static class GitHubUpdateChecker
                 continue;
             }
 
-            return new GitHubUpdateInfo
+            var info = new GitHubUpdateInfo
             {
                 CurrentVersion = options.Version,
                 LatestVersion = name,
                 ReleaseUrl = ReleasesPage(options),
             };
+            first ??= info;
+
+            // The tags endpoint is ordered by commit date, not by version, so
+            // pick the highest parseable tag instead of trusting the first row.
+            if (VersionComparison.TryParse(name, out Version? version)
+                && (newestVersion is null || version > newestVersion))
+            {
+                newest = info;
+                newestVersion = version;
+            }
         }
 
-        return null;
+        return newest ?? first;
     }
 
     private static async Task<JsonDocument?> GetJsonAsync(
         DiagnosticsOptions options,
         Uri uri,
+        HttpClient client,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -145,7 +184,7 @@ public static class GitHubUpdateChecker
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.GitHubToken);
         }
 
-        using HttpResponseMessage response = await Client
+        using HttpResponseMessage response = await client
             .SendAsync(request, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)

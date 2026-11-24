@@ -171,7 +171,8 @@ public static class AppDiagnostics
 
         string? configured = Environment.GetEnvironmentVariable("XGRID_LOG_LEVEL");
         if (!string.IsNullOrWhiteSpace(configured)
-            && Enum.TryParse(configured, ignoreCase: true, out LogEventLevel level))
+            && Enum.TryParse(configured, ignoreCase: true, out LogEventLevel level)
+            && Enum.IsDefined(level))
         {
             return level;
         }

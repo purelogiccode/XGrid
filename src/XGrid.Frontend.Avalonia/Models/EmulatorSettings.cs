@@ -78,7 +78,22 @@ public sealed class EmulatorSettings
     public string XemuCorePath { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the folders scanned by the game library.</summary>
-    public List<string> LibraryFolders { get; init; } = [];
+    public List<string> LibraryFolders { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the email address the user donated with. It is stored only
+    /// on this computer and is sent only when checking donation status.
+    /// </summary>
+    public string DonationEmail { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a donation was confirmed for
+    /// <see cref="DonationEmail"/>. The donation banner is hidden while true.
+    /// </summary>
+    public bool HasDonated { get; set; }
+
+    /// <summary>Gets or sets the UTC time of the last donation status check.</summary>
+    public DateTime? DonationLastCheckedUtc { get; set; }
 
     /// <summary>
     /// Gets or sets per-game overrides. A key is either a launched image path
@@ -125,19 +140,22 @@ public sealed class EmulatorSettings
     /// <param name="titleId">XBE title id of the launched disc, when known.</param>
     public TitleOverride? FindTitleOverride(string? gamePath, uint? titleId = null)
     {
-        if (TitleOverrides.Count == 0)
+        Dictionary<string, TitleOverride> overrides = NullSafe.Value(
+            TitleOverrides,
+            new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase));
+        if (overrides.Count == 0)
         {
             return null;
         }
 
-        if (titleId is { } id && TitleOverrides.TryGetValue(TitleIdKey(id), out TitleOverride? byTitle))
+        if (titleId is { } id && overrides.TryGetValue(TitleIdKey(id), out TitleOverride? byTitle))
         {
             return byTitle;
         }
 
         return string.IsNullOrWhiteSpace(gamePath)
             ? null
-            : TitleOverrides.TryGetValue(NormalizeTitleKey(gamePath), out TitleOverride? value) ? value : null;
+            : overrides.TryGetValue(NormalizeTitleKey(gamePath), out TitleOverride? value) ? value : null;
     }
 
     /// <summary>
@@ -226,14 +244,22 @@ public sealed class EmulatorSettings
             DisplaySink = DisplaySink,
             CoreHosting = CoreHosting,
             Filter = Filter,
-            Input = Input.Clone(),
-            Graphics = Graphics.Clone(),
-            Audio = Audio.Clone(),
-            LibraryFolders = [.. LibraryFolders],
+            Input = NullSafe.Value(Input, new InputSettings()).Clone(),
+            Graphics = NullSafe.Value(Graphics, new GraphicsSettings()).Clone(),
+            Audio = NullSafe.Value(Audio, new AudioSettings()).Clone(),
+            LibraryFolders = [.. NullSafe.Value(LibraryFolders, new List<string>())],
+            DonationEmail = NullSafe.Text(DonationEmail),
+            HasDonated = HasDonated,
+            DonationLastCheckedUtc = DonationLastCheckedUtc,
         };
-        foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
+        foreach (KeyValuePair<string, TitleOverride> pair in NullSafe.Value(
+                     TitleOverrides,
+                     new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase)))
         {
-            result.TitleOverrides[pair.Key] = pair.Value.Clone();
+            if (pair.Value is not null)
+            {
+                result.TitleOverrides[pair.Key] = pair.Value.Clone();
+            }
         }
 
         return result;
@@ -258,10 +284,14 @@ public sealed class EmulatorSettings
             Accent = "Blue";
         }
 
+        LibraryFolders = NullSafe.Value(LibraryFolders, []);
         LibraryFolders.RemoveAll(string.IsNullOrWhiteSpace);
+        DonationEmail = NullSafe.Text(DonationEmail).Trim();
 
         var overrides = new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase);
-        foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
+        foreach (KeyValuePair<string, TitleOverride> pair in NullSafe.Value(
+                     TitleOverrides,
+                     new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase)))
         {
             if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null)
             {

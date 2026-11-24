@@ -131,22 +131,26 @@ public sealed partial class FirstRunViewModel : ObservableObject
         Completed?.Invoke(this, EventArgs.Empty);
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnBiosPathChanged(string value)
     {
         OnPropertyChanged(nameof(HasBios));
         ClearProblem();
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnEepromPathChanged(string value)
     {
         ClearProblem();
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnHddPathChanged(string value)
     {
         ClearProblem();
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnProblemChanged(string value)
     {
         OnPropertyChanged(nameof(HasProblem));

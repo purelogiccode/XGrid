@@ -1,8 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Serilog;
@@ -25,7 +25,21 @@ public static class ApplicationStatsClient
         DiagnosticsOptions options,
         CancellationToken cancellationToken = default)
     {
+        return await RecordLaunchAsync(options, Client, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Records a launch with an injected HTTP client (tests and tools).</summary>
+    /// <param name="options">The statistics endpoint and API key.</param>
+    /// <param name="client">HTTP client to use.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns><see langword="true"/> when the service recorded the hit.</returns>
+    internal static async Task<bool> RecordLaunchAsync(
+        DiagnosticsOptions options,
+        HttpClient client,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(client);
         if (!options.StatisticsEnabled)
         {
             return false;
@@ -36,12 +50,12 @@ public static class ApplicationStatsClient
             using var request = new HttpRequestMessage(HttpMethod.Post, options.StatisticsEndpoint);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.StatisticsApiKey);
             request.Content = JsonContent.Create(
-                new StatisticsPayload
+                new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ApplicationId = options.ApplicationId,
-                    Version = options.Version,
+                    ["applicationId"] = options.ApplicationId,
+                    ["version"] = options.Version,
                 });
-            using HttpResponseMessage response = await Client
+            using HttpResponseMessage response = await client
                 .SendAsync(request, cancellationToken)
                 .ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
@@ -63,14 +77,5 @@ public static class ApplicationStatsClient
             Log.Debug(exception, "Usage statistics could not be sent");
             return false;
         }
-    }
-
-    private sealed record StatisticsPayload
-    {
-        [JsonPropertyName("applicationId")]
-        public string ApplicationId { get; init; } = string.Empty;
-
-        [JsonPropertyName("version")]
-        public string Version { get; init; } = string.Empty;
     }
 }

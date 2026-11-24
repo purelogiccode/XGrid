@@ -15,7 +15,7 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource XgBackgroundBrush}">
 
-  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
 
     <!-- ===================== Menu bar ===================== -->
     <Menu Grid.Row="0" IsVisible="{Binding !IsFullscreen}">
@@ -198,10 +198,49 @@
       </Grid>
     </Border>
 
+    <!-- ===================== Donation banner ===================== -->
+    <!-- Shown until the donation service confirms a completed donation. It has
+         no dismiss action, so it cannot be hidden without supporting XGrid. -->
+    <Border Grid.Row="2"
+            IsVisible="{Binding ShowDonationBanner}"
+            Padding="12,7"
+            Background="{DynamicResource XgSurfaceAltBrush}"
+            BorderBrush="{DynamicResource XgBorderBrush}"
+            BorderThickness="0,0,0,1"
+            ToolTip.Tip="XGrid is free donationware; donations are optional.">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+        <PathIcon Grid.Column="0"
+                  Width="15"
+                  Height="15"
+                  VerticalAlignment="Center"
+                  Data="{x:Static local:AppIcons.Heart}"
+                  Foreground="{DynamicResource XgAccentBrush}" />
+        <TextBlock Grid.Column="1"
+                   Classes="caption"
+                   VerticalAlignment="Center"
+                   TextWrapping="Wrap"
+                   Text="{Binding DonationStatus}"
+                   ToolTip.Tip="Donation status and what to do next" />
+        <Button Grid.Column="2"
+                Classes="chrome"
+                Content="I already donated"
+                IsEnabled="{Binding !IsDonationCheckInProgress}"
+                Command="{Binding VerifyDonationCommand}"
+                ToolTip.Tip="Enter the email used for your donation and check whether it was recognized" />
+        <Button Grid.Column="3"
+                Classes="primary"
+                Content="Donate"
+                Padding="12,4"
+                IsEnabled="{Binding !IsDonationCheckInProgress}"
+                Command="{Binding OpenDonationPageCommand}"
+                ToolTip.Tip="Open the XGrid donation page on purelogiccode.com" />
+      </Grid>
+    </Border>
+
     <!-- ===================== Content ===================== -->
     <!-- Pages stay alive across navigation: the console page owns a native
          child window that must not be destroyed when the user opens settings. -->
-    <Grid Grid.Row="2" Margin="16,14,16,14">
+    <Grid Grid.Row="3" Margin="16,14,16,14">
       <views:HomeView DataContext="{Binding Home}" IsVisible="{Binding IsActive}" />
       <views:LibraryView DataContext="{Binding Library}" IsVisible="{Binding IsActive}" />
       <views:SettingsView DataContext="{Binding Settings}" IsVisible="{Binding IsActive}" />
@@ -210,7 +249,7 @@
     </Grid>
 
     <!-- ===================== Log dock ===================== -->
-    <Border Grid.Row="3"
+    <Border Grid.Row="4"
             Height="180"
             IsVisible="{Binding ShowLogDock}"
             Background="{DynamicResource XgSurfaceBrush}"
@@ -255,7 +294,7 @@
     </Border>
 
     <!-- ===================== Status bar ===================== -->
-    <Border Grid.Row="4"
+    <Border Grid.Row="5"
             Padding="10,4"
             Background="{DynamicResource XgStatusBarBrush}"
             BorderBrush="{DynamicResource XgBorderBrush}"
@@ -273,7 +312,7 @@
     </Border>
 
     <!-- ===================== Toast ===================== -->
-    <Border Grid.Row="0" Grid.RowSpan="5"
+    <Border Grid.Row="0" Grid.RowSpan="6"
             Classes="toast"
             IsVisible="{Binding IsToastVisible}"
             HorizontalAlignment="Right"

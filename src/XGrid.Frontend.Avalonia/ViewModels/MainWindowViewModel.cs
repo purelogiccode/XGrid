@@ -17,6 +17,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using XGrid.Core.Xemu;
+using XGrid.Diagnostics.Donations;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 using XGrid.Frontend.Avalonia.Views;
@@ -111,6 +112,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _showLogDock;
+
+    [ObservableProperty]
+    private bool _isDonationCheckInProgress;
+
+    [ObservableProperty]
+    private string _donationStatus =
+        "XGrid is free donationware. If it helps you, please consider supporting development.";
 
     /// <summary>Initializes the shell with the default per-user settings store.</summary>
     public MainWindowViewModel()
@@ -209,6 +217,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets a value indicating whether firmware setup is needed.</summary>
     public bool NeedsSetup => !IsBiosReadyForSession;
+
+    /// <summary>
+    /// Gets a value indicating whether the optional donation banner is shown.
+    /// It is hidden only after the service confirms a completed donation, and
+    /// while fullscreen gameplay hides the shell chrome.
+    /// </summary>
+    public bool ShowDonationBanner => !Config.HasDonated && !IsFullscreen;
 
     /// <summary>Gets the supporting copy shown on the home page.</summary>
     public string HomeDetail
@@ -381,6 +396,30 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 window.Opened += OnMainWindowOpened;
             }
         }
+
+        // A saved donation email is refreshed silently so a donation completed
+        // after the last launch hides the banner without user action.
+        if (!Config.HasDonated && !string.IsNullOrWhiteSpace(Config.DonationEmail))
+        {
+            if (window.IsVisible)
+            {
+                _ = RefreshDonationStatusAsync(showMessages: false);
+            }
+            else
+            {
+                window.Opened += OnDonationWindowOpened;
+            }
+        }
+    }
+
+    private void OnDonationWindowOpened(object? sender, EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            window.Opened -= OnDonationWindowOpened;
+        }
+
+        _ = RefreshDonationStatusAsync(showMessages: false);
     }
 
     private void OnMainWindowOpened(object? sender, EventArgs e)
@@ -1054,6 +1093,148 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Public command: opens the XGrid donation page in the browser.</summary>
+    [RelayCommand]
+    private async Task OpenDonationPageAsync()
+    {
+        try
+        {
+            Uri uri = DonationVerificationClient.CreateDonationPageUri(Config.DonationEmail);
+            await Dialogs.OpenUriAsync(uri);
+            DonationStatus = string.IsNullOrWhiteSpace(Config.DonationEmail)
+                ? "After donating, click 'I already donated' and enter the email you used."
+                : "After donating, click 'I already donated' to check your support.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+                                              or System.ComponentModel.Win32Exception
+                                              or FormatException)
+        {
+            AddLog(LogLevel.Warning, "Could not open the donation page: " + exception.Message);
+            ShowToast("Could not open the donation page.");
+        }
+    }
+
+    /// <summary>
+    /// Public command: asks for the donation email and verifies whether the
+    /// service has a completed donation for it.
+    /// </summary>
+    [RelayCommand]
+    private async Task VerifyDonationAsync()
+    {
+        Window? window = _window;
+        if (window is null)
+        {
+            ShowToast("The main window is not ready yet.");
+            return;
+        }
+
+        string? email;
+        try
+        {
+            email = await DonationEmailWindow
+                .ShowAsync(window, Config.DonationEmail)
+                .ConfigureAwait(true);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException)
+        {
+            AddLog(LogLevel.Warning, "Could not show the donation dialog: " + exception.Message);
+            ShowToast("Could not open the donation dialog.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return;
+        }
+
+        Config.DonationEmail = email.Trim();
+        Config.HasDonated = false;
+        SaveDonationSettings();
+        await RefreshDonationStatusAsync(showMessages: true).ConfigureAwait(true);
+    }
+
+    private async Task RefreshDonationStatusAsync(bool showMessages)
+    {
+        if (IsDonationCheckInProgress || Config.HasDonated)
+        {
+            return;
+        }
+
+        string email = Config.DonationEmail;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return;
+        }
+
+        IsDonationCheckInProgress = true;
+        if (showMessages)
+        {
+            DonationStatus = "Checking donation status...";
+        }
+
+        try
+        {
+            DonationVerificationResult result = await DonationVerificationClient
+                .VerifyAsync(email)
+                .ConfigureAwait(true);
+            switch (result.Status)
+            {
+                case DonationVerificationStatus.Donated:
+                    Config.HasDonated = true;
+                    Config.DonationLastCheckedUtc = DateTime.UtcNow;
+                    SaveDonationSettings();
+                    DonationStatus = "Thank you for supporting XGrid!";
+                    OnPropertyChanged(nameof(ShowDonationBanner));
+                    AddLog(LogLevel.Info, "Donation confirmed for the saved email.");
+                    ShowToast("Thank you for supporting XGrid!");
+                    break;
+
+                case DonationVerificationStatus.NotDonated:
+                    Config.DonationLastCheckedUtc = DateTime.UtcNow;
+                    SaveDonationSettings();
+                    if (showMessages)
+                    {
+                        DonationStatus =
+                            "No donation was found for that email yet. If you just donated, try again in a moment.";
+                    }
+
+                    break;
+
+                default:
+                    if (showMessages)
+                    {
+                        DonationStatus = "Could not check donation status. Please try again later.";
+                    }
+
+                    break;
+            }
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            AddLog(LogLevel.Warning, "Unexpected donation verification failure: " + exception.Message);
+            if (showMessages)
+            {
+                DonationStatus = "Could not check donation status. Please try again later.";
+            }
+        }
+        finally
+        {
+            IsDonationCheckInProgress = false;
+        }
+    }
+
+    private void SaveDonationSettings()
+    {
+        try
+        {
+            _settingsStore.Save(Config);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Warning, "Could not save the donation status: " + exception.Message);
+        }
+    }
+
     /// <summary>
     /// Starts the session the command line asked for: the requested disc, or
     /// the dashboard when only <c>--autostart</c> was given.
@@ -1443,6 +1624,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnIsFullscreenChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowDonationBanner));
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnHasFrameChanged(bool value)
     {
         OnPropertyChanged(nameof(DisplayCaption));
@@ -1787,6 +1974,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(RendererLabel));
         OnPropertyChanged(nameof(SmoothFrame));
         OnPropertyChanged(nameof(ShowCoreDisplay));
+        OnPropertyChanged(nameof(ShowDonationBanner));
         StopSessionCommand.NotifyCanExecuteChanged();
     }
 

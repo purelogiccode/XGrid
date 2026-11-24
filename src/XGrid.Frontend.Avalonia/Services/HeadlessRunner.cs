@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using Serilog;
 using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
@@ -135,9 +136,9 @@ public static class HeadlessRunner
                 : null;
         long frameLimit = options.Frames ?? 0;
 
-        using var session = new XemuCoreSession(readFrames: false);
         using var sink = new XemuDisplaySink(launch.DisplaySinkName);
-        using var exited = new ManualResetEventSlim();
+        using var session = new XemuCoreSession(readFrames: false);
+        var exitSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var clock = Stopwatch.StartNew();
         XemuCoreStoppedEventArgs? stopped = null;
         long frames = 0;
@@ -146,36 +147,42 @@ public static class HeadlessRunner
         double lastFrameSeconds = 0;
         bool cancel = false;
 
-        void CountFrames()
+        static void CountFrames(
+            XemuDisplaySink source,
+            Stopwatch elapsed,
+            ref long frameCount,
+            ref ulong previousCounter,
+            ref double firstFrameTime,
+            ref double lastFrameTime)
         {
-            if (!sink.TryReadCounter(out ulong counter))
+            if (!source.TryReadCounter(out ulong counter))
             {
                 return;
             }
 
             // The core resets the counter when it recreates the section for a
             // new geometry. Treat that as starting from zero, not as a wrap.
-            frames += counter >= lastCounter
-                ? (long)(counter - lastCounter)
+            frameCount += counter >= previousCounter
+                ? (long)(counter - previousCounter)
                 : (long)counter;
-            lastCounter = counter;
+            previousCounter = counter;
 
-            if (frames > 0)
+            if (frameCount > 0)
             {
-                double now = clock.Elapsed.TotalSeconds;
-                if (firstFrameSeconds == 0)
+                double now = elapsed.Elapsed.TotalSeconds;
+                if (firstFrameTime == 0)
                 {
-                    firstFrameSeconds = now;
+                    firstFrameTime = now;
                 }
 
-                lastFrameSeconds = now;
+                lastFrameTime = now;
             }
         }
 
         session.Stopped += (_, args) =>
         {
             stopped = args;
-            exited.Set();
+            exitSignal.TrySetResult(true);
         };
         session.Log += (_, message) => HeadlessConsole.WriteLine("xgrid: " + message);
 
@@ -217,9 +224,9 @@ public static class HeadlessRunner
             }
 
             string stop = "core";
-            while (!exited.IsSet)
+            while (!exitSignal.Task.IsCompleted)
             {
-                CountFrames();
+                CountFrames(sink, clock, ref frames, ref lastCounter, ref firstFrameSeconds, ref lastFrameSeconds);
                 if (cancel)
                 {
                     stop = "cancel";
@@ -250,13 +257,13 @@ public static class HeadlessRunner
             }
 
             session.Stop();
-            if (!exited.Wait(TimeSpan.FromSeconds(12)))
+            if (!exitSignal.Task.Wait(TimeSpan.FromSeconds(12)))
             {
                 HeadlessConsole.WriteError("xgrid: the emulator did not shut down in time.");
                 return CoreFailure;
             }
 
-            CountFrames();
+            CountFrames(sink, clock, ref frames, ref lastCounter, ref firstFrameSeconds, ref lastFrameSeconds);
             double seconds = clock.Elapsed.TotalSeconds;
             long presented = frames;
             double frameWindow = lastFrameSeconds - firstFrameSeconds;

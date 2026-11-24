@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -17,16 +16,30 @@ internal sealed class BugReportQueue : IDisposable
     private static readonly TimeSpan MinimumInterval = TimeSpan.FromSeconds(6);
 
     private readonly Channel<BugReportRequest> _channel;
-    private readonly DiagnosticsOptions _options;
+    private readonly Func<BugReportRequest, CancellationToken, Task> _send;
+    private readonly TimeSpan _minimumInterval;
     private readonly Task _worker;
     private int _disposed;
 
     /// <summary>Initializes the queue and its background worker.</summary>
     /// <param name="options">The endpoint and API key.</param>
     internal BugReportQueue(DiagnosticsOptions options)
+        : this(CreateSender(options), MinimumInterval)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        _options = options;
+    }
+
+    /// <summary>Initializes a queue with an injected sender (tests and tools).</summary>
+    /// <param name="send">Sender invoked for every queued report.</param>
+    /// <param name="minimumInterval">Delay enforced between reports.</param>
+    internal BugReportQueue(
+        Func<BugReportRequest, CancellationToken, Task> send,
+        TimeSpan minimumInterval)
+    {
+        ArgumentNullException.ThrowIfNull(send);
+        ArgumentOutOfRangeException.ThrowIfLessThan(minimumInterval, TimeSpan.Zero);
+
+        _send = send;
+        _minimumInterval = minimumInterval;
         _channel = Channel.CreateBounded<BugReportRequest>(
             new BoundedChannelOptions(64)
             {
@@ -43,6 +56,13 @@ internal sealed class BugReportQueue : IDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
         _ = _channel.Writer.TryWrite(request);
+    }
+
+    private static Func<BugReportRequest, CancellationToken, Task> CreateSender(
+        DiagnosticsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return (request, token) => BugReportClient.SendAsync(request, options, token);
     }
 
     /// <inheritdoc />
@@ -70,25 +90,21 @@ internal sealed class BugReportQueue : IDisposable
         bool sent = false;
         await foreach (BugReportRequest request in _channel.Reader.ReadAllAsync().ConfigureAwait(false))
         {
-            if (sent && clock.Elapsed < MinimumInterval)
+            if (sent && clock.Elapsed < _minimumInterval)
             {
-                TimeSpan remaining = MinimumInterval - clock.Elapsed;
+                TimeSpan remaining = _minimumInterval - clock.Elapsed;
                 await Task.Delay(remaining).ConfigureAwait(false);
             }
 
             clock.Restart();
             try
             {
-                _ = await BugReportClient
-                    .SendAsync(request, _options)
-                    .ConfigureAwait(false);
+                await _send(request, CancellationToken.None).ConfigureAwait(false);
             }
-            catch (Exception exception) when (exception is HttpRequestException
-                                                  or TaskCanceledException
-                                                  or InvalidOperationException)
+            catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                // The report is best-effort: a network outage must not affect
-                // the application or recurse back into the logging pipeline.
+                // The report is best-effort: a network outage or a malformed
+                // report must not affect the application or stop the worker.
                 SelfLog.WriteLine("Bug report could not be sent: " + exception.Message);
             }
 

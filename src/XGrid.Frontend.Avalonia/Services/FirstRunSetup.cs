@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using XGrid.Frontend.Avalonia.Models;
 
@@ -54,6 +55,7 @@ public static class FirstRunSetup
 
         if (!string.IsNullOrWhiteSpace(libraryFolder))
         {
+            settings.LibraryFolders = NullSafe.Value(settings.LibraryFolders, new List<string>());
             string folder = libraryFolder.Trim();
             if (!settings.LibraryFolders.Exists(
                     existing => string.Equals(existing, folder, StringComparison.OrdinalIgnoreCase)))

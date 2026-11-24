@@ -738,6 +738,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             Accent = SelectedAccent?.Key ?? "Emerald",
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],
         };
+        CopyDonationState(next, Shell.Config);
         foreach (TitleOverrideItem item in TitleOverrides)
         {
             next.TitleOverrides[EmulatorSettings.CanonicalTitleKey(item.Path)] = item.ToOverride();
@@ -745,6 +746,21 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         Shell.SaveSettings(next);
         Shell.Home.NotifySettingsChanged();
+    }
+
+    /// <summary>
+    /// Copies the fields the Settings page does not edit so saving the page
+    /// cannot hide the donation banner or forget a confirmed donation.
+    /// </summary>
+    /// <param name="target">The settings being saved.</param>
+    /// <param name="source">The live settings.</param>
+    internal static void CopyDonationState(EmulatorSettings target, EmulatorSettings source)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(source);
+        target.DonationEmail = source.DonationEmail;
+        target.HasDonated = source.HasDonated;
+        target.DonationLastCheckedUtc = source.DonationLastCheckedUtc;
     }
 
     private GraphicsSettings BuildGraphicsSettings()
