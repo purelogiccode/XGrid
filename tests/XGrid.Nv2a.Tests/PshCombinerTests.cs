@@ -774,14 +774,14 @@ public sealed class PshCombinerTests
                 out float r1, out float g1, out float b1, out float a1);
             combiner.EvaluatePlanned(diffuse, specular, fog, texels, consts,
                 out float r2, out float g2, out float b2, out float a2);
-            int r1b = BitConverter.SingleToInt32Bits(r1);
-            int g1b = BitConverter.SingleToInt32Bits(g1);
-            int b1b = BitConverter.SingleToInt32Bits(b1);
-            int a1b = BitConverter.SingleToInt32Bits(a1);
-            int r2b = BitConverter.SingleToInt32Bits(r2);
-            int g2b = BitConverter.SingleToInt32Bits(g2);
-            int b2b = BitConverter.SingleToInt32Bits(b2);
-            int a2b = BitConverter.SingleToInt32Bits(a2);
+            int r1b = ComparableBits(r1);
+            int g1b = ComparableBits(g1);
+            int b1b = ComparableBits(b1);
+            int a1b = ComparableBits(a1);
+            int r2b = ComparableBits(r2);
+            int g2b = ComparableBits(g2);
+            int b2b = ComparableBits(b2);
+            int a2b = ComparableBits(a2);
             if (r1b != r2b || g1b != g2b || b1b != b2b || a1b != a2b)
             {
                 var words = new System.Text.StringBuilder();
@@ -802,6 +802,16 @@ public sealed class PshCombinerTests
         }
     }
 
+    /// <summary>
+    /// Compares floats by bit pattern, except that every NaN counts as the same
+    /// value: the sign and payload of a NaN are not observable in the combiner,
+    /// and operation order may differ between the generic and planned paths.
+    /// </summary>
+    private static int ComparableBits(float value)
+    {
+        return float.IsNaN(value) ? unchecked((int)0x7FC0_0000) : BitConverter.SingleToInt32Bits(value);
+    }
+
     private static bool CheckDivergence(PshCombiner combiner, Random rng, int samples)
     {
         float[][] consts = PshCombiner.BuildConsts(combiner);
@@ -816,10 +826,10 @@ public sealed class PshCombinerTests
                 out float r1, out float g1, out float b1, out float a1);
             combiner.EvaluatePlanned(diffuse, specular, fog, texels, consts,
                 out float r2, out float g2, out float b2, out float a2);
-            if (BitConverter.SingleToInt32Bits(r1) != BitConverter.SingleToInt32Bits(r2) ||
-                BitConverter.SingleToInt32Bits(g1) != BitConverter.SingleToInt32Bits(g2) ||
-                BitConverter.SingleToInt32Bits(b1) != BitConverter.SingleToInt32Bits(b2) ||
-                BitConverter.SingleToInt32Bits(a1) != BitConverter.SingleToInt32Bits(a2))
+            if (ComparableBits(r1) != ComparableBits(r2) ||
+                ComparableBits(g1) != ComparableBits(g2) ||
+                ComparableBits(b1) != ComparableBits(b2) ||
+                ComparableBits(a1) != ComparableBits(a2))
             {
                 return true;
             }
