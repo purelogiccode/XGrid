@@ -119,6 +119,21 @@ pwsh -File scripts/build-native-xemu.ps1
 Output: `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll`,
 `xemu/dist/xgrid-core.json` and the runtime DLLs.
 
+### Media boot checks
+
+The CHD and ZAR drivers are checked end to end by booting a disc with the
+standalone core:
+
+```powershell
+pwsh -File scripts/chd-boot-check.ps1 -Disc path\to\game.chd -Shot wt-data\chd-boot.png
+pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\hello-entry.zar -Shot wt-data\zar-boot.png
+```
+
+`RESULT: PASS` means the core stayed alive and presented a non-blank frame. Run
+both after a core rebase that touches the block layer. A file-tree ZAR is
+rejected until the XDVDFS synthesizer exists; an entry-form archive must carry
+the disc as one `.iso` entry.
+
 ## Adding an enhancement
 
 1. Prefer `xemu/xgrid-core/` for new files.
