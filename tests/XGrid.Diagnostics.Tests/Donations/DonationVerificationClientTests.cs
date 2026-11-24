@@ -72,12 +72,15 @@ public sealed class DonationVerificationClientTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.NotFound)]
-    [InlineData(HttpStatusCode.TooManyRequests)]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    [InlineData(HttpStatusCode.BadRequest)]
-    public async Task VerifyAsync_WhenServiceRejectsRequest_ReturnsUnavailable(HttpStatusCode statusCode)
+    [InlineData(HttpStatusCode.Unauthorized, DonationVerificationUnavailableReason.AuthenticationRejected)]
+    [InlineData(HttpStatusCode.Forbidden, DonationVerificationUnavailableReason.AuthenticationRejected)]
+    [InlineData(HttpStatusCode.NotFound, DonationVerificationUnavailableReason.ApplicationNotRegistered)]
+    [InlineData(HttpStatusCode.TooManyRequests, DonationVerificationUnavailableReason.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.InternalServerError, DonationVerificationUnavailableReason.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.BadRequest, DonationVerificationUnavailableReason.ServiceUnavailable)]
+    public async Task VerifyAsync_WhenServiceRejectsRequest_ReturnsTheReason(
+        HttpStatusCode statusCode,
+        DonationVerificationUnavailableReason expectedReason)
     {
         using var http = new HttpClient(new RecordingHandler(statusCode, "{}"));
 
@@ -88,10 +91,11 @@ public sealed class DonationVerificationClientTests
             CancellationToken.None);
 
         Assert.Equal(DonationVerificationStatus.Unavailable, result.Status);
+        Assert.Equal(expectedReason, result.Reason);
     }
 
     [Fact]
-    public async Task VerifyAsync_WhenAcknowledgedBodyIsEmpty_ReturnsUnavailable()
+    public async Task VerifyAsync_WhenAcknowledgedBodyIsEmpty_ReturnsAnInvalidResponse()
     {
         using var http = new HttpClient(new RecordingHandler(HttpStatusCode.OK, "null"));
 
@@ -102,10 +106,11 @@ public sealed class DonationVerificationClientTests
             CancellationToken.None);
 
         Assert.Equal(DonationVerificationStatus.Unavailable, result.Status);
+        Assert.Equal(DonationVerificationUnavailableReason.InvalidResponse, result.Reason);
     }
 
     [Fact]
-    public async Task VerifyAsync_WhenResponseJsonIsMalformed_ReturnsUnavailable()
+    public async Task VerifyAsync_WhenResponseJsonIsMalformed_ReturnsAnInvalidResponse()
     {
         using var http = new HttpClient(new RecordingHandler(HttpStatusCode.OK, "not json"));
 
@@ -116,10 +121,11 @@ public sealed class DonationVerificationClientTests
             CancellationToken.None);
 
         Assert.Equal(DonationVerificationStatus.Unavailable, result.Status);
+        Assert.Equal(DonationVerificationUnavailableReason.InvalidResponse, result.Reason);
     }
 
     [Fact]
-    public async Task VerifyAsync_WhenResponseFormatIsUnsupported_ReturnsUnavailable()
+    public async Task VerifyAsync_WhenResponseFormatIsUnsupported_ReturnsAnInvalidResponse()
     {
         using var http = new HttpClient(new UnsupportedContentHandler());
 
@@ -130,10 +136,11 @@ public sealed class DonationVerificationClientTests
             CancellationToken.None);
 
         Assert.Equal(DonationVerificationStatus.Unavailable, result.Status);
+        Assert.Equal(DonationVerificationUnavailableReason.InvalidResponse, result.Reason);
     }
 
     [Fact]
-    public async Task VerifyAsync_WhenTransportFails_ReturnsUnavailable()
+    public async Task VerifyAsync_WhenTransportFails_ReturnsAConnectionFailure()
     {
         using var http = new HttpClient(new ThrowingHandler());
 
@@ -144,6 +151,7 @@ public sealed class DonationVerificationClientTests
             CancellationToken.None);
 
         Assert.Equal(DonationVerificationStatus.Unavailable, result.Status);
+        Assert.Equal(DonationVerificationUnavailableReason.ConnectionFailed, result.Reason);
     }
 
     [Fact]

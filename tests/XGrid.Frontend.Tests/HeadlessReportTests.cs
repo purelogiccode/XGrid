@@ -22,7 +22,7 @@ public sealed class HeadlessReportTests
         Assert.Contains("renderer=OPENGL scale=2 filtering=nearest", text, System.StringComparison.Ordinal);
         Assert.Contains("size=1280x960", text, System.StringComparison.Ordinal);
         Assert.Contains("audio=none", text, System.StringComparison.Ordinal);
-        Assert.Contains("frames=1800 seconds=30.00 firstFrame=1.50 fps=60.00 stop=duration exit=0", text, System.StringComparison.Ordinal);
+        Assert.Contains("frames=1800 seconds=30.00 firstFrame=1.50 fps=60.00 frameTime=16.67ms stop=duration exit=0", text, System.StringComparison.Ordinal);
     }
 
     [Fact]
@@ -37,6 +37,7 @@ public sealed class HeadlessReportTests
         Assert.Equal(1800, root.GetProperty("frames").GetInt64());
         Assert.Equal(30.0, root.GetProperty("seconds").GetDouble(), 3);
         Assert.Equal(1.5, root.GetProperty("firstFrameSeconds").GetDouble(), 3);
+        Assert.Equal(16.667, root.GetProperty("frameTimeMs").GetDouble(), 3);
         Assert.Equal("duration", root.GetProperty("stop").GetString());
         Assert.Equal(0, root.GetProperty("result").GetInt32());
         Assert.True(root.TryGetProperty("presentationFilter", out _));
