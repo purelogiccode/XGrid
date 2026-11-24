@@ -108,7 +108,6 @@ public sealed class XemuWindowEmbedder : IDisposable
         _width = Math.Max(1, widthPx);
         _height = Math.Max(1, heightPx);
         ApplyGeometry();
-        _ = Win32Window.ShowWindow(child, Win32Window.SwShow);
         _ = Win32Window.SetFocus(child);
     }
 
@@ -123,7 +122,16 @@ public sealed class XemuWindowEmbedder : IDisposable
     {
         if (_child != IntPtr.Zero && Win32Window.IsWindow(_child))
         {
-            _ = Win32Window.ShowWindow(_child, visible ? Win32Window.SwShow : Win32Window.SwHide);
+            _ = Win32Window.SetWindowPos(
+                _child,
+                IntPtr.Zero,
+                0,
+                0,
+                0,
+                0,
+                Win32Window.SwpNoZOrder | Win32Window.SwpNoActivate
+                | Win32Window.SwpNoSize | Win32Window.SwpAsyncWindowPos
+                | (visible ? Win32Window.SwpShowWindow : Win32Window.SwpHideWindow));
         }
     }
 
@@ -194,6 +202,11 @@ public sealed class XemuWindowEmbedder : IDisposable
             0,
             _width,
             _height,
-            Win32Window.SwpNoZOrder | Win32Window.SwpNoActivate | Win32Window.SwpFrameChanged | Win32Window.SwpShowWindow);
+            Win32Window.SwpNoZOrder | Win32Window.SwpNoActivate
+            | Win32Window.SwpFrameChanged | Win32Window.SwpShowWindow
+            // The core owns the child window on its own thread; without the
+            // async flag SetWindowPos waits for that thread and can stall the
+            // shell for a second while the guest is booting.
+            | Win32Window.SwpAsyncWindowPos);
     }
 }

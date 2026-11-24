@@ -225,6 +225,14 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
             startInfo.Environment["XGRID_INPUT_SHM"] = _settings.InputSinkName;
         }
 
+        // Tell the core the shell will reparent its window: create it hidden
+        // and give it the title the locator matches, so it never flashes as a
+        // second top-level window before the embed completes.
+        startInfo.Environment["XGRID_EMBED"] =
+            string.IsNullOrEmpty(_settings.DisplaySinkName) && XemuWindowEmbedder.IsSupported
+                ? "1"
+                : "0";
+
         try
         {
             _process = Process.Start(startInfo)

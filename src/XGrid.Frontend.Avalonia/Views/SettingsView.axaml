@@ -227,7 +227,7 @@
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="2">
                     <TextBlock Text="Present core frames in the shell" Classes="label" />
-                    <TextBlock Text="The shell draws the picture (needed for filters); when off, the core's own window is embedded instead. Requires the patched core."
+                    <TextBlock Text="The shell draws the picture (needed for filters and the FPS overlay). When off, the core's own window is embedded in the console page; this is the fastest path at large window sizes. Requires the patched core."
                                Classes="hint" TextWrapping="Wrap" />
                   </StackPanel>
                   <ToggleSwitch Grid.Column="1"
@@ -243,7 +243,7 @@
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="2">
                     <TextBlock Text="Core hosting" Classes="label" />
-                    <TextBlock Text="In-process loads the core library into the shell, so the emulator and the UI share one process. Separate process runs the core beside the shell; choose it if a crashing core must not take the shell down."
+                    <TextBlock Text="In-process loads the core library into the shell and enables save states, pause, frame step and disc swap. It hosts one machine per shell; later launches fall back to a separate process. Separate process can start a new machine every time and isolates a crashing core."
                                Classes="hint" TextWrapping="Wrap" />
                   </StackPanel>
                   <ComboBox Grid.Column="1"
