@@ -28,9 +28,7 @@ It returns when the window is restored.
 
 1. Open the donation page with the banner button, or visit
    <https://www.purelogiccode.com/donate>.
-2. Choose **XGrid** as the application. If the selector does not list XGrid
-   yet, the site operator has not registered the product; contact
-   **contact@purelogiccode.com**.
+2. Choose **XGrid** as the application.
 3. Donate with the email address you want the desktop app to recognize. Signing
    in with the same email is the most reliable option.
 4. Return to XGrid and choose **I already donated**. Enter the same email.
@@ -67,9 +65,9 @@ The endpoint and API key can be overridden for local testing with
 
 | Symptom | Cause and fix |
 | --- | --- |
-| The page does not list XGrid | The product is not registered on the website. Contact the site operator. |
+| The check says donation checks are not available for XGrid yet | The deployed website catalog no longer lists the `xgrid` product. Contact the site operator. |
 | "No donation was found" right after donating | Stripe webhooks can take a moment. Wait a minute and try again. |
-| The check says the service is unavailable | The site or network is down. The banner stays and retrying is safe. |
+| The check says the service is temporarily unavailable or unreachable | The site or network is down. The banner stays and retrying is safe. |
 | The banner returned after saving settings | Fixed: the Settings page now preserves the donation state. Update to the current build. |
 | The banner returned after deleting settings | Expected. Enter the donation email again. |
 | The email was mistyped | Press **I already donated** and enter the correct address. A failed check does not lock the address. |

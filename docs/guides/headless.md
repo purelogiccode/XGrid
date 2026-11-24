@@ -20,6 +20,22 @@ Stop after 1,800 published frames instead of a wall-clock limit:
 XGrid.Frontend.Avalonia.exe --headless --frames 1800 --disc "D:\Games\Halo.iso"
 ```
 
+## Benchmark runs
+
+`--benchmark` is a headless run with a fixed frame budget so repeated runs are
+comparable. With no limit it stops after 600 presented frames; `--frames` or
+`--seconds` still take precedence.
+
+```text
+XGrid.Frontend.Avalonia.exe --benchmark --disc "D:\Games\Halo.iso" --summary bench.json
+```
+
+Keep the renderer, scale, filtering and host identical between runs, and use a
+copy of the hard-disk image so save data cannot change the result. The report
+adds `frameTime`, the average interval between presented frames, next to `fps`.
+Both are measured between the first and last frame, so boot time does not dilute
+the result.
+
 A frame limit has no default time cap; add `--seconds` as well when the guest
 might never reach the frame count. With neither limit, the run stops after 60
 seconds.
@@ -53,7 +69,7 @@ xgrid: core=D:\repo\xemu\dist\xemu.exe
 xgrid: disc=D:\Games\Halo.iso
 xgrid: renderer=OPENGL scale=1 filtering=linear filter=nearest size=1280x960
 xgrid: audio=none
-xgrid: frames=1800 seconds=30.04 firstFrame=1.20 fps=60.02 stop=frames exit=0
+xgrid: frames=1800 seconds=30.04 firstFrame=1.20 fps=60.02 frameTime=16.66ms stop=frames exit=0
 xgrid: summary=D:\Bench\halo.json
 ```
 
@@ -63,6 +79,7 @@ xgrid: summary=D:\Bench\halo.json
 | `seconds` | Wall-clock run length, including start-up and shutdown. |
 | `firstFrame` | Seconds from process start to the first published frame. |
 | `fps` | Frames per second between the first and last frame, so boot time does not dilute a benchmark. |
+| `frameTime` | Average milliseconds between presented frames (`1000 / fps`). |
 | `stop` | `duration`, `frames`, `core` (the guest powered off) or `cancel` (Ctrl+C). |
 | `exit` | The core's exit code. |
 
@@ -88,6 +105,7 @@ larger share of its wall time in the boot path.
   "seconds": 30.04,
   "firstFrameSeconds": 1.2,
   "fps": 60.02,
+  "frameTimeMs": 16.66,
   "stop": "frames",
   "exitCode": 0,
   "result": 0
@@ -128,10 +146,10 @@ are case-insensitive and accept both `--name value` and `--name=value`.
 | Launch | `--disc`, `--core`, `--data-dir`, `--bios`, `--mcpx`, `--eeprom`, `--hdd` |
 | Graphics | `--renderer`, `--scale`, `--filtering`, `--filter`, `--aspect`, `--fit` |
 | Machine | `--ram`, `--audio` |
-| Headless | `--seconds`, `--frames`, `--summary` |
+| Headless | `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` |
 
-`--seconds`, `--frames` and `--summary` select headless mode even when
-`--headless` is omitted. A positional disc path also works when it ends in
+`--seconds`, `--frames`, `--summary` and `--benchmark` select headless mode even
+when `--headless` is omitted. A positional disc path also works when it ends in
 `.iso`, `.xiso`, `.chd` or `.zar`; it implies `--autostart`. Use `--` to stop
 parsing and pass the rest to Avalonia unchanged.
 

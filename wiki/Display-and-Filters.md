@@ -73,6 +73,13 @@ bar reads **Paused**.
 Press **Space** while a game runs to toggle **4x fast-forward**; press it again
 to return to normal speed. The status bar reads **Running 4x** while it is on.
 
+## Frame-rate overlay
+
+Turn on **View  FPS Overlay** to show the present rate and average frame time
+over the console picture. It is hidden while the console is stopped and the
+choice is saved. The number is the shell's present rate, not the core's internal
+render rate, so a capped display shows the cap.
+
 ## If the picture is black
 
 1. Check **Activity**.

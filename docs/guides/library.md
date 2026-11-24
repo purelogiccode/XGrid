@@ -21,6 +21,17 @@ Folders are scanned recursively. A scan:
 Add as many roots as you need. Removing a folder from the list does not delete
 anything on disk.
 
+## Recently played
+
+The **Recently played** strip above the game list shows the titles you launched
+most recently, newest first. It keeps up to ten entries in `settings.json`, even
+when the disc lives outside your configured folders. Click a card to launch the
+game again; **Clear** removes the list. If a file was moved or deleted, the
+entry is dropped the next time you try to launch it.
+
+The list records successful starts only. Changing discs while the console is
+running is a disc swap, not a new launch, so it does not change the order.
+
 ## What the scanner recognizes
 
 | Extension | Listed | Launchable | Notes |

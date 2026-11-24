@@ -19,6 +19,12 @@ cap):
 XGrid.Frontend.Avalonia.exe --headless --frames 1800 --summary run.json --disc "D:\Games\Halo.iso"
 ```
 
+Benchmark with a fixed frame budget (600 frames by default) and a report:
+
+```text
+XGrid.Frontend.Avalonia.exe --benchmark --summary bench.json --disc "D:\Games\Halo.iso"
+```
+
 Use explicit firmware and an isolated data folder:
 
 ```text
@@ -48,19 +54,20 @@ The normal shell accepts the same overrides without `--headless`. A positional
 | `--filtering <linear\|nearest>` | Core texture filtering. |
 | `--filter <nearest\|bilinear\|scanline\|crt>` | Shell presentation filter. |
 | `--aspect`, `--fit`, `--ram`, `--audio` | Display, memory and audio overrides. |
-| `--headless`, `--seconds`, `--frames`, `--summary` | Headless run controls. |
+| `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` | Headless and benchmark controls. |
 | `-h`, `--help`, `--version` | Reference and version. |
 
 Use `--` to stop parsing and pass the rest to Avalonia. Command-line overrides
 are not saved to `settings.json`; they apply to the current session only.
-`--seconds`, `--frames` and `--summary` imply `--headless`.
+`--seconds`, `--frames` and `--summary` imply `--headless`, and so does
+`--benchmark`.
 
 ## Output and exit codes
 
 ```text
 xgrid: renderer=OPENGL scale=1 filtering=linear filter=nearest size=1280x960
 xgrid: audio=none
-xgrid: frames=1800 seconds=30.04 firstFrame=1.20 fps=60.02 stop=frames exit=0
+xgrid: frames=1800 seconds=30.04 firstFrame=1.20 fps=60.02 frameTime=16.66ms stop=frames exit=0
 ```
 
 | Code | Meaning |

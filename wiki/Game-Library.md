@@ -15,6 +15,13 @@ A scan:
 - de-duplicates paths;
 - sorts by title.
 
+## Recently played
+
+The strip above the list shows up to ten recently launched titles, newest first.
+Click a card to play it again, or **Clear** to empty the list. The entries are
+stored in `settings.json` and survive restarts. A moved or deleted file is
+dropped when you try to launch it.
+
 ## Supported files
 
 | Extension | Listed | Launchable |

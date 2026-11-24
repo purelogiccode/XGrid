@@ -47,7 +47,7 @@ and packaging.
 - **Save states that belong to the machine.** Four QEMU/xemu snapshot slots,
   saved through the in-process core ABI.
 - **Display your way.** Shell frame sink with nearest, bilinear, scanline and CRT
-  filters, or the core's own embedded window.
+  filters, an optional FPS overlay, or the core's own embedded window.
 - **Input your way.** Keyboard and XInput mapping, dead zones, trigger threshold,
   Y inversion and stick swap for players 1–4.
 - **Per-title overrides.** Guest memory, renderer and filters keyed by XBE title
@@ -63,7 +63,7 @@ and packaging.
 | **Display** | Shell frame sink or embedded core window; filters, resolution scale, aspect/fit, fullscreen |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
 | **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
-| **Quality of life** | Four save-state slots, library scan, per-title overrides, screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
+| **Quality of life** | Four save-state slots, multiple library roots, recently played list, per-title overrides, screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Platform** | Windows 10/11 x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell (bring your own core) |
 

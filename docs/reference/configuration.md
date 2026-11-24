@@ -47,6 +47,7 @@ the platform.
 | `--ram <64\|128>` | Guest RAM in megabytes. |
 | `--audio <backend>` | `auto`, `dsound` (Windows), `none` or `wav`. |
 | `--headless` | Run without the shell window; see [Headless runs](../guides/headless.md). |
+| `--benchmark` | Headless benchmark run; 600 frames when no other limit is set. |
 | `--seconds <n>` | Headless wall-clock limit (60 when no frame limit is set). |
 | `--frames <n>` | Stop a headless run after `n` published frames. |
 | `--summary <path>` | Write the headless JSON report to this path. |
@@ -67,11 +68,12 @@ never written into `settings.json`, and they win over per-title overrides.
 ### Headless runs
 
 `--headless` boots the core without the Avalonia window and without presenting a
-picture. The core still renders off-screen. `--seconds`, `--frames` and
-`--summary` select headless mode on their own. Without `--seconds` or
-`--frames`, the run stops after 60 seconds; a frame limit without a time limit
-runs until that many frames, so combine both when the guest might never reach
-the limit. Ctrl+C also stops it cleanly.
+picture. The core still renders off-screen. `--seconds`, `--frames`,
+`--summary` and `--benchmark` select headless mode on their own. Without
+`--seconds` or `--frames`, a normal headless run stops after 60 seconds and a
+benchmark run stops after 600 frames. A frame limit without a time limit runs
+until that many frames, so combine both when the guest might never reach the
+limit. Ctrl+C also stops it cleanly.
 
 ```text
 XGrid.Frontend.Avalonia.exe --headless --seconds 30 --disc "D:\Games\Halo.iso"
@@ -116,6 +118,7 @@ The shell writes indented JSON. The main fields are:
 | `DvdPath` | Default disc image. |
 | `RamMb` | 64 or 128. |
 | `DisplaySink` | Shell presents frames instead of embedding the core window. |
+| `ShowFpsOverlay` | Draw the frame-rate overlay over a running console. |
 | `CoreHosting` | `in-process` or `process`. |
 | `Filter` | `nearest`, `bilinear`, `scanline` or `crt`. |
 | `Graphics` | Renderer, scale, filtering, window, aspect, fit, AV pack. |
@@ -124,6 +127,7 @@ The shell writes indented JSON. The main fields are:
 | `Accent` | Accent palette key. |
 | `XemuCorePath` | Explicit core executable, or empty for auto-detect. |
 | `LibraryFolders` | Folders scanned by the Library. |
+| `RecentGames` | Recently launched titles (path, title and UTC time), newest first, up to 10. |
 | `TitleOverrides` | Per-title overrides keyed by `title:XXXXXXXX` or image path: RAM, renderer, texture filtering and presentation filter. |
 | `DonationEmail` | Optional email used to recognize a donation; stored locally and sent only to the donation check. |
 | `HasDonated` | `true` after the donation service confirms a completed donation; hides the banner. |
