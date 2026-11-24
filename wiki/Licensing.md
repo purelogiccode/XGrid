@@ -21,7 +21,9 @@ original per-file GPL-2.0, LGPL and MIT notices. XGrid's additions in
 The Windows core package redistributes runtime DLLs, including LGPL-3.0-or-later
 libraries. The combined package is GPL-3.0-or-later where those are included;
 GPL-2.0-only xemu/QEMU files are used under GPL-2.0, which that combination
-permits.
+permits. The Linux core package links the host's system libraries instead of
+bundling them; it carries the core's own `LICENSE.txt` and the shared license
+set.
 
 ## Firmware and games
 

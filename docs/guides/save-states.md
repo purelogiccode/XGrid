@@ -6,9 +6,10 @@ using the core's own snapshot support.
 
 ## Requirements
 
-- **In-process core hosting.** Save states use the in-process ABI. With
-  **Settings → System → Core hosting → Separate process**, the menu entries are
-  disabled because the shell has no ABI to call.
+- **In-process core hosting on Windows.** Save states use the in-process ABI.
+  With **Settings → System → Core hosting → Separate process**, the menu entries
+  are disabled because the shell has no ABI to call. The Linux core is a
+  separate process, so it has no shell save-state controls yet.
 - A running console.
 - A writable HDD image.
 

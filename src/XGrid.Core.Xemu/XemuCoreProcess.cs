@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace XGrid.Core.Xemu;
 
@@ -14,8 +15,10 @@ namespace XGrid.Core.Xemu;
 /// MCPX/APU/ACI/IDE/USB devices, audio and input. XGrid owns the shell around
 /// it, which is why this type does not emulate anything.
 /// </remarks>
-public sealed class XemuCoreProcess : IXemuCoreRuntime
+public sealed partial class XemuCoreProcess : IXemuCoreRuntime
 {
+    private const int SigTerm = 15;
+
     private readonly XemuLaunchSettings _settings;
     private Process? _process;
     private IntPtr _window;
@@ -247,6 +250,11 @@ public sealed class XemuCoreProcess : IXemuCoreRuntime
     /// <returns>The window handle, or <see cref="IntPtr.Zero"/>.</returns>
     public IntPtr TryFindWindow()
     {
+        if (!XemuWindowEmbedder.IsSupported)
+        {
+            return IntPtr.Zero;
+        }
+
         if (_window != IntPtr.Zero && !Win32Window.IsWindow(_window))
         {
             // The core recreated its window during start-up; look again.
@@ -273,6 +281,11 @@ public sealed class XemuCoreProcess : IXemuCoreRuntime
     public IntPtr WaitForWindow(TimeSpan timeout)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!XemuWindowEmbedder.IsSupported)
+        {
+            return IntPtr.Zero;
+        }
+
         if (_window != IntPtr.Zero)
         {
             return _window;
@@ -294,11 +307,40 @@ public sealed class XemuCoreProcess : IXemuCoreRuntime
     /// </summary>
     public void RequestClose()
     {
-        if (_window != IntPtr.Zero && Win32Window.IsWindow(_window))
+        if (XemuWindowEmbedder.IsSupported)
         {
-            _ = Win32Window.PostMessageW(_window, Win32Window.WmClose, IntPtr.Zero, IntPtr.Zero);
+            if (_window != IntPtr.Zero && Win32Window.IsWindow(_window))
+            {
+                _ = Win32Window.PostMessageW(_window, Win32Window.WmClose, IntPtr.Zero, IntPtr.Zero);
+            }
+
+            return;
+        }
+
+        // The core owns its window off Windows, so there is no host window
+        // handle to close. QEMU handles SIGTERM as a shutdown request, which is
+        // the core's own power-off path and flushes storage.
+        Process? process = _process;
+        if (process is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                _ = KillUnix(process.Id, SigTerm);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Exited between the check and the signal: nothing left to stop.
         }
     }
+
+    [LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static partial int KillUnix(int processId, int signal);
 
     /// <summary>Terminates the core process immediately (after a failed graceful stop).</summary>
     public void Kill()

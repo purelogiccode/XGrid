@@ -71,12 +71,12 @@
             <TextBlock Text="Shortcuts" Classes="h3" />
             <Grid ColumnDefinitions="160,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
               <TextBlock Text="Power on / off" Classes="caption" />
-              <TextBlock Grid.Column="1" Text="F5" Classes="mono" FontSize="11.5" />
-              <TextBlock Grid.Row="1" Text="Pause / step" Classes="caption" />
+              <TextBlock Grid.Row="0" Grid.Column="1" Text="F5" Classes="mono" FontSize="11.5" />
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="Pause / step" Classes="caption" />
               <TextBlock Grid.Row="1" Grid.Column="1" Text="P  ·  F10 (while paused)" Classes="mono" FontSize="11.5" />
-              <TextBlock Grid.Row="2" Text="Screenshot" Classes="caption" />
+              <TextBlock Grid.Row="2" Grid.Column="0" Text="Screenshot" Classes="caption" />
               <TextBlock Grid.Row="2" Grid.Column="1" Text="F8" Classes="mono" FontSize="11.5" />
-              <TextBlock Grid.Row="3" Text="Disc" Classes="caption" />
+              <TextBlock Grid.Row="3" Grid.Column="0" Text="Disc" Classes="caption" />
               <TextBlock Grid.Row="3" Grid.Column="1" Text="Ctrl+O  ·  Ctrl+E" Classes="mono" FontSize="11.5" />
             </Grid>
           </StackPanel>

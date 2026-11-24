@@ -32,7 +32,7 @@ files are recorded in `xemu/xemu-patches/`.
 | Silk.NET.OpenGL | MIT | Managed OpenGL bindings in the oracle. |
 | XISOSharp | MIT | XDVDFS reader adapter. |
 | CHDSharp | MIT | Managed CHD reader in the oracle. |
-| SDL3, GLib, OpenSSL, libcurl, zstd, and other core DLLs | see notices | Redistributed with the Windows core package. |
+| SDL3, GLib, OpenSSL, libcurl, zstd, and other core DLLs | see notices | Redistributed with the Windows core package; linked from the host on Linux. |
 
 The complete list, including every runtime DLL and ported file, is
 `THIRD_PARTY_NOTICES.md`.
@@ -44,6 +44,14 @@ are LGPL-3.0-or-later (`libidn2`, `libunistring`). Because XGrid's own code is
 GPL-2.0-or-later, the combined distribution is made under GPL-3.0-or-later where
 those libraries are included; the GPL-2.0-only xemu/QEMU files are used under
 GPL-2.0, which that combination permits.
+
+## Linux core package
+
+The Linux frontend archive redistributes the standalone `xemu` core and its
+generated `LICENSE.txt`. The core links the host's system libraries rather than
+bundling them, so those libraries are not part of the archive. The core source
+is the tracked `xemu/` tree; the GPL-2.0-or-later terms cover XGrid's additions
+and the xemu/QEMU files keep their per-file notices.
 
 If you redistribute XGrid binaries:
 

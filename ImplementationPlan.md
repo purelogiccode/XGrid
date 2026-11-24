@@ -17,8 +17,9 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Pause, resume and single-frame stepping.
 - [x] Disc swap and eject through the in-process ABI.
 - [x] Screenshot strip in the Library.
+- [x] Local cover art from the user covers folder, keyed by title ID or title.
 - [x] First-run wizard with a shortcut sheet.
-- [x] Controller assignment for players 1–4.
+- [x] Controller assignment for players 1–4, with all four pad records published to the core.
 - [x] Whole-window screenshots (F8).
 - [x] Power, stop, fullscreen, disc-open and settings shortcuts.
 
@@ -32,6 +33,9 @@ current product roadmap; user documentation lives in `docs/`.
       and DSP settings.
 - [x] Four save-state slots through the in-process ABI.
 - [x] Renderer capability manifest (`xgrid-core.json`).
+- [] Implement Direct-X rendering.
+- [] Review and test all graphic filters.
+
 
 ### Media and packaging
 
@@ -58,17 +62,22 @@ current product roadmap; user documentation lives in `docs/`.
 
 - [ ] Re-verify CHD/ZAR boot paths on each core rebase.
 
+### Library
+
+- [ ] Optional online cover-art catalog for titles without local covers.
+
 ### Platform
 
 - [x] Standalone core build on Linux from the tracked tree.
-- [ ] Package the core for Linux and macOS.
+- [x] Package a core build in the Linux frontend archive.
+- [ ] Verify the packaged Linux core on a Linux host.
+- [ ] Package the core for macOS.
 - [ ] Native display embedding on Linux/macOS.
 - [ ] Verify save states on non-Windows hosts.
 
 ## 3. Non-goals
 
 - Re-implementing the emulator in managed C# as the product path.
-- A DirectX renderer; xemu 0.8.139 offers OpenGL, Vulkan and NULL.
 - Shipping firmware, BIOS images, EEPROMs, HDD images or game data.
 - Replacing xemu's device emulation with a new implementation.
 

@@ -168,19 +168,24 @@ public sealed class XemuCoreSession : IDisposable
             throw new InvalidOperationException("The core is already running.");
         }
 
+        // The host frame and pad sections are Windows-only. On other platforms
+        // the core presents and reads input through its own window instead.
+        bool hostSinks = XemuDisplaySink.IsSupported;
+
         // Create the sinks first: an in-process core starts immediately, so a
         // section created after it would miss the first frames and the first pad.
-        if (!string.IsNullOrWhiteSpace(launch.DisplaySinkName))
+        if (hostSinks && !string.IsNullOrWhiteSpace(launch.DisplaySinkName))
         {
             _sink = new XemuDisplaySink(launch.DisplaySinkName);
             _sinkTimer = new Timer(_ => PollSink(), null, 8, 8);
         }
 
-        if (!string.IsNullOrWhiteSpace(launch.InputSinkName))
+        if (hostSinks && !string.IsNullOrWhiteSpace(launch.InputSinkName))
         {
             _input = new XemuInputSink(launch.InputSinkName);
             // Publish neutral states immediately so the core never reads garbage.
             _input.WriteNeutral();
+            Log?.Invoke(this, "Four player pads are published to the core.");
         }
 
         IXemuCoreRuntime runtime;
@@ -210,6 +215,10 @@ public sealed class XemuCoreSession : IDisposable
         if (_input is not null)
         {
             Log?.Invoke(this, "Emulator frames go to the shell surface.");
+        }
+        else if (!hostSinks)
+        {
+            Log?.Invoke(this, "Emulator frames go to the core's own window on this platform.");
         }
 
         _monitor = new Timer(_ => Poll(), null, 250, 250);
@@ -336,6 +345,11 @@ public sealed class XemuCoreSession : IDisposable
 
     private void TryEmbed()
     {
+        if (!XemuWindowEmbedder.IsSupported)
+        {
+            return;
+        }
+
         lock (_gate)
         {
             if (_sink is not null && _lastFrameCounter != 0)

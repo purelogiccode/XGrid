@@ -7,8 +7,9 @@ This page lists what XGrid needs to run a game. For building XGrid itself, see
 
 | Item | Requirement |
 | --- | --- |
-| **Operating system** | Windows 10 or 11, x64 (fully supported) |
-| **Linux / macOS** | The Avalonia shell targets these platforms, but the emulator core is currently packaged for Windows only. See [Compatibility](../reference/compatibility.md). |
+| **Operating system** | Windows 10 or 11, x64 (full shell integration) |
+| **Linux x64** | The frontend archive bundles the standalone core, which runs in its own window. Save states, pause/step and disc swap need the Windows in-process core. See [Compatibility](../reference/compatibility.md). |
+| **macOS** | The frontend archive contains the shell only; point it at an upstream xemu 0.8.139 build. |
 | **CPU** | A modern x64 processor. The QEMU TCG core is CPU-intensive. |
 | **GPU** | An OpenGL-capable GPU with current drivers. Vulkan is used only when the core build includes it. |
 | **RAM** | 4 GB or more recommended; the guest itself uses 64 MB or 128 MB. |

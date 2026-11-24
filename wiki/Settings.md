@@ -20,8 +20,8 @@ The Settings page is a draft editor. Change values, then click **Save settings**
 
 - **Emulator binary** — optional explicit path.
 - **Guest memory** — 64 MB retail, 128 MB debug kit.
-- **Present core frames in the shell** — shell presentation and filters.
-- **Core hosting** — **In-process (recommended)** or **Separate process**.
+- **Present core frames in the shell** - shell presentation and filters (Windows only).
+- **Core hosting** - **In-process (recommended, Windows)** or **Separate process**.
 
 ## Graphics
 

@@ -59,6 +59,34 @@ public sealed class XemuCoreHostingTests : IDisposable
         Assert.Empty(XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings()));
     }
 
+    [Fact]
+    public void HostSharedSections_AreWindowsOnly()
+    {
+        // The core's display and input sinks use Windows named sections. Other
+        // hosts must not advertise them, because the core keeps its SDL window.
+        Assert.Equal(OperatingSystem.IsWindows(), XemuDisplaySink.IsSupported);
+        Assert.Equal(OperatingSystem.IsWindows(), XemuInputSink.IsSupported);
+    }
+
+    [Fact]
+    public void WindowEmbedding_IsWindowsOnly()
+    {
+        // Reparenting needs a host window handle and Win32; the separate core
+        // process owns its window everywhere else.
+        Assert.Equal(OperatingSystem.IsWindows(), XemuWindowEmbedder.IsSupported);
+    }
+
+    [Fact]
+    public void ShellPadSection_PublishesFourPlayerPorts()
+    {
+        // The core binds one shell controller per Xbox port, so port 3 must be
+        // a valid record even when no gamepad is assigned to it.
+        Assert.Equal(4, XemuInputSink.PadCount);
+
+        using var sink = new XemuInputSink("Local\\XGridPadTest-" + Guid.NewGuid().ToString("N"));
+        sink.Write(3, 0, 0, 0, 0, 0, 0, 0);
+    }
+
     public void Dispose()
     {
         Directory.Delete(_root, recursive: true);

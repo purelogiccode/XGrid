@@ -19,6 +19,13 @@ Turn the setting off.
 - The core paints directly; the shell filter does **not** apply.
 - The core reads its own SDL input.
 
+## Linux and macOS
+
+The shell frame sink and embedding are Windows-only. On Linux the core opens
+its own SDL window outside the Home page; use it for the picture, filters and
+input. The macOS archives contain the shell only and need an external xemu
+build.
+
 ## Filters
 
 | Filter | Effect |
@@ -28,7 +35,9 @@ Turn the setting off.
 | Scanlines | Every other row darkened. |
 | CRT mask | Scanlines plus an RGB phosphor triad. |
 
-Filters are applied at source resolution by the shell.
+Filters are applied at source resolution by the shell before scaling. The masks
+preserve alpha, and a frame whose size disagrees with its declared geometry is
+left unfiltered.
 
 ## Core graphics settings
 

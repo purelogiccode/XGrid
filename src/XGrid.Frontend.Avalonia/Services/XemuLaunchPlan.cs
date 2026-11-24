@@ -36,6 +36,11 @@ public static class XemuLaunchPlan
 
         string dvd = discPath ?? settings.DvdPath;
 
+        // The shell-owned frame and pad sections are a Windows integration. On
+        // other hosts the core keeps its SDL window and reads SDL input, so a
+        // configured sink must not be advertised.
+        bool hostSinks = settings.DisplaySink && XemuDisplaySink.IsSupported;
+
         return new XemuLaunchSettings
         {
             CorePath = core ?? string.Empty,
@@ -70,8 +75,8 @@ public static class XemuLaunchPlan
             AudioWavPath = string.Equals(settings.Audio.Backend, AudioSettings.BackendWav, StringComparison.Ordinal)
                 ? Path.Combine(workingDirectory, "audio.wav")
                 : string.Empty,
-            DisplaySinkName = settings.DisplaySink ? XemuDisplaySink.CreateName() : string.Empty,
-            InputSinkName = settings.DisplaySink ? XemuInputSink.CreateName() : string.Empty,
+            DisplaySinkName = hostSinks ? XemuDisplaySink.CreateName() : string.Empty,
+            InputSinkName = hostSinks ? XemuInputSink.CreateName() : string.Empty,
             WorkingDirectory = workingDirectory,
         };
     }

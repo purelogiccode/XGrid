@@ -10,7 +10,8 @@ and failures.
 | “Choose a BIOS image first.” | Set **Settings → System → BIOS image**. |
 | “The emulator binary was not found.” | Set the core path, `XGRID_XEMU_CORE`, or build `xemu/dist`. |
 | “The in-process core library is not available…” | Build `xgrid_core.dll` or accept the separate process. |
-| Save-state entries disabled | Switch to in-process hosting. |
+| The core opens its own window | Linux/macOS hosting; the shell frame sink is Windows-only. |
+| Save-state entries disabled | Switch to in-process hosting on Windows. |
 | A core crash closes the whole app | Switch **Core hosting** to **Separate process**. |
 
 ## Display

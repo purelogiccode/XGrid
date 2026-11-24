@@ -42,6 +42,12 @@ public sealed class XemuDisplaySink : IDisposable
     private MemoryMappedViewAccessor? _view;
     private bool _disposed;
 
+    /// <summary>
+    /// Gets a value indicating whether the host shared-section display path is
+    /// available on this platform. The core's display sink is Windows-only.
+    /// </summary>
+    public static bool IsSupported => OperatingSystem.IsWindows();
+
     /// <summary>Creates a reader for a named section.</summary>
     /// <param name="name">Section name the core was started with.</param>
     public XemuDisplaySink(string name)
@@ -125,6 +131,8 @@ public sealed class XemuDisplaySink : IDisposable
 
     private bool EnsureOpen()
     {
+        // Keep the platform check inline so the analyzer can see that the
+        // Windows-only mapping APIs below are guarded.
         if (!OperatingSystem.IsWindows())
         {
             return false;

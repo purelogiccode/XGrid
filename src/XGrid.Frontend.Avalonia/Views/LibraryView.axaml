@@ -24,6 +24,14 @@
             <TextBlock Text="Rescan" />
           </StackPanel>
         </Button>
+        <Button Classes="ghost"
+                Command="{Binding Shell.OpenCoversFolderCommand}"
+                ToolTip.Tip="Add cover images here; name them after the title or title id.">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
+            <TextBlock Text="Covers" />
+          </StackPanel>
+        </Button>
       </StackPanel>
 
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -80,15 +88,25 @@
         <DataTemplate DataType="vm:GameListItem">
           <Border Classes="card tight" Padding="14">
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-              <Border Width="48"
-                      Height="48"
-                      CornerRadius="11"
+              <Border Width="54"
+                      Height="72"
+                      CornerRadius="8"
+                      ClipToBounds="True"
                       Background="{DynamicResource XgAccentSoftBrush}"
                       VerticalAlignment="Center">
-                <PathIcon Data="{x:Static local:AppIcons.Disc}"
-                          Width="23"
-                          Height="23"
-                          Foreground="{DynamicResource XgAccentBrush}" />
+                <Grid>
+                  <PathIcon Data="{x:Static local:AppIcons.Disc}"
+                            Width="23"
+                            Height="23"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding !HasCover}"
+                            Foreground="{DynamicResource XgAccentBrush}" />
+                  <Image Source="{Binding Cover}"
+                         Stretch="UniformToFill"
+                         IsVisible="{Binding HasCover}"
+                         RenderOptions.BitmapInterpolationMode="HighQuality" />
+                </Grid>
               </Border>
 
               <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">

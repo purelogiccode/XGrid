@@ -58,7 +58,8 @@ game data.
 
 ## Rules
 
-- `data/`, `dist/`, `publish/` and native build trees are git-ignored.
+- `data/`, `dist/`, `publish/`, `cores/` (per-RID core staging) and native
+  build trees are git-ignored.
 - Never commit firmware, BIOS images, EEPROMs, HDD images or game data.
 - Core edits belong in `xemu/xgrid-core/`; upstream file edits are recorded in
   `xemu/xemu-patches/`.

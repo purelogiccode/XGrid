@@ -11,7 +11,9 @@ public static class GameLibraryService
     private const int MaxEntries = 4096;
 
     /// <summary>Scans the given folders recursively (missing folders are skipped).</summary>
-    public static List<GameEntry> Scan(IEnumerable<string> folders)
+    /// <param name="folders">Library roots.</param>
+    /// <param name="coversDirectory">Shared covers folder, or null for sibling images only.</param>
+    public static List<GameEntry> Scan(IEnumerable<string> folders, string? coversDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(folders);
         StringComparer pathComparer = OperatingSystem.IsWindows()
@@ -19,6 +21,7 @@ public static class GameLibraryService
             : StringComparer.Ordinal;
         var seen = new HashSet<string>(pathComparer);
         var entries = new List<GameEntry>();
+        CoverArtIndex covers = CoverArtIndex.Create(coversDirectory);
         foreach (string folder in folders)
         {
             if (entries.Count >= MaxEntries)
@@ -52,7 +55,7 @@ public static class GameLibraryService
                         continue;
                     }
 
-                    GameEntry? entry = GameEntry.FromFile(file);
+                    GameEntry? entry = GameEntry.FromFile(file, covers);
                     if (entry is not null)
                     {
                         entries.Add(entry);

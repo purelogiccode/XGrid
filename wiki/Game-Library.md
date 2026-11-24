@@ -24,6 +24,25 @@ A scan:
 | `.zar` | Yes | Yes (entry form or file tree) |
 | `.xbe` | Yes | No (inspection only) |
 
+## Cover art
+
+Each row shows a cover when one is available. Covers live in the user data
+folder, never beside the disc:
+
+```text
+<data>/covers/
+```
+
+The lookup order is:
+
+1. An image named after the title ID, for example `4D530002.png`.
+2. An image named after the title. `(USA)`, `[!]` and similar annotations are
+   ignored when matching.
+
+Use **Library → Covers** to open the folder and **Rescan** after adding images.
+PNG, JPEG, WebP and BMP are supported. A missing image falls back to the disc
+placeholder.
+
 ## Titles and overrides
 
 - Loose XBE files show their certificate title.

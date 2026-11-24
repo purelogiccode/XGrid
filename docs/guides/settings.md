@@ -29,10 +29,11 @@ XGrid ships no firmware. Configure these from files you own.
 | --- | --- |
 | **Emulator binary** | Optional explicit path to the core executable. Empty uses the packaged core, then the in-tree build. |
 | **Guest memory** | 64 MB (retail) or 128 MB (debug kit). |
-| **Present core frames in the shell** | The shell owns presentation and can apply filters; when off, the core's own window is embedded. Requires the patched core. |
-| **Core hosting** | **In-process (recommended)** loads the core library into the shell. **Separate process** runs the core beside the shell. |
+| **Present core frames in the shell** | The shell owns presentation and can apply filters; when off, the core's own window is embedded. Requires the patched core. Windows only. |
+| **Core hosting** | **In-process (recommended)** loads the core library into the shell. **Separate process** runs the core beside the shell. The in-process library is Windows-only. |
 
 > Save states require the in-process core. See [Save states](save-states.md).
+> On Linux the core always runs as a separate process with its own window.
 
 ## Graphics
 

@@ -79,7 +79,8 @@ pwsh -File scripts/package-verify.ps1
 ```
 
 `package-verify.ps1` checks license completeness, archive contents, the bundled
-Windows core, SHA-256 sums, the package manifest and the CLI version.
+Windows and Linux cores, Unix execute bits, SHA-256 sums, the package manifest
+and the CLI version.
 
 ## Pull requests
 

@@ -8,7 +8,12 @@ publish job (`docs/ci.md`). For every runtime identifier it publishes the two
 applications self-contained and single-file, strips symbols and XML docs, adds
 the files a GPL-2.0-or-later binary distribution must carry (`COPYING`, `LICENSE`,
 `THIRD_PARTY_NOTICES.md`, the release notes), writes `VERSION`, archives with
-fixed timestamps and sorted entries, and records SHA-256 sums plus a manifest.
+fixed timestamps, sorted entries and executable modes, and records SHA-256 sums
+plus a manifest.
+
+The frontend archive for a RID carries the core when a build for that RID is
+available. Windows and Linux cores are produced by the tracked build scripts;
+stage them per RID with `-CoreRoot` when one host packages both.
 
 The output is a *release tree*:
 
@@ -38,9 +43,17 @@ Release-tree directory, relative to the repository root (default `dist`).
 .PARAMETER Work
 Intermediate publish directory (default `publish`, already git-ignored).
 
+.PARAMETER CoreRoot
+Directory that holds per-RID core build folders (`win-x64/`, `linux-x64/`,
+`osx-x64/`, `osx-arm64/`). A Windows or Linux folder is that host's `xemu/dist`
+output; a macOS folder must be a flat `xemu` binary with `xgrid-core.json` and
+`LICENSE.txt`. Use it when one host packages several RIDs and the cores were
+built on their own platforms. Without it, the host's `xemu/dist` is used when
+it matches the RID being packaged.
+
 .PARAMETER SkipCore
-Do not bundle the xemu core into the win-x64 frontend archive. Development
-only: a release archive without the core cannot emulate anything.
+Do not bundle the xemu core into any frontend archive. Development only: a
+release archive without the core cannot emulate anything.
 
 .PARAMETER NoVerify
 Do not run `scripts/package-verify.ps1` at the end.
@@ -48,6 +61,7 @@ Do not run `scripts/package-verify.ps1` at the end.
 .EXAMPLE
 pwsh -File scripts/package.ps1
 pwsh -File scripts/package.ps1 -Version 0.1.0 -Rids win-x64,linux-x64
+pwsh -File scripts/package.ps1 -CoreRoot cores
 #>
 [CmdletBinding()]
 param(
@@ -55,6 +69,7 @@ param(
     [string[]]$Rids = @('win-x64', 'linux-x64', 'osx-x64', 'osx-arm64'),
     [string]$Output = 'dist',
     [string]$Work = 'publish',
+    [string]$CoreRoot = '',
     [switch]$SkipCore,
     [switch]$NoVerify
 )
@@ -136,8 +151,10 @@ try {
         finally { $stream.Dispose() }
     }
 
-    function New-DeterministicTarGz([string]$Directory, [string]$Path) {
+    function New-DeterministicTarGz([string]$Directory, [string]$Path, [string[]]$Executables = @()) {
         if (Test-Path $Path) { Remove-Item -Force $Path }
+        $executableSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($executable in $Executables) { [void]$executableSet.Add($executable) }
         $stream = [System.IO.File]::Create($Path)
         try {
             $gzip = [System.IO.Compression.GZipStream]::new($stream, [System.IO.Compression.CompressionLevel]::SmallestSize)
@@ -148,7 +165,18 @@ try {
                         $name = [System.IO.Path]::GetRelativePath($Directory, $file.FullName).Replace('\', '/')
                         $entry = [System.Formats.Tar.UstarTarEntry]::new([System.Formats.Tar.TarEntryType]::RegularFile, $name)
                         $entry.ModificationTime = $fixedTime
-                        $entry.Mode = [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite -bor [System.IO.UnixFileMode]::GroupRead -bor [System.IO.UnixFileMode]::OtherRead
+                        $entry.Mode = if ($executableSet.Contains($name)) {
+                            # A tar entry that is not executable cannot start. The
+                            # CLI, the frontend and a bundled core must be 0755.
+                            [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite -bor
+                            [System.IO.UnixFileMode]::UserExecute -bor [System.IO.UnixFileMode]::GroupRead -bor
+                            [System.IO.UnixFileMode]::GroupExecute -bor [System.IO.UnixFileMode]::OtherRead -bor
+                            [System.IO.UnixFileMode]::OtherExecute
+                        }
+                        else {
+                            [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite -bor
+                            [System.IO.UnixFileMode]::GroupRead -bor [System.IO.UnixFileMode]::OtherRead
+                        }
                         $entry.DataStream = [System.IO.File]::OpenRead($file.FullName)
                         try { $writer.WriteEntry($entry) } finally { $entry.DataStream.Dispose() }
                     }
@@ -160,57 +188,134 @@ try {
         finally { $stream.Dispose() }
     }
 
-    # The win-x64 frontend archive carries the emulator: the standalone core and
-    # the in-process library, plus the DLLs both import. `XemuPaths` looks for it
-    # at `core/xemu/` beside the application.
-    $coreDist = Join-Path $repo 'xemu/dist'
-    $coreExe = Join-Path $coreDist 'xemu.exe'
-    $coreDll = Join-Path $coreDist 'xgrid_core.dll'
+    # `XemuPaths` looks for the core at `core/xemu/` beside the application. A
+    # core build output is per platform, so packaging selects it by RID; without
+    # `-CoreRoot` the host's own `xemu/dist` is used when it matches.
     $coreVersion = if (Test-Path (Join-Path $repo 'xemu/XEMU_VERSION')) {
         (Get-Content (Join-Path $repo 'xemu/XEMU_VERSION') -TotalCount 1).Trim()
     }
     else { '' }
+    $defaultCoreDist = Join-Path $repo 'xemu/dist'
+    $coreRootPath = if ([string]::IsNullOrWhiteSpace($CoreRoot)) {
+        ''
+    }
+    elseif ([System.IO.Path]::IsPathRooted($CoreRoot)) { $CoreRoot }
+    else { Join-Path $repo $CoreRoot }
+
+    function Get-CoreExecutable([string]$Rid) {
+        if ($Rid.StartsWith('win-', [StringComparison]::Ordinal)) {
+            return 'xemu.exe'
+        }
+
+        return 'xemu'
+    }
+
+    function Test-CoreDirectory([string]$Directory, [string]$Rid) {
+        if ([string]::IsNullOrWhiteSpace($Directory) -or -not (Test-Path $Directory)) { return $false }
+        $exe = Join-Path $Directory (Get-CoreExecutable $Rid)
+        return (Test-Path $exe) -and (Test-Path (Join-Path $Directory 'xgrid-core.json'))
+    }
 
     function Find-StripTool {
         foreach ($candidate in @('C:\msys64\mingw64\bin\strip.exe', (Join-Path $env:SystemDrive 'msys64/mingw64/bin/strip.exe'))) {
             if (Test-Path $candidate) { return $candidate }
         }
         $command = Get-Command strip -ErrorAction SilentlyContinue
-        return if ($command) { $command.Source } else { $null }
+        if ($command) {
+            return $command.Source
+        }
+
+        return $null
     }
 
-    function Copy-XemuCore([string]$Destination) {
+    function Test-HostCanStrip([string]$Rid) {
+        if ($Rid.StartsWith('win-', [StringComparison]::Ordinal)) { return $IsWindows }
+        if ($Rid.StartsWith('linux-', [StringComparison]::Ordinal)) { return $IsLinux }
+        # Apple's strip has different options; a macOS core is packaged as built.
+        return $false
+    }
+
+    function Copy-XemuCore([string]$Source, [string]$Destination, [string]$Rid) {
         $coreDirectory = Join-Path $Destination 'core/xemu'
         New-Item -ItemType Directory -Path $coreDirectory -Force | Out-Null
-        foreach ($file in Get-ChildItem $coreDist -File) {
-            if ($file.Extension -in '.pdb', '.log', '.txt') { continue }
-            Copy-Item $file.FullName (Join-Path $coreDirectory $file.Name) -Force
+        if ($Rid.StartsWith('win-', [StringComparison]::Ordinal)) {
+            foreach ($required in 'xemu.exe', 'xgrid_core.dll', 'xgrid-core.json') {
+                if (-not (Test-Path (Join-Path $Source $required))) {
+                    throw "the $Rid core at $Source is missing $required"
+                }
+            }
+
+            foreach ($file in Get-ChildItem $Source -File) {
+                if ($file.Extension -in '.pdb', '.log', '.txt') { continue }
+                Copy-Item $file.FullName (Join-Path $coreDirectory $file.Name) -Force
+            }
+
+            $stripTargets = @('xemu.exe', 'xgrid_core.dll')
+        }
+        else {
+            foreach ($required in 'xemu', 'xgrid-core.json', 'LICENSE.txt') {
+                if (-not (Test-Path (Join-Path $Source $required))) {
+                    throw "the $Rid core at $Source is missing $required"
+                }
+            }
+
+            Copy-Item (Join-Path $Source 'xemu') (Join-Path $coreDirectory 'xemu') -Force
+            Copy-Item (Join-Path $Source 'xgrid-core.json') (Join-Path $coreDirectory 'xgrid-core.json') -Force
+            Copy-Item (Join-Path $Source 'LICENSE.txt') (Join-Path $coreDirectory 'LICENSE.txt') -Force
+
+            $stripTargets = @('xemu')
         }
 
         # The development build carries full debug information; a release
         # archive carries code. 92 MB per binary becomes about 17 MB.
-        $strip = Find-StripTool
-        if ($strip) {
-            foreach ($name in 'xemu.exe', 'xgrid_core.dll') {
-                & $strip --strip-all (Join-Path $coreDirectory $name) | Out-Null
-                if ($LASTEXITCODE -ne 0) { throw "strip failed for $name" }
-            }
+        if (-not (Test-HostCanStrip $Rid)) {
+            Write-Warning "the $Rid core is packaged as supplied (not stripped on this host)"
         }
         else {
-            Write-Warning 'strip was not found; the archive carries the unstripped core'
-        }
-        $bytes = (Get-ChildItem $coreDirectory -File | Measure-Object Length -Sum).Sum
-        Write-Host ("  core {0} -> core/xemu ({1:N1} MB)" -f $coreVersion, ($bytes / 1MB))
-    }
-
-    $bundleCore = ($Rids -contains 'win-x64') -and -not $SkipCore
-    if ($bundleCore) {
-        foreach ($required in $coreExe, $coreDll) {
-            if (-not (Test-Path $required)) {
-                throw "missing $required - run scripts/build-native-xemu.ps1 first (or pass -SkipCore for a development archive)"
+            $strip = Find-StripTool
+            if ($strip) {
+                foreach ($name in $stripTargets) {
+                    & $strip --strip-all (Join-Path $coreDirectory $name) | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "strip failed for $name" }
+                }
+            }
+            else {
+                Write-Warning 'strip was not found; the archive carries the unstripped core'
             }
         }
+        $bytes = (Get-ChildItem $coreDirectory -File | Measure-Object Length -Sum).Sum
+        Write-Host ("  core {0} -> core/xemu/{1} ({2:N1} MB)" -f $coreVersion, $Rid, ($bytes / 1MB))
     }
+
+    $coreSources = @{}
+    if (-not $SkipCore) {
+        $requiredCoreRids = @($Rids | Where-Object {
+                $_ -eq 'win-x64' -or $_ -eq 'linux-x64'
+            })
+        $missing = [System.Collections.Generic.List[string]]::new()
+        foreach ($rid in $Rids) {
+            $candidates = [System.Collections.Generic.List[string]]::new()
+            if ($coreRootPath) { $candidates.Add((Join-Path $coreRootPath $rid)) }
+            $candidates.Add($defaultCoreDist)
+            foreach ($candidate in $candidates) {
+                if (Test-CoreDirectory $candidate $rid) {
+                    $coreSources[$rid] = $candidate
+                    break
+                }
+            }
+            if (-not $coreSources.ContainsKey($rid) -and $requiredCoreRids -contains $rid) {
+                $missing.Add($rid)
+            }
+        }
+        if ($missing.Count -gt 0) {
+            $message = "missing the core for {0} - build it with scripts/build-native-xemu.ps1 (Windows) or " +
+                "bash scripts/build-native-xemu.sh (Linux), stage each RID under -CoreRoot, or pass " +
+                "-SkipCore for a development archive"
+            throw ($message -f ($missing -join ', '))
+        }
+    }
+    $bundleCore = $coreSources.Count -gt 0
+    $coreRids = @($coreSources.Keys | Sort-Object)
 
     $apps = @(
         [pscustomobject]@{ Name = 'cli'; Project = 'src/XGrid.Cli/XGrid.Cli.csproj'; Exe = 'XGrid.Cli' },
@@ -245,14 +350,17 @@ try {
             $exePath = Join-Path $publishDirectory $exeName
             if (-not (Test-Path $exePath)) { throw "publish output has no $exeName for $($app.Name) $rid" }
 
-            if ($bundleCore -and $app.Name -eq 'frontend') {
-                Copy-XemuCore $publishDirectory
+            $executables = [System.Collections.Generic.List[string]]::new()
+            $executables.Add($exeName)
+            if ($coreSources.ContainsKey($rid) -and $app.Name -eq 'frontend') {
+                Copy-XemuCore -Source $coreSources[$rid] -Destination $publishDirectory -Rid $rid
+                $executables.Add("core/xemu/$(Get-CoreExecutable $rid)")
             }
 
             $file = "XGrid-$($app.Name)-$rid$extension"
             $archivePath = Join-Path $outputPath $file
             if ($isWindowsRid) { New-DeterministicZip $publishDirectory $archivePath }
-            else { New-DeterministicTarGz $publishDirectory $archivePath }
+            else { New-DeterministicTarGz $publishDirectory $archivePath $executables.ToArray() }
 
             $hash = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
             $bytes = (Get-Item $archivePath).Length
@@ -280,7 +388,7 @@ try {
                 }
                 else { '' }
                 path = 'core/xemu'
-                rids = @('win-x64')
+                rids = $coreRids
             }
         }
         else { $null }
@@ -293,7 +401,13 @@ try {
 
     Write-Host ("PACKAGE WROTE {0} archives to {1}" -f $archives.Count, $outputPath)
     if (-not $NoVerify) {
-        & (Join-Path $PSScriptRoot 'package-verify.ps1') -Dist $outputPath -Version $Version -Rids $Rids
+        $verifyArguments = @{
+            Dist = $outputPath
+            Version = $Version
+            Rids = $Rids
+            SkipCoreCheck = [bool]$SkipCore
+        }
+        & (Join-Path $PSScriptRoot 'package-verify.ps1') @verifyArguments
         exit $LASTEXITCODE
     }
 }

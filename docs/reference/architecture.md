@@ -72,12 +72,26 @@ The managed C# emulator and its test suite remain in the repository as a
 
 ### Separate process
 
-- The shell starts `xemu.exe` with `-config_path <generated xemu.toml>`.
-- The process gets the display and input sink names through environment
-  variables (`XGRID_DISPLAY_SHM`, `XGRID_INPUT_SHM`).
+- The shell starts `xemu.exe` (or `xemu` on Linux) with
+  `-config_path <generated xemu.toml>`.
+- On Windows the process gets the display and input sink names through
+  environment variables (`XGRID_DISPLAY_SHM`, `XGRID_INPUT_SHM`).
 - The core writes `xemu.log` in its working directory.
 - Save states are not exposed; the shell has no ABI to call.
 - Pause and frame step are not exposed for the same reason.
+
+### Linux and macOS
+
+The packaged `linux-x64` frontend archive carries the standalone core under
+`core/xemu/`. The shell starts it as a separate process, and the core owns its
+SDL window: presentation, keyboard and gamepad input stay inside the core. The
+shell keeps the library, settings, logs and screenshots. Window embedding and
+the host frame/pad sinks are Windows-only, so save states, pause/step and disc
+swap are unavailable there. macOS archives carry the shell only; point the
+**Emulator binary** setting at an upstream xemu 0.8.139 build.
+
+On Unix, `RequestStop` sends `SIGTERM`, which QEMU handles as a shutdown
+request, so the core flushes storage instead of being killed.
 
 ## Display sink
 
@@ -94,7 +108,8 @@ pixel data     width × height BGRA, top row first
 ```
 
 The shell polls the section every 8 ms, keeps the latest frame, and presents at a
-minimum 10 ms cadence. A slow UI drops frames instead of building latency.
+minimum 10 ms cadence. A slow UI drops frames instead of building latency. The
+section is Windows-only; elsewhere the core presents into its own window.
 
 ## Input sink
 
@@ -118,8 +133,8 @@ core never reads uninitialized state.
 
 The core reads the section only when the input sink is configured. It binds a
 controller to every port the keyboard did not take, so all four records reach
-the guest; the bindings are not persisted. With the embedded core window, the
-core uses SDL input instead.
+the guest; the bindings are not persisted. With the embedded core window, or on
+a non-Windows host, the core uses SDL input instead.
 
 ## Save states
 

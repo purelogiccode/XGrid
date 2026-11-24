@@ -4,7 +4,8 @@ XGrid maps up to four Xbox controllers, one per port. The keyboard always drives
 player 1.
 
 > Shell remapping and pad forwarding require **Present core frames in the shell**.
-> With the embedded window, the core reads its own SDL input.
+> With the embedded window, the core reads its own SDL input. On Linux the shell
+> frame sink is unavailable, so the core reads SDL input in its own window.
 
 ## Default keyboard map
 

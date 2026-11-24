@@ -25,6 +25,9 @@ pwsh -File scripts/build-native-xemu.ps1
 pwsh -File scripts/package.ps1
 ```
 
+On Linux, build the core with `bash scripts/build-native-xemu.sh`; stage cores
+from several hosts with `scripts/package.ps1 -CoreRoot <dir>`.
+
 See [Building from source](../development/building.md) and
 [Releasing](../development/releasing.md).
 
