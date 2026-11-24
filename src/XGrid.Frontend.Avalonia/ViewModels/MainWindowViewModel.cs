@@ -38,6 +38,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private GamepadMappingOptions _gamepadOptions = GamepadMappingOptions.Default;
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
+    private int _frameWidth;
+    private int _frameHeight;
     private bool _lastFrameSinkActive;
     private bool _shuttingDown;
     private SaveStateRunner? _saveStates;
@@ -200,8 +202,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         ? "Starting the console."
         : "Power on the console to see output here.";
 
-    /// <summary>Gets the caption under the display.</summary>
-    public string DisplayCaption => "640 x 480 - " + RendererName;
+    /// <summary>Gets the caption under the display, read from the presented frame.</summary>
+    public string DisplayCaption => HasFrame
+        ? DisplayCaptionText.Describe(_frameWidth, _frameHeight, RendererName)
+        : string.Empty;
+
+    /// <summary>Gets a value indicating whether there is a caption to show.</summary>
+    public bool HasDisplayCaption => DisplayCaption.Length > 0;
 
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
@@ -639,8 +646,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             IsRunning = true;
             StatusText = "Running";
             StatusDetail = game?.Title ?? "Xbox dashboard";
-            FrameBitmap = null;
-            HasFrame = false;
+            ResetFrame();
             AddLog(LogLevel.Info, game is null
                 ? "Powering on the console."
                 : "Launching " + game.Title + ".");
@@ -652,8 +658,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                                               or XemuConfigurationException)
         {
             IsRunning = false;
-            HasFrame = false;
-            FrameBitmap = null;
+            ResetFrame();
             StatusText = "Idle";
             StatusDetail = "Power-on failed";
             AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
@@ -804,6 +809,30 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnHasFrameChanged(bool value)
+    {
+        OnPropertyChanged(nameof(DisplayCaption));
+        OnPropertyChanged(nameof(HasDisplayCaption));
+    }
+
+    /// <summary>
+    /// Forgets the presented frame, including its size, so the next power-on
+    /// never shows the previous session's caption.
+    /// </summary>
+    private void ResetFrame()
+    {
+        FrameBitmap = null;
+        HasFrame = false;
+        if (_frameWidth != 0 || _frameHeight != 0)
+        {
+            _frameWidth = 0;
+            _frameHeight = 0;
+            OnPropertyChanged(nameof(DisplayCaption));
+            OnPropertyChanged(nameof(HasDisplayCaption));
+        }
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnSelectedSaveSlotChanged(int value)
     {
         OnPropertyChanged(nameof(QuickSaveHeader));
@@ -903,8 +932,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Dispatcher.UIThread.Post(() =>
         {
             IsRunning = false;
-            HasFrame = false;
-            FrameBitmap = null;
+            ResetFrame();
             _saveStates = null;
             _saveStatesNeedRefresh = false;
             OnPropertyChanged(nameof(HasSaveStates));
@@ -938,13 +966,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         if (IsRunning && !_core.IsRunning)
         {
             IsRunning = false;
-            HasFrame = false;
+            ResetFrame();
             return;
         }
 
         if (IsRunning)
         {
             HasFrame = _core.IsEmbedded || HasFrame;
+        }
+        else if (HasFrame)
+        {
+            ResetFrame();
         }
     }
 
@@ -997,6 +1029,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         int width = (int)packet.Width;
         int height = (int)packet.Height;
         int rowBytes = width * 4;
+        if (_frameWidth != width || _frameHeight != height)
+        {
+            _frameWidth = width;
+            _frameHeight = height;
+            OnPropertyChanged(nameof(DisplayCaption));
+            OnPropertyChanged(nameof(HasDisplayCaption));
+        }
         for (int index = 0; index < packet.Bgra.Length; index += 4)
         {
             packet.Bgra[index + 3] = 255;

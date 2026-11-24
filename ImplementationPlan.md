@@ -116,9 +116,14 @@ The previous 6,695-line plan for the managed C# emulator is archived at
 
 ## 3. Missing - shell and UX
 
-- [ ] **U1. Caption from the real frame.** `DisplayCaption` hardcodes
+- [x] **U1. Caption from the real frame.** `DisplayCaption` hardcodes
       `640 x 480` while the sink publishes 1280x960 frames.
       **Done when:** the caption reads the presented frame size.
+      **Done (2026-11-24):** `PresentFrame` records the packet size and
+      `DisplayCaptionText.Describe` formats it (`DisplayCaptionTextTests`, 7
+      cases); the caption is an overlay on the picture and is hidden until a
+      frame exists. UI Automation on the running shell reads
+      `1280 x 960 - OpenGL` (was the hardcoded `640 x 480 - OpenGL`).
 
 - [ ] **U2. Window geometry persisted.** The shell reopens at its default size;
       only the core's `last_width/last_height` are written.
