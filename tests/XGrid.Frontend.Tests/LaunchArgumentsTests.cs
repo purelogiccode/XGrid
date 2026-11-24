@@ -122,6 +122,35 @@ public sealed class LaunchArgumentsTests
     }
 
     [Fact]
+    public void Parse_BenchmarkImpliesHeadlessAndDefaultsToAFixedFrameCount()
+    {
+        LaunchArguments options = LaunchArguments.Parse(["--benchmark"]);
+
+        Assert.True(options.Benchmark);
+        Assert.True(options.Headless);
+        Assert.Equal(LaunchArguments.DefaultBenchmarkFrames, options.Frames);
+        Assert.Null(options.Seconds);
+    }
+
+    [Fact]
+    public void Parse_BenchmarkHonorsAnExplicitLimit()
+    {
+        LaunchArguments seconds = LaunchArguments.Parse(["--benchmark", "--seconds", "30"]);
+        LaunchArguments frames = LaunchArguments.Parse(["--benchmark", "--frames", "120"]);
+
+        Assert.Equal(30, seconds.Seconds);
+        Assert.Null(seconds.Frames);
+        Assert.Equal(120, frames.Frames);
+        Assert.Null(frames.Seconds);
+    }
+
+    [Fact]
+    public void Usage_DocumentsTheBenchmarkSwitch()
+    {
+        Assert.Contains("--benchmark", LaunchArguments.Usage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parse_StopsAtTheEndOfOptionsMarker()
     {
         LaunchArguments options = LaunchArguments.Parse(["--headless", "--", "--not-a-disc.iso", "-f"]);
