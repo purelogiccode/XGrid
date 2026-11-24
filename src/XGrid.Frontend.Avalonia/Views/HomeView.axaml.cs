@@ -10,6 +10,8 @@ namespace XGrid.Frontend.Avalonia.Views;
 /// <summary>Console view: the game picture, the transport strip and the core display.</summary>
 public partial class HomeView : UserControl
 {
+    private MainWindowViewModel? _shell;
+
     /// <summary>Creates the view and wires the native core display.</summary>
     public HomeView()
     {
@@ -22,20 +24,36 @@ public partial class HomeView : UserControl
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (DataContext is HomeViewModel { Shell: { } shell })
+        if (_shell is not null)
         {
-            shell.PropertyChanged += OnShellPropertyChanged;
-            ApplySampling(shell);
+            _shell.PropertyChanged -= OnShellPropertyChanged;
+            _shell.FramePresented -= OnFramePresented;
         }
+
+        _shell = DataContext is HomeViewModel { Shell: { } shell } ? shell : null;
+        if (_shell is null)
+        {
+            return;
+        }
+
+        _shell.PropertyChanged += OnShellPropertyChanged;
+        _shell.FramePresented += OnFramePresented;
+        ApplySampling(_shell);
     }
 
     private void OnShellPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainWindowViewModel.SmoothFrame)
-            && DataContext is HomeViewModel { Shell: { } shell })
+        if (e.PropertyName is nameof(MainWindowViewModel.SmoothFrame) && _shell is not null)
         {
-            ApplySampling(shell);
+            ApplySampling(_shell);
         }
+    }
+
+    private void OnFramePresented(object? sender, EventArgs e)
+    {
+        // The frame bitmap was written in place; the image control caches the
+        // pixels until its visual is invalidated, so ask for a redraw.
+        FrameImage.InvalidateVisual();
     }
 
     private void ApplySampling(MainWindowViewModel shell)
