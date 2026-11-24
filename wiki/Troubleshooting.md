@@ -22,8 +22,9 @@ and failures. The same events are in the Serilog rolling log under
 | --- | --- |
 | Black display | Wait for first frame; check Activity; try the other presentation mode. |
 | No filters | Enable **Present core frames in the shell**. |
+| Second game window | Update XGrid; both hosting modes embed the core window now. |
+| Low FPS | Scale 1, OpenGL, close background work; turn off **Present core frames in the shell** at large window sizes. |
 | Vulkan missing | Build has no Vulkan; use OpenGL. |
-| Low FPS | Scale 1, OpenGL, close background work. |
 
 ## Input
 

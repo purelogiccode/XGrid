@@ -22,10 +22,23 @@ frame sink; the fallback is the core's own window embedded in the Home page.
 Turn **Present core frames in the shell** off.
 
 - The core creates its own window; XGrid finds it and reparents it into the Home
-  page.
+  page, whether the core is in-process or a separate process.
 - The core paints with its own swapchain, so the shell adds no per-frame copy.
+  This is the fastest mode at large window sizes.
+- The core window is created hidden and shown only after the reparent, so it
+  does not flash as a second top-level window.
 - The shell presentation filter does not apply.
 - The shell pad is not forwarded; the core reads its own SDL input.
+
+### Choosing a mode
+
+| Mode | Best for | Trade-offs |
+| --- | --- | --- |
+| Shell frame sink | Shell filters, FPS overlay, uniform screenshots | Copies and scales each frame on the UI thread; high resolutions can cap below 60 fps |
+| Embedded core window | Maximum frame rate and native input | No shell filters or FPS overlay; the core's window is a child of the Home page |
+
+If a game feels slow at a large window size, turn **Present core frames in the
+shell** off and compare. The embedded window is the path upstream xemu uses.
 
 > Both modes require the patched core. A stock xemu executable has neither the
 > display sink nor the input sink.

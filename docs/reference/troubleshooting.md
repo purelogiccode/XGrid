@@ -40,6 +40,8 @@ message. See [Logging and diagnostics](../guides/diagnostics.md).
 | Frozen picture | Core stopped or UI stalled. | Check status; stop and power on again. |
 | Upside-down picture | Should not occur in current releases. | Report it with the renderer and a screenshot. |
 | No filters | Shell presentation is off. | Enable **Present core frames in the shell**. |
+| A second game window appears | An older build could not embed the in-process core's window. | Update XGrid; both hosting modes embed the core window now. |
+| Low frame rate at a large window | The shell frame sink copies and scales every frame on the UI thread. | Turn **Present core frames in the shell** off to use the core's native window, or lower the window size. |
 | Vulkan missing | Core build has no Vulkan. | Use OpenGL; the settings hint explains why. |
 | Very low frame rate | High internal resolution scale, heavy title, or CPU load. | Set scale to 1, try OpenGL, close background work. |
 | Headless run publishes no frames | The binary is not the XGrid core, or the renderer cannot render. | Point `--core` at the XGrid build; try `--renderer OPENGL`. See [Headless runs](../guides/headless.md). |
