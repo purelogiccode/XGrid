@@ -9,7 +9,7 @@ namespace XGrid.Core.Xemu;
 /// input path that works while the shell owns presentation (no SDL window).
 /// </summary>
 /// <remarks>
-/// Layout is defined in <c>native/xgrid-core/input/xgrid-input.h</c>: magic,
+/// Layout is defined in <c>xemu/xgrid-core/input/xgrid-input.h</c>: magic,
 /// xemu's XID button mask, four stick axes, two triggers and a sequence word.
 /// </remarks>
 public sealed class XemuInputSink : IDisposable

@@ -12,8 +12,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
 $root = Split-Path -Parent $PSScriptRoot
-$core = Join-Path $root 'native/xemu/dist/xemu.exe'
-if (-not (Test-Path $core)) { throw "Missing core: $core" }
+$core = Join-Path $root 'xemu/dist/xemu.exe'
+if (-not (Test-Path $core)) { throw "Missing core: $core (build it with scripts/build-native-xemu.ps1)" }
 $fw = Join-Path $root 'data/xemu'
 $dir = Join-Path $root 'wt-data/display-sink'
 New-Item -ItemType Directory -Force $dir | Out-Null
@@ -51,7 +51,7 @@ dvd_path = '$Disc'
 "@
 $configPath = Join-Path $dir 'xemu.toml'
 Set-Content $configPath $config -NoNewline
-Get-ChildItem (Join-Path $root 'native/xemu/dist') -Filter *.dll | ForEach-Object {
+Get-ChildItem (Join-Path $root 'xemu/dist') -Filter *.dll | ForEach-Object {
     Copy-Item $_.FullName $dir -Force
 }
 Copy-Item $core (Join-Path $dir 'xemu.exe') -Force
@@ -78,10 +78,11 @@ function Read-SinkFrame([string]$name, [string]$path) {
             $rect = New-Object System.Drawing.Rectangle(0, 0, [int]$width, [int]$height)
             $data = $bitmap.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
             try {
-                # glReadPixels is bottom-up; copy rows in reverse.
+                # The sink publishes top-down rows (the core reverses
+                # glReadPixels' bottom-up order), so the copy is straight.
                 for ($y = 0; $y -lt $height; $y++) {
                     $dst = [IntPtr]::Add($data.Scan0, $y * $data.Stride)
-                    [System.Runtime.InteropServices.Marshal]::Copy($pixels, [int](($height - 1 - $y) * $stride), $dst, [int]($width * 4))
+                    [System.Runtime.InteropServices.Marshal]::Copy($pixels, [int]($y * $stride), $dst, [int]($width * 4))
                 }
             } finally {
                 $bitmap.UnlockBits($data)

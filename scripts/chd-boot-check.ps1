@@ -10,8 +10,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
 $root = Split-Path -Parent $PSScriptRoot
-$core = Join-Path $root 'native/xemu/dist/xemu.exe'
-if (-not (Test-Path $core)) { throw "Missing core: $core" }
+$core = Join-Path $root 'xemu/dist/xemu.exe'
+if (-not (Test-Path $core)) { throw "Missing core: $core (build it with scripts/build-native-xemu.ps1)" }
 $fw = Join-Path $root 'data/xemu'
 $dir = Join-Path $root 'wt-data/chd-boot'
 New-Item -ItemType Directory -Force $dir | Out-Null
@@ -49,7 +49,7 @@ dvd_path = '$Disc'
 "@
 $configPath = Join-Path $dir 'xemu.toml'
 Set-Content $configPath $config -NoNewline
-Get-ChildItem (Join-Path $root 'native/xemu/dist') -Filter *.dll | ForEach-Object {
+Get-ChildItem (Join-Path $root 'xemu/dist') -Filter *.dll | ForEach-Object {
     Copy-Item $_.FullName $dir -Force
 }
 Copy-Item $core (Join-Path $dir 'xemu.exe') -Force
