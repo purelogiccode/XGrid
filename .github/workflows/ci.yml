@@ -51,7 +51,9 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "11.0.x"
-          cache: true
+          # The Windows runner's tar cannot archive the cache (every run ended
+          # with a save-failure annotation); its restore is already a minute.
+          cache: ${{ matrix.os == 'ubuntu-latest' }}
           cache-dependency-path: |
             Directory.Packages.props
             **/*.csproj
