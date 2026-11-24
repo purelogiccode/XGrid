@@ -29,6 +29,7 @@ files are recorded in `xemu/xemu-patches/`.
 | libchdr | BSD-3-Clause | CHD decoding. |
 | Avalonia | MIT | Desktop UI framework. |
 | CommunityToolkit.Mvvm | MIT | MVVM helpers. |
+| Serilog and its console/file/debug sinks | Apache-2.0 | Structured diagnostic logging. |
 | Silk.NET.OpenGL | MIT | Managed OpenGL bindings in the oracle. |
 | XISOSharp | MIT | XDVDFS reader adapter. |
 | CHDSharp | MIT | Managed CHD reader in the oracle. |
@@ -43,7 +44,8 @@ The Windows frontend archive redistributes the core's runtime DLLs. Some of them
 are LGPL-3.0-or-later (`libidn2`, `libunistring`). Because XGrid's own code is
 GPL-2.0-or-later, the combined distribution is made under GPL-3.0-or-later where
 those libraries are included; the GPL-2.0-only xemu/QEMU files are used under
-GPL-2.0, which that combination permits.
+GPL-2.0, which that combination permits. Serilog and its sinks are Apache-2.0,
+which is compatible with the same GPL-3.0-or-later combination.
 
 ## Linux core package
 

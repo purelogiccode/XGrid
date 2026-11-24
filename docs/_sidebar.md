@@ -13,6 +13,7 @@
   - [Input](guides/input.md)
   - [Audio](guides/audio.md)
   - [Headless and CLI](guides/headless.md)
+  - [Logging and diagnostics](guides/diagnostics.md)
   - [Save states](guides/save-states.md)
   - [Media formats](guides/media.md)
 

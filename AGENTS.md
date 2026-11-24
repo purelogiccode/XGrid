@@ -54,6 +54,7 @@ Warnings are errors; nullable is enabled; implicit usings are disabled.
 | --- | --- |
 | `src/XGrid.Frontend.Avalonia/` | Avalonia shell. |
 | `src/XGrid.Core.Xemu/` | Launch planning, hosting, sinks, save-state wrapper. |
+| `src/XGrid.Diagnostics/` | Serilog, bug reports, usage statistics and update checks. |
 | `src/XGrid.Input/` | Pad model and mapping. |
 | `src/XGrid.Xbe/`, `src/XGrid.XboxFs/` | XBE/FATX/XDVDFS readers. |
 | `xemu/xgrid-core/` | XGrid native additions. |

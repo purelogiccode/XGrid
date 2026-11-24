@@ -97,6 +97,14 @@ larger share of its wall time in the boot path.
 The folder is created when it does not exist. A summary write failure is
 reported and turns the process exit code into `1`.
 
+## Diagnostics
+
+A headless run writes the same Serilog rolling log as the shell and sends one
+best-effort usage hit at launch. Warnings and errors still reach the bug-report
+queue. The console report and the JSON summary are the stable machine-readable
+output; the log file has the exception and core details. See
+[Logging and diagnostics](diagnostics.md).
+
 ## Exit codes
 
 | Code | Meaning |

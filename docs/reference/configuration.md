@@ -176,6 +176,15 @@ means “unknown”; the shell keeps the configured choice and the core may fall
 | `XGRID_XEMU_CORE` | Override the core executable path. |
 | `XGRID_DISPLAY_SHM` | Display sink name (set by the shell for a separate core process; named file mapping on Windows, POSIX shared memory on Unix). |
 | `XGRID_INPUT_SHM` | Input sink name (set by the shell for the separate process on Windows). |
+| `XGRID_LOG_DIRECTORY` | Log folder (default: `XGrid/logs` under the per-user local application data). |
+| `XGRID_LOG_LEVEL` | Minimum Serilog level: `Verbose`, `Debug`, `Information`, `Warning`, `Error`, `Fatal`. |
+| `XGRID_FRONTEND_TRACE` | `1` enables debug-level frontend and native-surface diagnostics. |
+| `XGRID_DISABLE_BUG_REPORTS` | `1` stops forwarding warnings and errors to the bug-report API. |
+| `XGRID_DISABLE_STATISTICS` | `1` stops the startup usage hit. |
+| `XGRID_DISABLE_UPDATE_CHECK` | `1` stops the GitHub release check. |
+| `XGRID_GITHUB_TOKEN` | Token used by the release check for a private repository. |
+| `XGRID_BUGREPORT_API_KEY` | Override the bug-report API key. |
+| `XGRID_STATS_API_KEY` | Override the statistics API key. |
 
 ## Save states
 

@@ -14,6 +14,11 @@ disc, audio backend and every failure the shell sees.
 Use **File → Open Config Folder** to reach `settings.json` and the generated
 `xemu.toml`. In separate-process mode, `xemu/xemu.log` has the core's own log.
 
+Serilog writes the shell's rolling log to `XGrid/logs` under the per-user local
+application-data folder (on Windows, `%LOCALAPPDATA%\XGrid\logs`). The file has
+the full exception and stack trace even when **Activity** only shows the
+message. See [Logging and diagnostics](../guides/diagnostics.md).
+
 ## Power-on failures
 
 | Message | Cause | Fix |
@@ -100,7 +105,7 @@ Include:
 
 - XGrid version and platform;
 - renderer and core hosting mode;
-- the Activity log lines around the failure;
+- the Activity log lines and the matching `xgrid-YYYYMMDD.log` file around the failure;
 - the image format (ISO/CHD/ZAR);
 - whether the same title works in another emulator or in xemu 0.8.139.
 

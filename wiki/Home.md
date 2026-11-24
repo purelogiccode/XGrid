@@ -18,6 +18,7 @@ save states, display/input plumbing, screenshots and packaging.
 | [Input](Input) | Keyboard defaults, XInput, dead zones. |
 | [Audio](Audio) | Backends, DSP, HRTF and WAV capture. |
 | [Headless and CLI](Headless) | Settings overrides, headless runs and JSON reports. |
+| [Logging and diagnostics](Diagnostics) | Serilog logs, bug reports, statistics and updates. |
 | [Save states](Save-States) | Four slots, F6/F7 and the in-process requirement. |
 | [Media formats](Media-Formats) | ISO, CHD, ZAR and XBE behavior. |
 | [Troubleshooting](Troubleshooting) | Common failures and fixes. |
@@ -33,6 +34,7 @@ save states, display/input plumbing, screenshots and packaging.
 - **Hosting:** in-process `xgrid_core.dll` on Windows; separate process on Linux and as a fallback.
 - **Media:** ISO/XISO, compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.
 - **Automation:** command-line settings overrides and headless runs with JSON reports.
+- **Diagnostics:** Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check.
 - **Platform:** Windows x64 has the full shell integration; Linux x64 ships the
   standalone core in its own window; macOS ships the shell with an external core.
 

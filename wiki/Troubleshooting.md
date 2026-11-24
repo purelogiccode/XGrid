@@ -1,7 +1,9 @@
 # Troubleshooting
 
 Start with **Activity**. It records the launch plan, renderer, disc, audio backend
-and failures.
+and failures. The same events are in the Serilog rolling log under
+`XGrid/logs` in the per-user local application-data folder; see
+[Logging and diagnostics](Diagnostics).
 
 ## Power-on
 

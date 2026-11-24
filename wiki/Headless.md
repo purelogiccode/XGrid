@@ -75,5 +75,8 @@ at shutdown, so benchmark jobs should use a copy of the image. Off-screen
 rendering still needs a working OpenGL context; on a Linux server without a
 display, run it under Xvfb.
 
+The run also writes the Serilog rolling log and sends one best-effort usage hit.
+See [Logging and diagnostics](Diagnostics).
+
 Full details: [Headless runs](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/headless.md)
 and [Configuration](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/configuration.md).

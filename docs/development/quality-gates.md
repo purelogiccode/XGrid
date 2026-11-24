@@ -14,8 +14,13 @@ dotnet format XGrid.sln --no-restore --verify-no-changes
 
 - **Warnings are errors** (`TreatWarningsAsErrors`).
 - Nullable is enabled; implicit usings are disabled.
+- XML documentation is required for every public type and member, including the
+  Avalonia shell; missing comments fail the build.
 - The build is deterministic.
 - The test suite needs no firmware or game data.
+- Diagnostic logging goes through Serilog, never `Console.WriteLine` or
+  `Debug.WriteLine`, and caught exceptions are logged before they are handled.
+- Every interactive control in the Avalonia views has a tooltip.
 
 The convenience scripts wrap the same commands:
 

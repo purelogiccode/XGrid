@@ -6,6 +6,7 @@ Directory.Build.props         shared build settings (warnings as errors, version
 src/
   XGrid.Frontend.Avalonia/    the desktop shell
   XGrid.Core.Xemu/            shell ↔ core integration
+  XGrid.Diagnostics/          Serilog, bug reports, statistics and update checks
   XGrid.Input/                pad model and mapping
   XGrid.Xbe/                  XBE header/certificate reader
   XGrid.XboxFs/               FATX/XDVDFS readers
@@ -40,6 +41,8 @@ data/                         local firmware/media (git-ignored)
 - `src/XGrid.Frontend.Avalonia` — the shell.
 - `src/XGrid.Core.Xemu` — launch planning, generated configuration, process and
   in-process hosting, display/input sinks, save-state wrapper.
+- `src/XGrid.Diagnostics` — Serilog configuration, the warning/error bug-report
+  queue, the startup statistics call and the GitHub update check.
 - `xemu/` — the native core tree.
 - `scripts/build-native-xemu.ps1` — core build (Windows/MSYS2).
 - `scripts/build-native-xemu.sh` — core build (Linux).
