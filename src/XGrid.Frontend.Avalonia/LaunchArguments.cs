@@ -536,6 +536,20 @@ public sealed record LaunchArguments
                 return false;
             }
 
+            // Do not swallow the next switch as this switch's value. A
+            // recognized option with a missing value is an error, and the
+            // following option still has to be applied.
+            string next = args[index + 1];
+            if (next.StartsWith("--", StringComparison.Ordinal)
+                || (next.Length == 2
+                    && next[0] == '-'
+                    && char.IsLetter(next[1])))
+            {
+                value = string.Empty;
+                Errors.Add($"{name} needs a value.");
+                return false;
+            }
+
             value = args[++index];
             return true;
         }

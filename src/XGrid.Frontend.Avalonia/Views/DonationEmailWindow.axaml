@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="XGrid.Frontend.Avalonia.Views.DonationEmailWindow"
+        Title="Donation status"
+        Width="520"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource XgBackgroundBrush}">
+  <StackPanel Margin="24" Spacing="12">
+    <StackPanel Spacing="4">
+      <TextBlock Text="Support XGrid" Classes="h2" />
+      <TextBlock Classes="body"
+                 TextWrapping="Wrap"
+                 Text="XGrid is free donationware. Enter the email address you used on purelogiccode.com so the app can check whether a donation was recognized. The address is stored only on this computer." />
+    </StackPanel>
+
+    <TextBlock Text="Donation email" Classes="label" />
+    <TextBox x:Name="EmailBox"
+             PlaceholderText="Email address"
+             MaxLength="254"
+             ToolTip.Tip="Email address used on purelogiccode.com for your donation" />
+    <TextBlock x:Name="ValidationText"
+               IsVisible="False"
+               Foreground="{DynamicResource XgWarningBrush}"
+               FontSize="11"
+               Text="Please enter a valid email address."
+               ToolTip.Tip="Shown when the email address is not valid" />
+
+    <TextBlock Classes="hint"
+               TextWrapping="Wrap"
+               Text="The email is sent only when checking donation status. You can change or clear it later from the donation banner." />
+
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+      <TextBlock Classes="hint"
+                 VerticalAlignment="Center"
+                 Text="Donations are optional and never unlock additional features."
+                 TextWrapping="Wrap" />
+      <Button Grid.Column="1" Classes="ghost" Content="Cancel" Click="OnCancel" IsCancel="True"
+              ToolTip.Tip="Close without checking a donation" />
+      <Button Grid.Column="2" Classes="primary" Content="Check donation" Click="OnCheck" IsDefault="True"
+              ToolTip.Tip="Check this email for a completed XGrid donation" />
+    </Grid>
+  </StackPanel>
+</Window>

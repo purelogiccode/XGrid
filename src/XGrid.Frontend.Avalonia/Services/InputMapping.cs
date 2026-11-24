@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Avalonia.Input;
 using XGrid.Frontend.Avalonia.Models;
@@ -12,6 +13,7 @@ public static class InputMapping
     /// <param name="settings">Input settings.</param>
     public static GamepadMappingOptions Create(InputSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
         var bindings = new Dictionary<PadAction, GamepadSource>();
         foreach (PadAction action in PadActions.All)
         {
@@ -44,6 +46,7 @@ public static class InputMapping
     /// <param name="action">Mapped action.</param>
     public static bool TryMapKey(InputSettings settings, Key key, out PadAction action)
     {
+        ArgumentNullException.ThrowIfNull(settings);
         if (KeyboardKeys.IsReserved(key))
         {
             action = default;
@@ -77,6 +80,8 @@ public static class InputMapping
     /// <param name="pressed">Pressed keys.</param>
     public static HostPad MergeKeyboard(HostPad gamepad, InputSettings settings, IEnumerable<Key> pressed)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(pressed);
         ushort buttons = gamepad.Buttons;
         var analog = (byte[])gamepad.Analog.Clone();
         foreach (Key key in pressed)

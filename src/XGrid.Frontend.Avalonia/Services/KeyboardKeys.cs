@@ -60,6 +60,18 @@ public static class KeyboardKeys
             return true;
         }
 
+        // Enum.TryParse also accepts a numeric string, including values that
+        // are not defined by the Avalonia key enum. Stored bindings are always
+        // names, so reject numbers instead of forwarding a bogus key.
+        if (int.TryParse(
+                name,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out _))
+        {
+            return false;
+        }
+
         return Enum.TryParse(name, ignoreCase: true, out key)
             && key != Key.None
             && Enum.IsDefined(key);
@@ -88,7 +100,9 @@ public static class KeyboardKeys
     /// <param name="text">Stored key list.</param>
     public static string Describe(string? text)
     {
-        IReadOnlyList<Key> keys = ParseList(text);
+        List<Key> keys = ParseList(text)
+            .Where(key => !Reserved.Contains(key))
+            .ToList();
         return keys.Count == 0 ? "Unbound" : string.Join(", ", keys.Select(Format));
     }
 }
