@@ -10,16 +10,23 @@ namespace XGrid.Frontend.Avalonia;
 public class App : Application
 {
     /// <summary>
-    /// Gets or sets a value indicating whether the console should power on as
-    /// soon as the shell is ready (<c>--autostart</c> on the command line).
+    /// Gets or sets the switches the shell was started with. The command line
+    /// is a per-session override: it is applied to each launch and never saved
+    /// back into <c>settings.json</c>.
     /// </summary>
-    public static bool Autostart { get; set; }
+    public static LaunchArguments LaunchOptions { get; set; } = new();
 
     /// <summary>
-    /// Gets or sets a value indicating whether the shell should enter
-    /// fullscreen after it opens (<c>-fullscreen</c> or <c>-f</c>).
+    /// Gets a value indicating whether the console should power on as soon as
+    /// the shell is ready (<c>--autostart</c> or a disc on the command line).
     /// </summary>
-    public static bool Fullscreen { get; set; }
+    public static bool Autostart => LaunchOptions.Autostart;
+
+    /// <summary>
+    /// Gets a value indicating whether the shell should enter fullscreen after
+    /// it opens (<c>-fullscreen</c> or <c>-f</c>).
+    /// </summary>
+    public static bool Fullscreen => LaunchOptions.Fullscreen;
 
     public override void Initialize()
     {
@@ -45,7 +52,7 @@ public class App : Application
             if (Autostart)
             {
                 Dispatcher.UIThread.Post(
-                    () => viewModel.TogglePowerCommand.Execute(null),
+                    viewModel.StartFromCommandLine,
                     DispatcherPriority.Background);
             }
         }

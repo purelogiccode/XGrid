@@ -17,6 +17,7 @@ save states, display/input plumbing, screenshots and packaging.
 | [Display and filters](Display-and-Filters) | Frame sink, embedded window, filters, fullscreen. |
 | [Input](Input) | Keyboard defaults, XInput, dead zones. |
 | [Audio](Audio) | Backends, DSP, HRTF and WAV capture. |
+| [Headless and CLI](Headless) | Settings overrides, headless runs and JSON reports. |
 | [Save states](Save-States) | Four slots, F6/F7 and the in-process requirement. |
 | [Media formats](Media-Formats) | ISO, CHD, ZAR and XBE behavior. |
 | [Troubleshooting](Troubleshooting) | Common failures and fixes. |
@@ -31,6 +32,7 @@ save states, display/input plumbing, screenshots and packaging.
 - **Shell:** Home, Library, Settings, Activity, About.
 - **Hosting:** in-process `xgrid_core.dll` on Windows; separate process on Linux and as a fallback.
 - **Media:** ISO/XISO, compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.
+- **Automation:** command-line settings overrides and headless runs with JSON reports.
 - **Platform:** Windows x64 has the full shell integration; Linux x64 ships the
   standalone core in its own window; macOS ships the shell with an external core.
 

@@ -22,7 +22,7 @@ Use **File → Open Config Folder** to reach `settings.json` and the generated
 | “The emulator binary was not found.” | The packaged core is missing and no path is set. | Set **Emulator binary**, set `XGRID_XEMU_CORE`, or build `xemu/dist`. |
 | “The in-process core library is not available; starting a separate core process.” | `xgrid_core.dll` is missing or incompatible. | Build the core, or use separate process deliberately. |
 | “Power-on failed: …” | Validation or process start error. | Read the full message and the Activity log. |
-| The core opens its own window | Linux/macOS separate-process hosting; the shell frame sink is Windows-only. | Use the core window; window embedding is Windows-only. |
+| The core opens its own window | Linux/macOS separate-process hosting; the normal shell frame sink is Windows-only. | Use the core window; headless runs use the POSIX sink instead. |
 | Save-state entries disabled | Separate-process hosting, including Linux. | Switch to in-process on Windows and power-cycle. |
 | A core crash closes the whole app | In-process hosting shares the shell's process. | Switch **Core hosting** to **Separate process** for isolation. |
 
@@ -37,6 +37,8 @@ Use **File → Open Config Folder** to reach `settings.json` and the generated
 | No filters | Shell presentation is off. | Enable **Present core frames in the shell**. |
 | Vulkan missing | Core build has no Vulkan. | Use OpenGL; the settings hint explains why. |
 | Very low frame rate | High internal resolution scale, heavy title, or CPU load. | Set scale to 1, try OpenGL, close background work. |
+| Headless run publishes no frames | The binary is not the XGrid core, or the renderer cannot render. | Point `--core` at the XGrid build; try `--renderer OPENGL`. See [Headless runs](../guides/headless.md). |
+| Headless run exits `2` | A switch, firmware path or media path was rejected. | Read stderr; run `--help` for the accepted switches. |
 
 ## Input problems
 

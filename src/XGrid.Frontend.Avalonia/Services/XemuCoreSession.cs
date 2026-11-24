@@ -28,6 +28,7 @@ public sealed class XemuCoreStoppedEventArgs(bool faulted, string message, int e
 public sealed class XemuCoreSession : IDisposable
 {
     private readonly Lock _gate = new();
+    private readonly bool _readFrames;
     private IXemuCoreRuntime? _runtime;
     private XemuWindowEmbedder? _embedder;
     private XemuDisplaySink? _sink;
@@ -42,6 +43,22 @@ public sealed class XemuCoreSession : IDisposable
     private long _stopDeadline;
     private bool _stopping;
     private bool _disposed;
+
+    /// <summary>Creates a session that reads and raises the core's frames.</summary>
+    public XemuCoreSession()
+        : this(readFrames: true)
+    {
+    }
+
+    /// <summary>Creates a session, optionally without the frame-reader sink.</summary>
+    /// <param name="readFrames">
+    /// True to create the display sink and raise <see cref="FrameReady"/>;
+    /// false for a headless run that only needs the session lifecycle.
+    /// </param>
+    public XemuCoreSession(bool readFrames)
+    {
+        _readFrames = readFrames;
+    }
 
     /// <summary>Raised for each diagnostic line the shell should log.</summary>
     public event EventHandler<string>? Log;
@@ -174,13 +191,15 @@ public sealed class XemuCoreSession : IDisposable
 
         // Create the sinks first: an in-process core starts immediately, so a
         // section created after it would miss the first frames and the first pad.
-        if (hostSinks && !string.IsNullOrWhiteSpace(launch.DisplaySinkName))
+        // The name is authoritative: headless runs request a sink on hosts where
+        // the shell's normal presentation path is not offered.
+        if (_readFrames && !string.IsNullOrWhiteSpace(launch.DisplaySinkName))
         {
             _sink = new XemuDisplaySink(launch.DisplaySinkName);
             _sinkTimer = new Timer(_ => PollSink(), null, 8, 8);
         }
 
-        if (hostSinks && !string.IsNullOrWhiteSpace(launch.InputSinkName))
+        if (XemuInputSink.IsSupported && !string.IsNullOrWhiteSpace(launch.InputSinkName))
         {
             _input = new XemuInputSink(launch.InputSinkName);
             // Publish neutral states immediately so the core never reads garbage.
@@ -212,9 +231,11 @@ public sealed class XemuCoreSession : IDisposable
             _stopping = false;
         }
 
-        if (_input is not null)
+        if (!string.IsNullOrWhiteSpace(launch.DisplaySinkName))
         {
-            Log?.Invoke(this, "Emulator frames go to the shell surface.");
+            Log?.Invoke(this, _readFrames
+                ? "Emulator frames go to the shell surface."
+                : "Emulator renders off-screen into the display sink.");
         }
         else if (!hostSinks)
         {

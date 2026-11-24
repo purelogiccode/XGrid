@@ -38,6 +38,10 @@ picture, filters and input. The shell keeps the library, settings, log and
 screenshots. The macOS archives contain the shell only; point them at an
 external xemu build.
 
+Headless runs are the exception: `--headless` uses a POSIX shared-memory display
+sink on Linux and macOS, so the core still renders off-screen with no visible
+window. See [Headless runs](headless.md).
+
 ## Shell presentation filters
 
 | Filter | Effect |

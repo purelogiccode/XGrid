@@ -6,7 +6,9 @@
  * When XGRID_DISPLAY_SHM is set, the core publishes every presented frame into
  * a named shared section instead of (or as well as) showing its own window. The
  * shell owns presentation from there: scaling, filters, OSD and screenshots are
- * all frontend work.
+ * all frontend work. Windows uses a named file mapping; other hosts use a POSIX
+ * shared-memory object. Headless runs always request a sink so the core still
+ * renders off-screen with no visible window.
  *
  * Layout (little endian):
  *   uint32 magic   'XGDS'

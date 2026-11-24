@@ -27,6 +27,7 @@ namespace XGrid.Frontend.Avalonia.ViewModels;
 public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly SettingsStore _settingsStore;
+    private readonly LaunchArguments _launchOptions;
     private readonly XemuCoreSession _core;
     private readonly DispatcherTimer _uiTimer;
     private readonly DispatcherTimer _frameTimer;
@@ -120,6 +121,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private MainWindowViewModel(SettingsStore settingsStore)
     {
         _settingsStore = settingsStore;
+        _launchOptions = App.LaunchOptions;
         Config = settingsStore.Load();
         _firstRunPending = !settingsStore.ExistedAtLoad && !App.Autostart;
         _gamepadOptions = InputMapping.Create(Config.Input);
@@ -183,8 +185,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets the settings file path shown in the UI.</summary>
     public string SettingsPath => _settingsStore.FilePath;
 
-    /// <summary>Gets a value indicating whether a BIOS image is configured.</summary>
-    public bool IsBiosReady => Config.IsBiosReady;
+    /// <summary>Gets a value indicating whether a BIOS image is available for this session.</summary>
+    public bool IsBiosReady => IsBiosReadyForSession;
 
     /// <summary>Gets a value indicating whether the native core display should be shown.</summary>
     public bool ShowCoreDisplay => IsRunning && !_core.IsFrameSinkActive;
@@ -205,14 +207,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsAboutPage => SelectedNavigationItem?.Kind == PageKind.About;
 
     /// <summary>Gets a value indicating whether firmware setup is needed.</summary>
-    public bool NeedsSetup => !Config.IsBiosReady;
+    public bool NeedsSetup => !IsBiosReadyForSession;
 
     /// <summary>Gets the supporting copy shown on the home page.</summary>
     public string HomeDetail
     {
         get
         {
-            if (!Config.IsBiosReady)
+            if (!IsBiosReadyForSession)
             {
                 return "Add your Xbox BIOS image to bring the emulated console to life.";
             }
@@ -359,9 +361,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         RefreshCoreCapabilities();
         AddLog(LogLevel.Info, "XGrid frontend ready - " + RuntimeInformation.FrameworkDescription);
         AddLog(
-            Config.IsBiosReady ? LogLevel.Info : LogLevel.Warning,
-            Config.IsBiosReady
-                ? "Firmware configured: " + Config.BiosPath
+            IsBiosReadyForSession ? LogLevel.Info : LogLevel.Warning,
+            IsBiosReadyForSession
+                ? "Firmware configured: " + (_launchOptions.BiosPath ?? Config.BiosPath)
                 : "Firmware is not configured yet. Open Settings and choose a BIOS image.");
 
         _uiTimer.Start();
@@ -441,8 +443,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         RefreshCoreCapabilities();
         Settings.LoadFrom(Config);
         NotifyConfigChanged();
-        AddLog(LogLevel.Info, Config.IsBiosReady
-            ? "First-run setup finished; firmware configured: " + Config.BiosPath
+        AddLog(LogLevel.Info, IsBiosReadyForSession
+            ? "First-run setup finished; firmware configured: " + (_launchOptions.BiosPath ?? Config.BiosPath)
             : "First-run setup finished; add a BIOS image in Settings to power on.");
         if (Config.LibraryFolders.Count > 0)
         {
@@ -756,8 +758,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         string workingDirectory = Path.Combine(SettingsStore.ResolveDirectory(), "xemu");
         EmulatorSettings effective = game is null
-            ? Config
+            ? Config.Clone()
             : Config.WithTitleOverride(game.Path, game.TitleId == 0 ? null : game.TitleId);
+        // Command-line overrides are session-only and win over per-title values.
+        _launchOptions.ApplyTo(effective);
         string? problem = XemuLaunchPlan.DescribeProblem(effective, game?.Path, workingDirectory);
         if (problem is not null)
         {
@@ -1027,10 +1031,49 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Starts the session the command line asked for: the requested disc, or
+    /// the dashboard when only <c>--autostart</c> was given.
+    /// </summary>
+    public void StartFromCommandLine()
+    {
+        if (_launchOptions.DiscPath is { Length: > 0 } path)
+        {
+            GameEntry? entry = GameEntry.FromFile(path);
+            if (entry is null)
+            {
+                AddLog(LogLevel.Error, "The disc image could not be read: " + path);
+                ShowToast("The disc image could not be read.");
+                return;
+            }
+
+            StartGame(entry);
+            return;
+        }
+
+        TogglePowerCommand.Execute(null);
+    }
+
+    /// <summary>Gets a value indicating whether the session has a usable BIOS image.</summary>
+    private bool IsBiosReadyForSession => _launchOptions.BiosPath is { Length: > 0 } path
+        ? File.Exists(path)
+        : Config.IsBiosReady;
+
     /// <summary>Public command: starts a specific disc entry (or the configured disc).</summary>
     [RelayCommand]
     private void StartGame(GameEntry? game)
     {
+        if (game is null && _launchOptions.DiscPath is { Length: > 0 } requested)
+        {
+            game = GameEntry.FromFile(requested);
+            if (game is null)
+            {
+                AddLog(LogLevel.Error, "The disc image could not be read: " + requested);
+                ShowToast("The disc image could not be read.");
+                return;
+            }
+        }
+
         if (game is not null && !game.IsLaunchable)
         {
             ShowToast("Loose XBE files must be wrapped in an ISO or CHD image.");
@@ -1050,7 +1093,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (!Config.IsBiosReady)
+        if (!IsBiosReadyForSession)
         {
             AddLog(LogLevel.Warning, "Power-on refused: no BIOS image is configured.");
             ShowToast("Choose a BIOS image first.");

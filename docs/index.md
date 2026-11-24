@@ -21,6 +21,7 @@ diagnostics, packaging and the documentation you are reading.
 | **Display** | Shell frame sink with nearest, bilinear, scanline and CRT filters; embedded core window mode; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
 | **Quality of life** | Four save-state slots, per-title overrides, 4x fast-forward, local cover art, whole-window screenshots, activity log, accent themes |
+| **Automation** | Command-line settings overrides and headless runs with a JSON report for scripts and benchmarks |
 | **Platform** | Windows x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell with an external core |
 
 ## Why a native core?
@@ -84,6 +85,14 @@ frames to a shared section and the shell presents them with pacing, scaling and
 filters. The same session publishes one 32-byte pad record per Xbox port, so the
 keyboard and XInput mapping for players 1–4 is XGrid's, not the core's.
 
+### Scriptable runs
+
+`--headless` boots the core without a window and still renders off-screen. A
+wall-clock or frame limit, the console summary and an optional JSON report make it
+usable from a CI job or a benchmark script. The same command line can override
+the renderer, scale, filtering, RAM, firmware and disc for one session without
+touching the saved settings. See [Headless and CLI](guides/headless.md).
+
 ## Quick start
 
 1. **Download** the release archive for your platform. The Windows and Linux
@@ -103,7 +112,7 @@ Full details: [Installation](getting-started/installation.md) and
 | Section | Start here |
 | --- | --- |
 | Getting started | [Requirements](getting-started/requirements.md) · [Installation](getting-started/installation.md) · [First boot](getting-started/first-boot.md) |
-| Using XGrid | [Library](guides/library.md) · [Settings](guides/settings.md) · [Display](guides/display.md) · [Input](guides/input.md) · [Audio](guides/audio.md) · [Save states](guides/save-states.md) · [Media](guides/media.md) |
+| Using XGrid | [Library](guides/library.md) · [Settings](guides/settings.md) · [Display](guides/display.md) · [Input](guides/input.md) · [Audio](guides/audio.md) · [Headless and CLI](guides/headless.md) · [Save states](guides/save-states.md) · [Media](guides/media.md) |
 | Reference | [Architecture](reference/architecture.md) · [Configuration](reference/configuration.md) · [Shortcuts](reference/shortcuts.md) · [Compatibility](reference/compatibility.md) · [Troubleshooting](reference/troubleshooting.md) · [FAQ](reference/faq.md) · [Glossary](reference/glossary.md) |
 | Development | [Building](development/building.md) · [Layout](development/repository-layout.md) · [Core](development/core.md) · [Quality gates](development/quality-gates.md) · [Releasing](development/releasing.md) · [Release notes](release-notes/v0.1.0.md) · [Contributing](development/contributing.md) |
 | Legal | [Licensing](legal/licensing.md) · [Porting](legal/porting-policy.md) · [Release licensing](legal/release-licensing.md) · [Source availability](legal/source-availability.md) |

@@ -6,6 +6,7 @@
   * [Display and filters](Display-and-Filters)
   * [Input](Input)
   * [Audio](Audio)
+  * [Headless and CLI](Headless)
   * [Save states](Save-States)
   * [Media formats](Media-Formats)
 * **Help**

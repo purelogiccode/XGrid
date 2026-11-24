@@ -309,9 +309,24 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
     {
         if (XemuWindowEmbedder.IsSupported)
         {
-            if (_window != IntPtr.Zero && Win32Window.IsWindow(_window))
+            // A headless launch never embeds, so the window may not be cached
+            // yet. Find it now: a close request is the core's power-off path,
+            // and skipping it lets the session kill the process instead.
+            IntPtr window = _window;
+            if (window == IntPtr.Zero || !Win32Window.IsWindow(window))
             {
-                _ = Win32Window.PostMessageW(_window, Win32Window.WmClose, IntPtr.Zero, IntPtr.Zero);
+                window = TryFindWindow();
+                if (window == IntPtr.Zero)
+                {
+                    window = XemuWindowLocator.FindAnyWindow(ProcessId);
+                }
+
+                _window = window;
+            }
+
+            if (window != IntPtr.Zero)
+            {
+                _ = Win32Window.PostMessageW(window, Win32Window.WmClose, IntPtr.Zero, IntPtr.Zero);
             }
 
             return;

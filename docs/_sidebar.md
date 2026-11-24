@@ -12,6 +12,7 @@
   - [Display and filters](guides/display.md)
   - [Input](guides/input.md)
   - [Audio](guides/audio.md)
+  - [Headless and CLI](guides/headless.md)
   - [Save states](guides/save-states.md)
   - [Media formats](guides/media.md)
 
