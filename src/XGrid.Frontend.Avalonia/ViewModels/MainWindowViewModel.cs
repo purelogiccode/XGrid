@@ -923,6 +923,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OpenFolder(ScreenshotNaming.Directory(SettingsStore.ResolveDirectory()), "screenshots");
     }
 
+    /// <summary>Public command: opens the folder that holds game cover art.</summary>
+    [RelayCommand]
+    private void OpenCoversFolder()
+    {
+        OpenFolder(CoverArtIndex.DefaultDirectory(), "covers");
+    }
+
     private void OpenFolder(string path, string description)
     {
         try

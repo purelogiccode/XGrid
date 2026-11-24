@@ -1,8 +1,8 @@
 # XGrid frontend (Avalonia)
 
 Cross-platform desktop shell for the maintained xemu core. The same project
-builds for Windows, Linux and macOS, but the bundled emulator core is currently
-Windows-only.
+builds for Windows, Linux and macOS. Windows and Linux release archives bundle
+the core; macOS archives carry the shell only.
 
 ## Run
 
@@ -31,10 +31,13 @@ dotnet build src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Relea
 `XGrid.Core.Xemu` owns the launch plan, generated `xemu.toml`, in-process and
 separate-process hosting, the display/input sinks and the save-state wrapper.
 
-- **In-process** loads `xgrid_core.dll`; frames and input use shared sections.
-- **Separate process** starts `xemu.exe` with the generated configuration.
-- **Frame sink** lets the shell present and filter frames.
-- **Embedded window** lets the core paint with its own swapchain.
+- **In-process** loads `xgrid_core.dll`; frames and input use shared sections
+  (Windows only).
+- **Separate process** starts `xemu.exe` or `xemu` with the generated
+  configuration.
+- **Frame sink** lets the shell present and filter frames (Windows only).
+- **Embedded window** lets the core paint with its own swapchain (Windows only).
+- **Linux** runs the packaged core as a separate process with its own window.
 
 ## Configuration
 

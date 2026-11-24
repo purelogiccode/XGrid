@@ -4,8 +4,8 @@ XGrid exposes **xemu/QEMU snapshots** as four named slots.
 
 ## Requirements
 
-- **In-process core hosting** (**Settings → System → Core hosting**).
-  Separate process disables save states.
+- **In-process core hosting on Windows** (**Settings → System → Core hosting**).
+  Separate process, including the Linux core, disables save states.
 - A running console.
 - A writable HDD image.
 

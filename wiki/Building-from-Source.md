@@ -81,14 +81,16 @@ pwsh -File scripts/package.ps1
 pwsh -File scripts/package-verify.ps1
 ```
 
-The win-x64 frontend archive bundles `core/xemu/`; the Linux/macOS archives are
-shell-only.
+The win-x64 and linux-x64 frontend archives bundle `core/xemu/`; the macOS
+archives are shell-only. To package several RIDs from one host, stage each core
+output in `cores/<rid>/` and pass `-CoreRoot cores`.
 
 ## Linux and macOS
 
-The Linux core can be built from source with `scripts/build-native-xemu.sh`, but
-the release archives still contain the shell only. macOS has no XGrid core build
-script; point `XGRID_XEMU_CORE` or the **Emulator binary** setting at an upstream
-xemu 0.8.139 build for your platform.
+The Linux core can be built from source with `scripts/build-native-xemu.sh`, and
+the linux-x64 release archive carries it under `core/xemu/`. The core runs in its
+own window; shell save states, pause/step and disc swap remain Windows-only.
+macOS has no XGrid core build script; point `XGRID_XEMU_CORE` or the **Emulator
+binary** setting at an upstream xemu 0.8.139 build for your platform.
 
 Full guide: [Building from source](https://github.com/purelogiccode/XGrid/blob/master/docs/development/building.md).

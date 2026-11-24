@@ -2,7 +2,8 @@
 
 ## Requirements
 
-- Windows 10/11 x64 for the packaged emulator.
+- Windows 10/11 x64 or Linux x64 for the packaged emulator. On Linux the core
+  runs in its own window; the Windows shell integration is more complete.
 - An OpenGL-capable GPU with current drivers.
 - Your own legally obtained Xbox firmware:
   - BIOS/flash ROM (256 KB or 512 KB) — required;
@@ -13,10 +14,11 @@
 
 ## Install
 
-1. Download the release archive. The **Windows x64 frontend** archive includes
-   the emulator under `core/xemu/`.
+1. Download the release archive. The **Windows and Linux x64 frontend**
+   archives include the emulator under `core/xemu/`; the macOS archives are
+   shell-only.
 2. Extract it anywhere. The application is portable.
-3. Run `XGrid.Frontend.Avalonia`.
+3. Run `XGrid.Frontend.Avalonia` (`./XGrid.Frontend.Avalonia` on Linux).
 
 Release archives are self-contained; no .NET runtime is needed.
 

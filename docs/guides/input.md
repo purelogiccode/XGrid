@@ -5,7 +5,8 @@ drives **player 1**; an XInput controller can drive any player.
 
 > The shell's remapping and pad forwarding are active when **Present core frames
 > in the shell** is enabled. With the embedded core window, the core reads its
-> own SDL input instead.
+> own SDL input instead. On Linux, where the shell frame sink is unavailable, the
+> core also reads SDL input in its own window.
 
 ## Default keyboard map
 

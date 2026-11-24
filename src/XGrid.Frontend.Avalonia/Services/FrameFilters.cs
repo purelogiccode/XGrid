@@ -75,6 +75,15 @@ public static class FrameFilters
             return;
         }
 
+        // A frame that disagrees with its declared geometry is presented
+        // unfiltered. Half a scanline mask (or a partly applied phosphor
+        // triad) would be worse than no mask at all.
+        long required = (long)width * height * 4;
+        if (bgra.LongLength < required)
+        {
+            return;
+        }
+
         bool phosphor = string.Equals(filter, Crt, StringComparison.Ordinal);
         for (int y = 1; y < height; y += 2)
         {
@@ -82,12 +91,9 @@ public static class FrameFilters
             for (int x = 0; x < width; x++)
             {
                 int i = row + (x * 4);
-                if (i + 2 >= bgra.Length)
-                {
-                    return;
-                }
 
-                // Scanline: every other row keeps about half its light.
+                // Scanline: every other row keeps about half its light. Alpha
+                // is deliberately untouched; the mask is a colour effect.
                 bgra[i] = (byte)(bgra[i] * 3 / 5);
                 bgra[i + 1] = (byte)(bgra[i + 1] * 3 / 5);
                 bgra[i + 2] = (byte)(bgra[i + 2] * 3 / 5);
@@ -107,10 +113,6 @@ public static class FrameFilters
             for (int x = 0; x < width; x++)
             {
                 int i = row + (x * 4);
-                if (i + 2 >= bgra.Length)
-                {
-                    return;
-                }
 
                 switch (x % 3)
                 {

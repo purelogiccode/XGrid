@@ -26,6 +26,7 @@ Useful for portable installs and automated tests.
 <data>/
   settings.json          shell configuration
   screenshots/           F8 captures
+  covers/                local game cover art
   xemu/
     xemu.toml            generated core configuration
     xemu.log             core log (separate-process mode)
@@ -103,8 +104,8 @@ means “unknown”; the shell keeps the configured choice and the core may fall
 | --- | --- |
 | `XGRID_FRONTEND_DATA_DIR` | Override the shell data folder. |
 | `XGRID_XEMU_CORE` | Override the core executable path. |
-| `XGRID_DISPLAY_SHM` | Display sink section name (set by the shell for the separate process). |
-| `XGRID_INPUT_SHM` | Input sink section name (set by the shell for the separate process). |
+| `XGRID_DISPLAY_SHM` | Display sink section name (set by the shell for the separate process on Windows). |
+| `XGRID_INPUT_SHM` | Input sink section name (set by the shell for the separate process on Windows). |
 
 ## Save states
 

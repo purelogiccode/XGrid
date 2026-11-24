@@ -36,26 +36,59 @@ It writes deterministic archives with fixed timestamps, sorted entries, the
 license set, release notes, `VERSION`, per-RID checksums and
 `package-manifest.json`.
 
-### Windows frontend core
+### Frontend core
 
-The `win-x64` frontend archive includes the emulator:
+A frontend archive carries the core when a build for that RID is available:
 
 ```text
+# win-x64
 core/xemu/xemu.exe
 core/xemu/xgrid_core.dll
 core/xemu/xgrid-core.json
 <runtime DLLs>
+
+# linux-x64
+core/xemu/xemu
+core/xemu/xgrid-core.json
+core/xemu/LICENSE.txt
 ```
 
-[Build the core first](building.md):
+[Build the core first](building.md) on its own host:
 
 ```powershell
-pwsh -File scripts/build-native-xemu.ps1
+pwsh -File scripts/build-native-xemu.ps1   # Windows
 ```
 
-`-SkipCore` is a development escape and produces an archive that cannot emulate.
+```bash
+bash scripts/build-native-xemu.sh          # Linux
+```
 
-Linux and macOS frontend archives currently contain the shell only.
+The default lookup is `xemu/dist`, which matches the host's RID. To package
+several RIDs from one host, build each core on its platform and collect the
+outputs in per-RID folders, then pass the parent directory:
+
+```text
+cores/
+  win-x64/       # xemu/dist from Windows
+  linux-x64/     # xemu/dist from Linux
+```
+
+```powershell
+pwsh -File scripts/package.ps1 -CoreRoot cores
+```
+
+The packager refuses a requested `win-x64` or `linux-x64` archive without its
+core. `-SkipCore` is a development escape and produces archives that cannot
+emulate; `package-verify.ps1` accepts that tree only with `-SkipCoreCheck`.
+
+The macOS archives are shell-only: there is no XGrid core build script for
+macOS yet. A flat Mach-O core staged under `cores/osx-x64/` or
+`cores/osx-arm64/` is packaged and verified when supplied.
+
+The packager strips Windows and Linux cores when the packaging host matches
+their platform. A cross-staged or macOS core is packaged as supplied; strip it
+on its own host first if size matters. The gate warns but accepts an unstripped
+core.
 
 ## Verify
 
@@ -72,11 +105,13 @@ The gate checks:
 - license files in every archive;
 - notices coverage for ported files;
 - expected archives for every RID;
-- executable presence and magic;
+- executable presence, magic and Unix execute bits;
 - no symbols or firmware/game data;
 - SHA-256 sums and manifest;
 - the Windows CLI `--version`;
-- the bundled core in the Windows frontend archive.
+- the bundled core for every RID the manifest names, including its runtime
+  libraries and license text where the platform needs them;
+- that a Windows or Linux release tree really contains those cores.
 
 ## Publish
 
@@ -91,8 +126,9 @@ dist/
   package-manifest.json
 ```
 
-The `release.yml` workflow mirrors the same steps when run manually; it also
-generates an SBOM and build provenance.
+The manual `release.yml` workflow publishes shell archives, an SBOM and build
+provenance. The local `scripts/package.ps1` tree is the release artifact because
+it is the path that bundles and verifies the per-platform cores.
 
 ## Licensing checklist
 

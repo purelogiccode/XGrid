@@ -578,7 +578,7 @@
 
                 <StackPanel Spacing="6">
                   <TextBlock Text="Players" Classes="label" />
-                  <TextBlock Text="Assign one XInput slot to each Xbox port. The keyboard always drives player 1; the gamepad map and stick options above apply to every player."
+                  <TextBlock Text="Assign one XInput slot to each Xbox port. All four ports are published to the core, so four controllers can play together. The keyboard always drives player 1; the gamepad map and stick options above apply to every player."
                              Classes="hint" TextWrapping="Wrap" />
                   <ItemsControl ItemsSource="{Binding PlayerPads}">
                     <ItemsControl.ItemTemplate>
@@ -813,6 +813,27 @@
 
                 <TextBlock IsVisible="{Binding !HasLibraryFolders}"
                            Text="No folders yet. Add one to populate the library page."
+                           Classes="hint" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Cover art" Classes="h3" />
+                    <TextBlock Text="Put PNG, JPEG, WebP or BMP images in the covers folder. Name each file after the game title or its title id (for example Halo.jpg or 4D530002.png). Images beside the disc are ignored."
+                               Classes="hint"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="ghost" Command="{Binding Shell.OpenCoversFolderCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                      <TextBlock Text="Open folder" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+                <TextBlock Text="Rescan the library after adding covers."
                            Classes="hint" />
               </StackPanel>
             </Border>

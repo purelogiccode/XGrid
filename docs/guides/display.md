@@ -30,6 +30,14 @@ Turn **Present core frames in the shell** off.
 > Both modes require the patched core. A stock xemu executable has neither the
 > display sink nor the input sink.
 
+### Linux and macOS
+
+The shell frame sink and window embedding are Windows-only. On Linux the core
+opens its own SDL window, outside the Home page; use that window for the
+picture, filters and input. The shell keeps the library, settings, log and
+screenshots. The macOS archives contain the shell only; point them at an
+external xemu build.
+
 ## Shell presentation filters
 
 | Filter | Effect |
@@ -40,8 +48,10 @@ Turn **Present core frames in the shell** off.
 | **CRT mask** | Scanlines plus a repeating R/G/B phosphor triad. |
 
 Filters are applied at the source resolution by the shell before scaling, so the
-mask stays stable at any window size. The filter is a shell setting; the core's
-**Texture filtering** setting is separate.
+mask stays stable at any window size. The masks preserve the frame's alpha and
+leave a frame that does not match its declared geometry unfiltered rather than
+half-masked. The filter is a shell setting; the core's **Texture filtering**
+setting is separate.
 
 ## Core rendering settings
 

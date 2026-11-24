@@ -9,15 +9,16 @@ service; keep the extracted folder wherever you like.
 | --- | --- | --- |
 | `XGrid-frontend-win-x64.zip` | Windows 10/11 x64 | Avalonia shell **and** the emulator core under `core/xemu/` |
 | `XGrid-cli-win-x64.zip` | Windows 10/11 x64 | Validation CLI and the managed reference harness |
-| `XGrid-frontend-linux-x64.tar.gz` | Linux x64 | Shell only |
+| `XGrid-frontend-linux-x64.tar.gz` | Linux x64 | Avalonia shell **and** the standalone emulator core under `core/xemu/` |
 | `XGrid-frontend-osx-x64.tar.gz` | macOS Intel | Shell only |
 | `XGrid-frontend-osx-arm64.tar.gz` | macOS Apple Silicon | Shell only |
 | `XGrid-cli-<rid>` | all RIDs | Validation CLI |
 
-> **The Windows x64 frontend is the complete product today.** Linux and macOS
-> archives contain the Avalonia shell but not a bundled emulator core. Point the
-> shell at a core built from `xemu/` or set `XGRID_XEMU_CORE`, or build the core
-> for that platform yourself.
+> **Windows has the full shell integration; Linux has the bundled core with its
+> own window.** On Linux the core presents and reads input through SDL, so
+> save states, pause/step and disc swap are not available. The macOS archives
+> contain the shell only; point them at an upstream xemu 0.8.139 build with
+> `XGRID_XEMU_CORE` or the **Emulator binary** setting.
 
 Every archive includes:
 
@@ -25,6 +26,9 @@ Every archive includes:
 - `THIRD_PARTY_NOTICES.md`;
 - `README.md` and `RELEASE-NOTES.md`;
 - a `VERSION` file.
+
+The Linux core links the host's SDL3, GLib, libepoxy, zstd and related system
+libraries; install their runtime packages if they are not already present.
 
 Checksums and `package-manifest.json` are published beside the archives.
 

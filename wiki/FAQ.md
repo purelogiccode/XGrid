@@ -27,8 +27,10 @@ No. Supply your own legally obtained firmware and discs.
 
 ### Which platforms work?
 
-Windows x64 is fully supported. The shell builds for Linux/macOS, but the packaged
-core is Windows-only today.
+Windows x64 has the full shell integration. The Linux x64 archive bundles the
+standalone core, which runs in its own window; save states, pause/step and disc
+swap need the Windows in-process path. The macOS archives contain the shell only
+and need an external xemu 0.8.139 build.
 
 ### Do I need .NET?
 

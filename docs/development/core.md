@@ -129,7 +129,10 @@ bash scripts/build-native-xemu.sh
 
 Output: `xemu/dist/xemu`, `xemu/dist/xgrid-core.json` and
 `xemu/dist/LICENSE.txt`. This is the standalone core; the in-process
-`xgrid_core` library and its save-state ABI are Windows-only.
+`xgrid_core` library and its save-state ABI are Windows-only. The release
+packager bundles this output in the `linux-x64` frontend archive; stage a
+different host's build with `-CoreRoot` when one machine packages several RIDs
+(see [Releasing](releasing.md)).
 
 ### Rebase baseline
 

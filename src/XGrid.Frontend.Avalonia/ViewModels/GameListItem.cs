@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
 using XGrid.Frontend.Avalonia.Models;
 
@@ -7,12 +8,18 @@ namespace XGrid.Frontend.Avalonia.ViewModels;
 /// <summary>A game row/card with a launch command bound to the shell.</summary>
 public sealed class GameListItem
 {
+    private readonly Bitmap? _cover;
+
     /// <summary>Creates a list item for a library entry.</summary>
-    public GameListItem(GameEntry game, Action<GameEntry> launch)
+    /// <param name="game">Library entry.</param>
+    /// <param name="launch">Launch callback.</param>
+    /// <param name="cover">Decoded cover from the scan's cache, or null.</param>
+    public GameListItem(GameEntry game, Action<GameEntry> launch, Bitmap? cover = null)
     {
         ArgumentNullException.ThrowIfNull(game);
         ArgumentNullException.ThrowIfNull(launch);
         Game = game;
+        _cover = cover;
         LaunchCommand = new RelayCommand(() => launch(Game));
     }
 
@@ -21,6 +28,12 @@ public sealed class GameListItem
 
     /// <summary>Gets the launch command.</summary>
     public IRelayCommand LaunchCommand { get; }
+
+    /// <summary>Gets the decoded cover, or null when the entry has none.</summary>
+    public Bitmap? Cover => _cover;
+
+    /// <summary>Gets a value indicating whether a cover image is available.</summary>
+    public bool HasCover => _cover is not null;
 
     /// <summary>Gets the display title.</summary>
     public string Title => Game.Title;

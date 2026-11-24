@@ -43,6 +43,27 @@ across multiple roots if you need more.
 Homebrew images that never set a certificate ID share a placeholder ID, so their
 file names remain the distinguishing text.
 
+## Cover art
+
+The Library shows a cover thumbnail for each game when one is available. Covers
+live in the user data folder, never beside the disc:
+
+```text
+<data>/covers/
+```
+
+XGrid looks in that folder in this order:
+
+1. A file named with the XBE title ID: `4D530002.png`.
+2. A file named with the game title. Annotation groups are ignored for
+   matching, so `Halo - Combat Evolved (USA).jpg` matches
+   **Halo - Combat Evolved**.
+
+PNG, JPEG, WebP and BMP are supported. Use **Library → Covers** (or
+**Settings → Library → Cover art → Open folder**) to open the folder. A missing
+or unreadable image is shown as the disc placeholder; it never hides the game.
+Press **Rescan** after adding covers.
+
 ## Searching
 
 The search box filters by title or format text as you type. Clearing it restores

@@ -16,12 +16,12 @@ diagnostics, packaging and the documentation you are reading.
 | --- | --- |
 | **Core** | xemu 0.8.139 / QEMU 10.2.0 TCG i386, NV2A OpenGL/Vulkan/NULL renderers, MCPX, APU/ACI, IDE/ATAPI, USB/OHCI, SMBus and the full Xbox boot chain |
 | **Shell** | Avalonia 12 desktop application with Home, Library, Settings, Activity and About pages |
-| **Hosting** | In-process core (`xgrid_core.dll`) by default; separate-process fallback |
+| **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
 | **Media** | ISO/XISO, compressed CHD, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
 | **Display** | Shell frame sink with nearest, bilinear, scanline and CRT filters; embedded core window mode; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
-| **Quality of life** | Four save-state slots, per-title overrides, whole-window screenshots, activity log, accent themes |
-| **Platform** | Windows x64 is the fully supported emulation host today; the shell targets Linux and macOS |
+| **Quality of life** | Four save-state slots, per-title overrides, local cover art, whole-window screenshots, activity log, accent themes |
+| **Platform** | Windows x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell with an external core |
 
 ## Why a native core?
 
@@ -42,7 +42,7 @@ Read [Architecture](reference/architecture.md) for the full picture.
 ### A real desktop shell
 
 - **Home** — power, stop, the live display, current disc and renderer status.
-- **Library** — recursive scanning of ISO, CHD, ZAR and XBE files, search and launch.
+- **Library** — recursive scanning of ISO, CHD, ZAR and XBE files, search, local cover art and launch.
 - **Settings** — System, Graphics, Audio, Input, Titles, Library and Appearance tabs.
 - **Activity** — a searchable, copyable session log.
 - **About** — build, runtime and project links.
@@ -84,8 +84,8 @@ keyboard and XInput mapping for players 1–4 is XGrid's, not the core's.
 
 ## Quick start
 
-1. **Download** the release archive for your platform. The Windows x64 frontend
-   archive includes the emulator under `core/xemu/`.
+1. **Download** the release archive for your platform. The Windows and Linux
+   x64 frontend archives include the emulator under `core/xemu/`.
 2. **Extract** it anywhere. The applications are portable and self-contained.
 3. **Start** `XGrid.Frontend.Avalonia`.
 4. The first-run wizard asks for the BIOS, EEPROM, hard-disk image and an optional

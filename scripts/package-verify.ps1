@@ -11,8 +11,9 @@ things a GPL-2.0-or-later binary distribution can get wrong without anyone notic
      every source file that declares itself ported is recorded in the notices;
   2. package integrity - the expected archives exist for every RID, contain the
      executable and the release metadata, carry no symbols or firmware/game
-     data, and match their SHA-256 sum and the package manifest. The win-x64
-     frontend archive must also carry the emulator (core/xemu/).
+     data, and match their SHA-256 sum and the package manifest. Each frontend
+     archive that has a core build carries the emulator (core/xemu/), and every
+     Unix executable entry is mode 0755 so the extracted archive can run.
 
 It also smoke-runs the Windows CLI from its archive (`--version` must equal the
 version in the archive's VERSION file). That leg is skipped on other hosts.
@@ -32,6 +33,10 @@ Runtime identifiers the tree must contain.
 .PARAMETER SkipSmoke
 Skip the Windows CLI smoke run (for a host without PowerShell on Windows).
 
+.PARAMETER SkipCoreCheck
+Accept a development tree without the Windows or Linux core (the matching
+`scripts/package.ps1 -SkipCore`). A release tree must not use this.
+
 .EXAMPLE
 pwsh -File scripts/package.ps1 -Rids win-x64,linux-x64
 pwsh -File scripts/package-verify.ps1 -Rids win-x64,linux-x64
@@ -41,7 +46,8 @@ param(
     [string]$Dist = 'dist',
     [string]$Version = '',
     [string[]]$Rids = @('win-x64', 'linux-x64', 'osx-x64', 'osx-arm64'),
-    [switch]$SkipSmoke
+    [switch]$SkipSmoke,
+    [switch]$SkipCoreCheck
 )
 
 Set-StrictMode -Version Latest
@@ -73,16 +79,29 @@ try {
     }
     if ([string]::IsNullOrWhiteSpace($Version)) { Fail 'no expected version (pass -Version)' }
 
-    if ($manifest -and ($Rids -contains 'win-x64')) {
-        $expectedCore = if (Test-Path (Join-Path $repo 'xemu/XEMU_VERSION')) {
-            (Get-Content (Join-Path $repo 'xemu/XEMU_VERSION') -TotalCount 1).Trim()
-        }
-        else { '' }
-        if (-not $manifest.core) {
-            Fail 'package-manifest.json does not describe the bundled emulator core'
-        }
-        elseif ($expectedCore -and [string]$manifest.core.version -ne $expectedCore) {
+    $expectedCore = if (Test-Path (Join-Path $repo 'xemu/XEMU_VERSION')) {
+        (Get-Content (Join-Path $repo 'xemu/XEMU_VERSION') -TotalCount 1).Trim()
+    }
+    else { '' }
+    $coreRids = @()
+    if ($manifest -and $manifest.core) {
+        if ($expectedCore -and [string]$manifest.core.version -ne $expectedCore) {
             Fail "package-manifest.json records core version '$($manifest.core.version)', expected '$expectedCore'"
+        }
+        if ($manifest.core.rids) {
+            $coreRids = @($manifest.core.rids | ForEach-Object { [string]$_ })
+        }
+        foreach ($rid in $coreRids) {
+            if ($Rids -notcontains $rid) {
+                Fail "package-manifest.json claims a core for $rid, which is not in the requested RIDs"
+            }
+        }
+    }
+    if (-not $SkipCoreCheck) {
+        foreach ($rid in $Rids) {
+            if (($rid -eq 'win-x64' -or $rid -eq 'linux-x64') -and $coreRids -notcontains $rid) {
+                Fail "package-manifest.json does not describe a core for $rid (pass -SkipCoreCheck for a development tree)"
+            }
         }
     }
 
@@ -155,6 +174,7 @@ try {
         $names = [System.Collections.Generic.Dictionary[string, long]]::new([StringComparer]::Ordinal)
         $text = [System.Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
         $head = [System.Collections.Generic.Dictionary[string, byte[]]]::new([StringComparer]::Ordinal)
+        $modes = [System.Collections.Generic.Dictionary[string, System.IO.UnixFileMode]]::new([StringComparer]::Ordinal)
 
         # A small entry is read whole (prefix + text); a large one only needs its
         # first four bytes, so it is never decompressed to the end.
@@ -200,7 +220,9 @@ try {
                             if ($entry.EntryType -ne [System.Formats.Tar.TarEntryType]::RegularFile -and
                                 $entry.EntryType -ne [System.Formats.Tar.TarEntryType]::V7RegularFile) { continue }
                             if (-not $entry.DataStream) { continue }
-                            Add-Entry $entry.Name.Replace('\', '/') ([long]$entry.Length) $entry.DataStream
+                            $name = $entry.Name.Replace('\', '/')
+                            Add-Entry $name ([long]$entry.Length) $entry.DataStream
+                            $modes[$name] = $entry.Mode
                         }
                     }
                     finally { $reader.Dispose() }
@@ -209,7 +231,13 @@ try {
             }
             finally { $stream.Dispose() }
         }
-        return [pscustomobject]@{ Names = $names; Text = $text; Head = $head }
+        return [pscustomobject]@{ Names = $names; Text = $text; Head = $head; Modes = $modes }
+    }
+
+    function Test-ExecutableMode([System.IO.UnixFileMode]$Mode) {
+        return (($Mode -band [System.IO.UnixFileMode]::UserExecute) -ne 0) -or
+               (($Mode -band [System.IO.UnixFileMode]::GroupExecute) -ne 0) -or
+               (($Mode -band [System.IO.UnixFileMode]::OtherExecute) -ne 0)
     }
 
     foreach ($rid in $Rids) {
@@ -263,6 +291,16 @@ try {
                     else { @('cffaedfe', 'cafebabe', 'cefaedfe', 'feedfacf') -contains $magic }
                 if (-not $matchesPlatform) { Fail "$file $exeName has magic $magic, not a $rid executable" }
             }
+            if (-not $isWindowsRid -and $archive.Names.ContainsKey($exeName)) {
+                # A Unix archive that loses the execute bit cannot start. The
+                # packager writes 0755 for the CLI, the frontend and a core.
+                if (-not $archive.Modes.ContainsKey($exeName)) {
+                    Fail "$file does not record a mode for $exeName"
+                }
+                elseif (-not (Test-ExecutableMode ($archive.Modes[$exeName]))) {
+                    Fail "$file $exeName has mode $($archive.Modes[$exeName]), not executable"
+                }
+            }
             if ($archive.Names.ContainsKey('VERSION') -and $Version) {
                 $declared = $archive.Text['VERSION'].Trim()
                 if ($declared -ne $Version) { Fail "$file VERSION is '$declared', expected '$Version'" }
@@ -278,21 +316,57 @@ try {
                 }
             }
 
-            if ($app -eq 'frontend' -and $rid -eq 'win-x64') {
-                # The archive carries the emulator itself; a frontend without it
-                # can present nothing.
-                foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll', 'core/xemu/xgrid-core.json') {
-                    if (-not $archive.Names.ContainsKey($entry)) { Fail "$file is missing $entry" }
+            $coreEntries = @($archive.Names.Keys | Where-Object { $_ -like 'core/xemu/*' })
+            $hasCore = $coreRids -contains $rid
+            if ($app -eq 'cli' -and $coreEntries.Count -gt 0) {
+                Fail "$file carries core files; the core belongs in the frontend archive"
+            }
+            if ($app -eq 'frontend') {
+                if (-not $hasCore -and $coreEntries.Count -gt 0) {
+                    Fail "$file carries core files but package-manifest.json does not list $rid"
                 }
-                $coreLibraries = @($archive.Names.Keys | Where-Object { $_ -like 'core/xemu/*.dll' })
-                if ($coreLibraries.Count -lt 5) {
-                    Fail "$file ships $($coreLibraries.Count) files under core/xemu; the core needs its runtime DLLs"
-                }
-                foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll') {
-                    if ($archive.Head.ContainsKey($entry)) {
-                        $magic = -join ($archive.Head[$entry] | ForEach-Object { $_.ToString('x2') })
-                        if (-not $magic.StartsWith('4d5a', [StringComparison]::Ordinal)) {
-                            Fail "$file $entry is not a Windows binary"
+                elseif ($hasCore) {
+                    # The archive carries the emulator itself; a frontend without
+                    # it can present nothing.
+                    if ($rid.StartsWith('win-', [StringComparison]::Ordinal)) {
+                        foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll', 'core/xemu/xgrid-core.json') {
+                            if (-not $archive.Names.ContainsKey($entry)) { Fail "$file is missing $entry" }
+                        }
+                        $coreLibraries = @($archive.Names.Keys | Where-Object { $_ -like 'core/xemu/*.dll' })
+                        if ($coreLibraries.Count -lt 5) {
+                            Fail "$file ships $($coreLibraries.Count) files under core/xemu; the core needs its runtime DLLs"
+                        }
+                        foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll') {
+                            if ($archive.Head.ContainsKey($entry)) {
+                                $magic = -join ($archive.Head[$entry] | ForEach-Object { $_.ToString('x2') })
+                                if (-not $magic.StartsWith('4d5a', [StringComparison]::Ordinal)) {
+                                    Fail "$file $entry is not a Windows binary"
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        foreach ($entry in 'core/xemu/xemu', 'core/xemu/xgrid-core.json', 'core/xemu/LICENSE.txt') {
+                            if (-not $archive.Names.ContainsKey($entry)) { Fail "$file is missing $entry" }
+                        }
+                        $coreName = 'core/xemu/xemu'
+                        if ($archive.Head.ContainsKey($coreName)) {
+                            $magic = -join ($archive.Head[$coreName] | ForEach-Object { $_.ToString('x2') })
+                            $matchesPlatform = if ($rid.StartsWith('linux-', [StringComparison]::Ordinal)) {
+                                $magic -eq '7f454c46'
+                            }
+                            else {
+                                @('cffaedfe', 'cafebabe', 'cefaedfe', 'feedfacf') -contains $magic
+                            }
+                            if (-not $matchesPlatform) {
+                                Fail "$file $coreName has magic $magic, not a $rid executable"
+                            }
+                        }
+                        if (-not $archive.Modes.ContainsKey($coreName)) {
+                            Fail "$file does not record a mode for $coreName"
+                        }
+                        elseif (-not (Test-ExecutableMode ($archive.Modes[$coreName]))) {
+                            Fail "$file $coreName has mode $($archive.Modes[$coreName]), not executable"
                         }
                     }
                 }

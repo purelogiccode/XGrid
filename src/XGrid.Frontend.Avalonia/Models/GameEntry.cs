@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using XGrid.Frontend.Avalonia.Services;
 using XGrid.Xbe;
 using XGrid.XboxFs;
 
@@ -25,12 +26,13 @@ public enum GameFormat
 /// <summary>A game or executable discovered by the library scanner.</summary>
 public sealed class GameEntry
 {
-    private GameEntry(string path, string title, GameFormat format, long sizeBytes)
+    private GameEntry(string path, string title, GameFormat format, long sizeBytes, string? coverPath)
     {
         Path = path;
         Title = title;
         Format = format;
         SizeBytes = sizeBytes;
+        CoverPath = coverPath;
     }
 
     /// <summary>Gets the full path to the image.</summary>
@@ -38,6 +40,9 @@ public sealed class GameEntry
 
     /// <summary>Gets the display title.</summary>
     public string Title { get; }
+
+    /// <summary>Gets the local cover image path, or null when none was found.</summary>
+    public string? CoverPath { get; }
 
     /// <summary>Gets the container format.</summary>
     public GameFormat Format { get; }
@@ -88,7 +93,9 @@ public sealed class GameEntry
     public string Folder => System.IO.Path.GetDirectoryName(Path) ?? string.Empty;
 
     /// <summary>Creates an entry for a discovered file, parsing direct XBE titles.</summary>
-    public static GameEntry? FromFile(string path)
+    /// <param name="path">Discovered image or executable.</param>
+    /// <param name="covers">Cover index for the scan, or null for sibling covers only.</param>
+    public static GameEntry? FromFile(string path, CoverArtIndex? covers = null)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -118,12 +125,19 @@ public sealed class GameEntry
                 title = ReadXbeTitle(path) ?? title;
             }
 
-            return new GameEntry(path, title, format, info.Length)
+            // Covers .xbe directly and every launchable image; a container the
+            // resolver cannot read (or a homebrew title with no certificate)
+            // leaves the id at 0 / the shared placeholder.
+            uint resolvedTitleId = DiscTitleId.TryRead(path, out uint titleId, out _) ? titleId : 0u;
+            CoverArtIndex coverIndex = covers ?? CoverArtIndex.Empty;
+            return new GameEntry(
+                path,
+                title,
+                format,
+                info.Length,
+                coverIndex.Find(path, title, resolvedTitleId))
             {
-                // Covers .xbe directly and every launchable image; a container
-                // the resolver cannot read (or a homebrew title with no
-                // certificate) leaves the id at 0 / the shared placeholder.
-                TitleId = DiscTitleId.TryRead(path, out uint titleId, out _) ? titleId : 0u,
+                TitleId = resolvedTitleId,
             };
         }
         catch (IOException)

@@ -37,7 +37,8 @@ and packaging.
 ## Why XGrid?
 
 - **A real desktop application.** Home, Library, Settings, Activity and About
-  pages instead of a bare emulator window.
+  pages, with local cover art in the game library, instead of a bare emulator
+  window.
 - **The core is the proven one.** xemu 0.8.139 with a small, documented patch
   set — not a re-implementation.
 - **No extraction for compressed media.** CHD and ZArchive discs are decoded on
@@ -58,17 +59,18 @@ and packaging.
 | --- | --- |
 | **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
 | **Media** | ISO/XISO, CHD, ZAR (entry form or file tree); raw/qcow2 HDD |
-| **Hosting** | In-process core (`xgrid_core.dll`) by default; separate process fallback |
+| **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
 | **Display** | Shell frame sink or embedded core window; filters, resolution scale, aspect/fit, fullscreen |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
 | **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
 | **Quality of life** | Four save-state slots, library scan, per-title overrides, screenshots, activity log, accent themes |
-| **Platform** | Windows 10/11 x64 fully supported; shell targets Linux/macOS |
+| **Platform** | Windows 10/11 x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell (bring your own core) |
 
 ## Quick start
 
 1. **Download** the [latest release](https://github.com/purelogiccode/XGrid/releases).
-   The Windows x64 frontend archive includes the emulator under `core/xemu/`.
+   The Windows and Linux x64 frontend archives include the emulator under
+   `core/xemu/`.
 2. **Extract** it anywhere and run `XGrid.Frontend.Avalonia`.
 3. Open **Settings → System** and set your **BIOS**, **MCPX ROM**, **EEPROM** and
    **HDD** image.
@@ -151,8 +153,9 @@ pwsh -File scripts/package-verify.ps1
 
 The release tree contains self-contained archives for `win-x64`, `linux-x64`,
 `osx-x64` and `osx-arm64`, checksums, a package manifest and the full license
-set. The **Windows x64 frontend archive includes the emulator**; the Linux and
-macOS archives currently contain the shell only.
+set. The **Windows and Linux x64 frontend archives include the emulator**; the
+macOS archives currently contain the shell only. Stage per-RID cores with
+`-CoreRoot` when one host packages several platforms.
 
 ## Documentation
 

@@ -31,9 +31,10 @@ supply your own legally obtained files.
 
 ## Which platforms are supported?
 
-Windows 10/11 x64 is the fully supported emulation host. The Avalonia shell builds
-for Linux and macOS, but the release archives for those platforms currently
-contain the shell only, because the core is a Windows build.
+Windows 10/11 x64 has the full shell integration. The Linux x64 frontend archive
+bundles the standalone core, which runs in its own window; save states, pause
+and disc swap need the Windows in-process path. The macOS archives contain the
+shell only and need an external xemu 0.8.139 build.
 
 ## Does it need .NET installed?
 

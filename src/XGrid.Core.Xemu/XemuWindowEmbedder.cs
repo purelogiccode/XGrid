@@ -22,6 +22,12 @@ public sealed class XemuWindowEmbedder : IDisposable
     private int _height;
     private bool _disposed;
 
+    /// <summary>
+    /// Gets a value indicating whether reparenting a foreign window is
+    /// available on this platform. Window embedding is a Windows integration.
+    /// </summary>
+    public static bool IsSupported => OperatingSystem.IsWindows();
+
     /// <summary>Gets a value indicating whether a core window is currently hosted.</summary>
     public bool IsEmbedded => _child != IntPtr.Zero;
 

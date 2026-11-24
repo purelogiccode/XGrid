@@ -15,6 +15,7 @@ namespace XGrid.Frontend.Avalonia.ViewModels;
 public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageViewModel(shell), IDisposable
 {
     private readonly List<GameEntry> _all = [];
+    private readonly CoverArtCache _covers = new();
     private readonly Dictionary<string, ScreenshotItem> _screenshotCache =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -61,6 +62,8 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         if (folders.Length == 0)
         {
             _all.Clear();
+            DisposeGames();
+            _covers.Clear();
             ApplyFilter();
             IsScanning = false;
             StatusText = "No folders configured yet.";
@@ -71,7 +74,10 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         StatusText = "Scanning " + folders.Length + " folder" + (folders.Length == 1 ? "…" : "s…");
         try
         {
-            List<GameEntry> scanned = await Task.Run(() => GameLibraryService.Scan(folders));
+            string coversDirectory = CoverArtIndex.DefaultDirectory();
+            List<GameEntry> scanned = await Task.Run(() => GameLibraryService.Scan(folders, coversDirectory));
+            DisposeGames();
+            _covers.Clear();
             _all.Clear();
             _all.AddRange(scanned);
             ApplyFilter();
@@ -156,9 +162,11 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         HasScreenshots = next.Count > 0;
     }
 
-    /// <summary>Releases the decoded thumbnails.</summary>
+    /// <summary>Releases the decoded covers and thumbnails.</summary>
     public void Dispose()
     {
+        DisposeGames();
+        _covers.Dispose();
         foreach (ScreenshotItem item in _screenshotCache.Values)
         {
             item.Dispose();
@@ -200,14 +208,17 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
     private void ApplyFilter()
     {
         string query = SearchText.Trim();
-        Games.Clear();
+        DisposeGames();
         foreach (GameEntry game in _all)
         {
             if (query.Length == 0
                 || game.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || game.FormatText.Contains(query, StringComparison.OrdinalIgnoreCase))
             {
-                Games.Add(new GameListItem(game, entry => Shell.StartGameCommand.Execute(entry)));
+                Games.Add(new GameListItem(
+                    game,
+                    entry => Shell.StartGameCommand.Execute(entry),
+                    _covers.Get(game.CoverPath)));
             }
         }
 
@@ -215,5 +226,10 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         OnPropertyChanged(nameof(ShowEmptyState));
         OnPropertyChanged(nameof(EmptyTitle));
         OnPropertyChanged(nameof(EmptyDetail));
+    }
+
+    private void DisposeGames()
+    {
+        Games.Clear();
     }
 }

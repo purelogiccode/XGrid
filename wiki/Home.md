@@ -29,10 +29,10 @@ save states, display/input plumbing, screenshots and packaging.
 - **Core:** xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL,
   MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus.
 - **Shell:** Home, Library, Settings, Activity, About.
-- **Hosting:** in-process `xgrid_core.dll` by default; separate process fallback.
+- **Hosting:** in-process `xgrid_core.dll` on Windows; separate process on Linux and as a fallback.
 - **Media:** ISO/XISO, compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.
-- **Platform:** Windows x64 is the supported emulation host; the shell targets
-  Linux and macOS.
+- **Platform:** Windows x64 has the full shell integration; Linux x64 ships the
+  standalone core in its own window; macOS ships the shell with an external core.
 
 ## Full documentation
 

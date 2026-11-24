@@ -198,8 +198,9 @@ pwsh -File scripts/package.ps1
 pwsh -File scripts/package-verify.ps1
 ```
 
-The Windows frontend archive must contain `core/xemu/`; build the core first or
-pass `-SkipCore` for a development-only archive. See [Releasing](releasing.md).
+The Windows and Linux frontend archives must contain `core/xemu/`; build the
+core on its own host or stage per-RID builds with `-CoreRoot`, or pass
+`-SkipCore` for a development-only archive. See [Releasing](releasing.md).
 
 ## Linux and macOS
 
@@ -207,12 +208,14 @@ pass `-SkipCore` for a development-only archive. See [Releasing](releasing.md).
 - On Linux, build the core with `bash scripts/build-native-xemu.sh`. The shell
   finds `xemu/dist/xemu` automatically, or point it there with
   `XGRID_XEMU_CORE` or the **Emulator binary** setting.
-- The in-process core, save states and embedded display are Windows-only. On
-  Linux the shell runs the core as a separate process with its own window.
-- There is no packaged core for Linux/macOS yet; the release archives for those
-  platforms contain the shell only.
-- macOS has no XGrid core build script. You can point the shell at an upstream
-  xemu 0.8.139 build for macOS with the **Emulator binary** setting.
+- The `linux-x64` release frontend archive carries the Linux core under
+  `core/xemu/`. The shell runs it as a separate process with its own window.
+- The in-process core, host frame/pad sinks, save states and embedded display
+  are Windows-only. On Linux the core handles presentation and input through
+  SDL; the shell still owns the library, settings and diagnostics.
+- macOS has no XGrid core build script. The macOS archives contain the shell
+  only; point the shell at an upstream xemu 0.8.139 build with the **Emulator
+  binary** setting.
 
 ## Troubleshooting the build
 
