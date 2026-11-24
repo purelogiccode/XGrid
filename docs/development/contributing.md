@@ -45,6 +45,15 @@ See [Building from source](building.md).
 - C#: nullable enabled, warnings as errors, analyzers clean.
 - No implicit usings; add explicit `using` directives.
 - Keep hot paths allocation-free.
+- Visibility: `public` is a cross-assembly contract, `internal` is the default
+  for implementation types, and `private` is the default for helpers. Public
+  members on an internal type are `internal` unless an interface or the runtime
+  requires otherwise.
+- Document every public type and member with XML comments.
+- Log through Serilog (`Log.Information`, `Log.Warning`, `Log.Error`). Do not add
+  new `Console.WriteLine` or `Debug.WriteLine` diagnostics, and log a caught
+  exception before handling it.
+- Keep async method names suffixed with `Async`.
 - Native core: follow xemu's style; `clang-format` new C files.
 - Tests use xUnit; names describe behavior.
 

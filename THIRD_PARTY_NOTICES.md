@@ -122,6 +122,8 @@ offer is the one described in "The emulation core" above.
 | NAudio | MIT | Live WASAPI audio sink (`XGrid.Audio`, Windows). |
 | Avalonia (Desktop/Fluent/Inter) | MIT | Desktop frontend. |
 | CommunityToolkit.Mvvm | MIT | Desktop frontend MVVM. |
+| Serilog | Apache-2.0 | Structured diagnostic logging (`XGrid.Diagnostics`). |
+| Serilog.Sinks.Console / File / Debug | Apache-2.0 | Console, rolling-file and debugger sinks. |
 | Iced | MIT | x86 encoder used by the raw JIT. |
 | xunit / xunit.runner.visualstudio | Apache-2.0 | Test projects only; not part of the emulator runtime. |
 | Meziantou.Analyzer | MIT | Build-time analyzer. |

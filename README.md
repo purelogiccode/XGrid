@@ -63,7 +63,8 @@ and packaging.
 | **Display** | Shell frame sink or embedded core window; filters, resolution scale, aspect/fit, fullscreen |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
 | **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
-| **Quality of life** | Four save-state slots, library scan, per-title overrides, screenshots, activity log, accent themes |
+| **Quality of life** | Four save-state slots, library scan, per-title overrides, screenshots, activity log, tooltips on every control, accent themes |
+| **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Platform** | Windows 10/11 x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell (bring your own core) |
 
 ## Quick start

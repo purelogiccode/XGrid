@@ -27,6 +27,11 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Power, stop, fullscreen, disc-open and settings shortcuts.
 - [x] Command-line settings overrides and headless runs with console and JSON
       reports for automation and benchmarks.
+- [x] Tooltips on every interactive control in every window and page.
+- [x] Serilog rolling logs, warning/error bug reports with environment and
+      exception details, startup usage statistics and a GitHub update check.
+- [x] XML documentation required for every public type and member.
+- [x] `Async` suffix on asynchronous methods.
 
 ### Core integration
 

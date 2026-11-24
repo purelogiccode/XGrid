@@ -7,6 +7,7 @@
   * [Input](Input)
   * [Audio](Audio)
   * [Headless and CLI](Headless)
+  * [Logging and diagnostics](Diagnostics)
   * [Save states](Save-States)
   * [Media formats](Media-Formats)
 * **Help**

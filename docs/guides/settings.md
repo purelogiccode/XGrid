@@ -4,6 +4,9 @@ The Settings page is a draft editor: change values, then click **Save settings**
 (or press **Ctrl+S** while the page is open). Most changes take effect on the
 next power-on because the core is launched with a generated configuration.
 
+Every control on every page has a tooltip. Hover a button, path box, slider,
+toggle or tab header to read what it does before changing it.
+
 ## System
 
 ### Firmware
