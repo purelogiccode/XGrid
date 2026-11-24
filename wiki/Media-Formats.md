@@ -6,25 +6,26 @@
 | --- | --- | --- |
 | ISO / XISO | Yes | Direct XDVDFS image. |
 | CHD | Yes | Compressed; decoded on demand by `xgridchd`. |
-| ZArchive (`.zar`) | Entry form | Must contain the disc as one `.iso` entry. |
+| ZArchive (`.zar`) | Entry form or file tree | An `.iso` entry is served directly; a file tree is synthesized into XDVDFS. |
 | XBE | Inspect only | Not bootable on its own. |
 
 ### ZArchive
 
-The `xgridzar` driver exposes the largest `.iso` entry as the guest DVD and
-decodes zstd blocks on demand. Archives that store the game as a file tree are
-not supported yet; the shell refuses them with an explanation. Pack the ISO as
-one file entry (for example, pack a folder that contains the ISO) rather than
-expanding it into game files.
+The `xgridzar` driver decodes zstd blocks on demand and supports both shapes:
 
-Build one in entry mode:
+- **Entry form** — the largest `.iso` entry is the guest DVD.
+- **File tree** — the game files are synthesized into an XDVDFS volume at open
+  time (descriptor, directory tables, sector-aligned files), so `--iso`
+  archives boot without extraction.
+
+Names in a file tree use the XDVDFS rules: Latin-1, up to 42 characters,
+without separators.
+
+Build an entry-form archive:
 
 ```powershell
 ZArchiveSharp --iso game.iso game.zar
 ```
-
-If the core says `no .iso entry in this archive`, the packer expanded the ISO
-into a file tree; rerun it in entry mode.
 
 ## Changing discs
 
@@ -55,5 +56,5 @@ XGrid ships none of these.
 
 - Use ISO for the first boot of a title.
 - Use CHD to save space with no extraction step.
-- Use ZAR only with an entry-form archive.
+- Use ZAR with either archive shape; entry form avoids the XDVDFS name rules.
 - Keep the HDD on fast local storage.

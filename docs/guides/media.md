@@ -21,31 +21,32 @@ extraction.
 
 ### ZArchive (`.zar`)
 
-A ZArchive container. The `xgridzar` driver exposes the **largest `.iso` entry**
-inside the archive as the guest DVD, decoding zstd blocks on demand.
+A ZArchive container. The `xgridzar` driver decodes zstd blocks on demand and
+supports both archive shapes:
 
-> **Entry form only.** The archive must contain the disc as a single `.iso` file
-> entry. Archives that store the game as a file tree (for example, a packer that
-> converts an ISO into individual game files) are not supported yet; the shell
-> refuses them with a message explaining the archive shape.
->
-> A practical way to build an entry-form archive is to pack a folder that
-> contains the ISO as one file. Tools that expand the ISO into a file tree
-> produce the unsupported shape.
+- **Entry form** — the archive carries the disc as one `.iso` file entry; the
+  driver exposes that entry as the guest DVD.
+- **File tree** — the archive carries the game as individual files (the shape
+  `ZArchiveSharp --iso` produces). The driver synthesizes an XDVDFS volume in
+  memory: the descriptor, directory tables and a balanced name tree are built
+  at open time, and each file is placed at a 2048-byte sector boundary. Reads
+  still come from the compressed archive, so nothing is extracted.
+
+The XDVDFS name limit applies to the file tree: names are Latin-1, up to 42
+characters, without path separators.
 
 #### Creating an entry-form archive
 
 1. Confirm the source ISO boots in XGrid on its own.
-2. Run the packer in entry (`--iso`) mode, not in file-tree mode:
+2. Run the packer; `--iso` produces the entry form:
 
    ```powershell
    ZArchiveSharp --iso game.iso game.zar
    ```
 
-3. Add or open `game.zar`. XGrid reads the archive directory before launch and
-   exposes the largest `.iso` entry to the guest.
-4. If the core reports `no .iso entry in this archive`, the packer expanded the
-   ISO into a file tree; rebuild it in entry mode.
+3. Add or open `game.zar`. Entry-form archives use the largest `.iso` entry;
+   file-tree archives get the synthesized volume.
+4. A name XDVDFS cannot represent is reported with the offending entry.
 
 The shell's directory reader is covered by synthetic entry-form and file-tree
 archives in `ZarArchiveTests`, so the shape check also runs on a clean checkout.
@@ -93,7 +94,7 @@ XGrid ships none of these. See [Requirements](../getting-started/requirements.md
 | --- | --- | --- | --- |
 | `.iso` | Yes | Yes | Direct block access. |
 | `.chd` | Yes | Yes | Real-time decode. |
-| `.zar` | Yes | Yes | Entry-form only. |
+| `.zar` | Yes | Yes | Entry form or synthesized file tree. |
 | `.xbe` | Yes | No | Inspection only. |
 | HDD raw/qcow2 | Settings | Boot | Dashboard and save states. |
 
@@ -101,5 +102,6 @@ XGrid ships none of these. See [Requirements](../getting-started/requirements.md
 
 - Use **ISO** for maximum compatibility and simplicity.
 - Use **CHD** to save disk space with no runtime extraction.
-- Use **ZAR** only if your archive contains the disc as an `.iso` entry.
+- Use **ZAR** for either an entry-form archive or a file-tree archive; the
+  driver serves the entry directly or synthesizes the volume.
 - Keep the **HDD image** on fast local storage; save states write to it.

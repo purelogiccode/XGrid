@@ -44,7 +44,7 @@ and failures.
 
 | Symptom | Fix |
 | --- | --- |
-| `.zar` refused | It is a file-tree archive; use an `.iso` entry. |
+| `.zar` refused | Check **Activity**: the archive may be corrupt or contain a name XDVDFS cannot store. Both entry-form and file-tree archives are supported. |
 | `.xbe` won’t launch | Wrap it in ISO/CHD. |
 | Game not listed | Check extension, folder and 4,096-entry cap. |
 

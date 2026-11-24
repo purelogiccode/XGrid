@@ -30,7 +30,7 @@ save states, display/input plumbing, screenshots and packaging.
   MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus.
 - **Shell:** Home, Library, Settings, Activity, About.
 - **Hosting:** in-process `xgrid_core.dll` by default; separate process fallback.
-- **Media:** ISO/XISO, compressed CHD, entry-form ZArchive, raw/qcow2 HDD.
+- **Media:** ISO/XISO, compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.
 - **Platform:** Windows x64 is the supported emulation host; the shell targets
   Linux and macOS.
 

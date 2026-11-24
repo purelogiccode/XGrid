@@ -27,7 +27,7 @@ anything on disk.
 | --- | --- | --- | --- |
 | `.iso` | Yes | Yes | XDVDFS ISO/XISO. |
 | `.chd` | Yes | Yes | Compressed disc image. |
-| `.zar` | Yes | Yes | Only when the archive contains an `.iso` entry. |
+| `.zar` | Yes | Yes | Entry form or synthesized file tree. |
 | `.xbe` | Yes | No | Shown for inspection; wrap it in an image to boot. |
 
 The library is capped at 4,096 entries per scan. Split a very large collection

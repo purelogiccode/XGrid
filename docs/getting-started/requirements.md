@@ -44,7 +44,7 @@ files are not included, so configure them explicitly in **Settings → System**.
 | --- | --- | --- |
 | **ISO / XISO** | Yes | Standard XDVDFS disc images. |
 | **CHD** | Yes | Compressed MAME CHD; decoded on demand. |
-| **ZArchive (`.zar`)** | Entry form | The archive must contain the disc as an `.iso` entry. File-tree archives are not supported yet. |
+| **ZArchive (`.zar`)** | Entry form or file tree | An `.iso` entry is exposed directly; a file tree is synthesized into an XDVDFS volume. |
 | **XBE** | Inspect only | A loose executable is not a disc; wrap it in an ISO/CHD to boot. |
 
 See [Media formats](../guides/media.md) for the details.

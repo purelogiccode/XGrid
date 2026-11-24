@@ -21,7 +21,7 @@ A scan:
 | --- | --- | --- |
 | `.iso` | Yes | Yes |
 | `.chd` | Yes | Yes |
-| `.zar` | Yes | Yes, if it contains an `.iso` entry |
+| `.zar` | Yes | Yes (entry form or file tree) |
 | `.xbe` | Yes | No (inspection only) |
 
 ## Titles and overrides

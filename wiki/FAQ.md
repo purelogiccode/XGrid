@@ -45,11 +45,14 @@ renderers and the shell hides unsupported options.
 
 ### What media works?
 
-ISO/XISO, CHD, entry-form ZAR, raw/qcow2 HDD. XBE is inspection only.
+ISO/XISO, CHD, ZAR (entry form or file tree), raw/qcow2 HDD. XBE is inspection
+only.
 
 ### Why does my ZAR fail?
 
-It stores a file tree, not one `.iso` entry. File-tree archives are not supported.
+The archive may be corrupt or contain a name XDVDFS cannot store (Latin-1, up to
+42 characters, no separators). Both entry-form and file-tree archives are
+supported; read the core message in **Activity**.
 
 ### Do save states work in separate process?
 

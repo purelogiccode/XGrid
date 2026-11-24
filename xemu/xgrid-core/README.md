@@ -14,7 +14,7 @@ is a patch rebase, not a re-port.
 | Path | What it is |
 |---|---|
 | `block/xgridchd.c` | QEMU block driver that decodes CHD hunks on demand, so a compressed disc plays without extraction. |
-| `block/xgridzar.c` | QEMU block driver that exposes a ZArchive's disc image as the guest DVD, decoding zstd blocks on demand. |
+| `block/xgridzar.c` | QEMU block driver for ZArchive discs: serves an entry-form archive's `.iso` entry directly and synthesizes an XDVDFS volume for a file-tree archive, decoding zstd blocks on demand. |
 | `display/xgrid-display.c` | Host display sink: publishes presented frames to a named section for the shell. |
 | `input/xgrid-input.c` | Host input source: each Xbox port reads its pad record from the shell's section. |
 | `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread, exposes stop/join/version and the save-state request slot. |

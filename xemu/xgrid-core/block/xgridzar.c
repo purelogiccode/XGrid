@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Exposes the disc image stored in a ZArchive as the guest's DVD, decoding
- * 64 KiB zstd blocks on demand: nothing is extracted. The format facts are in
- * docs/research-notes/zarchive-format.md, taken from the operator's
- * ZArchiveSharp port of ZArchive 0.1.2 (Exzap).
+ * 64 KiB zstd blocks on demand: nothing is extracted. An entry-form archive
+ * exposes its largest .iso entry; a file-tree archive is synthesized into an
+ * XDVDFS volume (see the synthesizer below). The format facts are pinned by
+ * tests/XGrid.Core.Tests/ZarArchiveTests.cs and the media guide.
  *
  * The driver owns its file handle (like the CHD driver does): reading through
  * the block layer from bdrv_open is not allowed, and a disc read is a cold
@@ -28,6 +29,9 @@
 #define XGRIDZAR_RECORD_SIZE 40u
 #define XGRIDZAR_TREE_ENTRY_SIZE 16u
 
+typedef struct XGridZarIsoNode XGridZarIsoNode;
+typedef struct XGridZarExtent XGridZarExtent;
+
 typedef struct BDRVXgridZarState {
     FILE *file;
     uint8_t *offset_records;
@@ -43,7 +47,17 @@ typedef struct BDRVXgridZarState {
     uint8_t *block;
     uint8_t *compressed;
     uint64_t cached_block;
+    bool synthesized;
+    XGridZarIsoNode *iso_nodes;
+    uint32_t iso_node_count;
+    uint8_t *iso_descriptor;
+    XGridZarExtent *iso_extents;
+    uint32_t iso_extent_count;
+    uint64_t iso_size;
 } BDRVXgridZarState;
+
+static bool zar_iso_build(BDRVXgridZarState *s, Error **errp);
+static void zar_iso_free(BDRVXgridZarState *s);
 
 static uint32_t zar_be32(const uint8_t *p)
 {
@@ -251,15 +265,16 @@ static int xgridzar_open(BlockDriverState *bs, QDict *options, int flags,
     }
 
     if (!found) {
-        error_setg(errp, "xgridzar: no .iso entry in this archive; repack it "
-                   "with `ZArchiveSharp --iso <game.iso> <out.zar>`");
-        return -EINVAL;
+        if (!zar_iso_build(s, errp)) {
+            return -EINVAL;
+        }
     }
 
     s->cached_block = UINT64_MAX;
     s->block = g_malloc(XGRIDZAR_BLOCK_SIZE);
     s->compressed = g_malloc(XGRIDZAR_BLOCK_SIZE + 1);
-    bs->total_sectors = s->file_size / BDRV_SECTOR_SIZE;
+    bs->total_sectors = (s->synthesized ? s->iso_size : s->file_size) /
+                        BDRV_SECTOR_SIZE;
     bs->bl.request_alignment = 1;
 
     return 0;
@@ -279,6 +294,7 @@ static void xgridzar_close(BlockDriverState *bs)
     g_free(s->file_tree);
     g_free(s->block);
     g_free(s->compressed);
+    zar_iso_free(s);
 }
 
 static int xgridzar_read_block(BDRVXgridZarState *s, uint64_t archive_block)
@@ -327,12 +343,601 @@ static int xgridzar_read_block(BDRVXgridZarState *s, uint64_t archive_block)
     return 0;
 }
 
+/*
+ * XDVDFS synthesis for file-tree archives.
+ *
+ * `ZArchiveSharp --iso` stores the game as its files, not as one .iso entry.
+ * The guest expects an XDVDFS volume, so this builds the volume descriptor and
+ * the directory tables in memory, places each archived file at a sector
+ * boundary, and maps guest reads onto the archive's uncompressed extents. The
+ * layout follows XISOSharp's writer: the descriptor at sector 32, the root
+ * table at sector 264, DWORD-aligned records that never straddle a sector,
+ * 0xFF padding, a balanced search tree for the left/right offsets, and
+ * sector-rounded sizes for subdirectory tables.
+ */
+#define XGRIDZAR_ISO_SECTOR 2048u
+#define XGRIDZAR_ISO_ROOT_SECTOR 264u
+#define XGRIDZAR_ISO_MAX_TABLE 0x3FFFCu /* u16 child offsets in DWORDs */
+#define XGRIDZAR_ISO_MAX_NAME 42u
+#define XGRIDZAR_ISO_MAX_DEPTH 64
+#define XGRIDZAR_ISO_MAGIC "MICROSOFT*XBOX*MEDIA"
+
+typedef struct XGridZarIsoNode {
+    char name[XGRIDZAR_ISO_MAX_NAME + 1];
+    bool is_dir;
+    bool linked;
+    uint64_t archive_offset;
+    uint32_t file_size;
+    uint32_t first_child;
+    uint32_t child_count;
+    uint32_t entry_offset;
+    uint32_t data_sector;
+    uint32_t table_bytes;
+    uint32_t table_sectors;
+    uint8_t *table;
+    struct XGridZarIsoNode **children;
+    struct XGridZarIsoNode *bst_left;
+    struct XGridZarIsoNode *bst_right;
+} XGridZarIsoNode;
+
+typedef struct XGridZarExtent {
+    uint64_t offset;
+    uint64_t length;
+    const uint8_t *memory;
+    XGridZarIsoNode *file;
+} XGridZarExtent;
+
+static uint32_t zar_iso_sectors(uint64_t bytes)
+{
+    return (uint32_t)((bytes + XGRIDZAR_ISO_SECTOR - 1) / XGRIDZAR_ISO_SECTOR);
+}
+
+static uint32_t zar_iso_align4(uint32_t value)
+{
+    return (value + 3u) & ~3u;
+}
+
+static int zar_iso_name_compare(const void *left, const void *right)
+{
+    const XGridZarIsoNode *a = *(XGridZarIsoNode * const *)left;
+    const XGridZarIsoNode *b = *(XGridZarIsoNode * const *)right;
+    const unsigned char *pa = (const unsigned char *)a->name;
+    const unsigned char *pb = (const unsigned char *)b->name;
+
+    while (*pa != '\0' && *pb != '\0') {
+        int ca = g_ascii_tolower(*pa);
+        int cb = g_ascii_tolower(*pb);
+        if (ca != cb) {
+            return ca - cb;
+        }
+        pa++;
+        pb++;
+    }
+
+    return (int)*pa - (int)*pb;
+}
+
+static bool zar_iso_name_valid(const char *name)
+{
+    size_t length = strlen(name);
+
+    if (length == 0 || length > XGRIDZAR_ISO_MAX_NAME) {
+        return false;
+    }
+
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)name[i];
+        if (c < 0x20 || c == '/' || c == '\\' || c == ':') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static uint32_t zar_iso_name_length(const BDRVXgridZarState *s,
+                                    uint32_t name_offset)
+{
+    uint8_t header;
+    uint32_t length;
+
+    if (name_offset >= s->name_size) {
+        return 0;
+    }
+
+    header = s->names[name_offset];
+    length = header & 0x7Fu;
+    if ((header & 0x80u) != 0) {
+        length |= (uint32_t)header << 7;
+    }
+
+    return length;
+}
+
+static XGridZarIsoNode *zar_iso_build_tree(XGridZarIsoNode **children,
+                                           int low, int high)
+{
+    if (low >= high) {
+        return NULL;
+    }
+
+    int middle = low + ((high - low) / 2);
+    XGridZarIsoNode *root = children[middle];
+    root->bst_left = zar_iso_build_tree(children, low, middle);
+    root->bst_right = zar_iso_build_tree(children, middle + 1, high);
+    return root;
+}
+
+static bool zar_iso_layout(BDRVXgridZarState *s, XGridZarIsoNode *dir,
+                           int depth, Error **errp)
+{
+    if (depth > XGRIDZAR_ISO_MAX_DEPTH) {
+        error_setg(errp, "xgridzar: directory tree is too deep");
+        return false;
+    }
+
+    if (dir->child_count == 0) {
+        dir->table_bytes = 0;
+        dir->table_sectors = 1;
+        dir->table = g_malloc(XGRIDZAR_ISO_SECTOR);
+        memset(dir->table, 0xFF, XGRIDZAR_ISO_SECTOR);
+        return true;
+    }
+
+    if (dir->first_child > s->iso_node_count ||
+        dir->child_count > s->iso_node_count - dir->first_child) {
+        error_setg(errp, "xgridzar: directory child range is out of bounds");
+        return false;
+    }
+
+    dir->children = g_new0(XGridZarIsoNode *, dir->child_count);
+    for (uint32_t i = 0; i < dir->child_count; i++) {
+        XGridZarIsoNode *child = &s->iso_nodes[dir->first_child + i];
+        if (child->linked) {
+            error_setg(errp, "xgridzar: file tree has more than one parent "
+                       "for '%s'", child->name);
+            return false;
+        }
+        child->linked = true;
+        dir->children[i] = child;
+    }
+
+    qsort(dir->children, dir->child_count, sizeof(XGridZarIsoNode *),
+          zar_iso_name_compare);
+    for (uint32_t i = 1; i < dir->child_count; i++) {
+        if (strcasecmp(dir->children[i - 1]->name, dir->children[i]->name) == 0) {
+            error_setg(errp, "xgridzar: duplicate name '%s' in one directory",
+                       dir->children[i]->name);
+            return false;
+        }
+    }
+
+    uint32_t offset = 0;
+    for (uint32_t i = 0; i < dir->child_count; i++) {
+        XGridZarIsoNode *child = dir->children[i];
+        uint32_t entry_size = zar_iso_align4(14u + (uint32_t)strlen(child->name));
+        if ((offset % XGRIDZAR_ISO_SECTOR) + entry_size > XGRIDZAR_ISO_SECTOR) {
+            offset = (offset + XGRIDZAR_ISO_SECTOR - 1) /
+                     XGRIDZAR_ISO_SECTOR * XGRIDZAR_ISO_SECTOR;
+        }
+        child->entry_offset = offset;
+        offset += entry_size;
+        if (offset > XGRIDZAR_ISO_MAX_TABLE) {
+            error_setg(errp, "xgridzar: directory table exceeds the XDVDFS "
+                       "offset limit");
+            return false;
+        }
+    }
+
+    dir->table_bytes = offset;
+    dir->table_sectors = MAX(1u, zar_iso_sectors(offset));
+    dir->table = g_malloc((size_t)dir->table_sectors * XGRIDZAR_ISO_SECTOR);
+    memset(dir->table, 0xFF, (size_t)dir->table_sectors * XGRIDZAR_ISO_SECTOR);
+
+    /* The child tables are needed for their sizes before the entries are
+     * written, but their offsets were assigned above. */
+    for (uint32_t i = 0; i < dir->child_count; i++) {
+        if (dir->children[i]->is_dir &&
+            !zar_iso_layout(s, dir->children[i], depth + 1, errp)) {
+            return false;
+        }
+    }
+
+    (void)zar_iso_build_tree(dir->children, 0, (int)dir->child_count);
+
+    for (uint32_t i = 0; i < dir->child_count; i++) {
+        XGridZarIsoNode *child = dir->children[i];
+        uint8_t *entry = dir->table + child->entry_offset;
+        uint16_t left = child->bst_left != NULL
+            ? (uint16_t)(child->bst_left->entry_offset / 4) : 0;
+        uint16_t right = child->bst_right != NULL
+            ? (uint16_t)(child->bst_right->entry_offset / 4) : 0;
+        uint32_t size = child->is_dir
+            ? child->table_sectors * XGRIDZAR_ISO_SECTOR : child->file_size;
+        size_t name_length = strlen(child->name);
+
+        stw_le_p(entry, left);
+        stw_le_p(entry + 2, right);
+        stl_le_p(entry + 4, 0); /* start sector, assigned after placement */
+        stl_le_p(entry + 8, size);
+        entry[12] = child->is_dir ? 0x10 : 0x20;
+        entry[13] = (uint8_t)name_length;
+        memcpy(entry + 14, child->name, name_length);
+    }
+
+    return true;
+}
+
+static bool zar_iso_assign(BDRVXgridZarState *s, XGridZarIsoNode *dir,
+                           uint64_t *next, Error **errp)
+{
+    for (uint32_t i = 0; i < dir->child_count; i++) {
+        XGridZarIsoNode *child = dir->children[i];
+        uint64_t sectors;
+
+        if (child->is_dir) {
+            child->data_sector = (uint32_t)*next;
+            sectors = child->table_sectors;
+            if (*next + sectors > UINT32_MAX) {
+                error_setg(errp, "xgridzar: synthesized image exceeds the "
+                           "XDVDFS sector range");
+                return false;
+            }
+            *next += sectors;
+            if (!zar_iso_assign(s, child, next, errp)) {
+                return false;
+            }
+        } else if (child->file_size > 0) {
+            child->data_sector = (uint32_t)*next;
+            sectors = zar_iso_sectors(child->file_size);
+            if (*next + sectors > UINT32_MAX) {
+                error_setg(errp, "xgridzar: synthesized image exceeds the "
+                           "XDVDFS sector range");
+                return false;
+            }
+            *next += sectors;
+        } else {
+            child->data_sector = 0;
+        }
+    }
+
+    return true;
+}
+
+static void zar_iso_fill_sectors(BDRVXgridZarState *s, XGridZarIsoNode *dir)
+{
+    for (uint32_t i = 0; i < dir->child_count; i++) {
+        XGridZarIsoNode *child = dir->children[i];
+        stl_le_p(dir->table + child->entry_offset + 4, child->data_sector);
+        if (child->is_dir) {
+            zar_iso_fill_sectors(s, child);
+        }
+    }
+}
+
+static uint32_t zar_iso_count_dirs(const XGridZarIsoNode *node)
+{
+    uint32_t count = 1;
+    for (uint32_t i = 0; i < node->child_count; i++) {
+        if (node->children[i]->is_dir) {
+            count += zar_iso_count_dirs(node->children[i]);
+        }
+    }
+    return count;
+}
+
+static uint32_t zar_iso_count_files(const XGridZarIsoNode *node)
+{
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < node->child_count; i++) {
+        if (node->children[i]->is_dir) {
+            count += zar_iso_count_files(node->children[i]);
+        } else if (node->children[i]->file_size > 0) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void zar_iso_collect_extents(XGridZarIsoNode *node,
+                                    XGridZarExtent **cursor)
+{
+    XGridZarExtent *extent = (*cursor)++;
+
+    extent->offset = (uint64_t)node->data_sector * XGRIDZAR_ISO_SECTOR;
+    extent->length = (uint64_t)node->table_sectors * XGRIDZAR_ISO_SECTOR;
+    extent->memory = node->table;
+    extent->file = NULL;
+
+    for (uint32_t i = 0; i < node->child_count; i++) {
+        XGridZarIsoNode *child = node->children[i];
+        if (child->is_dir) {
+            zar_iso_collect_extents(child, cursor);
+        } else if (child->file_size > 0) {
+            extent = (*cursor)++;
+            extent->offset = (uint64_t)child->data_sector * XGRIDZAR_ISO_SECTOR;
+            extent->length = (uint64_t)zar_iso_sectors(child->file_size) *
+                             XGRIDZAR_ISO_SECTOR;
+            extent->memory = NULL;
+            extent->file = child;
+        }
+    }
+}
+
+static int zar_iso_extent_compare(const void *left, const void *right)
+{
+    const XGridZarExtent *a = left;
+    const XGridZarExtent *b = right;
+
+    if (a->offset < b->offset) {
+        return -1;
+    }
+    if (a->offset > b->offset) {
+        return 1;
+    }
+    return 0;
+}
+
+static bool zar_iso_parse(BDRVXgridZarState *s, Error **errp)
+{
+    uint32_t count = s->tree_size / XGRIDZAR_TREE_ENTRY_SIZE;
+
+    if (count == 0) {
+        error_setg(errp, "xgridzar: the file tree is empty");
+        return false;
+    }
+
+    s->iso_nodes = g_new0(XGridZarIsoNode, count);
+    s->iso_node_count = count;
+
+    for (uint32_t i = 0; i < count; i++) {
+        const uint8_t *entry = s->file_tree + (i * XGRIDZAR_TREE_ENTRY_SIZE);
+        uint32_t name_and_type = zar_be32(entry);
+        uint32_t field1 = zar_be32(entry + 4);
+        uint32_t field2 = zar_be32(entry + 8);
+        uint32_t field3 = zar_be32(entry + 12);
+        XGridZarIsoNode *node = &s->iso_nodes[i];
+        bool is_file = (name_and_type & 0x80000000u) != 0;
+
+        if (i == 0) {
+            if (is_file || name_and_type != 0x7FFFFFFFu) {
+                error_setg(errp, "xgridzar: unsupported file-tree root");
+                return false;
+            }
+            node->is_dir = true;
+            node->linked = true;
+            node->first_child = field1;
+            node->child_count = field2;
+            continue;
+        }
+
+        zar_entry_name(s, name_and_type & 0x7FFFFFFFu, node->name,
+                       sizeof(node->name));
+        uint32_t declared = zar_iso_name_length(s, name_and_type & 0x7FFFFFFFu);
+        if (declared == 0 || declared > XGRIDZAR_ISO_MAX_NAME) {
+            error_setg(errp, "xgridzar: '%s' exceeds the 42-character XDVDFS "
+                       "name limit", node->name);
+            return false;
+        }
+        if (!zar_iso_name_valid(node->name)) {
+            error_setg(errp, "xgridzar: '%s' is not a valid XDVDFS name",
+                       node->name);
+            return false;
+        }
+
+        if (is_file) {
+            uint64_t offset = field1 | ((uint64_t)(field3 & 0xFFFFu) << 32);
+            uint64_t size = field2 | ((uint64_t)(field3 >> 16) << 32);
+            if (size > UINT32_MAX) {
+                error_setg(errp, "xgridzar: '%s' exceeds the 4 GiB XDVDFS "
+                           "file limit", node->name);
+                return false;
+            }
+            node->archive_offset = offset;
+            node->file_size = (uint32_t)size;
+        } else {
+            node->is_dir = true;
+            node->first_child = field1;
+            node->child_count = field2;
+            if (node->first_child > count ||
+                node->child_count > count - node->first_child) {
+                error_setg(errp, "xgridzar: '%s' has an invalid child range",
+                           node->name);
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+static bool zar_iso_build(BDRVXgridZarState *s, Error **errp)
+{
+    XGridZarIsoNode *root;
+    uint64_t next;
+    uint32_t dir_count;
+    uint32_t file_count;
+    XGridZarExtent *cursor;
+    uint8_t *descriptor;
+
+    if (!zar_iso_parse(s, errp)) {
+        return false;
+    }
+
+    root = &s->iso_nodes[0];
+    if (!zar_iso_layout(s, root, 0, errp)) {
+        return false;
+    }
+
+    root->data_sector = XGRIDZAR_ISO_ROOT_SECTOR;
+    next = (uint64_t)XGRIDZAR_ISO_ROOT_SECTOR + root->table_sectors;
+    if (!zar_iso_assign(s, root, &next, errp)) {
+        return false;
+    }
+
+    zar_iso_fill_sectors(s, root);
+
+    descriptor = g_malloc0(XGRIDZAR_ISO_SECTOR);
+    memcpy(descriptor, XGRIDZAR_ISO_MAGIC, strlen(XGRIDZAR_ISO_MAGIC));
+    stl_le_p(descriptor + 0x14, XGRIDZAR_ISO_ROOT_SECTOR);
+    stl_le_p(descriptor + 0x18, root->table_bytes);
+    stq_le_p(descriptor + 0x1C, 0); /* deterministic 1601 FILETIME */
+    memcpy(descriptor + 0x7EC, XGRIDZAR_ISO_MAGIC,
+           strlen(XGRIDZAR_ISO_MAGIC));
+    s->iso_descriptor = descriptor;
+
+    dir_count = zar_iso_count_dirs(root);
+    file_count = zar_iso_count_files(root);
+    s->iso_extent_count = 1 + dir_count + file_count;
+    s->iso_extents = g_new0(XGridZarExtent, s->iso_extent_count);
+
+    s->iso_extents[0].offset = 32u * XGRIDZAR_ISO_SECTOR;
+    s->iso_extents[0].length = XGRIDZAR_ISO_SECTOR;
+    s->iso_extents[0].memory = descriptor;
+
+    cursor = &s->iso_extents[1];
+    zar_iso_collect_extents(root, &cursor);
+    qsort(s->iso_extents, s->iso_extent_count, sizeof(XGridZarExtent),
+          zar_iso_extent_compare);
+
+    for (uint32_t i = 1; i < s->iso_extent_count; i++) {
+        const XGridZarExtent *previous = &s->iso_extents[i - 1];
+        if (s->iso_extents[i].offset < previous->offset + previous->length) {
+            error_setg(errp, "xgridzar: synthesized extents overlap");
+            return false;
+        }
+    }
+
+    s->iso_size = next * XGRIDZAR_ISO_SECTOR;
+    s->synthesized = true;
+    return true;
+}
+
+static void zar_iso_free(BDRVXgridZarState *s)
+{
+    if (s->iso_nodes != NULL) {
+        for (uint32_t i = 0; i < s->iso_node_count; i++) {
+            g_free(s->iso_nodes[i].table);
+            g_free(s->iso_nodes[i].children);
+        }
+        g_free(s->iso_nodes);
+        s->iso_nodes = NULL;
+    }
+
+    g_free(s->iso_descriptor);
+    s->iso_descriptor = NULL;
+    g_free(s->iso_extents);
+    s->iso_extents = NULL;
+    s->iso_extent_count = 0;
+    s->iso_node_count = 0;
+}
+
+static int zar_iso_read_file(BDRVXgridZarState *s, XGridZarIsoNode *file,
+                             uint64_t position, uint8_t *out, uint32_t length)
+{
+    while (length > 0) {
+        uint64_t absolute = file->archive_offset + position;
+        uint64_t block = absolute / XGRIDZAR_BLOCK_SIZE;
+        uint32_t within = (uint32_t)(absolute % XGRIDZAR_BLOCK_SIZE);
+        uint32_t chunk = MIN(length, (uint32_t)(XGRIDZAR_BLOCK_SIZE - within));
+
+        if (s->cached_block != block) {
+            int ret = xgridzar_read_block(s, block);
+            if (ret < 0) {
+                return ret;
+            }
+            s->cached_block = block;
+        }
+
+        memcpy(out, s->block + within, chunk);
+        out += chunk;
+        position += chunk;
+        length -= chunk;
+    }
+
+    return 0;
+}
+
 static int coroutine_fn GRAPH_RDLOCK
-xgridzar_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
-                   QEMUIOVector *qiov, BdrvRequestFlags flags)
+xgridzar_iso_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                    QEMUIOVector *qiov)
 {
     BDRVXgridZarState *s = bs->opaque;
     int64_t done = 0;
+
+    while (done < bytes) {
+        uint64_t position = (uint64_t)offset + (uint64_t)done;
+        uint32_t low = 0;
+        uint32_t high = s->iso_extent_count;
+        const XGridZarExtent *extent;
+
+        while (low < high) {
+            uint32_t middle = low + ((high - low) / 2);
+            if (s->iso_extents[middle].offset <= position) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+
+        if (low == 0 ||
+            position >= s->iso_extents[low - 1].offset +
+                        s->iso_extents[low - 1].length) {
+            uint64_t end = low < s->iso_extent_count
+                ? s->iso_extents[low].offset : s->iso_size;
+            uint64_t length = MIN((uint64_t)(bytes - done), end - position);
+            if (length == 0) {
+                return -EIO;
+            }
+            qemu_iovec_memset(qiov, done, 0, length);
+            done += length;
+            continue;
+        }
+
+        extent = &s->iso_extents[low - 1];
+        uint64_t within = position - extent->offset;
+        uint64_t length = MIN((uint64_t)(bytes - done),
+                              extent->length - within);
+        if (extent->memory != NULL) {
+            qemu_iovec_from_buf(qiov, done, extent->memory + within, length);
+        } else {
+            XGridZarIsoNode *file = extent->file;
+            uint64_t available = within < file->file_size
+                ? file->file_size - within : 0;
+            uint64_t copy = MIN(length, available);
+            uint64_t copied = 0;
+
+            while (copied < copy) {
+                uint64_t chunk = MIN(copy - copied, 65536u);
+                uint8_t *buffer = g_malloc(chunk);
+                int ret = zar_iso_read_file(s, file, within + copied,
+                                            buffer, (uint32_t)chunk);
+                if (ret < 0) {
+                    g_free(buffer);
+                    return ret;
+                }
+                qemu_iovec_from_buf(qiov, done + copied, buffer, chunk);
+                g_free(buffer);
+                copied += chunk;
+            }
+            if (copy < length) {
+                qemu_iovec_memset(qiov, done + copy, 0, length - copy);
+            }
+        }
+        done += length;
+    }
+
+    return 0;
+}
+
+static int coroutine_fn GRAPH_RDLOCK
+xgridzar_entry_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                      QEMUIOVector *qiov, BdrvRequestFlags flags)
+{
+    BDRVXgridZarState *s = bs->opaque;
+    int64_t done = 0;
+
+    (void)flags;
 
     while (done < bytes) {
         uint64_t position = s->file_offset + (uint64_t)offset + (uint64_t)done;
@@ -355,6 +960,19 @@ xgridzar_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
     }
 
     return 0;
+}
+
+static int coroutine_fn GRAPH_RDLOCK
+xgridzar_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                   QEMUIOVector *qiov, BdrvRequestFlags flags)
+{
+    BDRVXgridZarState *s = bs->opaque;
+
+    if (s->synthesized) {
+        return xgridzar_iso_preadv(bs, offset, bytes, qiov);
+    }
+
+    return xgridzar_entry_preadv(bs, offset, bytes, qiov, flags);
 }
 
 static BlockDriver bdrv_xgridzar = {

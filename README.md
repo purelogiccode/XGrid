@@ -40,23 +40,24 @@ and packaging.
   pages instead of a bare emulator window.
 - **The core is the proven one.** xemu 0.8.139 with a small, documented patch
   set — not a re-implementation.
-- **No extraction for compressed media.** CHD and entry-form ZArchive discs are
-  decoded on demand by `xgridchd` and `xgridzar`.
+- **No extraction for compressed media.** CHD and ZArchive discs are decoded on
+  demand by `xgridchd` and `xgridzar`; file-tree ZArchives are synthesized as
+  XDVDFS volumes.
 - **Save states that belong to the machine.** Four QEMU/xemu snapshot slots,
   saved through the in-process core ABI.
 - **Display your way.** Shell frame sink with nearest, bilinear, scanline and CRT
   filters, or the core's own embedded window.
 - **Input your way.** Keyboard and XInput mapping, dead zones, trigger threshold,
-  Y inversion and stick swap for player 1.
-- **Per-title overrides.** Guest memory (64/128 MB) keyed by XBE title ID or
-  image path.
+  Y inversion and stick swap for players 1–4.
+- **Per-title overrides.** Guest memory, renderer and filters keyed by XBE title
+  ID or image path.
 
 ## Feature summary
 
 | Area | Support |
 | --- | --- |
 | **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
-| **Media** | ISO/XISO, CHD, entry-form ZAR; raw/qcow2 HDD |
+| **Media** | ISO/XISO, CHD, ZAR (entry form or file tree); raw/qcow2 HDD |
 | **Hosting** | In-process core (`xgrid_core.dll`) by default; separate process fallback |
 | **Display** | Shell frame sink or embedded core window; filters, resolution scale, aspect/fit, fullscreen |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
@@ -194,9 +195,8 @@ core and display embedding are Windows-first.
 
 Known limitations:
 
-- ZArchive archives must store the disc as an `.iso` entry.
 - Save states require in-process hosting.
-- The shell exposes player 1 only and no netplay UI.
+- No netplay UI.
 - No software or DirectX renderer; OpenGL (and Vulkan when compiled) only.
 
 See [Compatibility](docs/reference/compatibility.md).
