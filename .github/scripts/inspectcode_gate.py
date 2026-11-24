@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """Fail CI only on NEW InspectCode findings (WARNING or ERROR).
 
-A zero-warning gate cannot be switched on for a codebase this size: the tree
-carries 45 accepted findings - unused test fixtures, fixed-point integer
-division in the APU, deliberately qualified names, a diagnostic-only field.
-Fixing them is churn with no behaviour change, and hiding the gate loses the
-only static-analysis signal CI has.
-
-So the gate is a ratchet. `inspectcode-baseline.json` (beside this script)
-records the accepted findings as `"<rule>|<file>": count`:
+The C# tree reports zero findings at WARNING severity, so the baseline is empty
+and any finding fails the build. The ratchet stays in place for the cases where
+a finding is genuinely not fixable: `inspectcode-baseline.json` (beside this
+script) can record accepted findings as `"<rule>|<file>": count`:
 
 * a finding whose key is absent from the baseline, or whose count exceeds the
   recorded one, **fails** the build;
 * a key whose count fell is reported as stale so the baseline can be tightened
   in the same change;
 * `--write` regenerates the baseline from the current report.
+
+The vendored xemu tree is C/C++ and is not inspected (the CI command passes
+`--include=**/*.cs`); it is built and checked by its own toolchain.
 
 Keying on rule+file rather than rule+line is deliberate: line numbers move on
 every refactor, and a baseline that churns on unrelated edits gets deleted

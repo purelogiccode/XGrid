@@ -184,7 +184,7 @@ public sealed partial class McpxApuDevice
                 }
                 else
                 {
-                    VoiceProcess(voice, list);
+                    VoiceProcess(voice);
                 }
 
                 _regs[currentReg] = _regs[nextReg];
@@ -201,8 +201,7 @@ public sealed partial class McpxApuDevice
     /// Mixes one active voice into the frame's mix bins (xemu <c>voice_process</c>).
     /// </summary>
     /// <param name="voice">The voice handle.</param>
-    /// <param name="voiceList">The list the voice was found on (0=2D, 1=3D, 2=MP).</param>
-    private void VoiceProcess(uint voice, int voiceList)
+    private void VoiceProcess(uint voice)
     {
         uint fmt = GetVoiceMask(voice, VoiceCfgFmt, uint.MaxValue);
         bool stereo = (fmt & VoiceFmtStereo) != 0;
@@ -432,7 +431,10 @@ public sealed partial class McpxApuDevice
                     }
                     else if (count <= attackRate * 16)
                     {
-                        value = (int)(count * 0xFF) / (int)(attackRate * 16);
+                        // The reference keeps this in integer arithmetic and
+                        // stores the truncated result in the level field.
+                        uint attackLevel = (count * 0xFF) / (attackRate * 16);
+                        value = attackLevel;
                     }
                     else
                     {
@@ -487,9 +489,10 @@ public sealed partial class McpxApuDevice
                     }
                     else
                     {
-                        value = 255.0f * MathF.Pow(
-                            0.99988799f,
-                            ((int)(decayRate * 16) - (int)count) * 4096 / (int)decayRate);
+                        // Integer arithmetic before the float conversion, as in
+                        // the reference: the exponent uses the truncated step.
+                        int step = ((int)(decayRate * 16) - (int)count) * 4096 / (int)decayRate;
+                        value = 255.0f * MathF.Pow(0.99988799f, step);
                     }
 
                     if (value <= (sustainLevel + 0.2f) || value > 255.0f)
@@ -682,7 +685,7 @@ public sealed partial class McpxApuDevice
 
         int sslIndex = 0;
         uint segmentOffset = 0;
-        int segmentLength = 0;
+        int segmentLength;
 
         if (stream)
         {

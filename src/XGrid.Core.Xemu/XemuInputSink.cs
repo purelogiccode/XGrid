@@ -20,7 +20,6 @@ public sealed class XemuInputSink : IDisposable
     private readonly string _name;
     private MemoryMappedFile? _mapping;
     private MemoryMappedViewAccessor? _view;
-    private uint _sequence;
     private bool _disposed;
 
     /// <summary>Creates a writer for a named section.</summary>
@@ -64,9 +63,7 @@ public sealed class XemuInputSink : IDisposable
         view.Write(20, ry);
         view.Write(24, lt);
         view.Write(28, rt);
-        _sequence++;
-        // The core reads all eight words at once; the sequence is informational
-        // and lets a reader detect a stall.
+        // The core reads all eight words at once.
         view.Flush();
     }
 

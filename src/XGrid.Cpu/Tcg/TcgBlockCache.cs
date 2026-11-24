@@ -5,14 +5,13 @@ namespace XGrid.Cpu.Tcg;
 /// <summary>
 /// The translated-block (TB) cache for the managed TCG engine (P1S4). One entry
 /// per guest EIP: an IR program covering a straight-line run of up to 16
-/// instructions, keyed with the fetch defaults and the head instruction bytes.
+/// instructions, keyed with the fetch defaults and the block geometry.
 /// Mapping changes and stores to decoded code pages clear it through the
 /// decode-cache hooks.
 /// </summary>
 internal sealed class TcgBlockCache
 {
     private const int Slots = 4096;
-    private const int HeadBytes = 15;
 
     private readonly Entry?[] _entries = new Entry?[Slots];
 
@@ -60,9 +59,8 @@ internal sealed class TcgBlockCache
         return false;
     }
 
-    /// <summary>Stores one block (the head bytes are kept for diagnostics).</summary>
+    /// <summary>Stores one block.</summary>
     /// <param name="eip">The guest EIP.</param>
-    /// <param name="head">The first instruction's bytes.</param>
     /// <param name="operandSize">The default operand size.</param>
     /// <param name="addressSize">The default address size.</param>
     /// <param name="program">The translated program.</param>
@@ -70,7 +68,6 @@ internal sealed class TcgBlockCache
     /// <param name="members">The guest instruction count.</param>
     public void Put(
         uint eip,
-        ReadOnlySpan<byte> head,
         int operandSize,
         int addressSize,
         TcgProgram program,
@@ -89,7 +86,6 @@ internal sealed class TcgBlockCache
             Eip = eip,
             OperandSize = operandSize,
             AddressSize = addressSize,
-            Head = head[..HeadBytes].ToArray(),
             Program = program,
             Length = length,
             Members = members,
@@ -115,8 +111,6 @@ internal sealed class TcgBlockCache
         public int OperandSize { get; init; }
 
         public int AddressSize { get; init; }
-
-        public byte[] Head { get; init; } = [];
 
         public TcgProgram Program { get; init; } = null!;
 

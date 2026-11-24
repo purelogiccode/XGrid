@@ -44,9 +44,6 @@ public static class XInputPadMapping
     /// <summary>Right thumb-click digital bit.</summary>
     public const ushort RightThumb = 0x0080;
 
-    /// <summary>Mask covering every digital bit the Xbox report carries.</summary>
-    private const ushort DigitalMask = 0x00FF;
-
     // XInput-only flags that map onto an analog byte.
     /// <summary>Left shoulder (black) flag.</summary>
     public const ushort LeftShoulder = 0x0100;

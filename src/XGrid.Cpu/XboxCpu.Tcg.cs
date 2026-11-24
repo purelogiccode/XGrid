@@ -112,7 +112,7 @@ public sealed partial class XboxCpu : ITcgMemory, ITcgPollObserver
                         continue;
                     }
 
-                    TcgBlocks.Put(eip, buffer, operandSize, addressSize, program!, length, members);
+                    TcgBlocks.Put(eip, operandSize, addressSize, program!, length, members);
                 }
 
                 for (int i = 0; i < 8; i++)
@@ -152,8 +152,6 @@ public sealed partial class XboxCpu : ITcgMemory, ITcgPollObserver
                     executed += members;
                     TcgTranslatedInstructions += members;
                 }
-
-                continue;
             }
             catch (PageFaultSignal fault)
             {
@@ -167,7 +165,6 @@ public sealed partial class XboxCpu : ITcgMemory, ITcgPollObserver
                 }
 
                 executed += _tcgState.MembersDone + 1;
-                continue;
             }
         }
 

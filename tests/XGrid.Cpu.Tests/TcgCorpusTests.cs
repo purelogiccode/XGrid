@@ -111,7 +111,7 @@ public sealed class TcgCorpusTests(ITestOutputHelper output)
             var builder = new TcgBuilder(eip);
             bool terminates = false;
             bool isTranslated = decoded.IsValid
-                && I386Translator.TryTranslate(decoded, eip, builder, out terminates, out string? reason);
+                && I386Translator.TryTranslate(decoded, eip, builder, out terminates, out _);
             if (!isTranslated)
             {
                 fallbacks++;

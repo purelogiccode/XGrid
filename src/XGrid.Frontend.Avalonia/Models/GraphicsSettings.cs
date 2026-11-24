@@ -77,7 +77,7 @@ public sealed class GraphicsSettings
     /// <summary>Repairs values loaded from disk.</summary>
     public void Normalize()
     {
-        Renderer = (Renderer ?? string.Empty).ToUpperInvariant() switch
+        Renderer = NullSafe.Text(Renderer).ToUpperInvariant() switch
         {
             RendererVulkan => RendererVulkan,
             RendererNull => RendererNull,
@@ -88,14 +88,14 @@ public sealed class GraphicsSettings
             ? FilterNearest
             : FilterLinear;
         StartupSize = StartupSizes.Contains(StartupSize, StringComparer.Ordinal) ? StartupSize : "1280x960";
-        AspectRatio = (AspectRatio ?? string.Empty).ToLowerInvariant() switch
+        AspectRatio = NullSafe.Text(AspectRatio).ToLowerInvariant() switch
         {
             "native" => "native",
             "4x3" => "4x3",
             "16x9" => "16x9",
             _ => "auto",
         };
-        Fit = (Fit ?? string.Empty).ToLowerInvariant() switch
+        Fit = NullSafe.Text(Fit).ToLowerInvariant() switch
         {
             "center" => "center",
             "stretch" => "stretch",

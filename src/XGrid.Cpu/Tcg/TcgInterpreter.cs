@@ -280,10 +280,10 @@ public static class TcgInterpreter
                     temps[op.Dest] = temps[op.Left] & 0xFFFFu;
                     break;
                 case TcgOpKind.Movsx8:
-                    temps[op.Dest] = (uint)(int)(sbyte)temps[op.Left];
+                    temps[op.Dest] = (uint)(sbyte)temps[op.Left];
                     break;
                 case TcgOpKind.Movsx16:
-                    temps[op.Dest] = (uint)(int)(short)temps[op.Left];
+                    temps[op.Dest] = (uint)(short)temps[op.Left];
                     break;
                 case TcgOpKind.Sahf:
                     eflags = (eflags & ~FlagBits.ConditionMask) | ((gprs[0] >> 8) & FlagBits.ConditionMask);
@@ -570,10 +570,10 @@ public static class TcgInterpreter
                     switch (op.Immediate)
                     {
                         case 0:
-                            gprs[0] = (gprs[0] & 0xFFFF0000u) | (uint)(0xFFFF & (int)(sbyte)(byte)gprs[0]);
+                            gprs[0] = (gprs[0] & 0xFFFF0000u) | (uint)(0xFFFF & (sbyte)(byte)gprs[0]);
                             break;
                         case 1:
-                            gprs[0] = (uint)(int)(short)(ushort)gprs[0];
+                            gprs[0] = (uint)(short)(ushort)gprs[0];
                             break;
                         case 2:
                             {
@@ -656,7 +656,8 @@ public static class TcgInterpreter
             }
         }
 
-        state.Eip = eip; state.Eflags = eflags; return;
+        state.Eip = eip;
+        state.Eflags = eflags;
     }
 
     private static void WriteRegister8(uint[] gprs, int registerIndex, byte value)

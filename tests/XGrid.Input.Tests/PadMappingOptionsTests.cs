@@ -70,7 +70,7 @@ public sealed class PadMappingOptionsTests
     {
         var options = new GamepadMappingOptions { InvertLeftY = true };
 
-        HostPad pad = XInputPadMapping.Map(0, 0, 0, (short)10000, (short)20000, (short)30000, (short)32000, options);
+        HostPad pad = XInputPadMapping.Map(0, 0, 0, 10000, 20000, 30000, 32000, options);
 
         Assert.Equal(10000, pad.Sticks[0]);
         Assert.Equal(-20000, pad.Sticks[1]);
@@ -83,7 +83,7 @@ public sealed class PadMappingOptionsTests
     {
         var options = new GamepadMappingOptions { SwapSticks = true };
 
-        HostPad pad = XInputPadMapping.Map(0, 0, 0, (short)10000, (short)20000, (short)30000, (short)32000, options);
+        HostPad pad = XInputPadMapping.Map(0, 0, 0, 10000, 20000, 30000, 32000, options);
 
         Assert.Equal(30000, pad.Sticks[0]);
         Assert.Equal(32000, pad.Sticks[1]);
@@ -96,7 +96,7 @@ public sealed class PadMappingOptionsTests
     {
         var options = new GamepadMappingOptions { LeftDeadZonePercent = 0, RightDeadZonePercent = 0 };
 
-        HostPad pad = XInputPadMapping.Map(0, 0, 0, (short)1, (short)1, (short)1, (short)1, options);
+        HostPad pad = XInputPadMapping.Map(0, 0, 0, 1, 1, 1, 1, options);
 
         Assert.Equal(1, pad.Sticks[0]);
         Assert.Equal(1, pad.Sticks[1]);
@@ -115,7 +115,7 @@ public sealed class PadMappingOptionsTests
             [PadAction.Start] = 0,
         };
 
-        HostPad pad = PadStateBuilder.Build(values, [(short)100, (short)-100, (short)0, (short)0]);
+        HostPad pad = PadStateBuilder.Build(values, [100, -100, 0, 0]);
 
         Assert.Equal(200, pad.Analog[0]);
         Assert.Equal(100, pad.Analog[1]);

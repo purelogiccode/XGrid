@@ -93,7 +93,7 @@ public sealed class InputSettingsTests
     public void MergeKeyboard_OverlaysTheGamepadReport()
     {
         var settings = new InputSettings();
-        HostPad gamepad = XInputPadMapping.Map(0, 0, 0, (short)10000, (short)0, (short)0, (short)0);
+        HostPad gamepad = XInputPadMapping.Map(0, 0, 0, 10000, 0, 0, 0);
 
         HostPad merged = InputMapping.MergeKeyboard(gamepad, settings, [Key.A, Key.Up]);
 

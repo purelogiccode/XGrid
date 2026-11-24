@@ -201,9 +201,9 @@ public sealed class EmulatorSettings
             DisplaySink = DisplaySink,
             CoreHosting = CoreHosting,
             Filter = Filter,
-            Input = Input?.Clone() ?? new InputSettings(),
-            Graphics = Graphics?.Clone() ?? new GraphicsSettings(),
-            Audio = Audio?.Clone() ?? new AudioSettings(),
+            Input = Input.Clone(),
+            Graphics = Graphics.Clone(),
+            Audio = Audio.Clone(),
             LibraryFolders = [.. LibraryFolders],
         };
         foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
@@ -222,9 +222,9 @@ public sealed class EmulatorSettings
             ? CoreHostingProcess
             : CoreHostingInProcess;
         Filter = Services.FrameFilters.Normalize(Filter);
-        Input ??= new InputSettings();
-        Graphics ??= new GraphicsSettings();
-        Audio ??= new AudioSettings();
+        Input = NullSafe.Value(Input, new InputSettings());
+        Graphics = NullSafe.Value(Graphics, new GraphicsSettings());
+        Audio = NullSafe.Value(Audio, new AudioSettings());
         Input.Normalize();
         Graphics.Normalize();
         Audio.Normalize();

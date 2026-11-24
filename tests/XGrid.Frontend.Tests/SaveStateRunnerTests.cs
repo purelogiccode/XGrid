@@ -39,14 +39,14 @@ public sealed class SaveStateRunnerTests
         service.Status = XemuSaveStateStatus.Completed;
         SaveStateResult? saved = runner.Poll();
         Assert.NotNull(saved);
-        Assert.True(saved!.Succeeded);
+        Assert.True(saved.Succeeded);
         Assert.Equal("Saved state to slot 3.", saved.Message);
 
         Assert.True(runner.TryLoad(3, out _));
         service.Status = XemuSaveStateStatus.Completed;
         SaveStateResult? loaded = runner.Poll();
         Assert.NotNull(loaded);
-        Assert.True(loaded!.Succeeded);
+        Assert.True(loaded.Succeeded);
         Assert.Equal("Loaded state from slot 3.", loaded.Message);
 
         Assert.Equal(["save:xgrid-slot-3", "load:xgrid-slot-3"], service.Calls);
@@ -78,7 +78,7 @@ public sealed class SaveStateRunnerTests
         SaveStateResult? result = runner.Poll();
 
         Assert.NotNull(result);
-        Assert.False(result!.Succeeded);
+        Assert.False(result.Succeeded);
         Assert.Equal("Could not create snapshot: no space", result.Message);
     }
 
@@ -119,19 +119,19 @@ public sealed class SaveStateRunnerTests
     [Fact]
     public void Poll_AbandonsARequestTheCoreNeverAnswers()
     {
-        long now = 1000;
+        var now = new System.Runtime.CompilerServices.StrongBox<long>(1000);
         var service = new FakeSaveStateService();
-        var runner = new SaveStateRunner(service, timeoutMs: 500, clock: () => now);
+        var runner = new SaveStateRunner(service, timeoutMs: 500, clock: () => now.Value);
         Assert.True(runner.TrySave(1, out _));
 
-        now += 400;
+        now.Value += 400;
         Assert.Null(runner.Poll());
 
-        now += 200;
+        now.Value += 200;
         SaveStateResult? result = runner.Poll();
 
         Assert.NotNull(result);
-        Assert.False(result!.Succeeded);
+        Assert.False(result.Succeeded);
         Assert.Contains("did not answer", result.Message, StringComparison.Ordinal);
     }
 
@@ -147,7 +147,7 @@ public sealed class SaveStateRunnerTests
         SaveStateResult? result = runner.Poll();
 
         Assert.NotNull(result);
-        Assert.True(result!.Succeeded);
+        Assert.True(result.Succeeded);
         Assert.Equal("Save states: 2 found.", result.Message);
         Assert.Equal(["refresh:"], service.Calls);
     }

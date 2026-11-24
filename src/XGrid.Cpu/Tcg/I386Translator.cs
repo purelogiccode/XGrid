@@ -41,8 +41,6 @@ public static class I386Translator
             return false;
         }
 
-        builder.NoteLength(instruction.Length);
-
         switch (instruction.Mnemonic)
         {
             case Mnemonic.Nop:
@@ -885,7 +883,7 @@ public static class I386Translator
                     if (instruction.Operand2.Kind == OperandKind.Immediate)
                     {
                         count = builder.NewTemp();
-                        builder.MovImmediate(count, instruction.Operand2.Immediate, 4);
+                        builder.MovImmediate(count, instruction.Operand2.Immediate);
                     }
                     else
                     {
@@ -1546,7 +1544,7 @@ public static class I386Translator
         if (operand.Kind == OperandKind.Immediate)
         {
             temp = builder.NewTemp();
-            builder.MovImmediate(temp, operand.Immediate, 4);
+            builder.MovImmediate(temp, operand.Immediate);
             return true;
         }
 

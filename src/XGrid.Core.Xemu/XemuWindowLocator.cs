@@ -126,7 +126,7 @@ internal static unsafe partial class XemuWindowLocator
         return IntPtr.Zero;
     }
 
-    private static unsafe string ReadTitle(IntPtr handle)
+    private static string ReadTitle(IntPtr handle)
     {
         int length = Win32Window.GetWindowTextLengthW(handle);
         if (length <= 0)
@@ -152,6 +152,5 @@ internal static unsafe partial class XemuWindowLocator
     }
 
     [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static unsafe partial bool EnumWindows(delegate* unmanaged[Stdcall]<IntPtr, nint, int> callback, nint state);
+    private static unsafe partial void EnumWindows(delegate* unmanaged[Stdcall]<IntPtr, nint, int> callback, nint state);
 }

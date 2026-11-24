@@ -7,9 +7,8 @@ namespace XGrid.Core.Xemu;
 
 /// <summary>One file entry in a ZArchive.</summary>
 /// <param name="Name">Entry name (Latin-1 decoded).</param>
-/// <param name="UncompressedOffset">Offset in the archive's uncompressed space.</param>
 /// <param name="Size">Entry size in bytes.</param>
-public readonly record struct ZarEntry(string Name, ulong UncompressedOffset, ulong Size);
+public readonly record struct ZarEntry(string Name, ulong Size);
 
 /// <summary>
 /// Reads the directory of a ZArchive (<c>.zar</c>) without decoding any block,
@@ -116,11 +115,9 @@ public sealed class ZarArchive
                     continue;
                 }
 
-                ulong offset = BinaryPrimitives.ReadUInt32BigEndian(entry[4..])
-                               | ((ulong)(BinaryPrimitives.ReadUInt32BigEndian(entry[12..]) & 0xFFFF) << 32);
                 ulong size = BinaryPrimitives.ReadUInt32BigEndian(entry[8..])
                              | ((ulong)(BinaryPrimitives.ReadUInt32BigEndian(entry[12..]) >> 16) << 32);
-                entries.Add(new ZarEntry(name, offset, size));
+                entries.Add(new ZarEntry(name, size));
             }
 
             archive = new ZarArchive(entries);

@@ -79,7 +79,7 @@ public static class TcgFpu
                 break;
 
             case Mnemonic.Fbld:
-                fpu.Push(ReadBcd(TcgAddress.Of(instruction.Operand1, gprs, segmentBases), fpu, memory));
+                fpu.Push(ReadBcd(TcgAddress.Of(instruction.Operand1, gprs, segmentBases), memory));
                 break;
 
             case Mnemonic.Fbstp:
@@ -700,7 +700,7 @@ public static class TcgFpu
         }
     }
 
-    private static Fpu80 ReadBcd(uint address, FpuState fpu, ITcgMemory? memory)
+    private static Fpu80 ReadBcd(uint address, ITcgMemory? memory)
     {
         Span<byte> bytes = stackalloc byte[10];
         ReadBytes(address, bytes, memory);
