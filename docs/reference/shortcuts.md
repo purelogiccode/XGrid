@@ -8,8 +8,10 @@
 | `F6` | Quick save to the selected slot |
 | `F7` | Quick load from the selected slot |
 | `F8` | Save a screenshot of the whole window |
+| `F10` | Step one frame while paused |
 | `F11` | Toggle fullscreen |
 | `Esc` | Leave fullscreen (when fullscreen) |
+| `P` | Pause or resume the console |
 | `Ctrl+O` | Open a disc image |
 | `Ctrl+S` | Save settings (Settings page only) |
 
@@ -36,8 +38,9 @@ All bindings are configurable in **Settings → Input**. See [Input](../guides/i
 | Menu | Entries |
 | --- | --- |
 | **File** | Open Disc, Choose Disc Image, Open Config Folder, Open Screenshots Folder, Exit |
-| **Emulation** | Power On / Off, Stop, Save State, Load State, Delete State, Fullscreen |
+| **Emulation** | Power On / Off, Stop, Pause / Resume, Step One Frame, Save State, Load State, Delete State, Fullscreen |
 | **View** | Console, Library, Settings, Activity, Save Screenshot, Show Log Dock, Fullscreen |
 | **Help** | About XGrid |
 
-`Ctrl+O` and `F8` are also exposed in the File and View menus.
+`Ctrl+O` and `F8` are also exposed in the File and View menus. Pause and frame
+step need in-process core hosting, like save states.

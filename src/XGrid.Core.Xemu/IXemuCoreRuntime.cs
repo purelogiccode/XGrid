@@ -29,6 +29,12 @@ public interface IXemuCoreRuntime : IDisposable
     /// </summary>
     ISaveStateService? SaveStates { get; }
 
+    /// <summary>
+    /// Gets the core's pause/step controls, or null when this hosting mode (or
+    /// an older core build) cannot reach them.
+    /// </summary>
+    ICorePlayback? Playback { get; }
+
     /// <summary>Starts the machine.</summary>
     void Start();
 

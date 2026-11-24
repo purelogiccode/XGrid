@@ -42,6 +42,9 @@ public sealed class XemuInProcessCore : IDisposable
     private delegate int NameRequestDelegate([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int PauseDelegate(int paused);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int NoArgIntDelegate();
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -65,6 +68,8 @@ public sealed class XemuInProcessCore : IDisposable
     private readonly NoArgIntDelegate? _snapshotCount;
     private readonly NoArgStringDelegate? _snapshotError;
     private readonly IndexedStringDelegate? _snapshotName;
+    private readonly PauseDelegate? _setPaused;
+    private readonly NoArgIntDelegate? _frameStep;
     private bool _started;
     private bool _disposed;
 
@@ -90,6 +95,11 @@ public sealed class XemuInProcessCore : IDisposable
             _snapshotCount = TryGet<NoArgIntDelegate>("xgrid_core_snapshot_count");
             _snapshotError = TryGet<NoArgStringDelegate>("xgrid_core_snapshot_error");
             _snapshotName = TryGet<IndexedStringDelegate>("xgrid_core_snapshot_name");
+
+            // Playback is optional for the same reason: an older core still
+            // boots, the shell just has no pause control for it.
+            _setPaused = TryGet<PauseDelegate>("xgrid_core_set_paused");
+            _frameStep = TryGet<NoArgIntDelegate>("xgrid_core_frame_step");
         }
         catch
         {
@@ -115,6 +125,9 @@ public sealed class XemuInProcessCore : IDisposable
     public bool SupportsSaveStates =>
         _snapshotSave is not null && _snapshotLoad is not null && _snapshotDelete is not null
         && _snapshotStatus is not null && _snapshotError is not null;
+
+    /// <summary>Gets a value indicating whether the core can pause and step.</summary>
+    public bool SupportsPlayback => _setPaused is not null && _frameStep is not null;
 
     /// <summary>
     /// Loads the core DLL when it exists beside the executable, returning null
@@ -230,6 +243,19 @@ public sealed class XemuInProcessCore : IDisposable
     public int Join()
     {
         return _disposed ? -1 : _join();
+    }
+
+    /// <summary>Queues a pause (true) or resume (false); 0 accepted, negative refused.</summary>
+    /// <param name="paused">True to pause, false to resume.</param>
+    public int SetPaused(bool paused)
+    {
+        return _disposed || _setPaused is null ? -1 : _setPaused(paused ? 1 : 0);
+    }
+
+    /// <summary>Queues one frame step while paused (0 accepted, negative refused).</summary>
+    public int StepFrame()
+    {
+        return _disposed || _frameStep is null ? -1 : _frameStep();
     }
 
     /// <summary>Queues a snapshot save (0 accepted, negative refused).</summary>

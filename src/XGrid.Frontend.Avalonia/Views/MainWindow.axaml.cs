@@ -278,6 +278,14 @@ public partial class MainWindow : Window
                 ExecuteShellCommand(static viewModel => viewModel.SaveScreenshotCommand.Execute(null));
                 e.Handled = true;
                 return;
+            case Key.P:
+                ExecuteShellCommand(static viewModel => viewModel.TogglePauseCommand.Execute(null));
+                e.Handled = true;
+                return;
+            case Key.F10:
+                ExecuteShellCommand(static viewModel => viewModel.StepFrameCommand.Execute(null));
+                e.Handled = true;
+                return;
         }
 
         if (DataContext is not MainWindowViewModel { IsRunning: true } viewModel)

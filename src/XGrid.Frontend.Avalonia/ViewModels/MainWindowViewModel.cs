@@ -50,6 +50,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _lastFrameSinkActive;
     private bool _shuttingDown;
     private SaveStateRunner? _saveStates;
+    private PlaybackController? _playback;
     private bool _saveStatesNeedRefresh;
     private CoreCapabilities? _coreCapabilities;
 
@@ -58,6 +59,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isRunning;
+
+    [ObservableProperty]
+    private bool _isPaused;
 
     [ObservableProperty]
     private int _selectedSaveSlot = 1;
@@ -242,6 +246,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets a value indicating whether the running core can save states.</summary>
     public bool HasSaveStates => _saveStates?.IsSupported == true;
 
+    /// <summary>Gets a value indicating whether the running core can pause and step.</summary>
+    public bool HasPlayback => _playback?.IsSupported == true;
+
+    /// <summary>Gets the pause button label for the current state.</summary>
+    public string PauseButtonText => IsPaused ? "Resume" : "Pause";
+
+    /// <summary>Gets the pause toolbar hint for the current state.</summary>
+    public string PauseHint => IsPaused ? "Resume the console (P)" : "Pause the console (P)";
+
+    /// <summary>Gets the frame-step toolbar hint.</summary>
+    public string StepFrameHint => IsPaused
+        ? "Advance one frame (F10)"
+        : "Pause the console to step one frame at a time (F10)";
+
     /// <summary>Gets the quick-save menu label for the selected slot.</summary>
     public string QuickSaveHeader => "Quick Save (Slot " + SelectedSaveSlot.ToString(CultureInfo.InvariantCulture) + ")";
 
@@ -264,7 +282,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     };
 
     /// <summary>Gets the short run state shown in the status bar.</summary>
-    public string RunStateLabel => IsRunning ? "Running" : "Ready";
+    public string RunStateLabel => IsRunning ? (IsPaused ? "Paused" : "Running") : "Ready";
 
     /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
     public bool SmoothFrame => FrameFilters.UsesBilinearSampling(Config.Filter);
@@ -549,6 +567,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _saveStates = new SaveStateRunner(_core.SaveStates);
         _saveStatesNeedRefresh = _saveStates.IsSupported;
         OnPropertyChanged(nameof(HasSaveStates));
+        _playback = new PlaybackController(_core.Playback);
+        IsPaused = false;
+        OnPropertyChanged(nameof(HasPlayback));
+        TogglePauseCommand.NotifyCanExecuteChanged();
+        StepFrameCommand.NotifyCanExecuteChanged();
 
         if (!string.Equals(launch.Renderer, effective.Graphics.Renderer, StringComparison.Ordinal))
         {
@@ -581,6 +604,57 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             StartGame(null);
         }
+    }
+
+    /// <summary>Public command: pauses a running console or resumes a paused one (P).</summary>
+    [RelayCommand(CanExecute = nameof(CanTogglePause))]
+    private void TogglePause()
+    {
+        PlaybackController? playback = _playback;
+        if (playback is null)
+        {
+            ShowToast("Pausing needs the in-process emulator core.");
+            return;
+        }
+
+        if (!playback.Toggle(out string problem))
+        {
+            AddLog(LogLevel.Warning, "Pause refused: " + problem);
+            ShowToast(problem);
+            return;
+        }
+
+        IsPaused = playback.IsPaused;
+        StatusText = IsPaused ? "Paused" : "Running";
+        StatusDetail = (CurrentGame?.Title ?? "Xbox dashboard") + (IsPaused ? " - paused" : string.Empty);
+        AddLog(LogLevel.Info, IsPaused ? "Emulator paused." : "Emulator resumed.");
+    }
+
+    private bool CanTogglePause()
+    {
+        return IsRunning && _playback?.IsSupported == true;
+    }
+
+    /// <summary>Public command: runs one frame while paused (F10).</summary>
+    [RelayCommand(CanExecute = nameof(CanStepFrame))]
+    private void StepFrame()
+    {
+        PlaybackController? playback = _playback;
+        if (playback is null)
+        {
+            ShowToast("Pausing needs the in-process emulator core.");
+            return;
+        }
+
+        if (!playback.TryStepFrame(out string problem))
+        {
+            ShowToast(problem);
+        }
+    }
+
+    private bool CanStepFrame()
+    {
+        return IsRunning && IsPaused && _playback?.IsSupported == true;
     }
 
     /// <summary>
@@ -709,6 +783,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             IsRunning = false;
             ResetFrame();
+            _playback?.Reset();
+            _playback = null;
+            IsPaused = false;
+            OnPropertyChanged(nameof(HasPlayback));
             StatusText = "Idle";
             StatusDetail = "Power-on failed";
             AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
@@ -856,6 +934,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowCoreDisplay));
         OnPropertyChanged(nameof(RunStateLabel));
         StopSessionCommand.NotifyCanExecuteChanged();
+        TogglePauseCommand.NotifyCanExecuteChanged();
+        StepFrameCommand.NotifyCanExecuteChanged();
         if (value)
         {
             _frameTimer.Start();
@@ -864,6 +944,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _frameTimer.Stop();
         }
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnIsPausedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(RunStateLabel));
+        OnPropertyChanged(nameof(PauseButtonText));
+        OnPropertyChanged(nameof(PauseHint));
+        OnPropertyChanged(nameof(StepFrameHint));
+        TogglePauseCommand.NotifyCanExecuteChanged();
+        StepFrameCommand.NotifyCanExecuteChanged();
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -1001,7 +1092,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             ResetFrame();
             _saveStates = null;
             _saveStatesNeedRefresh = false;
+            _playback?.Reset();
+            _playback = null;
+            IsPaused = false;
             OnPropertyChanged(nameof(HasSaveStates));
+            OnPropertyChanged(nameof(HasPlayback));
             StatusText = e.Faulted ? "Faulted" : "Off";
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);

@@ -32,9 +32,15 @@
         <Separator />
         <MenuItem Header="Exit" Click="OnMenuExit" ToolTip.Tip="Close XGrid." />
       </MenuItem>
-      <MenuItem Header="Emulation" ToolTip.Tip="Power, stop and save states.">
+      <MenuItem Header="Emulation" ToolTip.Tip="Power, stop, pause and save states.">
         <MenuItem Header="Power On / Off" InputGesture="F5" Click="OnMenuPower" />
         <MenuItem Header="Stop" Click="OnMenuStop" />
+        <MenuItem Header="{Binding PauseButtonText}" InputGesture="P"
+                  Command="{Binding TogglePauseCommand}"
+                  ToolTip.Tip="Freeze the running machine and resume it where it stopped." />
+        <MenuItem Header="Step One Frame" InputGesture="F10"
+                  Command="{Binding StepFrameCommand}"
+                  ToolTip.Tip="Advance a paused machine by one frame." />
         <Separator />
         <MenuItem Header="Save State" IsEnabled="{Binding HasSaveStates}"
                   ToolTip.Tip="Write the running machine to a slot on the hard disk image.">
@@ -109,6 +115,22 @@
             <StackPanel Spacing="2">
               <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Stop}" />
               <TextBlock Text="Stop" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="toolbar"
+                  Command="{Binding TogglePauseCommand}"
+                  ToolTip.Tip="{Binding PauseHint}">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Pause}" />
+              <TextBlock Text="{Binding PauseButtonText}" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="toolbar"
+                  Command="{Binding StepFrameCommand}"
+                  ToolTip.Tip="{Binding StepFrameHint}">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.StepForward}" />
+              <TextBlock Text="Step" FontSize="10.5" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
 

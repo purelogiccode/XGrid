@@ -19,6 +19,7 @@
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
 #include "qemu/thread.h"
+#include "qemu/timer.h"
 #include "block/aio.h"
 #include "qapi/error.h"
 #include "system/runstate.h"
@@ -223,6 +224,161 @@ static int xgrid_core_snapshot_request_start(XGridSnapshotRequest request,
     return 0;
 }
 
+/*
+ * Playback control.
+ *
+ * Pause, resume and frame step change the machine's run state, which needs
+ * the BQL, so they are queued as bottom halves on the core's main loop like
+ * the snapshot requests.
+ *
+ * A pause lands on a frame boundary: the machine keeps running until the
+ * display path publishes the next frame, then stops there. A step resumes
+ * from that boundary and stops the same way after the next frame. A timer
+ * covers a launch where no frame is published (the display sink is off, or
+ * the window is gone).
+ *
+ * g_paused is the shell's intent; g_vm_paused is what the core applied. A
+ * snapshot load stops the machine for the restore and a step runs it for one
+ * frame, so neither may be mistaken for the shell's pause.
+ */
+#define XGRID_FRAME_TIMEOUT_MS 50
+
+static int g_paused;
+static int g_vm_paused;
+static int g_pause_pending;
+static int g_step_pending;
+static int g_step_armed;
+static QEMUTimer *g_step_timer;
+
+static void xgrid_core_stop_on_timeout(void *opaque);
+
+static void xgrid_core_cancel_frame_timer(void)
+{
+    if (g_step_timer != NULL) {
+        timer_del(g_step_timer);
+    }
+}
+
+static void xgrid_core_arm_frame_timer(void)
+{
+    if (g_step_timer == NULL) {
+        g_step_timer = timer_new_ms(QEMU_CLOCK_REALTIME,
+                                    xgrid_core_stop_on_timeout, NULL);
+    }
+    timer_mod(g_step_timer,
+              qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + XGRID_FRAME_TIMEOUT_MS);
+}
+
+static void xgrid_core_mark_stopped(void)
+{
+    if (runstate_is_running()) {
+        vm_stop(RUN_STATE_PAUSED);
+    }
+    qatomic_set(&g_vm_paused, 1);
+}
+
+/* Runs on the main loop after the frame that ends a pause request. */
+static void xgrid_core_stop_for_pause(void *opaque)
+{
+    (void)opaque;
+    xgrid_core_cancel_frame_timer();
+    if (qatomic_read(&g_paused) && !qatomic_read(&g_vm_paused)) {
+        xgrid_core_mark_stopped();
+    }
+}
+
+/* Runs on the main loop after the frame that ends a step. */
+static void xgrid_core_stop_for_step(void *opaque)
+{
+    (void)opaque;
+    xgrid_core_cancel_frame_timer();
+    qatomic_set(&g_step_pending, 0);
+    if (qatomic_read(&g_paused) && !qatomic_read(&g_vm_paused)) {
+        xgrid_core_mark_stopped();
+    }
+}
+
+/*
+ * Runs on the main loop when the frame never arrived (no display sink, so the
+ * core renders into its own window and publishes nothing). A timer may not
+ * delete itself, so this only updates the flags.
+ */
+static void xgrid_core_stop_on_timeout(void *opaque)
+{
+    (void)opaque;
+
+    qatomic_set(&g_pause_pending, 0);
+    qatomic_set(&g_step_armed, 0);
+    qatomic_set(&g_step_pending, 0);
+    if (qatomic_read(&g_paused)) {
+        xgrid_core_mark_stopped();
+    }
+}
+
+/* Runs on the display path, possibly on the vblank thread. */
+static void xgrid_core_display_frame(void *opaque)
+{
+    AioContext *context;
+
+    (void)opaque;
+
+    context = qemu_get_aio_context();
+    if (context == NULL) {
+        return;
+    }
+
+    if (qatomic_xchg(&g_pause_pending, 0)) {
+        aio_bh_schedule_oneshot(context, xgrid_core_stop_for_pause, NULL);
+    } else if (qatomic_xchg(&g_step_armed, 0)) {
+        aio_bh_schedule_oneshot(context, xgrid_core_stop_for_step, NULL);
+    }
+}
+
+static void xgrid_core_apply_pause(void *opaque)
+{
+    (void)opaque;
+
+    /* A pause or resume cancels any frame wait that is still running. */
+    xgrid_core_cancel_frame_timer();
+    qatomic_set(&g_pause_pending, 0);
+    qatomic_set(&g_step_armed, 0);
+    qatomic_set(&g_step_pending, 0);
+
+    if (qatomic_read(&g_paused)) {
+        if (qatomic_read(&g_vm_paused)) {
+            return;
+        }
+
+        if (xgrid_display_enabled()) {
+            /* Stop on the next frame boundary the display path publishes. */
+            xgrid_core_arm_frame_timer();
+            qatomic_set(&g_pause_pending, 1);
+        } else {
+            xgrid_core_mark_stopped();
+        }
+    } else {
+        if (!runstate_is_running()) {
+            vm_start();
+        }
+        qatomic_set(&g_vm_paused, 0);
+    }
+}
+
+static void xgrid_core_start_step(void *opaque)
+{
+    (void)opaque;
+
+    if (!qatomic_read(&g_paused) || !qatomic_read(&g_vm_paused)) {
+        qatomic_set(&g_step_pending, 0);
+        return;
+    }
+
+    xgrid_core_arm_frame_timer();
+    qatomic_set(&g_step_armed, 1);
+    qatomic_set(&g_vm_paused, 0);
+    vm_start();
+}
+
 /**
  * Starts the machine on a background thread.
  *
@@ -260,6 +416,12 @@ XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
      * The host owns the process streams: redirecting them here would capture
      * the shell's own output as well, because a loaded library shares them.
      */
+    qatomic_set(&g_paused, 0);
+    qatomic_set(&g_vm_paused, 0);
+    qatomic_set(&g_pause_pending, 0);
+    qatomic_set(&g_step_pending, 0);
+    qatomic_set(&g_step_armed, 0);
+    xgrid_display_set_frame_callback(xgrid_core_display_frame, NULL);
     xgrid_display_set_sink(display_sink);
     xgrid_input_set_sink(input_sink);
 
@@ -329,6 +491,50 @@ XGRID_CORE_EXPORT int xgrid_core_join(void)
 XGRID_CORE_EXPORT const char *xgrid_core_version(void)
 {
     return xemu_version;
+}
+
+/** Queues a pause or a resume. */
+XGRID_CORE_EXPORT int xgrid_core_set_paused(int paused)
+{
+    if (paused != 0 && paused != 1) {
+        return -2;
+    }
+    if (!qatomic_read(&g_running) || qemu_get_aio_context() == NULL) {
+        return -1;
+    }
+
+    qatomic_set(&g_paused, paused);
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), xgrid_core_apply_pause,
+                            NULL);
+    return 0;
+}
+
+/** Returns 1 while the shell has the machine paused. */
+XGRID_CORE_EXPORT int xgrid_core_is_paused(void)
+{
+    return qatomic_read(&g_running) && qatomic_read(&g_paused) ? 1 : 0;
+}
+
+/** Runs one frame while paused and pauses again. */
+XGRID_CORE_EXPORT int xgrid_core_frame_step(void)
+{
+    if (!qatomic_read(&g_running) || qemu_get_aio_context() == NULL) {
+        return -1;
+    }
+    if (!qatomic_read(&g_paused)) {
+        return -2;
+    }
+    if (!qatomic_read(&g_vm_paused)) {
+        /* The pause is still waiting for its frame boundary. */
+        return -2;
+    }
+    if (qatomic_xchg(&g_step_pending, 1)) {
+        return -3;
+    }
+
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), xgrid_core_start_step,
+                            NULL);
+    return 0;
 }
 
 /** Queues a snapshot save under @p name. */

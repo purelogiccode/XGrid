@@ -66,6 +66,7 @@ The managed C# emulator and its test suite remain in the repository as a
 - Frames and input still use the same shared sections, so presentation is
   identical to the separate-process path.
 - Save states are available through the in-process ABI.
+- Pause, resume and single-frame step are available through the same ABI.
 - A missing or unusable library falls back to the separate process with a log
   message.
 
@@ -76,6 +77,7 @@ The managed C# emulator and its test suite remain in the repository as a
   variables (`XGRID_DISPLAY_SHM`, `XGRID_INPUT_SHM`).
 - The core writes `xemu.log` in its working directory.
 - Save states are not exposed; the shell has no ABI to call.
+- Pause and frame step are not exposed for the same reason.
 
 ## Display sink
 
@@ -127,6 +129,22 @@ main loop exists is refused so the shell can retry.
 The request runs as a bottom half on the core's main loop because the block layer
 requires the main thread and the thumbnail reads the renderer's GL context. The
 shell polls the status and reports completion.
+
+## Playback control
+
+Pause, resume and frame step use the in-process ABI:
+
+```text
+xgrid_core_set_paused(bool)   xgrid_core_is_paused()   xgrid_core_frame_step()
+```
+
+A request is queued and applied as a bottom half on the core's main loop, so the
+run-state change happens where QEMU expects it. A pause stops the machine on the
+next published frame; a frame step resumes from that frame boundary and stops
+the same way after the next one. When no frame is published (the display sink is
+off), a short timer stops the machine instead. The shell keeps the paused state
+it asked for and reports it in the status bar, the toolbar and a badge over the
+picture.
 
 ## Core capabilities
 

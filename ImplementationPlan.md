@@ -14,6 +14,7 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Settings tabs: System, Graphics, Audio, Input, Titles, Library, Appearance.
 - [x] Keyboard and XInput bindings with capture, dead zones and trigger threshold.
 - [x] Per-title guest-memory overrides keyed by title ID or path.
+- [x] Pause, resume and single-frame stepping.
 - [x] Whole-window screenshots (F8).
 - [x] Power, stop, fullscreen, disc-open and settings shortcuts.
 
@@ -53,7 +54,6 @@ current product roadmap; user documentation lives in `docs/`.
 
 - [ ] Per-title overrides beyond guest memory (renderer and filter).
 - [ ] Disc swap without power-cycling.
-- [ ] Pause and frame-step for the core.
 - [ ] Controller assignment beyond player 1.
 - [ ] Screenshot access from the Library.
 - [ ] First-run wizard and shortcut sheet.

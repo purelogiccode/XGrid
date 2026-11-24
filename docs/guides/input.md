@@ -71,10 +71,15 @@ These are shell shortcuts, not gamepad bindings:
 | `F6` | Quick save to the selected slot |
 | `F7` | Quick load from the selected slot |
 | `F8` | Save a screenshot of the window |
+| `F10` | Step one frame while paused |
 | `F11` | Toggle fullscreen |
 | `Esc` | Leave fullscreen |
+| `P` | Pause or resume the console |
 | `Ctrl+O` | Open a disc image |
 | `Ctrl+S` | Save settings (Settings page) |
+
+Pause and frame step need in-process core hosting, like save states: the shell
+calls the core's ABI to stop the machine and to run exactly one frame.
 
 See [Shortcuts](../reference/shortcuts.md) for the full list.
 
