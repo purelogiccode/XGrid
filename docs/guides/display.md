@@ -74,10 +74,12 @@ the Activity log.
 ## Fullscreen
 
 - **F11** toggles fullscreen.
-- **Esc** leaves fullscreen.
+- In fullscreen, **Esc** pauses a running game on the first press. Press **Esc**
+  again to close XGrid.
+- With no game running, **Esc** returns to the windowed shell.
 
 The shell fullscreen mode is separate from the core's **Start fullscreen**
-setting. Use F11 for normal desktop use.
+setting. Use F11 when you only want to leave fullscreen during play.
 
 ## Captions and screenshots
 
@@ -102,6 +104,13 @@ adding files, and **Open folder** to browse the PNGs directly.
 
 Both controls need in-process core hosting, like save states. The status bar
 shows **Paused** and the picture stays until the next step or resume.
+
+## Fast forward
+
+Press **Space** while a game runs to turn on **4x**; press it again to return to
+normal speed. The status bar shows **Running 4x** while it is on. Fast-forward
+speeds up the vblank pace the core presents at, so it needs in-process core
+hosting like pause and frame step.
 
 ## Performance notes
 

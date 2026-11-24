@@ -15,6 +15,9 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Keyboard and XInput bindings with capture, dead zones and trigger threshold.
 - [x] Per-title overrides (memory, renderer, texture filtering, presentation filter) keyed by title ID or path.
 - [x] Pause, resume and single-frame stepping.
+- [x] 4x fast-forward toggled with Space.
+- [x] Fullscreen Esc pauses a running game, then closes the shell on the next press.
+- [x] Command-line launch switches: `--autostart`, `-fullscreen`/`--fullscreen`/`-f`.
 - [x] Disc swap and eject through the in-process ABI.
 - [x] Screenshot strip in the Library.
 - [x] Local cover art from the user covers folder, keyed by title ID or title.
@@ -33,8 +36,8 @@ current product roadmap; user documentation lives in `docs/`.
       and DSP settings.
 - [x] Four save-state slots through the in-process ABI.
 - [x] Renderer capability manifest (`xgrid-core.json`).
-- [] Implement Direct-X rendering.
-- [] Review and test all graphic filters.
+- [ ] Implement Direct-X rendering.
+- [x] Review and test all graphic filters.
 
 
 ### Media and packaging
@@ -57,6 +60,19 @@ current product roadmap; user documentation lives in `docs/`.
 - [ ] Expand the tested retail-title set.
 - [ ] Track title-level behavior regressions against xemu 0.8.139.
 - [ ] Keep the media drivers current with CHD/ZArchive format changes.
+
+### Graphics
+
+The core has OpenGL, Vulkan and NULL render backends plus DXGI presentation;
+a DirectX NV2A renderer is still a new backend, not a shell switch.
+
+- [ ] Choose Direct3D 11 or 12 and document the choice.
+- [ ] Share NV2A command decoding between the OpenGL backend and the DirectX backend.
+- [ ] Translate Xbox vertex and pixel shaders for the chosen DirectX API.
+- [ ] Add a DirectX texture cache with Xbox tiling and swizzle handling.
+- [ ] Implement surface/render-target caching and presentation.
+- [ ] Add the renderer to the capability manifest and Settings choices.
+- [ ] Test a retail-title sample against OpenGL for visual and performance parity.
 
 ### Media
 

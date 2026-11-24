@@ -8,6 +8,19 @@ namespace XGrid.Frontend.Avalonia.Services;
 /// <summary>Parses and formats the Avalonia key names stored in input settings.</summary>
 public static class KeyboardKeys
 {
+    /// <summary>
+    /// Keys the shell owns. Space holds fast-forward while a game runs, so it
+    /// is never stored as a pad binding.
+    /// </summary>
+    public static IReadOnlyList<Key> Reserved { get; } = [Key.Space];
+
+    /// <summary>Returns true when the shell owns the key for itself.</summary>
+    /// <param name="key">Avalonia key.</param>
+    public static bool IsReserved(Key key)
+    {
+        return Reserved.Contains(key);
+    }
+
     /// <summary>Parses a comma-separated key list, ignoring unknown or duplicate entries.</summary>
     /// <param name="text">Stored key list.</param>
     public static IReadOnlyList<Key> ParseList(string? text)
@@ -63,7 +76,12 @@ public static class KeyboardKeys
     /// <param name="text">Stored key list.</param>
     public static string NormalizeList(string? text)
     {
-        return string.Join(",", ParseList(text).Select(Format).Distinct(StringComparer.OrdinalIgnoreCase));
+        return string.Join(
+            ",",
+            ParseList(text)
+                .Where(key => !Reserved.Contains(key))
+                .Select(Format)
+                .Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>Returns the display text for a stored key list.</summary>

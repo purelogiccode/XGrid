@@ -12,11 +12,11 @@ namespace XGrid.Frontend.Tests;
 public sealed class InputSettingsTests
 {
     [Fact]
-    public void Defaults_CoverEveryActionAndKeepTheAlternateAKey()
+    public void Defaults_CoverEveryActionAndReserveSpace()
     {
         var settings = new InputSettings();
 
-        Assert.Equal("A,Space", settings.Keyboard[nameof(PadAction.A)]);
+        Assert.Equal("A", settings.Keyboard[nameof(PadAction.A)]);
         Assert.Equal("RightShoulder", settings.Gamepad[nameof(PadAction.White)]);
         Assert.Equal("LeftShoulder", settings.Gamepad[nameof(PadAction.Black)]);
         foreach (PadAction action in PadActions.All)
@@ -47,7 +47,7 @@ public sealed class InputSettingsTests
 
         settings.Normalize();
 
-        Assert.Equal("A,Space", settings.Keyboard[nameof(PadAction.A)]);
+        Assert.Equal("A", settings.Keyboard[nameof(PadAction.A)]);
         Assert.False(settings.Keyboard.ContainsKey("NotAnAction"));
         Assert.Equal("A", settings.Gamepad[nameof(PadAction.A)]);
         Assert.Equal(0, settings.LeftDeadZonePercent);
@@ -62,7 +62,7 @@ public sealed class InputSettingsTests
         InputSettings copy = settings.Clone();
         copy.Keyboard[nameof(PadAction.A)] = "Q";
 
-        Assert.Equal("A,Space", settings.Keyboard[nameof(PadAction.A)]);
+        Assert.Equal("A", settings.Keyboard[nameof(PadAction.A)]);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class InputSettingsTests
         Assert.True(KeyboardKeys.TryParse("Backspace", out Key back));
         Assert.Equal(Key.Back, back);
         Assert.Equal("Backspace", KeyboardKeys.Format(Key.Back));
-        Assert.Equal("A,Space", KeyboardKeys.NormalizeList("A, Space, A"));
+        Assert.Equal("A", KeyboardKeys.NormalizeList("A, Space, A"));
         Assert.Equal("Unbound", KeyboardKeys.Describe("not-a-key"));
     }
 
@@ -115,11 +115,21 @@ public sealed class InputSettingsTests
 
         Assert.True(InputMapping.TryMapKey(settings, Key.A, out PadAction a));
         Assert.Equal(PadAction.A, a);
-        Assert.True(InputMapping.TryMapKey(settings, Key.Space, out PadAction space));
-        Assert.Equal(PadAction.A, space);
+        Assert.False(InputMapping.TryMapKey(settings, Key.Space, out _));
         Assert.True(InputMapping.TryMapKey(settings, Key.S, out PadAction b));
         Assert.Equal(PadAction.B, b);
         Assert.False(InputMapping.TryMapKey(settings, Key.P, out _));
+    }
+
+    [Fact]
+    public void TryMapKey_IgnoresSpaceEvenWhenAnOldConfigBindsIt()
+    {
+        var settings = new InputSettings();
+        settings.Keyboard[nameof(PadAction.A)] = "A,Space";
+
+        Assert.True(InputMapping.TryMapKey(settings, Key.A, out PadAction a));
+        Assert.Equal(PadAction.A, a);
+        Assert.False(InputMapping.TryMapKey(settings, Key.Space, out _));
     }
 
     [Fact]

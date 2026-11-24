@@ -43,6 +43,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private long _lastPresentTimestamp;
     private long _frameWindowStart;
     private const int FrameReportPeriodMs = 5000;
+
+    /// <summary>The pace Space holds the console at (four times real time).</summary>
+    public const int FastForwardMultiplier = 4;
     private GamepadMappingOptions _gamepadOptions;
     private readonly XInputGamepadReader?[] _gamepads = new XInputGamepadReader?[XemuInputSink.PadCount];
     private readonly HostPad[] _gamepadPads = CreateNeutralPads();
@@ -70,6 +73,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isPaused;
+
+    [ObservableProperty]
+    private bool _isFastForward;
 
     [ObservableProperty]
     private int _selectedSaveSlot = 1;
@@ -307,7 +313,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     };
 
     /// <summary>Gets the short run state shown in the status bar.</summary>
-    public string RunStateLabel => IsRunning ? (IsPaused ? "Paused" : "Running") : "Ready";
+    public string RunStateLabel => IsRunning
+        ? IsPaused
+            ? "Paused"
+            : IsFastForward
+                ? $"Running {FastForwardMultiplier}x"
+                : "Running"
+        : "Ready";
 
     /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
     public bool SmoothFrame => FrameFilters.UsesBilinearSampling(ActiveFilter);
@@ -768,6 +780,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasSaveStates));
         _playback = new PlaybackController(_core.Playback);
         IsPaused = false;
+        IsFastForward = false;
         OnPropertyChanged(nameof(HasPlayback));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StepFrameCommand.NotifyCanExecuteChanged();
@@ -828,6 +841,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Pausing while Space is held must return the core to real time; the
+        // key handler releases the flag separately.
+        if (playback.IsPaused && IsFastForward)
+        {
+            if (playback.TrySetSpeed(1, out string speedProblem))
+            {
+                IsFastForward = false;
+            }
+            else
+            {
+                AddLog(LogLevel.Warning, "Could not leave fast-forward: " + speedProblem);
+            }
+        }
+
         IsPaused = playback.IsPaused;
         StatusText = IsPaused ? "Paused" : "Running";
         StatusDetail = (CurrentGame?.Title ?? "Xbox dashboard") + (IsPaused ? " - paused" : string.Empty);
@@ -837,6 +864,59 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool CanTogglePause()
     {
         return IsRunning && _playback?.IsSupported == true;
+    }
+
+    /// <summary>Toggles 4x fast-forward on or off (Space).</summary>
+    public void ToggleFastForward()
+    {
+        SetFastForward(!IsFastForward);
+    }
+
+    /// <summary>
+    /// Turns 4x fast-forward on or off. The status bar shows the active pace so
+    /// the state is never silent.
+    /// </summary>
+    /// <param name="enabled">True to run at 4x, false to return to real time.</param>
+    public void SetFastForward(bool enabled)
+    {
+        if (enabled == IsFastForward)
+        {
+            return;
+        }
+
+        if (enabled && (!IsRunning || IsPaused))
+        {
+            return;
+        }
+
+        PlaybackController? playback = _playback;
+        if (playback is null || !playback.IsSupported)
+        {
+            if (enabled)
+            {
+                ShowToast("Fast forward needs the in-process emulator core.");
+            }
+
+            return;
+        }
+
+        int multiplier = enabled ? FastForwardMultiplier : 1;
+        if (!playback.TrySetSpeed(multiplier, out string problem))
+        {
+            if (enabled)
+            {
+                AddLog(LogLevel.Warning, "Fast forward refused: " + problem);
+                ShowToast(problem);
+            }
+
+            return;
+        }
+
+        IsFastForward = enabled;
+        StatusText = IsPaused ? "Paused" : "Running";
+        StatusDetail = (CurrentGame?.Title ?? "Xbox dashboard")
+            + (IsPaused ? " - paused" : enabled ? $" - {FastForwardMultiplier}x fast-forward" : string.Empty);
+        AddLog(LogLevel.Info, enabled ? $"Fast forward {FastForwardMultiplier}x." : "Fast forward off.");
     }
 
     /// <summary>Public command: runs one frame while paused (F10).</summary>
@@ -1254,6 +1334,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnIsRunningChanged(bool value)
     {
+        if (!value)
+        {
+            IsFastForward = false;
+        }
+
         OnPropertyChanged(nameof(PowerButtonText));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
@@ -1283,6 +1368,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StepFrameHint));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StepFrameCommand.NotifyCanExecuteChanged();
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnIsFastForwardChanged(bool value)
+    {
+        OnPropertyChanged(nameof(RunStateLabel));
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod

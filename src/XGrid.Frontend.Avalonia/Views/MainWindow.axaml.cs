@@ -18,6 +18,7 @@ namespace XGrid.Frontend.Avalonia.Views;
 public partial class MainWindow : Window
 {
     private readonly HashSet<Key> _pressed = [];
+    private bool _spacePressed;
     private DispatcherTimer? _padTimer;
     private WindowState _restoreState = WindowState.Normal;
 
@@ -27,6 +28,10 @@ public partial class MainWindow : Window
         InitializeComponent();
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
         AddHandler(KeyUpEvent, OnKeyUp, RoutingStrategies.Bubble);
+        // Space is the playback shortcut, not a button activation, while a
+        // game runs. Tunnel so a focused toolbar button cannot swallow it.
+        AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, OnPreviewKeyUp, RoutingStrategies.Tunnel);
         Deactivated += OnDeactivated;
         Closed += OnClosed;
         DataContextChanged += OnDataContextChanged;
@@ -179,6 +184,40 @@ public partial class MainWindow : Window
         _padTimer = null;
     }
 
+    private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space
+            || e.KeyModifiers != KeyModifiers.None
+            || IsTypingTarget()
+            || DataContext is not MainWindowViewModel { IsRunning: true } viewModel)
+        {
+            return;
+        }
+
+        // One press toggles 4x on or off. Keep the physical-key latch so the
+        // OS key repeat does not toggle it back and forth while held.
+        if (_spacePressed)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        _spacePressed = true;
+        viewModel.ToggleFastForward();
+        e.Handled = true;
+    }
+
+    private void OnPreviewKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space || !_spacePressed)
+        {
+            return;
+        }
+
+        _spacePressed = false;
+        e.Handled = true;
+    }
+
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled)
@@ -228,7 +267,7 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 return;
             case Key.Escape when WindowState == WindowState.FullScreen:
-                ToggleFullscreen();
+                HandleFullscreenEscape();
                 e.Handled = true;
                 return;
             case Key.F5:
@@ -286,6 +325,11 @@ public partial class MainWindow : Window
 
     private void OnDeactivated(object? sender, EventArgs e)
     {
+        // A key released in another window never reaches this one; clear the
+        // latch so the next Space press toggles normally. The chosen 4x state
+        // stays until Space is pressed again, paused, or the session ends.
+        _spacePressed = false;
+
         if (_pressed.Count == 0)
         {
             return;
@@ -308,21 +352,75 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Switches the shell to fullscreen (CLI launch, menu or F11).</summary>
+    public void EnterFullscreen()
+    {
+        if (WindowState == WindowState.FullScreen)
+        {
+            return;
+        }
+
+        _restoreState = WindowState;
+        WindowState = WindowState.FullScreen;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.IsFullscreen = true;
+        }
+    }
+
     private void ToggleFullscreen()
     {
         if (WindowState == WindowState.FullScreen)
         {
             WindowState = _restoreState == WindowState.FullScreen ? WindowState.Normal : _restoreState;
+            if (DataContext is MainWindowViewModel viewModel)
+            {
+                viewModel.IsFullscreen = false;
+            }
         }
         else
         {
-            _restoreState = WindowState;
-            WindowState = WindowState.FullScreen;
+            EnterFullscreen();
+        }
+    }
+
+    /// <summary>
+    /// Fullscreen Esc: pause a running game first, close the shell on the next
+    /// press. A console that cannot pause, or no running game, leaves
+    /// fullscreen instead so Esc always has a visible effect.
+    /// </summary>
+    private void HandleFullscreenEscape()
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            ToggleFullscreen();
+            return;
         }
 
-        if (DataContext is MainWindowViewModel viewModel)
+        switch (FullscreenEscape.Decide(viewModel.IsRunning, viewModel.IsPaused, viewModel.HasPlayback))
         {
-            viewModel.IsFullscreen = WindowState == WindowState.FullScreen;
+            case FullscreenEscapeAction.PauseGame:
+                viewModel.TogglePauseCommand.Execute(null);
+                if (viewModel.IsPaused)
+                {
+                    viewModel.ShowToast("Paused. Press Esc again to close XGrid.");
+                }
+                else
+                {
+                    // The core refused the pause; do not trap the user in a
+                    // fullscreen window with no working path out.
+                    ToggleFullscreen();
+                }
+
+                break;
+
+            case FullscreenEscapeAction.CloseApplication:
+                Close();
+                break;
+
+            default:
+                ToggleFullscreen();
+                break;
         }
     }
 

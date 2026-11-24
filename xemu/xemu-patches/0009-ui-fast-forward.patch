@@ -1,0 +1,96 @@
+diff --git a/xemu/ui/xemu-run.h b/xemu/ui/xemu-run.h
+index 8df96346..e3bfc003 100644
+--- a/xemu/ui/xemu-run.h
++++ b/xemu/ui/xemu-run.h
+@@ -31,4 +31,14 @@ int xemu_run(int argc, char **argv, bool library_mode);
+  */
+ void xemu_request_shutdown(void);
+ 
++/**
++ * Sets the vblank pace multiplier used by the shell's fast-forward control.
++ * 1 is real time; 4 presents four times as many frames per real second. Safe
++ * to call from any thread while the machine runs.
++ */
++void xemu_set_speed_multiplier(int multiplier);
++
++/** Returns the current vblank pace multiplier (1 is real time). */
++int xemu_get_speed_multiplier(void);
++
+ #endif /* XEMU_RUN_H */
+diff --git a/xemu/ui/xemu.c b/xemu/ui/xemu.c
+index 0ae95b49..b2d9ab8a 100644
+--- a/xemu/ui/xemu.c
++++ b/xemu/ui/xemu.c
+@@ -81,6 +81,35 @@
+ uint64_t vblank_interval_ns = 16666666LL;
+ bool use_vblank_timer_thread = true;
+ 
++/*
++ * XGrid: fast-forward runs the vblank pace faster without changing the guest's
++ * clock. The shell sets it from its own thread; the vblank thread reads it once
++ * per frame, so the value is atomic.
++ */
++static int xemu_speed_multiplier = 1;
++static const int XEMU_MAX_SPEED_MULTIPLIER = 8;
++
++void xemu_set_speed_multiplier(int multiplier)
++{
++    if (multiplier < 1) {
++        multiplier = 1;
++    } else if (multiplier > XEMU_MAX_SPEED_MULTIPLIER) {
++        multiplier = XEMU_MAX_SPEED_MULTIPLIER;
++    }
++
++    qatomic_set(&xemu_speed_multiplier, multiplier);
++}
++
++int xemu_get_speed_multiplier(void)
++{
++    return qatomic_read(&xemu_speed_multiplier);
++}
++
++static int64_t vblank_interval_current_ns(void)
++{
++    return vblank_interval_ns / qatomic_read(&xemu_speed_multiplier);
++}
++
+ struct xemu_console {
+     DisplayChangeListener dcl;
+     DisplaySurface *surface;
+@@ -773,7 +802,7 @@ static void vblank_timer_callback(void *opaque)
+ 
+     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+     process_vblank(scon);
+-    timer_mod_ns(vblank_timer, now + vblank_interval_ns);
++    timer_mod_ns(vblank_timer, now + vblank_interval_current_ns());
+ }
+ 
+ static void *vblank_timer_thread(void *opaque)
+@@ -783,13 +812,14 @@ static void *vblank_timer_thread(void *opaque)
+ 
+     while (!qatomic_read(&qemu_exiting)) {
+         // Schedule next vblank at fixed interval (absolute deadline)
+-        next_vblank += vblank_interval_ns;
++        int64_t interval_ns = vblank_interval_current_ns();
++        next_vblank += interval_ns;
+ 
+         // Wait until deadline
+         int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+         if (now < next_vblank) {
+             SDL_DelayPrecise(next_vblank - now);
+-        } else if (now > next_vblank + vblank_interval_ns) {
++        } else if (now > next_vblank + interval_ns) {
+             // We've fallen behind by more than one frame, reset to avoid
+             // rapid-fire catch-up
+             next_vblank = now;
+@@ -1258,7 +1288,9 @@ static void display_init(DisplayState *ds, DisplayOptions *o)
+                            &scon_list[0], QEMU_THREAD_JOINABLE);
+     } else {
+         vblank_timer = timer_new_ns(QEMU_CLOCK_REALTIME, vblank_timer_callback, &scon_list[0]);
+-        timer_mod_ns(vblank_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + vblank_interval_ns);
++        timer_mod_ns(vblank_timer,
++                     qemu_clock_get_ns(QEMU_CLOCK_REALTIME) +
++                         vblank_interval_current_ns());
+     }
+ 
+     /* Tell main thread to go ahead and create the app and enter the run loop */

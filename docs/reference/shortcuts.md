@@ -10,7 +10,8 @@
 | `F8` | Save a screenshot of the whole window |
 | `F10` | Step one frame while paused |
 | `F11` | Toggle fullscreen |
-| `Esc` | Leave fullscreen (when fullscreen) |
+| `Space` | Toggle 4x fast-forward |
+| `Esc` | Fullscreen: pause a running game, then close XGrid on the next press |
 | `P` | Pause or resume the console |
 | `Ctrl+O` | Open a disc image (swaps the disc while running) |
 | `Ctrl+E` | Eject the inserted disc |
@@ -20,7 +21,7 @@
 
 | Xbox control | Keyboard |
 | --- | --- |
-| A | `A` or `Space` |
+| A | `A` |
 | B | `S` |
 | X | `D` |
 | Y | `F` |
@@ -32,7 +33,8 @@
 | Left trigger | `Z` |
 | Right trigger | `C` |
 
-All bindings are configurable in **Settings → Input**. See [Input](../guides/input.md).
+All bindings except **Space** are configurable in **Settings → Input**; Space is
+reserved for fast-forward. See [Input](../guides/input.md).
 
 ## Menus
 
@@ -43,5 +45,5 @@ All bindings are configurable in **Settings → Input**. See [Input](../guides/i
 | **View** | Console, Library, Settings, Activity, Save Screenshot, Show Log Dock, Fullscreen |
 | **Help** | About XGrid |
 
-`Ctrl+O` and `F8` are also exposed in the File and View menus. Pause and frame
-step need in-process core hosting, like save states.
+`Ctrl+O` and `F8` are also exposed in the File and View menus. Pause, frame step
+and fast-forward need in-process core hosting, like save states.

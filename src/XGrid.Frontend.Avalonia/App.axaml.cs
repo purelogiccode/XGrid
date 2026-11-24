@@ -15,6 +15,12 @@ public class App : Application
     /// </summary>
     public static bool Autostart { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the shell should enter
+    /// fullscreen after it opens (<c>-fullscreen</c> or <c>-f</c>).
+    /// </summary>
+    public static bool Fullscreen { get; set; }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -28,6 +34,13 @@ public class App : Application
             var window = new MainWindow { DataContext = viewModel };
             desktop.MainWindow = window;
             viewModel.Attach(window);
+
+            if (Fullscreen)
+            {
+                // The window state is only reliable once the platform window
+                // exists, so enter fullscreen after the first open.
+                window.Opened += (_, _) => window.EnterFullscreen();
+            }
 
             if (Autostart)
             {

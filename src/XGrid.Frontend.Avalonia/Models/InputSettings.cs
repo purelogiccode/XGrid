@@ -12,8 +12,8 @@ namespace XGrid.Frontend.Avalonia.Models;
 /// <remarks>
 /// Action and source keys are the enum names from <see cref="PadAction"/> and
 /// <see cref="GamepadSource"/>. Keyboard values are comma-separated Avalonia
-/// key names, so one action can keep an alternate key (the default A keeps both
-/// A and Space).
+/// key names, so one action can keep an alternate key. Space is reserved for
+/// fast-forward and is removed from the pad map.
 /// </remarks>
 public sealed class InputSettings
 {
@@ -145,7 +145,7 @@ public static class InputDefaults
     {
         return action switch
         {
-            PadAction.A => "A,Space",
+            PadAction.A => "A",
             PadAction.B => "S",
             PadAction.X => "D",
             PadAction.Y => "F",
