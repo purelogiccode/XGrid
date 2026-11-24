@@ -29,6 +29,7 @@ current product roadmap; user documentation lives in `docs/`.
       reports for automation and benchmarks.
 - [x] Multiple library roots, a recently played list and `--benchmark` runs.
 - [x] Frame-rate overlay with present rate and average frame time.
+- [x] In-process core window embedding, so native presentation never opens a second top-level window.
 - [x] Tooltips on every interactive control in every window and page.
 - [x] Serilog rolling logs, warning/error bug reports with environment and
       exception details, startup usage statistics and a GitHub update check.

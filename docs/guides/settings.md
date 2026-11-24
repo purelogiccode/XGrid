@@ -32,8 +32,8 @@ XGrid ships no firmware. Configure these from files you own.
 | --- | --- |
 | **Emulator binary** | Optional explicit path to the core executable. Empty uses the packaged core, then the in-tree build. |
 | **Guest memory** | 64 MB (retail) or 128 MB (debug kit). |
-| **Present core frames in the shell** | The shell owns presentation and can apply filters; when off, the core's own window is embedded. Requires the patched core. Windows only. |
-| **Core hosting** | **In-process (recommended)** loads the core library into the shell. **Separate process** runs the core beside the shell. The in-process library is Windows-only. |
+| **Present core frames in the shell** | The shell owns presentation and can apply filters and show the FPS overlay; when off, the core's own window is embedded. The embedded window is the fastest path at large sizes. Requires the patched core. Windows only. |
+| **Core hosting** | **In-process (recommended)** loads the core library into the shell and enables save states, pause, frame step and disc swap. It hosts one machine per shell; later launches fall back to a separate process until XGrid restarts. **Separate process** can start a new machine every time and isolates a core crash. The in-process library is Windows-only. |
 
 > Save states require the in-process core. See [Save states](save-states.md).
 > On Linux the core always runs as a separate process with its own window.
@@ -64,6 +64,14 @@ XGrid ships no firmware. Configure these from files you own.
 The presentation filter is independent of the core's texture filtering, but it
 only applies when **Present core frames in the shell** is enabled. See
 [Display and filters](display.md).
+
+### Performance
+
+The shell frame sink copies each frame into a bitmap and scales it on the UI
+thread. At very large window sizes this can cap the present rate below the
+core's own frame rate. Turn **Present core frames in the shell** off to embed
+the core window instead; it paints with its own swapchain and adds no per-frame
+copy. See [Display and filters](display.md).
 
 ## Audio
 

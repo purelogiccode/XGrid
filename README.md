@@ -60,7 +60,7 @@ and packaging.
 | **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
 | **Media** | ISO/XISO, CHD, ZAR (entry form or file tree); raw/qcow2 HDD |
 | **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
-| **Display** | Shell frame sink or embedded core window; filters, resolution scale, aspect/fit, fullscreen |
+| **Display** | Shell frame sink or embedded core window (in-process or separate); filters, resolution scale, aspect/fit, fullscreen, optional FPS overlay |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
 | **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
 | **Quality of life** | Four save-state slots, multiple library roots, recently played list, per-title overrides, screenshots, activity log, tooltips on every control, accent themes, optional donation banner |

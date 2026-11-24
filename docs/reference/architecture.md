@@ -63,10 +63,14 @@ The managed C# emulator and its test suite remain in the repository as a
 
 - The shell loads `xgrid_core.dll` with `NativeLibrary.Load`.
 - The machine runs on its own thread inside the shell process.
-- Frames and input still use the same shared sections, so presentation is
-  identical to the separate-process path.
+- With the display sink on, frames and input use the same shared sections as the
+  separate-process path. With it off, the core's own window is embedded in the
+  Home page, exactly like a separate process.
 - Save states are available through the in-process ABI.
 - Pause, resume and single-frame step are available through the same ABI.
+- QEMU's global state is single-use: the in-process core hosts one machine per
+  shell. A later power-on falls back to the separate process with a log message
+  and a toast; restart XGrid to use in-process features again.
 - A missing or unusable library falls back to the separate process with a log
   message.
 
@@ -75,7 +79,9 @@ The managed C# emulator and its test suite remain in the repository as a
 - The shell starts `xemu.exe` (or `xemu` on Linux) with
   `-config_path <generated xemu.toml>`.
 - On Windows the process gets the display and input sink names through
-  environment variables (`XGRID_DISPLAY_SHM`, `XGRID_INPUT_SHM`).
+  environment variables (`XGRID_DISPLAY_SHM`, `XGRID_INPUT_SHM`). When the sink
+  is off, `XGRID_EMBED=1` asks the core to create its window hidden and titled
+  `XGridCore`, ready for the shell to reparent without a flash.
 - The core writes `xemu.log` in its working directory.
 - Save states are not exposed; the shell has no ABI to call.
 - Pause and frame step are not exposed for the same reason.

@@ -15,9 +15,16 @@ XGrid can present the core's picture in two ways.
 
 Turn the setting off.
 
-- The core creates its own window; XGrid embeds it.
+- The core creates its own window; XGrid embeds it, in-process or separate.
 - The core paints directly; the shell filter does **not** apply.
 - The core reads its own SDL input.
+- This is the fastest mode at large window sizes.
+
+## Choosing a mode
+
+Use the shell sink for filters, the FPS overlay and uniform screenshots. Use the
+embedded window for the highest frame rate. If a game feels slow at a large
+window, switch the setting off and compare.
 
 ## Linux and macOS
 
