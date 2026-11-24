@@ -20,7 +20,8 @@ diagnostics, packaging and the documentation you are reading.
 | **Media** | ISO/XISO, compressed CHD, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
 | **Display** | Shell frame sink with nearest, bilinear, scanline and CRT filters; embedded core window mode; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
-| **Quality of life** | Four save-state slots, per-title overrides, 4x fast-forward, local cover art, whole-window screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
+| **Quality of life** | Four save-state slots, multiple library roots, recently played list, per-title overrides, 4x fast-forward, local cover art, whole-window screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
+| **Performance** | Optional FPS overlay with present rate and frame time; headless `--benchmark` runs with JSON reports |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Automation** | Command-line settings overrides and headless runs with a JSON report for scripts and benchmarks |
 | **Platform** | Windows x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell with an external core |
@@ -44,7 +45,7 @@ Read [Architecture](reference/architecture.md) for the full picture.
 ### A real desktop shell
 
 - **Home** — power, stop, the live display, current disc and renderer status.
-- **Library** — recursive scanning of ISO, CHD, ZAR and XBE files, search, local cover art and launch.
+- **Library** - recursive scanning of ISO, CHD, ZAR and XBE files across several folders, search, a recently played list, local cover art and launch.
 - **Settings** - System, Graphics, Audio, Input, Titles, Library and Appearance tabs.
 - **Playback** - pause, single-frame step, 4x fast-forward and fullscreen with a
   pause-then-close Escape sequence.

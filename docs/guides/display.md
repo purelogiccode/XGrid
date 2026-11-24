@@ -116,6 +116,14 @@ normal speed. The status bar shows **Running 4x** while it is on. Fast-forward
 speeds up the vblank pace the core presents at, so it needs in-process core
 hosting like pause and frame step.
 
+## Frame-rate overlay
+
+Turn on **View  FPS Overlay** to draw the shell's present rate and the average
+frame time over the console picture. The overlay is hidden while the console is
+stopped and is remembered in `settings.json`. It reports what the shell actually
+presented, so a fast core with a capped display still shows the cap. Use it with
+the headless `--benchmark` mode when you need a repeatable number.
+
 ## Performance notes
 
 - Prefer **OpenGL** unless your build reports Vulkan and your driver is stable.

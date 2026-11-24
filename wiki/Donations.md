@@ -27,8 +27,8 @@ gameplay.
 4. Return to XGrid, press **I already donated**, and enter the same email.
 5. The banner disappears after the service confirms the donation.
 
-If the site does not list XGrid yet, the product is not registered there.
-Contact **contact@purelogiccode.com**.
+If the donation checks report that XGrid is not available yet, the deployed
+catalog is missing the `xgrid` product. Contact **contact@purelogiccode.com**.
 
 ## Privacy
 
@@ -46,6 +46,6 @@ See also [Privacy and data](https://github.com/purelogiccode/XGrid/blob/master/d
 | Symptom | Fix |
 | --- | --- |
 | No donation found right after donating | Stripe webhooks can lag; wait a minute and retry. |
-| XGrid is not in the application list | The site has not registered the product. |
-| Service unavailable | The site or network is down; retry later. |
+| "Donation checks are not available for XGrid yet" | The deployed catalog is missing the `xgrid` product. |
+| Service temporarily unavailable or unreachable | The site or network is down; retry later. |
 | Banner returns after saving settings | Fixed in the current build; the Settings page preserves the donation state. |

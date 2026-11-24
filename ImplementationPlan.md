@@ -27,6 +27,8 @@ current product roadmap; user documentation lives in `docs/`.
 - [x] Power, stop, fullscreen, disc-open and settings shortcuts.
 - [x] Command-line settings overrides and headless runs with console and JSON
       reports for automation and benchmarks.
+- [x] Multiple library roots, a recently played list and `--benchmark` runs.
+- [x] Frame-rate overlay with present rate and average frame time.
 - [x] Tooltips on every interactive control in every window and page.
 - [x] Serilog rolling logs, warning/error bug reports with environment and
       exception details, startup usage statistics and a GitHub update check.
@@ -134,8 +136,8 @@ requests; use per-title overrides or an upstream patch.
   ([#1454](https://github.com/xemu-project/xemu/issues/1454),
   [#1349](https://github.com/xemu-project/xemu/issues/1349),
   [#1350](https://github.com/xemu-project/xemu/issues/1350)).
-- [ ] **Library roots and recent titles** — allow more than one games directory
-  and add a recent-files entry point
+- [x] **Library roots and recent titles** - more than one games directory and a
+  recently played list
   ([#2832](https://github.com/xemu-project/xemu/issues/2832),
   [#2544](https://github.com/xemu-project/xemu/issues/2544)).
 - [ ] **Accessibility and localization** — screen-reader support, Chinese
@@ -162,8 +164,8 @@ requests; use per-title overrides or an upstream patch.
   and working headless mode for automation and benchmarks
   ([#1843](https://github.com/xemu-project/xemu/issues/1843),
   [#1483](https://github.com/xemu-project/xemu/issues/1483)).
-- [ ] **Benchmark and FPS diagnostics** — benchmark mode plus an in-shell FPS
-  overlay for performance comparisons
+- [x] **Benchmark and FPS diagnostics** - headless `--benchmark` mode plus an
+  in-shell FPS overlay for performance comparisons
   ([#465](https://github.com/xemu-project/xemu/issues/465),
   [#2195](https://github.com/xemu-project/xemu/issues/2195)).
 - [ ] **Audio device and backend UX** — select the audio backend/device and

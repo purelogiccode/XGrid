@@ -14,9 +14,9 @@ other donationware products.
 | Authentication | `X-API-KEY: <shared desktop key>` |
 | Timeout | 10 seconds in the client |
 
-The application slug is `xgrid`. The website must have a catalog product with
-that slug and the donationware flag enabled; until then the endpoint returns
-`404` and the shell reports the service as unavailable.
+The application slug is `xgrid`. The website catalog registers XGrid as a
+donationware product, so the endpoint answers for the slug. A `404` still means
+the product is missing from the deployed catalog or the endpoint moved.
 
 ## Request
 
@@ -56,11 +56,16 @@ not an error.
 | --- | --- | --- |
 | `200` with `donated: true` | `Donated` | Stores `HasDonated`, hides the banner, shows a thank-you toast. |
 | `200` with `donated: false` | `NotDonated` | Keeps the banner and explains that no donation was found yet. |
-| `401` | `Unavailable` | The API key is rejected; the banner stays. |
-| `404` | `Unavailable` | The product is not registered or the endpoint moved. |
-| `429` | `Unavailable` | Rate limited; retry later. |
-| `5xx` | `Unavailable` | Temporary service failure; retry later. |
-| Timeout or network error | `Unavailable` | The check is best-effort and never interrupts the shell. |
+| `401` or `403` | `Unavailable` (`AuthenticationRejected`) | The API key is rejected; the banner stays and the user is asked to report it. |
+| `404` | `Unavailable` (`ApplicationNotRegistered`) | The product is missing from the deployed catalog; the banner stays and says checks are not available yet. |
+| `429` | `Unavailable` (`ServiceUnavailable`) | Rate limited; retry later. |
+| `5xx` | `Unavailable` (`ServiceUnavailable`) | Temporary service failure; retry later. |
+| Timeout or network error | `Unavailable` (`ConnectionFailed`) | The check is best-effort and never interrupts the shell. |
+| Empty, malformed or unsupported body | `Unavailable` (`InvalidResponse`) | The service answered but the response could not be used. |
+
+A user who has not donated sees the "no donation was found" message. Every
+unavailable reason has its own message, so an outage or a missing catalog entry
+is never presented as "you did not donate".
 
 ## Client behavior
 
