@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -36,6 +37,12 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
 
     /// <summary>Gets the recent captures shown under the game list.</summary>
     public ObservableCollection<ScreenshotItem> Screenshots { get; } = [];
+
+    /// <summary>Gets the recently launched games, newest first.</summary>
+    public ObservableCollection<RecentGameItem> RecentGames { get; } = [];
+
+    /// <summary>Gets a value indicating whether the recent section has rows.</summary>
+    public bool HasRecentGames => RecentGames.Count > 0;
 
     /// <summary>Gets a value indicating whether the library's configured folders are empty.</summary>
     public bool HasNoFolders => Shell.Config.LibraryFolders.Count == 0;
@@ -86,7 +93,7 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
                 : $"{_all.Count} game{(_all.Count == 1 ? string.Empty : "s")} in {folders.Length} folder{(folders.Length == 1 ? string.Empty : "s")}";
             Shell.AddLog(LogLevel.Info, "Library scan: " + StatusText);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.IO.IOException
+        catch (Exception exception) when (exception is InvalidOperationException or IOException
                                               or UnauthorizedAccessException)
         {
             StatusText = "Scan failed: " + exception.Message;
@@ -107,6 +114,51 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         return RefreshAsync();
     }
 
+    /// <summary>Rebuilds the recently played list from the persisted settings.</summary>
+    public void RefreshRecentGames()
+    {
+        DateTime now = DateTime.UtcNow;
+        RecentGames.Clear();
+        foreach (RecentGame game in Shell.Config.RecentGames)
+        {
+            if (!File.Exists(game.Path))
+            {
+                continue;
+            }
+
+            RecentGames.Add(new RecentGameItem(game, LaunchRecentGame, now));
+        }
+
+        OnPropertyChanged(nameof(HasRecentGames));
+    }
+
+    /// <summary>Public command: removes every recently played entry.</summary>
+    [RelayCommand]
+    private void ClearRecentGames()
+    {
+        Shell.ClearRecentGames();
+    }
+
+    private void LaunchRecentGame(RecentGame game)
+    {
+        if (!File.Exists(game.Path))
+        {
+            Shell.ForgetRecentGame(game.Path);
+            Shell.ShowToast("That game is no longer available; the recent entry was removed.");
+            return;
+        }
+
+        GameEntry? entry = GameEntry.FromFile(game.Path);
+        if (entry is null)
+        {
+            Shell.ForgetRecentGame(game.Path);
+            Shell.ShowToast("That file could not be read as a disc image.");
+            return;
+        }
+
+        Shell.StartGameCommand.Execute(entry);
+    }
+
     /// <summary>Public command: re-reads the screenshots folder.</summary>
     [RelayCommand]
     public void RefreshScreenshots()
@@ -117,7 +169,7 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         {
             files = ScreenshotLibrary.List(directory);
         }
-        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             Shell.AddLog(LogLevel.Warning, "Could not read the screenshots folder: " + exception.Message);
             return;

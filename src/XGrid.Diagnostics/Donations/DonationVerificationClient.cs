@@ -100,7 +100,7 @@ public static class DonationVerificationClient
             if (!response.IsSuccessStatusCode)
             {
                 LogFailure(response.StatusCode);
-                return new DonationVerificationResult(DonationVerificationStatus.Unavailable);
+                return Unavailable(Classify(response.StatusCode));
             }
 
             DonationVerificationResponse? result = await response.Content
@@ -109,7 +109,7 @@ public static class DonationVerificationClient
             if (result is null)
             {
                 Log.Warning("The donation verification API returned an empty response.");
-                return new DonationVerificationResult(DonationVerificationStatus.Unavailable);
+                return Unavailable(DonationVerificationUnavailableReason.InvalidResponse);
             }
 
             return result.Donated
@@ -122,28 +122,50 @@ public static class DonationVerificationClient
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             Log.Information(exception, "The donation verification request timed out.");
-            return new DonationVerificationResult(DonationVerificationStatus.Unavailable);
+            return Unavailable(DonationVerificationUnavailableReason.ConnectionFailed);
         }
         catch (HttpRequestException exception)
         {
             Log.Information(exception, "Could not reach the donation verification service.");
-            return new DonationVerificationResult(DonationVerificationStatus.Unavailable);
+            return Unavailable(DonationVerificationUnavailableReason.ConnectionFailed);
         }
         catch (JsonException exception)
         {
             Log.Warning(exception, "The donation verification API returned invalid JSON.");
-            return new DonationVerificationResult(DonationVerificationStatus.Unavailable);
+            return Unavailable(DonationVerificationUnavailableReason.InvalidResponse);
         }
         catch (NotSupportedException exception)
         {
             Log.Warning(exception, "The donation verification API response format is not supported.");
-            return new DonationVerificationResult(DonationVerificationStatus.Unavailable);
+            return Unavailable(DonationVerificationUnavailableReason.InvalidResponse);
         }
         catch (InvalidOperationException exception)
         {
             Log.Warning(exception, "The donation verification request could not be created.");
-            return new DonationVerificationResult(DonationVerificationStatus.Unavailable);
+            return Unavailable(DonationVerificationUnavailableReason.InvalidResponse);
         }
+    }
+
+    private static DonationVerificationResult Unavailable(DonationVerificationUnavailableReason reason)
+    {
+        return new DonationVerificationResult(
+            DonationVerificationStatus.Unavailable,
+            Reason: reason);
+    }
+
+    private static DonationVerificationUnavailableReason Classify(HttpStatusCode statusCode)
+    {
+        if (statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            return DonationVerificationUnavailableReason.AuthenticationRejected;
+        }
+
+        if (statusCode == HttpStatusCode.NotFound)
+        {
+            return DonationVerificationUnavailableReason.ApplicationNotRegistered;
+        }
+
+        return DonationVerificationUnavailableReason.ServiceUnavailable;
     }
 
     private static void LogFailure(HttpStatusCode statusCode)

@@ -87,6 +87,28 @@
                      Foreground="{DynamicResource XgAccentBrush}" />
         </Border>
 
+        <!-- Frame-rate overlay: shell present rate and the average frame time. -->
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="10"
+                Padding="8,3"
+                CornerRadius="3"
+                Background="#B3000000"
+                BorderBrush="{DynamicResource XgBorderBrush}"
+                BorderThickness="1"
+                IsVisible="{Binding Shell.IsFpsOverlayVisible}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{Binding Shell.FpsText}"
+                       Classes="mono"
+                       FontSize="10"
+                       Foreground="{DynamicResource XgAccentBrush}" />
+            <TextBlock Text="{Binding Shell.FrameTimeText}"
+                       Classes="mono"
+                       FontSize="10"
+                       Foreground="#B3FFFFFF" />
+          </StackPanel>
+        </Border>
+
         <!-- The caption reports the frame the core actually published; it is
              not shown until there is one. -->
         <Border HorizontalAlignment="Left"

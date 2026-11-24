@@ -4,7 +4,7 @@
              xmlns:local="using:XGrid.Frontend.Avalonia"
              x:Class="XGrid.Frontend.Avalonia.Views.LibraryView"
              x:DataType="vm:LibraryViewModel">
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
     <!-- ===================== Toolbar ===================== -->
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
       <StackPanel Orientation="Horizontal" Spacing="10">
@@ -51,8 +51,53 @@
       </StackPanel>
     </Grid>
 
+    <!-- ===================== Recently played ===================== -->
+    <Border Grid.Row="1" Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasRecentGames}">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Recently played" Classes="h3" />
+            <TextBlock Text="Your last launches, newest first." Classes="hint" />
+          </StackPanel>
+          <Button Grid.Column="1"
+                  Classes="ghost"
+                  Command="{Binding ClearRecentGamesCommand}"
+                  Content="Clear"
+                  ToolTip.Tip="Remove every recently played entry" />
+        </Grid>
+        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding RecentGames}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="10" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:RecentGameItem">
+                <Button Classes="subtle"
+                        Padding="12,8"
+                        Command="{Binding LaunchCommand}"
+                        ToolTip.Tip="{Binding Path}">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Title}"
+                               FontWeight="SemiBold"
+                               MaxWidth="220"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding LastPlayedText}"
+                               Classes="caption"
+                               FontSize="10.5" />
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
+    </Border>
+
     <!-- ===================== Empty state ===================== -->
-    <Border Grid.Row="1" Classes="card" IsVisible="{Binding ShowEmptyState}">
+    <Border Grid.Row="2" Classes="card" IsVisible="{Binding ShowEmptyState}">
       <StackPanel HorizontalAlignment="Center"
                   VerticalAlignment="Center"
                   Spacing="14"
@@ -84,7 +129,7 @@
     </Border>
 
     <!-- ===================== Game rows ===================== -->
-    <ListBox Grid.Row="1"
+    <ListBox Grid.Row="2"
              Classes="rows"
              ItemsSource="{Binding Games}"
              IsVisible="{Binding !ShowEmptyState}"
@@ -175,7 +220,7 @@
     </ListBox>
 
     <!-- ===================== Screenshots ===================== -->
-    <Border Grid.Row="2" Classes="card" Margin="0,14,0,0" IsVisible="{Binding HasScreenshots}">
+    <Border Grid.Row="3" Classes="card" Margin="0,14,0,0" IsVisible="{Binding HasScreenshots}">
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
           <StackPanel Spacing="2">

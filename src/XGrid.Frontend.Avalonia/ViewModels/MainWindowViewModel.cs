@@ -46,6 +46,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private long _lastPresentTimestamp;
     private long _frameWindowStart;
     private const int FrameReportPeriodMs = 5000;
+    private readonly FrameRateMeter _fpsMeter = new();
 
     /// <summary>The pace Space holds the console at (four times real time).</summary>
     public const int FastForwardMultiplier = 4;
@@ -88,6 +89,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _statusDetail = "No console powered on";
+
+    [ObservableProperty]
+    private string _fpsText = "-- FPS";
+
+    [ObservableProperty]
+    private string _frameTimeText = string.Empty;
 
     [ObservableProperty]
     private WriteableBitmap? _frameBitmap;
@@ -143,6 +150,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Home = new HomeViewModel(this);
         Settings = new SettingsViewModel(this);
         Library = new LibraryViewModel(this);
+        Library.RefreshRecentGames();
         Logs = new LogsViewModel(this);
         About = new AboutViewModel(this);
 
@@ -224,6 +232,38 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// while fullscreen gameplay hides the shell chrome.
     /// </summary>
     public bool ShowDonationBanner => !Config.HasDonated && !IsFullscreen;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the frame-rate overlay is
+    /// enabled. The choice is persisted in <c>settings.json</c>.
+    /// </summary>
+    public bool ShowFpsOverlay
+    {
+        get => Config.ShowFpsOverlay;
+        set
+        {
+            if (Config.ShowFpsOverlay == value)
+            {
+                return;
+            }
+
+            Config.ShowFpsOverlay = value;
+            try
+            {
+                _settingsStore.Save(Config);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                AddLog(LogLevel.Warning, "Could not save the FPS overlay setting: " + exception.Message);
+            }
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsFpsOverlayVisible));
+        }
+    }
+
+    /// <summary>Gets a value indicating whether the overlay is drawn over a running console.</summary>
+    public bool IsFpsOverlayVisible => ShowFpsOverlay && IsRunning;
 
     /// <summary>Gets the supporting copy shown on the home page.</summary>
     public string HomeDetail
@@ -628,6 +668,43 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public static void PreviewAccent(string key)
     {
         AccentService.Apply(AccentPalette.Find(key));
+    }
+
+    private void RememberRecentGame(GameEntry game)
+    {
+        RecentGame.Record(Config.RecentGames, game.Path, game.Title, DateTime.UtcNow);
+        PersistRecentGames();
+    }
+
+    /// <summary>Removes one game from the recently played list and persists it.</summary>
+    /// <param name="path">Image path to forget.</param>
+    public void ForgetRecentGame(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        Config.RecentGames.RemoveAll(
+            entry => string.Equals(entry.Path, path, StringComparison.OrdinalIgnoreCase));
+        PersistRecentGames();
+    }
+
+    /// <summary>Removes every recently played entry and persists the change.</summary>
+    public void ClearRecentGames()
+    {
+        Config.RecentGames.Clear();
+        PersistRecentGames();
+    }
+
+    private void PersistRecentGames()
+    {
+        try
+        {
+            _settingsStore.Save(Config);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Warning, "Could not save the recently played list: " + exception.Message);
+        }
+
+        Library.RefreshRecentGames();
     }
 
     /// <summary>Adds a library folder, persists it, and rescans.</summary>
@@ -1200,6 +1277,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
                     break;
 
+                case DonationVerificationStatus.Unavailable:
+                    AddLog(
+                        LogLevel.Warning,
+                        "Donation verification is unavailable: " + result.Reason + ".");
+                    if (showMessages)
+                    {
+                        DonationStatus = DescribeDonationFailure(result.Reason);
+                    }
+
+                    break;
+
                 default:
                     if (showMessages)
                     {
@@ -1221,6 +1309,31 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             IsDonationCheckInProgress = false;
         }
+    }
+
+    internal static string DescribeDonationFailure(DonationVerificationUnavailableReason reason)
+    {
+        if (reason == DonationVerificationUnavailableReason.ApplicationNotRegistered)
+        {
+            return "Donation checks are not available for XGrid yet. Every feature stays free; please try again later.";
+        }
+
+        if (reason == DonationVerificationUnavailableReason.AuthenticationRejected)
+        {
+            return "The donation service rejected this copy of XGrid's credentials. Please report this so it can be fixed.";
+        }
+
+        if (reason == DonationVerificationUnavailableReason.ConnectionFailed)
+        {
+            return "Could not reach the donation service. Check your internet connection and try again.";
+        }
+
+        if (reason == DonationVerificationUnavailableReason.InvalidResponse)
+        {
+            return "The donation service returned an unexpected response. Please try again later.";
+        }
+
+        return "The donation service is temporarily unavailable. Please try again later.";
     }
 
     private void SaveDonationSettings()
@@ -1309,6 +1422,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             CurrentGame = game;
             StartCore(game);
+            if (game is not null)
+            {
+                RememberRecentGame(game);
+            }
 
             OnPropertyChanged(nameof(CurrentGameTitle));
             OnPropertyChanged(nameof(CurrentGameFormat));
@@ -1586,6 +1703,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             IsFastForward = false;
         }
 
+        _fpsMeter.Reset();
+        FpsText = "-- FPS";
+        FrameTimeText = string.Empty;
+        OnPropertyChanged(nameof(IsFpsOverlayVisible));
+
         OnPropertyChanged(nameof(PowerButtonText));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
@@ -1812,8 +1934,28 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             (long)System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds);
         _lastPresentTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
         Interlocked.Increment(ref _framesPresented);
+        _fpsMeter.AddFrame();
         HasFrame = true;
         FramePresented?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void UpdateFps(long now)
+    {
+        if (!IsRunning)
+        {
+            _fpsMeter.Reset();
+            return;
+        }
+
+        if (!_fpsMeter.TryUpdate(now, out double fps, out double frameTimeMs))
+        {
+            return;
+        }
+
+        FpsText = fps.ToString("F0", CultureInfo.InvariantCulture) + " FPS";
+        FrameTimeText = frameTimeMs > 0
+            ? frameTimeMs.ToString("F1", CultureInfo.InvariantCulture) + " ms"
+            : string.Empty;
     }
 
     private void OnUiTick(object? sender, EventArgs e)
@@ -1822,6 +1964,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         PollDiscChange();
 
         long now = Environment.TickCount64;
+        UpdateFps(now);
         if (_frameWindowStart == 0)
         {
             _frameWindowStart = now;
@@ -1975,6 +2118,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SmoothFrame));
         OnPropertyChanged(nameof(ShowCoreDisplay));
         OnPropertyChanged(nameof(ShowDonationBanner));
+        OnPropertyChanged(nameof(ShowFpsOverlay));
+        OnPropertyChanged(nameof(IsFpsOverlayVisible));
         StopSessionCommand.NotifyCanExecuteChanged();
     }
 

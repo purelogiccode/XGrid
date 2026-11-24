@@ -41,6 +41,12 @@ public sealed class EmulatorSettings
     public bool DisplaySink { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether the frame-rate overlay is shown
+    /// over the console picture.
+    /// </summary>
+    public bool ShowFpsOverlay { get; set; }
+
+    /// <summary>
     /// Gets or sets the core hosting mode: <c>in-process</c> (experimental;
     /// the shell loads the core library) or <c>process</c> (the core runs
     /// beside the shell, the stable default).
@@ -79,6 +85,12 @@ public sealed class EmulatorSettings
 
     /// <summary>Gets or sets the folders scanned by the game library.</summary>
     public List<string> LibraryFolders { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the most recently launched games, newest first. Entries are
+    /// informational; a missing file is ignored by the Library page.
+    /// </summary>
+    public List<RecentGame> RecentGames { get; set; } = [];
 
     /// <summary>
     /// Gets or sets the email address the user donated with. It is stored only
@@ -242,12 +254,14 @@ public sealed class EmulatorSettings
             Accent = Accent,
             XemuCorePath = XemuCorePath,
             DisplaySink = DisplaySink,
+            ShowFpsOverlay = ShowFpsOverlay,
             CoreHosting = CoreHosting,
             Filter = Filter,
             Input = NullSafe.Value(Input, new InputSettings()).Clone(),
             Graphics = NullSafe.Value(Graphics, new GraphicsSettings()).Clone(),
             Audio = NullSafe.Value(Audio, new AudioSettings()).Clone(),
             LibraryFolders = [.. NullSafe.Value(LibraryFolders, new List<string>())],
+            RecentGames = CloneRecentGames(),
             DonationEmail = NullSafe.Text(DonationEmail),
             HasDonated = HasDonated,
             DonationLastCheckedUtc = DonationLastCheckedUtc,
@@ -259,6 +273,21 @@ public sealed class EmulatorSettings
             if (pair.Value is not null)
             {
                 result.TitleOverrides[pair.Key] = pair.Value.Clone();
+            }
+        }
+
+        return result;
+    }
+
+    private List<RecentGame> CloneRecentGames()
+    {
+        var result = new List<RecentGame>();
+        foreach (RecentGame? entry in NullSafe.Value(RecentGames, new List<RecentGame>()))
+        {
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract -- settings JSON may contain null rows.
+            if (entry is not null)
+            {
+                result.Add(entry.Clone());
             }
         }
 
@@ -287,6 +316,41 @@ public sealed class EmulatorSettings
         LibraryFolders = NullSafe.Value(LibraryFolders, []);
         LibraryFolders.RemoveAll(string.IsNullOrWhiteSpace);
         DonationEmail = NullSafe.Text(DonationEmail).Trim();
+
+        var recent = new List<RecentGame>(NullSafe.Value(RecentGames, []).Count);
+        foreach (RecentGame? entry in NullSafe.Value(RecentGames, []))
+        {
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract -- settings JSON may contain null rows.
+            if (entry is null || string.IsNullOrWhiteSpace(entry.Path))
+            {
+                continue;
+            }
+
+            entry.Path = entry.Path.Trim();
+            entry.Title = string.IsNullOrWhiteSpace(entry.Title)
+                ? Path.GetFileNameWithoutExtension(entry.Path)
+                : entry.Title.Trim();
+            recent.Add(entry);
+        }
+
+        recent.Sort(static (left, right) => right.LastPlayedUtc.CompareTo(left.LastPlayedUtc));
+        var recentPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var trimmedRecent = new List<RecentGame>(Math.Min(recent.Count, RecentGame.MaxEntries));
+        foreach (RecentGame entry in recent)
+        {
+            if (!recentPaths.Add(entry.Path))
+            {
+                continue;
+            }
+
+            trimmedRecent.Add(entry);
+            if (trimmedRecent.Count >= RecentGame.MaxEntries)
+            {
+                break;
+            }
+        }
+
+        RecentGames = trimmedRecent;
 
         var overrides = new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<string, TitleOverride> pair in NullSafe.Value(
