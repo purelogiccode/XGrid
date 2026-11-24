@@ -960,6 +960,11 @@ does not have).**
 - **Gates.** Build 0 warnings, suite **2,295** green, `dotnet format
   --verify-no-changes` clean, `save-state-check.ps1` **SAVESTATE PASS** at the
   new cadence (50 MiB slot at guest clock 0:00:21.4), `status.ps1 -Check` OK.
+- **Retired tree.** `scripts/chd-boot-check.ps1` and
+  `scripts/display-sink-check.ps1` still launched `native/xemu/dist/xemu.exe`
+  (the pre-vendoring copy); both now use the maintained `xemu/dist`, and the
+  sink check copies rows straight because the sink is top-down. The untracked
+  `native/` folder is therefore unused by the repository and can be removed.
 
 **Session 2026-11-24 (seventieth; save states work through the shell - P1 and C4
 land, and the core does the snapshotting on its own main loop).**

@@ -27,7 +27,7 @@ public sealed class XemuDisplayFrame
 /// core recreates it after a geometry change.
 /// </summary>
 /// <remarks>
-/// Layout is defined in <c>native/xgrid-core/display/xgrid-display.h</c>: a
+/// Layout is defined in <c>xemu/xgrid-core/display/xgrid-display.h</c>: a
 /// 32-byte header (magic, width, height, stride, frame counter) followed by
 /// top-down BGRA pixels.
 /// </remarks>
