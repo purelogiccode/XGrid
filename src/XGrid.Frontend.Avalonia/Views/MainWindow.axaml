@@ -32,9 +32,37 @@
         <Separator />
         <MenuItem Header="Exit" Click="OnMenuExit" ToolTip.Tip="Close XGrid." />
       </MenuItem>
-      <MenuItem Header="Emulation" ToolTip.Tip="Power and stop the core.">
+      <MenuItem Header="Emulation" ToolTip.Tip="Power, stop and save states.">
         <MenuItem Header="Power On / Off" InputGesture="F5" Click="OnMenuPower" />
         <MenuItem Header="Stop" Click="OnMenuStop" />
+        <Separator />
+        <MenuItem Header="Save State" IsEnabled="{Binding HasSaveStates}"
+                  ToolTip.Tip="Write the running machine to a slot on the hard disk image.">
+          <MenuItem Header="{Binding QuickSaveHeader}" InputGesture="F6"
+                    Command="{Binding QuickSaveCommand}" />
+          <Separator />
+          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuSaveState" />
+          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuSaveState" />
+          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuSaveState" />
+          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuSaveState" />
+        </MenuItem>
+        <MenuItem Header="Load State" IsEnabled="{Binding HasSaveStates}"
+                  ToolTip.Tip="Restore the machine from a slot and keep running.">
+          <MenuItem Header="{Binding QuickLoadHeader}" InputGesture="F7"
+                    Command="{Binding QuickLoadCommand}" />
+          <Separator />
+          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuLoadState" />
+          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuLoadState" />
+          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuLoadState" />
+          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuLoadState" />
+        </MenuItem>
+        <MenuItem Header="Delete State" IsEnabled="{Binding HasSaveStates}"
+                  ToolTip.Tip="Remove a slot from the hard disk image.">
+          <MenuItem Header="Slot 1" Tag="1" Click="OnMenuDeleteState" />
+          <MenuItem Header="Slot 2" Tag="2" Click="OnMenuDeleteState" />
+          <MenuItem Header="Slot 3" Tag="3" Click="OnMenuDeleteState" />
+          <MenuItem Header="Slot 4" Tag="4" Click="OnMenuDeleteState" />
+        </MenuItem>
         <Separator />
         <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen" />
       </MenuItem>

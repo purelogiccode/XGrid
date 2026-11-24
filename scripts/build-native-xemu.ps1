@@ -42,6 +42,12 @@ status=`$?
 if [ `$status -eq 0 ]; then
   ninja -C build xgrid_core.dll >> $rootPosix/wt-data/xemu-build.log 2>&1 || status=`$?
 fi
+# The media checks read snapshot lists and disc descriptors with the QEMU
+# tools; they live in the object tree (copying them into dist would ship them
+# in the release archive).
+if [ `$status -eq 0 ]; then
+  ninja -C build qemu-img.exe qemu-io.exe >> $rootPosix/wt-data/xemu-build.log 2>&1 || status=`$?
+fi
 if [ `$status -eq 0 ]; then
   cp -f build/xgrid_core.dll dist/
 fi

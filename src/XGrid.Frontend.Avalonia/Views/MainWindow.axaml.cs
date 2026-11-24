@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -92,6 +93,33 @@ public partial class MainWindow : Window
     private void OnMenuScreenshot(object? sender, RoutedEventArgs e)
     {
         ExecuteShellCommand(static viewModel => viewModel.SaveScreenshotCommand.Execute(null));
+    }
+
+    private void OnMenuSaveState(object? sender, RoutedEventArgs e)
+    {
+        int slot = MenuSlot(sender);
+        ExecuteShellCommand(viewModel => viewModel.SaveStateToSlot(slot));
+    }
+
+    private void OnMenuLoadState(object? sender, RoutedEventArgs e)
+    {
+        int slot = MenuSlot(sender);
+        ExecuteShellCommand(viewModel => viewModel.LoadStateFromSlot(slot));
+    }
+
+    private void OnMenuDeleteState(object? sender, RoutedEventArgs e)
+    {
+        int slot = MenuSlot(sender);
+        ExecuteShellCommand(viewModel => viewModel.DeleteStateInSlot(slot));
+    }
+
+    /// <summary>Reads the slot number a save-state menu item carries.</summary>
+    private static int MenuSlot(object? sender)
+    {
+        return sender is MenuItem { Tag: string text }
+               && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot)
+            ? slot
+            : 0;
     }
 
     private void OnMenuOpenConfigFolder(object? sender, RoutedEventArgs e)
@@ -236,6 +264,14 @@ public partial class MainWindow : Window
                 return;
             case Key.F5:
                 ExecuteShellCommand(static viewModel => viewModel.TogglePowerCommand.Execute(null));
+                e.Handled = true;
+                return;
+            case Key.F6:
+                ExecuteShellCommand(static viewModel => viewModel.QuickSaveCommand.Execute(null));
+                e.Handled = true;
+                return;
+            case Key.F7:
+                ExecuteShellCommand(static viewModel => viewModel.QuickLoadCommand.Execute(null));
                 e.Handled = true;
                 return;
             case Key.F8:

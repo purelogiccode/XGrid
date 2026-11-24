@@ -120,6 +120,7 @@ static bool map_section(uint32_t width, uint32_t height, uint32_t stride)
 void xgrid_display_publish(const void *pixels, uint32_t width, uint32_t height,
                            uint32_t stride)
 {
+    const uint8_t *source = (const uint8_t *)pixels;
     uint8_t *base;
 
     if (pixels == NULL || width == 0 || height == 0 || stride < width * 4) {
@@ -136,10 +137,19 @@ void xgrid_display_publish(const void *pixels, uint32_t width, uint32_t height,
     memcpy(base + 8, &height, 4);
     memcpy(base + 12, &stride, 4);
 
+    /*
+     * glReadPixels returns the framebuffer bottom-up (the GL origin is the
+     * lower-left corner); the shell draws the pixels top-down, so the rows are
+     * written in reverse. A whole-buffer memcpy here presents every frame
+     * upside down - the boot animation hides it, a text overlay does not.
+     */
+    for (uint32_t row = 0; row < height; row++) {
+        memcpy(base + XGRID_DISPLAY_HEADER + (size_t)row * stride,
+               source + (size_t)(height - 1 - row) * stride, (size_t)width * 4);
+    }
+
     /* Pixels first, then the counter, so a reader never sees a torn frame
      * without also seeing the matching count. */
-    memcpy(base + XGRID_DISPLAY_HEADER, pixels, (size_t)stride * height);
-
     g_frame++;
     memcpy(base + 16, &g_frame, 8);
 }

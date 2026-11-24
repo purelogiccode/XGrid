@@ -17,8 +17,13 @@
 
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
+#include "qemu/main-loop.h"
 #include "qemu/thread.h"
+#include "block/aio.h"
+#include "qapi/error.h"
+#include "system/runstate.h"
 #include "ui/xemu-run.h"
+#include "ui/xemu-snapshots.h"
 #include "xemu-version.h"
 #include "xgrid-core.h"
 #include "../display/xgrid-display.h"
@@ -44,12 +49,184 @@ static void *xgrid_core_thread(void *opaque)
     return NULL;
 }
 
+/*
+ * Save states.
+ *
+ * The request is queued from the shell's thread and runs as a bottom half on
+ * the core's main loop: snapshot save/load touches the block layer (which
+ * asserts it is on the main thread) and the snapshot thumbnail reads the
+ * renderer's framebuffer, whose GL context lives on that same loop.
+ */
+typedef enum XGridSnapshotRequest {
+    XGRID_SNAPSHOT_REQUEST_NONE = 0,
+    XGRID_SNAPSHOT_REQUEST_SAVE,
+    XGRID_SNAPSHOT_REQUEST_LOAD,
+    XGRID_SNAPSHOT_REQUEST_DELETE,
+    XGRID_SNAPSHOT_REQUEST_REFRESH,
+} XGridSnapshotRequest;
+
+static QemuMutex g_snapshot_mutex;
+static bool g_snapshot_mutex_ready;
+
+/* Guarded by g_snapshot_mutex. */
+static XGridSnapshotRequest g_snapshot_request;
+static char *g_snapshot_request_name;
+static int g_snapshot_status;
+static char g_snapshot_error[1024];
+
+/* Published list; the array is swapped whole under the mutex. */
+static char **g_snapshot_names;
+static int g_snapshot_count;
+
+static void xgrid_core_snapshot_lock(void)
+{
+    if (!g_snapshot_mutex_ready) {
+        qemu_mutex_init(&g_snapshot_mutex);
+        g_snapshot_mutex_ready = true;
+    }
+    qemu_mutex_lock(&g_snapshot_mutex);
+}
+
+static void xgrid_core_snapshot_unlock(void)
+{
+    qemu_mutex_unlock(&g_snapshot_mutex);
+}
+
+static void xgrid_core_snapshot_set_failed(const char *message)
+{
+    xgrid_core_snapshot_lock();
+    g_snapshot_status = XGRID_SNAPSHOT_FAILED;
+    snprintf(g_snapshot_error, sizeof(g_snapshot_error), "%s",
+             message != NULL && message[0] != '\0' ? message : "Snapshot failed");
+    xgrid_core_snapshot_unlock();
+}
+
+static void xgrid_core_snapshot_free_names(void)
+{
+    if (g_snapshot_names != NULL) {
+        for (int i = 0; i < g_snapshot_count; i++) {
+            g_free(g_snapshot_names[i]);
+        }
+        g_free(g_snapshot_names);
+        g_snapshot_names = NULL;
+    }
+    g_snapshot_count = 0;
+}
+
+/* Runs on the core's main loop, with the BQL held. */
+static void xgrid_core_snapshot_run(void *opaque)
+{
+    XGridSnapshotRequest request;
+    char *name;
+    Error *err = NULL;
+
+    (void)opaque;
+
+    xgrid_core_snapshot_lock();
+    request = g_snapshot_request;
+    name = g_snapshot_request_name;
+    g_snapshot_request = XGRID_SNAPSHOT_REQUEST_NONE;
+    g_snapshot_request_name = NULL;
+    xgrid_core_snapshot_unlock();
+
+    switch (request) {
+    case XGRID_SNAPSHOT_REQUEST_SAVE:
+        xemu_snapshots_save(name, &err);
+        break;
+
+    case XGRID_SNAPSHOT_REQUEST_LOAD: {
+        /*
+         * The reference stops the machine for the restore and only restarts it
+         * when the load succeeded. A failed load must not leave the shell with
+         * a frozen guest, so the machine is resumed here.
+         */
+        bool was_running = runstate_is_running();
+        xemu_snapshots_load(name, &err);
+        if (err != NULL && was_running && !runstate_is_running()) {
+            vm_start();
+        }
+        break;
+    }
+
+    case XGRID_SNAPSHOT_REQUEST_DELETE:
+        xemu_snapshots_delete(name, &err);
+        break;
+
+    case XGRID_SNAPSHOT_REQUEST_REFRESH: {
+        QEMUSnapshotInfo *info = NULL;
+        int count = xemu_snapshots_list(&info, NULL, &err);
+        if (!err && count >= 0) {
+            char **names = count > 0 ? g_new0(char *, count) : NULL;
+            for (int i = 0; i < count; i++) {
+                names[i] = g_strdup(info[i].name);
+            }
+            xgrid_core_snapshot_lock();
+            xgrid_core_snapshot_free_names();
+            g_snapshot_names = names;
+            g_snapshot_count = count;
+            xgrid_core_snapshot_unlock();
+        }
+        break;
+    }
+
+    case XGRID_SNAPSHOT_REQUEST_NONE:
+        break;
+    }
+
+    if (err != NULL) {
+        char *message = g_strdup(error_get_pretty(err));
+        error_free(err);
+        xgrid_core_snapshot_set_failed(message);
+        g_free(message);
+    } else if (request != XGRID_SNAPSHOT_REQUEST_NONE) {
+        xgrid_core_snapshot_lock();
+        g_snapshot_status = XGRID_SNAPSHOT_COMPLETED;
+        g_snapshot_error[0] = '\0';
+        xgrid_core_snapshot_unlock();
+    }
+
+    g_free(name);
+}
+
+static int xgrid_core_snapshot_request_start(XGridSnapshotRequest request,
+                                             const char *name)
+{
+    if (!qatomic_read(&g_running)) {
+        return -1;
+    }
+    if (qemu_get_aio_context() == NULL) {
+        /* The core thread has not set up its main loop yet; retry later. */
+        return -1;
+    }
+    if (request != XGRID_SNAPSHOT_REQUEST_REFRESH &&
+        (name == NULL || name[0] == '\0')) {
+        return -2;
+    }
+    if (name != NULL && strlen(name) > 255) {
+        return -2;
+    }
+
+    xgrid_core_snapshot_lock();
+    if (g_snapshot_request != XGRID_SNAPSHOT_REQUEST_NONE) {
+        xgrid_core_snapshot_unlock();
+        return -3;
+    }
+
+    g_snapshot_request = request;
+    g_snapshot_request_name = name != NULL ? g_strdup(name) : NULL;
+    g_snapshot_status = XGRID_SNAPSHOT_PENDING;
+    g_snapshot_error[0] = '\0';
+    xgrid_core_snapshot_unlock();
+
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), xgrid_core_snapshot_run,
+                            NULL);
+    return 0;
+}
+
 /**
  * Starts the machine on a background thread.
  *
  * @param config_path The xemu settings file (the shell writes it).
- * @param log_path Optional file that receives the core's stdout/stderr, or
- *                 NULL to keep the host's streams.
  * @param display_sink Shared-section name for presented frames, or NULL.
  * @param input_sink Shared-section name for port 1, or NULL.
  * @param extra_argv Additional command-line arguments, or NULL.
@@ -72,6 +249,12 @@ XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
     if (extra_argc < 0 || (extra_argc > 0 && extra_argv == NULL)) {
         return -3;
     }
+
+    xgrid_core_snapshot_lock();
+    g_snapshot_status = XGRID_SNAPSHOT_IDLE;
+    g_snapshot_error[0] = '\0';
+    g_snapshot_request = XGRID_SNAPSHOT_REQUEST_NONE;
+    xgrid_core_snapshot_unlock();
 
     /*
      * The host owns the process streams: redirecting them here would capture
@@ -146,4 +329,80 @@ XGRID_CORE_EXPORT int xgrid_core_join(void)
 XGRID_CORE_EXPORT const char *xgrid_core_version(void)
 {
     return xemu_version;
+}
+
+/** Queues a snapshot save under @p name. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_save(const char *name)
+{
+    return xgrid_core_snapshot_request_start(XGRID_SNAPSHOT_REQUEST_SAVE, name);
+}
+
+/** Queues a snapshot load. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_load(const char *name)
+{
+    return xgrid_core_snapshot_request_start(XGRID_SNAPSHOT_REQUEST_LOAD, name);
+}
+
+/** Queues a snapshot delete. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_delete(const char *name)
+{
+    return xgrid_core_snapshot_request_start(XGRID_SNAPSHOT_REQUEST_DELETE,
+                                             name);
+}
+
+/** Queues a refresh of the snapshot list. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_refresh(void)
+{
+    return xgrid_core_snapshot_request_start(XGRID_SNAPSHOT_REQUEST_REFRESH,
+                                             NULL);
+}
+
+/** Returns one of the XGRID_SNAPSHOT_* status values. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_status(void)
+{
+    int status;
+
+    xgrid_core_snapshot_lock();
+    status = g_snapshot_status;
+    xgrid_core_snapshot_unlock();
+    return status;
+}
+
+/** Returns the last request's error text, or an empty string. */
+XGRID_CORE_EXPORT const char *xgrid_core_snapshot_error(void)
+{
+    /*
+     * The shell asks from one thread; the copy keeps the text intact while
+     * the core publishes the next request's result.
+     */
+    static char copy[sizeof(g_snapshot_error)];
+
+    xgrid_core_snapshot_lock();
+    snprintf(copy, sizeof(copy), "%s", g_snapshot_error);
+    xgrid_core_snapshot_unlock();
+    return copy;
+}
+
+/** Returns how many snapshots the last refresh found. */
+XGRID_CORE_EXPORT int xgrid_core_snapshot_count(void)
+{
+    int count;
+
+    xgrid_core_snapshot_lock();
+    count = g_snapshot_count;
+    xgrid_core_snapshot_unlock();
+    return count;
+}
+
+/** Returns the name of snapshot @p index, or NULL when out of range. */
+XGRID_CORE_EXPORT const char *xgrid_core_snapshot_name(int index)
+{
+    const char *name = NULL;
+
+    xgrid_core_snapshot_lock();
+    if (index >= 0 && index < g_snapshot_count) {
+        name = g_snapshot_names[index];
+    }
+    xgrid_core_snapshot_unlock();
+    return name;
 }

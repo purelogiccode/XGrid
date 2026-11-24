@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -39,12 +40,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private int _coreDisplayHeight = 480;
     private bool _lastFrameSinkActive;
     private bool _shuttingDown;
+    private SaveStateRunner? _saveStates;
+    private bool _saveStatesNeedRefresh;
 
     [ObservableProperty]
     private NavigationItem? _selectedNavigationItem;
 
     [ObservableProperty]
     private bool _isRunning;
+
+    [ObservableProperty]
+    private int _selectedSaveSlot = 1;
 
     [ObservableProperty]
     private string _statusText = "Idle";
@@ -215,6 +221,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Gets the renderer label for the status bar.</summary>
     public string RendererLabel => RendererName;
+
+    /// <summary>Gets a value indicating whether the running core can save states.</summary>
+    public bool HasSaveStates => _saveStates?.IsSupported == true;
+
+    /// <summary>Gets the quick-save menu label for the selected slot.</summary>
+    public string QuickSaveHeader => "Quick Save (Slot " + SelectedSaveSlot.ToString(CultureInfo.InvariantCulture) + ")";
+
+    /// <summary>Gets the quick-load menu label for the selected slot.</summary>
+    public string QuickLoadHeader => "Quick Load (Slot " + SelectedSaveSlot.ToString(CultureInfo.InvariantCulture) + ")";
+
+    /// <summary>Gets a hint for the console page's save button.</summary>
+    public string SaveStateHint =>
+        "Save the machine to slot " + SelectedSaveSlot.ToString(CultureInfo.InvariantCulture) + " (F6)";
+
+    /// <summary>Gets a hint for the console page's load button.</summary>
+    public string LoadStateHint =>
+        "Restore slot " + SelectedSaveSlot.ToString(CultureInfo.InvariantCulture) + " (F7)";
 
     private string RendererName => Config.Graphics.Renderer switch
     {
@@ -474,6 +497,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             workingDirectory);
         FrontendTrace.Write($"sink='{launch.DisplaySinkName}' setting={Config.DisplaySink}");
         _core.Start(launch);
+        _saveStates = new SaveStateRunner(_core.SaveStates);
+        _saveStatesNeedRefresh = _saveStates.IsSupported;
+        OnPropertyChanged(nameof(HasSaveStates));
+
         StatusText = "Running";
         StatusDetail = "Emulator - " + (game?.Title ?? "Xbox dashboard");
         AddLog(
@@ -655,6 +682,85 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         NavigateTo(PageKind.Settings);
     }
 
+    /// <summary>Public command: saves the machine to the selected slot (F6).</summary>
+    [RelayCommand]
+    private void QuickSave()
+    {
+        SaveStateToSlot(SelectedSaveSlot);
+    }
+
+    /// <summary>Public command: restores the selected slot (F7).</summary>
+    [RelayCommand]
+    private void QuickLoad()
+    {
+        LoadStateFromSlot(SelectedSaveSlot);
+    }
+
+    /// <summary>Saves the machine to one quick slot and selects it for F6/F7.</summary>
+    /// <param name="slot">Slot number, 1 to 4.</param>
+    public void SaveStateToSlot(int slot)
+    {
+        BeginSaveState(slot, static (SaveStateRunner runner, int number, out string problem) =>
+            runner.TrySave(number, out problem));
+    }
+
+    /// <summary>Restores one quick slot and selects it for F6/F7.</summary>
+    /// <param name="slot">Slot number, 1 to 4.</param>
+    public void LoadStateFromSlot(int slot)
+    {
+        BeginSaveState(slot, static (SaveStateRunner runner, int number, out string problem) =>
+            runner.TryLoad(number, out problem));
+    }
+
+    /// <summary>Deletes the state in one quick slot.</summary>
+    /// <param name="slot">Slot number, 1 to 4.</param>
+    public void DeleteStateInSlot(int slot)
+    {
+        BeginSaveState(slot, static (SaveStateRunner runner, int number, out string problem) =>
+            runner.TryDelete(number, out problem));
+    }
+
+    private void BeginSaveState(
+        int slot,
+        SlotRequest request)
+    {
+        if (!IsRunning)
+        {
+            ShowToast("Power on the console before using save states.");
+            return;
+        }
+
+        SaveStateRunner? runner = _saveStates;
+        if (runner is null)
+        {
+            ShowToast("Save states need the in-process emulator core.");
+            return;
+        }
+
+        if (!SaveStateRunner.IsValidSlot(slot))
+        {
+            ShowToast("Save states use slots 1 to " + SaveStateRunner.SlotCount.ToString(CultureInfo.InvariantCulture) + ".");
+            return;
+        }
+
+        if (!request(runner, slot, out string problem))
+        {
+            AddLog(LogLevel.Warning, "Save state refused: " + problem);
+            ShowToast(problem);
+            return;
+        }
+
+        SelectedSaveSlot = slot;
+        AddLog(LogLevel.Info, runner.Operation switch
+        {
+            XemuSaveStateOperation.Save => $"Saving state to slot {slot}...",
+            XemuSaveStateOperation.Load => $"Loading state from slot {slot}...",
+            _ => $"Deleting the state in slot {slot}...",
+        });
+    }
+
+    private delegate bool SlotRequest(SaveStateRunner runner, int slot, out string problem);
+
     /// <summary>Public command: picks a disc image and launches it.</summary>
     [RelayCommand]
     private async Task OpenDiscAsync()
@@ -697,6 +803,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         StopSessionCommand.NotifyCanExecuteChanged();
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnSelectedSaveSlotChanged(int value)
+    {
+        OnPropertyChanged(nameof(QuickSaveHeader));
+        OnPropertyChanged(nameof(QuickLoadHeader));
+        OnPropertyChanged(nameof(SaveStateHint));
+        OnPropertyChanged(nameof(LoadStateHint));
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnSelectedNavigationItemChanged(NavigationItem? value)
     {
         foreach (NavigationItem item in NavigationItems)
@@ -789,6 +905,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             IsRunning = false;
             HasFrame = false;
             FrameBitmap = null;
+            _saveStates = null;
+            _saveStatesNeedRefresh = false;
+            OnPropertyChanged(nameof(HasSaveStates));
             StatusText = e.Faulted ? "Faulted" : "Off";
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
@@ -802,6 +921,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             PresentFrame(coreFrame!);
             HasFrame = true;
         }
+
+        PollSaveStates();
 
         // The native host is only shown while the core paints into it. When the
         // frame sink takes over it must not sit above the frame image.
@@ -824,6 +945,49 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         if (IsRunning)
         {
             HasFrame = _core.IsEmbedded || HasFrame;
+        }
+    }
+
+    /// <summary>
+    /// Reports the finished save-state request, if one arrived. The core runs
+    /// the work on its own loop, so the shell only reads the status.
+    /// </summary>
+    private void PollSaveStates()
+    {
+        SaveStateRunner? runner = _saveStates;
+        if (runner is null)
+        {
+            return;
+        }
+
+        // The core sets its main loop up on its own thread a moment after it
+        // starts, so the first list request is retried until it is accepted.
+        if (_saveStatesNeedRefresh)
+        {
+            _saveStatesNeedRefresh = !runner.TryRefresh(out _);
+        }
+
+        SaveStateResult? result = runner.Poll();
+        if (result is null)
+        {
+            return;
+        }
+
+        XemuSaveStateOperation operation = runner.Operation;
+        AddLog(result.Succeeded ? LogLevel.Info : LogLevel.Error, result.Message);
+        FrontendTrace.Write(
+            $"save state {operation} slot {runner.Slot}: {(result.Succeeded ? "ok" : "failed")} - {result.Message}");
+
+        // A refresh is bookkeeping; the player only asked for the slot change.
+        if (operation != XemuSaveStateOperation.Refresh)
+        {
+            ShowToast(result.Message);
+        }
+
+        if (result.Succeeded
+            && operation is XemuSaveStateOperation.Save or XemuSaveStateOperation.Delete)
+        {
+            _ = runner.TryRefresh(out _);
         }
     }
 

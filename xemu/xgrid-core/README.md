@@ -17,7 +17,7 @@ is a patch rebase, not a re-port.
 | `block/xgridzar.c` | QEMU block driver that exposes a ZArchive's disc image as the guest DVD, decoding zstd blocks on demand. |
 | `display/xgrid-display.c` | Host display sink: publishes presented frames to a named section for the shell. |
 | `input/xgrid-input.c` | Host input source: port 1 reads the shell's pad state. |
-| `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread and exposes stop/join/version. |
+| `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread, exposes stop/join/version and the save-state request slot. |
 | `thirdparty/libchdr/` | libchdr 0.3.0 (BSD-3-Clause, Copyright Romain Tisserand) and its small LZMA decoder, vendored so the build never fetches the network. |
 
 ## In-process core
@@ -30,6 +30,21 @@ presentation path does not change. The ABI is
 `xgrid_core_start(config, display_sink, input_sink, argv, argc)`,
 `xgrid_core_request_stop`, `xgrid_core_is_running`, `xgrid_core_exit_code`,
 `xgrid_core_join` and `xgrid_core_version`.
+
+### Save states
+
+`xgrid_core_snapshot_save/load/delete/refresh` queue one request at a time;
+`xgrid_core_snapshot_status` (idle, pending, completed, failed),
+`xgrid_core_snapshot_error`, `xgrid_core_snapshot_count` and
+`xgrid_core_snapshot_name` report it. A save state is xemu's own internal
+snapshot of the hard disk image (QEMU `savevm`), so it includes the VM state and
+the frame thumbnail and survives the process.
+
+The work runs as a bottom half on the core's main loop, because the block layer
+asserts it is on the main thread and the thumbnail reads the renderer's GL
+context, which lives on that same loop. The shell therefore never blocks on a
+snapshot and polls the status; a request made before the main loop exists (the
+first moments after `start`) is refused with `-1` so the caller can retry.
 
 A DLL, not the EXE: the Windows loader initialises a DLL's CRT, which an EXE
 loaded with `LoadLibrary` does not do. The DLL is linked at a fixed image base
