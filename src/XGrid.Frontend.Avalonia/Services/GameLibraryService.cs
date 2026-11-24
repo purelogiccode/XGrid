@@ -79,8 +79,9 @@ public static class GameLibraryService
     {
         string extension = Path.GetExtension(path);
         return extension.Equals(".iso", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".xiso", StringComparison.OrdinalIgnoreCase)
                || extension.Equals(".chd", StringComparison.OrdinalIgnoreCase)
-        || extension.Equals(".zar", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".zar", StringComparison.OrdinalIgnoreCase)
                || extension.Equals(".xbe", StringComparison.OrdinalIgnoreCase);
     }
 
