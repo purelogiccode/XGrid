@@ -24,6 +24,9 @@ public sealed record LaunchArguments
     /// <summary>The default headless run length, in seconds.</summary>
     public const int DefaultHeadlessSeconds = 60;
 
+    /// <summary>The frame limit used by <c>--benchmark</c> when no limit is given.</summary>
+    public const long DefaultBenchmarkFrames = 600;
+
     /// <summary>Gets a value indicating whether the console powers on at startup.</summary>
     public bool Autostart { get; init; }
 
@@ -32,6 +35,13 @@ public sealed record LaunchArguments
 
     /// <summary>Gets a value indicating whether the run is headless (no shell window).</summary>
     public bool Headless { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the headless run is a benchmark. Benchmark
+    /// runs default to <see cref="DefaultBenchmarkFrames"/> presented frames when
+    /// neither <c>--seconds</c> nor <c>--frames</c> is given.
+    /// </summary>
+    public bool Benchmark { get; init; }
 
     /// <summary>Gets a value indicating whether the run should print the command-line help.</summary>
     public bool Help { get; init; }
@@ -148,6 +158,7 @@ public sealed record LaunchArguments
 
         Headless:
           --headless                  Run without a shell window.
+          --benchmark                 Benchmark run; 600 frames when no limit is given.
           --seconds <n>               Stop after n seconds (60 when no frame limit).
           --frames <n>                Stop after n presented frames.
           --summary <path>            Write a JSON run report.
@@ -278,6 +289,7 @@ public sealed record LaunchArguments
         private bool _autostart;
         private bool _fullscreen;
         private bool _headless;
+        private bool _benchmark;
         private bool _help;
         private bool _version;
         private string? _discPath;
@@ -317,6 +329,9 @@ public sealed record LaunchArguments
                     return true;
                 case "--headless":
                     _headless = true;
+                    return true;
+                case "--benchmark":
+                    _benchmark = true;
                     return true;
                 case "-h":
                 case "-?":
@@ -391,9 +406,17 @@ public sealed record LaunchArguments
             // A headless limit or report has no meaning in the windowed shell,
             // so it selects the headless run instead of being silently ignored.
             bool headless = _headless
+                            || _benchmark
                             || _seconds is not null
                             || _frames is not null
                             || _summaryPath is not null;
+            long? frames = _frames;
+            if (_benchmark && frames is null && _seconds is null)
+            {
+                // A fixed frame count keeps repeated benchmark runs comparable.
+                frames = DefaultBenchmarkFrames;
+            }
+
             return new LaunchArguments
             {
                 // A disc on the command line is a request to launch it; the
@@ -402,11 +425,12 @@ public sealed record LaunchArguments
                 Autostart = _autostart || _discPath is not null,
                 Fullscreen = _fullscreen,
                 Headless = headless,
+                Benchmark = _benchmark,
                 Help = _help,
                 Version = _version,
                 DiscPath = _discPath,
                 Seconds = _seconds,
-                Frames = _frames,
+                Frames = frames,
                 SummaryPath = _summaryPath,
                 DataDirectory = _dataDirectory,
                 CorePath = _corePath,

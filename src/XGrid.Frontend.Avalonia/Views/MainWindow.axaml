@@ -107,6 +107,8 @@
         <MenuItem Header="Show Log Dock" ToggleType="CheckBox" IsChecked="{Binding ShowLogDock}"
                   Click="OnMenuToggleLogDock"
                   ToolTip.Tip="Show or hide the log dock at the bottom" />
+        <MenuItem Header="FPS Overlay" ToggleType="CheckBox" IsChecked="{Binding ShowFpsOverlay, Mode=TwoWay}"
+                  ToolTip.Tip="Show the frame rate and average frame time over the console picture" />
         <Separator />
         <MenuItem Header="Fullscreen" InputGesture="F11" Click="OnMenuFullscreen"
                   ToolTip.Tip="Toggle fullscreen (F11)" />

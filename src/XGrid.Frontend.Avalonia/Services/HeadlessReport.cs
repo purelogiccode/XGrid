@@ -57,6 +57,9 @@ public sealed record HeadlessReport
     /// <summary>Gets the average presented frames per second between first and last frame.</summary>
     public double Fps { get; init; }
 
+    /// <summary>Gets the average interval between presented frames, in milliseconds.</summary>
+    public double FrameTimeMs => Fps > 0 ? 1000.0 / Fps : 0;
+
     /// <summary>Gets why the run stopped: <c>duration</c>, <c>frames</c>, <c>core</c> or <c>cancel</c>.</summary>
     public string Stop { get; init; } = string.Empty;
 
@@ -87,6 +90,7 @@ public sealed record HeadlessReport
                    + " seconds=" + Seconds.ToString("0.00", CultureInfo.InvariantCulture)
                    + " firstFrame=" + FirstFrameSeconds.ToString("0.00", CultureInfo.InvariantCulture)
                    + " fps=" + Fps.ToString("0.00", CultureInfo.InvariantCulture)
+                   + " frameTime=" + FrameTimeMs.ToString("0.00", CultureInfo.InvariantCulture) + "ms"
                    + " stop=" + Stop
                    + " exit=" + ExitCode.ToString(CultureInfo.InvariantCulture)) + Environment.NewLine;
     }

@@ -739,6 +739,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],
         };
         CopyDonationState(next, Shell.Config);
+        CopyRecentGames(next, Shell.Config);
+        next.ShowFpsOverlay = Shell.Config.ShowFpsOverlay;
         foreach (TitleOverrideItem item in TitleOverrides)
         {
             next.TitleOverrides[EmulatorSettings.CanonicalTitleKey(item.Path)] = item.ToOverride();
@@ -746,6 +748,20 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         Shell.SaveSettings(next);
         Shell.Home.NotifySettingsChanged();
+    }
+
+    /// <summary>
+    /// Copies the recently played list so saving the Settings page does not
+    /// erase the Library page's recent entries.
+    /// </summary>
+    /// <param name="target">The settings being saved.</param>
+    /// <param name="source">The live settings.</param>
+    internal static void CopyRecentGames(EmulatorSettings target, EmulatorSettings source)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(source);
+
+        target.RecentGames = [.. source.RecentGames.Select(static entry => entry.Clone())];
     }
 
     /// <summary>
