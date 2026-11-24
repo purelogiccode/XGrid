@@ -35,7 +35,9 @@ current product roadmap; user documentation lives in `docs/`.
 
 - [x] ISO/XISO, compressed CHD and entry-form ZAR discs.
 - [x] `win-x64` frontend archive carries the core under `core/xemu/`.
-- [x] Package gate: licenses, archive contents, checksums, manifest, CLI smoke.
+- [x] Package gate: licenses, archive contents, checksums, manifest, CLI smoke,
+      verified for all four release RIDs.
+- [x] Unsigned archives with documented SmartScreen/Gatekeeper behavior.
 - [x] GPL-2.0-or-later license set, third-party notices, source availability.
 
 ## 2. Next
@@ -66,8 +68,6 @@ current product roadmap; user documentation lives in `docs/`.
 ### Release
 
 - [ ] Ship dependency license texts with the archive.
-- [ ] Code signing/notarization decision.
-- [ ] Reproducible package verification on all release RIDs.
 
 ## 3. Non-goals
 

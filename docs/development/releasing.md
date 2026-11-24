@@ -63,6 +63,10 @@ Linux and macOS frontend archives currently contain the shell only.
 pwsh -File scripts/package-verify.ps1
 ```
 
+The same gate runs at the end of `scripts/package.ps1`. A release host runs it
+for all four RIDs; the tree carries eight archives, the per-RID and combined
+checksum files and `package-manifest.json`.
+
 The gate checks:
 
 - license files in every archive;
