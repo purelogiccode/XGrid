@@ -48,10 +48,17 @@ public sealed class SettingsStore
     /// <summary>Gets the settings file path.</summary>
     public string FilePath => Path.Combine(DirectoryPath, "settings.json");
 
+    /// <summary>
+    /// Gets a value indicating whether <c>settings.json</c> existed when
+    /// <see cref="Load"/> ran. A missing file is a first run.
+    /// </summary>
+    public bool ExistedAtLoad { get; private set; }
+
     /// <summary>Loads settings, returning defaults when the file is missing or unreadable.</summary>
     public EmulatorSettings Load()
     {
-        if (!File.Exists(FilePath))
+        ExistedAtLoad = File.Exists(FilePath);
+        if (!ExistedAtLoad)
         {
             return new EmulatorSettings();
         }
