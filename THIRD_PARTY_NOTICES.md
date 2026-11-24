@@ -79,9 +79,30 @@ work is distributed under GPL-3.0-or-later where those libraries are included.
 The core's GPL-2.0-only files (xemu/QEMU) are used under GPL-2.0, which the
 GPL-3.0-or-later combination permits.
 
-The MSYS2 packages that provide these DLLs carry their full license texts;
-`docs/release-licensing-review.md` section 6 records shipping them as an
-operator action before a public release.
+The license texts for these libraries ship in `licenses/` in every release
+archive; `licenses/README.md` maps each component to its text. The copyright
+lines are the tables above.
+
+## Shipped license texts
+
+Every archive carries `licenses/` beside `COPYING` and `LICENSE`:
+
+| Text | Covers |
+| --- | --- |
+| `GPL-2.0.txt` | XGrid, the xemu core and its QEMU base, the ported DSP modules |
+| `LGPL-2.1.txt` | GLib, gettext, libiconv, LGPL files inside xemu/QEMU |
+| `LGPL-3.0.txt` | libidn2, libunistring |
+| `GPL-3.0.txt`, `GCC-exception-3.1.txt` | The GCC runtime DLLs |
+| `Apache-2.0.txt` | OpenSSL |
+| `MIT.txt` | NuGet runtime dependencies, libepoxy, nghttp2/nghttp3/ngtcp2, libpsl, Brotli, winpthreads |
+| `BSD-2-Clause.txt` | libsamplerate |
+| `BSD-3-Clause.txt` | libchdr, PCRE2, libssh2, libslirp, Zstandard, winpthreads |
+| `Zlib.txt` | SDL3, zlib |
+| `curl.txt` | libcurl |
+| `OFL-1.1.txt` | Inter font |
+
+`scripts/package-verify.ps1` requires every file in the folder in every
+archive.
 
 ## Earlier native CPU extraction (retired 2026-11-23)
 

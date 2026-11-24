@@ -100,7 +100,8 @@ generates an SBOM and build provenance.
 - `LICENSE` is the project notice.
 - `THIRD_PARTY_NOTICES.md` covers every redistributed component and ported file.
 - The core source and `xemu/xemu-patches/` are available with the release.
-- Dependency license texts are shipped where required.
+- `licenses/` carries the dependency license texts; the gate checks every text
+  in every archive.
 - No firmware or game data is included.
 
 See [Release licensing](../legal/release-licensing.md) and

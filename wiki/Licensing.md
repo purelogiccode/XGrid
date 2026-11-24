@@ -33,7 +33,7 @@ grant rights to Microsoft's firmware or game content.
 If you ship XGrid binaries:
 
 - include `COPYING`, `LICENSE` and `THIRD_PARTY_NOTICES.md`;
-- include required dependency license texts;
+- include the dependency license texts (`licenses/`);
 - provide the corresponding source, including `xemu/` and
   `xemu/xemu-patches/`;
 - do not add firmware or game data.

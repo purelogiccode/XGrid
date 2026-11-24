@@ -237,6 +237,7 @@ try {
                 Remove-Item -Force $symbol.FullName
             }
             Copy-Item (Join-Path $repo 'LICENSE'), (Join-Path $repo 'COPYING'), (Join-Path $repo 'THIRD_PARTY_NOTICES.md'), (Join-Path $repo 'README.md') -Destination $publishDirectory -Force
+            Copy-Item (Join-Path $repo 'licenses') -Destination $publishDirectory -Recurse -Force
             Copy-Item $notesPath (Join-Path $publishDirectory 'RELEASE-NOTES.md') -Force
             Set-Content -Path (Join-Path $publishDirectory 'VERSION') -Value $Version -NoNewline -Encoding utf8NoBOM
 
