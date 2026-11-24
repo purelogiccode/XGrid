@@ -26,6 +26,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Per-title override (memory, renderer, filters) | Supported |
 | Disc swap while running | Supported with in-process hosting |
 | Whole-window screenshots | Supported |
+| Headless runs and CLI overrides | Supported with the XGrid core |
 | Linux core from the tracked tree | Supported as a separate process with its own window |
 | macOS core | Bring your own upstream xemu 0.8.139 build |
 
@@ -33,7 +34,7 @@ point, but XGrid's patches and media drivers can change the result.
 
 | Limitation | Detail |
 | --- | --- |
-| **Windows is the integrated emulation host** | In-process hosting, the shell frame/pad sinks, save states, pause/step, disc swap and window embedding are Windows-only. The `linux-x64` archive bundles the standalone core, which presents and reads input through its own window. macOS archives contain the shell only. |
+| **Windows is the integrated emulation host** | In-process hosting, the shell frame/pad sinks, save states, pause/step, disc swap and window embedding are Windows-only. The `linux-x64` archive bundles the standalone core, which presents and reads input through its own window; headless runs use the shared-memory sink there too. macOS archives contain the shell only. |
 | **ZArchive file-tree archives** | Supported by the XDVDFS synthesizer; entry-form archives remain the simplest shape. |
 | **Save states are in-process only** | The separate-process host has no ABI for snapshot control. |
 | **Pause, frame stepping and disc swap need in-process hosting** | On Linux, power off before changing a disc. |

@@ -22,18 +22,70 @@ Useful for portable installs and automated tests.
 
 ## Command line
 
+Switches are case-insensitive and accept either `--name value` or
+`--name=value`. A recognized switch with a bad value stops the run with exit
+code `2`; an unrecognized argument is passed through unchanged for Avalonia and
+the platform.
+
 | Argument | Meaning |
 | --- | --- |
 | `--autostart` | Power on the console as soon as the shell is ready. |
 | `-fullscreen`, `--fullscreen`, `-f` | Open the shell in fullscreen. |
+| `--disc <path>` | Insert this ISO/XISO, CHD or ZAR image and power on. |
+| `--core <path>` | Use this emulator binary for the session. |
+| `--data-dir <path>` | Use this shell data folder for the session. |
+| `--bios <path>` | Flash ROM image for the session. |
+| `--mcpx <path>` | 512-byte MCPX boot ROM for the session. |
+| `--eeprom <path>` | 256-byte EEPROM image for the session. |
+| `--hdd <path>` | Raw or qcow2 hard-disk image for the session. |
+| `--renderer <name>` | `OPENGL`, `VULKAN` or `NULL`. |
+| `--scale <1-8>` | Internal surface scale. |
+| `--filtering <mode>` | Core texture filtering: `linear` or `nearest`. |
+| `--filter <mode>` | Shell filter: `nearest`, `bilinear`, `scanline` or `crt`. |
+| `--aspect <mode>` | `native`, `auto`, `4x3` (or `4:3`) or `16x9` (or `16:9`). |
+| `--fit <mode>` | `center`, `scale` or `stretch`. |
+| `--ram <64\|128>` | Guest RAM in megabytes. |
+| `--audio <backend>` | `auto`, `dsound` (Windows), `none` or `wav`. |
+| `--headless` | Run without the shell window; see [Headless runs](../guides/headless.md). |
+| `--seconds <n>` | Headless wall-clock limit (60 when no frame limit is set). |
+| `--frames <n>` | Stop a headless run after `n` published frames. |
+| `--summary <path>` | Write the headless JSON report to this path. |
+| `-h`, `--help`, `-?` | Print the command-line reference. |
+| `--version` | Print the application version. |
 
-Arguments the shell does not recognize are passed through unchanged for
-Avalonia and the platform. The switches are case-insensitive and can be
-combined:
+A positional argument that ends in `.iso`, `.xiso`, `.chd` or `.zar` is treated
+as `--disc` and implies `--autostart`:
 
 ```text
-XGrid.Frontend.Avalonia.exe --autostart -f
+XGrid.Frontend.Avalonia.exe -f "D:\Games\Halo.iso"
 ```
+
+Use `--` to stop parsing; every following argument is passed to Avalonia
+unchanged. Command-line overrides apply to the current session only. They are
+never written into `settings.json`, and they win over per-title overrides.
+
+### Headless runs
+
+`--headless` boots the core without the Avalonia window and without presenting a
+picture. The core still renders off-screen. `--seconds`, `--frames` and
+`--summary` select headless mode on their own. Without `--seconds` or
+`--frames`, the run stops after 60 seconds; a frame limit without a time limit
+runs until that many frames, so combine both when the guest might never reach
+the limit. Ctrl+C also stops it cleanly.
+
+```text
+XGrid.Frontend.Avalonia.exe --headless --seconds 30 --disc "D:\Games\Halo.iso"
+```
+
+The console output and JSON report are documented in
+[Headless runs](../guides/headless.md). Exit codes are:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Clean run. |
+| `1` | Core failure, or the requested summary could not be written. |
+| `2` | Configuration or media validation failed. |
+| `3` | The core ran but published no frames. |
 
 ## Files
 
@@ -47,6 +99,9 @@ XGrid.Frontend.Avalonia.exe --autostart -f
     xemu.log             core log (separate-process mode)
     audio.wav            WAV capture, when selected
 ```
+
+A headless run writes its report only where `--summary` points; no file is
+created by default.
 
 ### `settings.json`
 
@@ -117,10 +172,10 @@ means “unknown”; the shell keeps the configured choice and the core may fall
 
 | Variable | Effect |
 | --- | --- |
-| `XGRID_FRONTEND_DATA_DIR` | Override the shell data folder. |
+| `XGRID_FRONTEND_DATA_DIR` | Override the shell data folder (equivalent to `--data-dir`). |
 | `XGRID_XEMU_CORE` | Override the core executable path. |
-| `XGRID_DISPLAY_SHM` | Display sink section name (set by the shell for the separate process on Windows). |
-| `XGRID_INPUT_SHM` | Input sink section name (set by the shell for the separate process on Windows). |
+| `XGRID_DISPLAY_SHM` | Display sink name (set by the shell for a separate core process; named file mapping on Windows, POSIX shared memory on Unix). |
+| `XGRID_INPUT_SHM` | Input sink name (set by the shell for the separate process on Windows). |
 
 ## Save states
 

@@ -20,7 +20,7 @@ xemu/
 | --- | --- |
 | `block/xgridchd.c` | CHD block driver; decodes hunks on demand through libchdr. |
 | `block/xgridzar.c` | ZArchive block driver; decodes zstd blocks, exposes an entry-form `.iso`, and synthesizes XDVDFS for file-tree archives. |
-| `display/xgrid-display.c` | Frame sink; publishes BGRA frames to a named shared section. |
+| `display/xgrid-display.c` | Frame sink; publishes BGRA frames to a Windows named section or POSIX shared memory. |
 | `input/xgrid-input.c` | Input sink; reads one pad record per Xbox port. |
 | `abi/xgrid-core.c` | In-process host ABI and save-state request bridge. |
 | `thirdparty/libchdr/` | Vendored libchdr 0.3.0 (BSD-3-Clause). |
@@ -100,6 +100,13 @@ while the vblank thread reads it. The shell toggles 4x with Space and returns to
 
 One process hosts one machine. Start is accepted once; join releases the thread
 handle after the run loop stops.
+
+### Headless
+
+The display sink is also the headless renderer: the core hides its SDL window,
+keeps the OpenGL context and publishes every presented frame. A headless shell
+run reads only the 32-byte header, so counting frames does not copy pixels. On
+Unix the transport is a POSIX shared-memory object; the core unlinks it at exit.
 
 ### Why a DLL?
 

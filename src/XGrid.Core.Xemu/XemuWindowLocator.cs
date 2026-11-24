@@ -92,6 +92,59 @@ internal static unsafe partial class XemuWindowLocator
         return best;
     }
 
+    /// <summary>Returns the largest top-level window owned by a process, visible or not.</summary>
+    /// <param name="processId">Core process id.</param>
+    /// <returns>The window handle, or zero when the process owns no top-level window.</returns>
+    /// <remarks>
+    /// A headless core hides its SDL window, so the embedding locator (which
+    /// only accepts visible windows) cannot find it. Closing that window is
+    /// still the core's own power-off path.
+    /// </remarks>
+    internal static IntPtr FindAnyWindow(int processId)
+    {
+        var candidates = new List<IntPtr>(4);
+        GCHandle state = GCHandle.Alloc(candidates);
+        try
+        {
+            EnumWindows(&CollectWindow, GCHandle.ToIntPtr(state));
+        }
+        finally
+        {
+            state.Free();
+        }
+
+        IntPtr best = IntPtr.Zero;
+        long bestArea = 0;
+        foreach (IntPtr handle in candidates)
+        {
+            _ = Win32Window.GetWindowThreadProcessId(handle, out uint owner);
+            if (owner != processId)
+            {
+                continue;
+            }
+
+            int style = Win32Window.GetWindowLongW(handle, Win32Window.GwlStyle);
+            if ((style & Win32Window.WsChild) != 0)
+            {
+                continue;
+            }
+
+            if (!Win32Window.GetWindowRect(handle, out Win32Window.Rect rect))
+            {
+                continue;
+            }
+
+            long area = (long)(rect.Right - rect.Left) * (rect.Bottom - rect.Top);
+            if (area > bestArea)
+            {
+                bestArea = area;
+                best = handle;
+            }
+        }
+
+        return best;
+    }
+
     /// <summary>Finds the core window by its XGrid title, hidden or not.</summary>
     /// <param name="processId">Core process id.</param>
     /// <param name="title">Exact window title to match.</param>
@@ -142,8 +195,9 @@ internal static unsafe partial class XemuWindowLocator
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
     private static int CollectWindow(IntPtr handle, nint state)
     {
-        if (Win32Window.IsWindowVisible(handle)
-            && GCHandle.FromIntPtr(state).Target is List<IntPtr> list)
+        // Collect hidden windows too: a core started with the display sink
+        // hides its SDL window, but that window still owns the close path.
+        if (GCHandle.FromIntPtr(state).Target is List<IntPtr> list)
         {
             list.Add(handle);
         }

@@ -95,8 +95,8 @@ request, so the core flushes storage instead of being killed.
 
 ## Display sink
 
-When the shell presents frames, the core writes a top-down BGRA image into a named
-shared section:
+When the shell presents frames, the core writes a top-down BGRA image into a
+named shared section:
 
 ```text
 uint32 magic   'XGDS'
@@ -107,9 +107,24 @@ uint64 frame   increments once per published frame
 pixel data     width × height BGRA, top row first
 ```
 
-The shell polls the section every 8 ms, keeps the latest frame, and presents at a
-minimum 10 ms cadence. A slow UI drops frames instead of building latency. The
-section is Windows-only; elsewhere the core presents into its own window.
+Windows uses a named file mapping; Linux and macOS use a POSIX shared-memory
+object with the same layout. The core still creates an OpenGL context and renders
+off-screen when the sink is active. The shell polls the section every 8 ms on
+Windows, keeps the latest frame, and presents at a minimum 10 ms cadence. A slow
+UI drops frames instead of building latency; elsewhere the normal UI keeps the
+core's own SDL window.
+
+Headless runs use the same sink on every host, but only read the 32-byte header:
+they count the frame counter without copying pixels, so a benchmark does not pay
+for presentation it never shows.
+
+## Headless runner
+
+`--headless` starts the core before Avalonia is initialized. It writes the same
+generated `xemu.toml`, uses no input sink, defaults the audio backend to `none`,
+and stops on `--seconds`, `--frames`, guest power-off or Ctrl+C. The run prints a
+summary and can write the same fields as JSON. See
+[Headless runs](../guides/headless.md).
 
 ## Input sink
 

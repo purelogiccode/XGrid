@@ -61,8 +61,19 @@ On Linux, `bash scripts/build-native-xemu.sh` builds the same tree and writes th
 renderer manifest.
 
 The shell tests cover launch planning, generated configuration, display/input
-sinks, save-state orchestration, filters, settings and the library. Media and
-emulation checks are described in the script headers under `scripts/`.
+sinks, save-state orchestration, filters, settings, the library and the
+command-line parser. Media and emulation checks are described in the script
+headers under `scripts/`.
+
+The headless path has its own end-to-end smoke check; it needs a built core, a
+Release frontend and the development firmware:
+
+```powershell
+pwsh -File scripts/headless-check.ps1 -Seconds 20 -Disc 'D:\Games\Halo.iso'
+```
+
+The script renders off-screen, writes a JSON report and fails when no frames were
+published.
 
 ## Documentation gate
 

@@ -5,6 +5,9 @@
     <RootNamespace>XGrid.Frontend.Avalonia</RootNamespace>
     <AssemblyName>XGrid.Frontend.Avalonia</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- The source-generated LibraryImport marshalling for the host console
+         attachment uses unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- UI types are not a public API surface; XAML is the documentation. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>

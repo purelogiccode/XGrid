@@ -125,8 +125,9 @@ renderer manifest beside the core. Use `-j N` to set the job count and
 
 The Linux build is the standalone core. The in-process `xgrid_core` library,
 four save-state slots and embedded display remain Windows-only; on Linux the
-shell launches the core as a separate process with its own window. The recipe is
-tested on Ubuntu 22.04 with SDL3 3.4.20, also under WSL2/WSLg.
+shell launches the core as a separate process with its own window, while
+`--headless` uses the POSIX display sink. The recipe is tested on Ubuntu 22.04
+with SDL3 3.4.20, also under WSL2/WSLg.
 
 ### Core output
 
@@ -211,8 +212,10 @@ core on its own host or stage per-RID builds with `-CoreRoot`, or pass
 - The `linux-x64` release frontend archive carries the Linux core under
   `core/xemu/`. The shell runs it as a separate process with its own window.
 - The in-process core, host frame/pad sinks, save states and embedded display
-  are Windows-only. On Linux the core handles presentation and input through
-  SDL; the shell still owns the library, settings and diagnostics.
+  are Windows-only for the normal shell UI. On Linux the core handles
+  presentation and input through SDL; the shell still owns the library, settings
+  and diagnostics. Headless runs are the exception: they use the POSIX display
+  sink on Linux and macOS.
 - macOS has no XGrid core build script. The macOS archives contain the shell
   only; point the shell at an upstream xemu 0.8.139 build with the **Emulator
   binary** setting.

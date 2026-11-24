@@ -26,6 +26,9 @@ its own SDL window outside the Home page; use it for the picture, filters and
 input. The macOS archives contain the shell only and need an external xemu
 build.
 
+Headless runs are the exception: `--headless` uses a POSIX shared-memory frame
+sink on Linux and macOS. See [Headless and CLI](Headless).
+
 ## Filters
 
 | Filter | Effect |

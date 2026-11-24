@@ -19,7 +19,7 @@ public sealed class EmulatorSettings
     public string BiosPath { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the optional 512-byte MCPX boot ROM path.</summary>
-    public string McpxRomPath { get; init; } = string.Empty;
+    public string McpxRomPath { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the optional 256-byte EEPROM image path.</summary>
     public string EepromPath { get; set; } = string.Empty;
@@ -74,7 +74,7 @@ public sealed class EmulatorSettings
     /// packaged <c>core/xemu/xemu.exe</c> and then the repository's
     /// <c>data/xemu/xemu.exe</c>.
     /// </summary>
-    public string XemuCorePath { get; init; } = string.Empty;
+    public string XemuCorePath { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the folders scanned by the game library.</summary>
     public List<string> LibraryFolders { get; init; } = [];
