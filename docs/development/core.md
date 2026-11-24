@@ -19,7 +19,7 @@ xemu/
 | File | Role |
 | --- | --- |
 | `block/xgridchd.c` | CHD block driver; decodes hunks on demand through libchdr. |
-| `block/xgridzar.c` | ZArchive block driver; decodes zstd blocks and exposes the largest `.iso` entry. |
+| `block/xgridzar.c` | ZArchive block driver; decodes zstd blocks, exposes an entry-form `.iso`, and synthesizes XDVDFS for file-tree archives. |
 | `display/xgrid-display.c` | Frame sink; publishes BGRA frames to a named shared section. |
 | `input/xgrid-input.c` | Input sink; reads one pad record per Xbox port. |
 | `abi/xgrid-core.c` | In-process host ABI and save-state request bridge. |
@@ -127,12 +127,13 @@ standalone core:
 ```powershell
 pwsh -File scripts/chd-boot-check.ps1 -Disc path\to\game.chd -Shot wt-data\chd-boot.png
 pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\hello-entry.zar -Shot wt-data\zar-boot.png
+pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\hello.zar -Shot wt-data\zar-tree-boot.png
 ```
 
 `RESULT: PASS` means the core stayed alive and presented a non-blank frame. Run
-both after a core rebase that touches the block layer. A file-tree ZAR is
-rejected until the XDVDFS synthesizer exists; an entry-form archive must carry
-the disc as one `.iso` entry.
+them after a core rebase that touches the block layer. The file-tree check
+exercises the XDVDFS synthesizer; entry-form archives must carry the disc as one
+`.iso` entry.
 
 ## Adding an enhancement
 

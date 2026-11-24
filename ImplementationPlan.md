@@ -36,6 +36,7 @@ current product roadmap; user documentation lives in `docs/`.
 ### Media and packaging
 
 - [x] ISO/XISO, compressed CHD and entry-form ZAR discs.
+- [x] XDVDFS synthesis for file-tree ZArchive discs.
 - [x] Entry-form ZArchive creation documented and covered by directory tests.
 - [x] `win-x64` frontend archive carries the core under `core/xemu/`.
 - [x] Package gate: licenses, archive contents, checksums, manifest, CLI smoke,
@@ -54,7 +55,6 @@ current product roadmap; user documentation lives in `docs/`.
 
 ### Media
 
-- [ ] XDVDFS synthesizer for file-tree `--iso` ZArchive files.
 - [ ] Re-verify CHD/ZAR boot paths on each core rebase.
 
 ### Platform

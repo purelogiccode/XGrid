@@ -17,7 +17,7 @@ diagnostics, packaging and the documentation you are reading.
 | **Core** | xemu 0.8.139 / QEMU 10.2.0 TCG i386, NV2A OpenGL/Vulkan/NULL renderers, MCPX, APU/ACI, IDE/ATAPI, USB/OHCI, SMBus and the full Xbox boot chain |
 | **Shell** | Avalonia 12 desktop application with Home, Library, Settings, Activity and About pages |
 | **Hosting** | In-process core (`xgrid_core.dll`) by default; separate-process fallback |
-| **Media** | ISO/XISO, compressed CHD, entry-form ZArchive and raw/qcow2 HDD images |
+| **Media** | ISO/XISO, compressed CHD, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
 | **Display** | Shell frame sink with nearest, bilinear, scanline and CRT filters; embedded core window mode; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
 | **Quality of life** | Four save-state slots, per-title overrides, whole-window screenshots, activity log, accent themes |
@@ -50,8 +50,9 @@ Read [Architecture](reference/architecture.md) for the full picture.
 ### Media without extraction
 
 - **CHD** discs are decoded on demand by the `xgridchd` block driver.
-- **ZArchive** discs are decoded on demand by `xgridzar`; the archive must contain
-  the disc as an `.iso` entry.
+- **ZArchive** discs are decoded on demand by `xgridzar`; an entry-form archive
+  exposes its `.iso` entry, and a file-tree archive is synthesized into an
+  XDVDFS volume at open time.
 - **ISO/XISO** is handled directly by the core block layer.
 - **XBE** files are listed for inspection but must be wrapped in a disc image to boot.
 

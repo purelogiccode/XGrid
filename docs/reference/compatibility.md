@@ -13,7 +13,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Retail boot chain and dashboard from an HDD image | Supported |
 | ISO/XISO disc images | Supported |
 | Compressed CHD disc images | Supported (real-time decode) |
-| ZArchive discs | Supported when the archive contains an `.iso` entry |
+| ZArchive discs | Supported, entry form or synthesized file tree |
 | 64 MB and 128 MB guest RAM | Supported |
 | OpenGL renderer | Supported |
 | Vulkan renderer | Only when the core build includes it |
@@ -32,7 +32,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Limitation | Detail |
 | --- | --- |
 | **Windows is the supported emulation host** | The core and display embedding are packaged for Windows x64. Linux/macOS archives contain the shell only. |
-| **ZArchive file-tree archives** | A `.zar` must store the disc as a single `.iso` entry. File-tree archives need an XDVDFS synthesizer that is not built yet. |
+| **ZArchive file-tree archives** | Supported by the XDVDFS synthesizer; entry-form archives remain the simplest shape. |
 | **Save states are in-process only** | The separate-process host has no ABI for snapshot control. |
 | **Player 1 only** | The shell maps one controller. |
 | **No disc swap while running** | Power off before launching another disc. |
