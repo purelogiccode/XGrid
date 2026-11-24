@@ -49,7 +49,7 @@ public static class XemuLaunchPlan
             // The display control publishes 1x1 before its first layout pass.
             WindowWidth = Math.Max(64, width),
             WindowHeight = Math.Max(64, height),
-            Renderer = settings.Graphics.Renderer,
+            Renderer = ResolveRenderer(settings.Graphics.Renderer, CoreCapabilities.Read(core)),
             SurfaceScale = settings.Graphics.SurfaceScale,
             Filtering = settings.Graphics.Filtering,
             StartupSize = settings.Graphics.StartupSize,
@@ -112,6 +112,25 @@ public static class XemuLaunchPlan
         XemuLaunchSettings launch = Create(settings, discPath, 640, 480, workingDirectory);
         System.Collections.Generic.IReadOnlyList<string> errors = launch.Validate();
         return errors.Count == 0 ? null : errors[0];
+    }
+
+    /// <summary>
+    /// Returns the renderer the core will actually start. A build that reports
+    /// no Vulkan cannot start one, so a configured Vulkan renderer becomes
+    /// OpenGL here rather than in the core's log after the window is up.
+    /// </summary>
+    /// <param name="renderer">Configured renderer key.</param>
+    /// <param name="capabilities">Core capabilities, or null when unknown.</param>
+    /// <returns>The renderer key to write into the core configuration.</returns>
+    public static string ResolveRenderer(string renderer, CoreCapabilities? capabilities)
+    {
+        if (string.Equals(renderer, GraphicsSettings.RendererVulkan, StringComparison.OrdinalIgnoreCase)
+            && capabilities is { SupportsVulkan: false })
+        {
+            return GraphicsSettings.RendererOpenGl;
+        }
+
+        return renderer;
     }
 
     private static string Resolve(string configured, string? firmwareDirectory, string fileName)

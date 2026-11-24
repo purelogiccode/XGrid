@@ -138,10 +138,20 @@ The previous 6,695-line plan for the managed C# emulator is archived at
       **Done when:** a core fault shows a dialog with the log path, the shell
       stays alive, and the next power-on offers the separate-process host.
 
-- [ ] **U5. Vulkan honest.** `CONFIG_VULKAN` is undefined in the build, so the
+- [x] **U5. Vulkan honest.** `CONFIG_VULKAN` is undefined in the build, so the
       option logs `Configured renderer unavailable. Switching to OpenGL.`
       **Done when:** either the build enables Vulkan and the option works, or
       the option is hidden with a hint.
+      **Done (2026-11-24):** `scripts/build-native-xemu.ps1` writes
+      `xemu/dist/xgrid-core.json` with the renderers `CONFIG_VULKAN` actually
+      enabled (`OPENGL`, `NULL` today), the shell reads it through
+      `CoreCapabilities`, and the settings page offers only what the build has
+      (`RendererChoices`, hint "This emulator build has no Vulkan renderer").
+      A configuration that asked for Vulkan is coerced in `XemuLaunchPlan` and
+      logged (`VULKAN is not compiled into this emulator build; OPENGL is
+      used.`). Evidence: the running shell with a Vulkan settings file reads
+      `OpenGL` on the console page, logs both fallback lines, and Save settings
+      writes `"Renderer": "OPENGL"`.
 
 - [ ] **U6. Full screen on the picture.** F11 full-screens the whole shell.
       **Done when:** a full-screen mode shows only the game surface and Esc
