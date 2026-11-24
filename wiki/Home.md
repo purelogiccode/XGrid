@@ -19,11 +19,15 @@ save states, display/input plumbing, screenshots and packaging.
 | [Audio](Audio) | Backends, DSP, HRTF and WAV capture. |
 | [Headless and CLI](Headless) | Settings overrides, headless runs and JSON reports. |
 | [Logging and diagnostics](Diagnostics) | Serilog logs, bug reports, statistics and updates. |
+| [Donations](Donations) | The donation banner, verification and privacy. |
+| [Accessibility](Accessibility) | Tooltips, keyboard navigation and screen readers. |
+| [Privacy and data](Privacy) | What is local, what is sent and how to opt out. |
 | [Save states](Save-States) | Four slots, F6/F7 and the in-process requirement. |
 | [Media formats](Media-Formats) | ISO, CHD, ZAR and XBE behavior. |
 | [Troubleshooting](Troubleshooting) | Common failures and fixes. |
 | [FAQ](FAQ) | Short answers. |
 | [Building from source](Building-from-Source) | Shell, native core and gates. |
+| [Testing](Testing) | Test projects, commands and conventions. |
 | [Licensing](Licensing) | GPL, xemu/QEMU and third-party notices. |
 
 ## At a glance
@@ -35,6 +39,7 @@ save states, display/input plumbing, screenshots and packaging.
 - **Media:** ISO/XISO, compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.
 - **Automation:** command-line settings overrides and headless runs with JSON reports.
 - **Diagnostics:** Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check.
+- **Donationware:** optional banner and email-based recognition; no feature locks.
 - **Platform:** Windows x64 has the full shell integration; Linux x64 ships the
   standalone core in its own window; macOS ships the shell with an external core.
 
@@ -45,6 +50,10 @@ The complete multi-page documentation lives in the repository:
 - [Documentation home](https://github.com/purelogiccode/XGrid/blob/master/docs/index.md)
 - [Architecture](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/architecture.md)
 - [Configuration](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/configuration.md)
+- [Service endpoints](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/service-endpoints.md)
+- [Donations](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/donations.md)
+- [Privacy and data](https://github.com/purelogiccode/XGrid/blob/master/docs/legal/privacy.md)
+- [Testing](https://github.com/purelogiccode/XGrid/blob/master/docs/development/testing.md)
 - [Compatibility](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/compatibility.md)
 
 ## Status

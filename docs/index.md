@@ -20,7 +20,7 @@ diagnostics, packaging and the documentation you are reading.
 | **Media** | ISO/XISO, compressed CHD, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
 | **Display** | Shell frame sink with nearest, bilinear, scanline and CRT filters; embedded core window mode; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
-| **Quality of life** | Four save-state slots, per-title overrides, 4x fast-forward, local cover art, whole-window screenshots, activity log, tooltips on every control, accent themes |
+| **Quality of life** | Four save-state slots, per-title overrides, 4x fast-forward, local cover art, whole-window screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Automation** | Command-line settings overrides and headless runs with a JSON report for scripts and benchmarks |
 | **Platform** | Windows x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell with an external core |
@@ -101,6 +101,13 @@ also carries the environment and exception details to the bug-report service,
 and a startup check offers the GitHub release page when a newer build exists.
 See [Logging and diagnostics](guides/diagnostics.md).
 
+### Donationware, without feature locks
+
+XGrid is free to use. The optional banner under the toolbar links to the
+PureLogicCode donation page and disappears when the service confirms a completed
+donation for your email. Donating is never required for a feature. See
+[Supporting XGrid](guides/donations.md) and [Privacy and data](legal/privacy.md).
+
 ## Quick start
 
 1. **Download** the release archive for your platform. The Windows and Linux
@@ -120,10 +127,10 @@ Full details: [Installation](getting-started/installation.md) and
 | Section | Start here |
 | --- | --- |
 | Getting started | [Requirements](getting-started/requirements.md) · [Installation](getting-started/installation.md) · [First boot](getting-started/first-boot.md) |
-| Using XGrid | [Library](guides/library.md) · [Settings](guides/settings.md) · [Display](guides/display.md) · [Input](guides/input.md) · [Audio](guides/audio.md) · [Headless and CLI](guides/headless.md) · [Logging and diagnostics](guides/diagnostics.md) · [Save states](guides/save-states.md) · [Media](guides/media.md) |
-| Reference | [Architecture](reference/architecture.md) · [Configuration](reference/configuration.md) · [Shortcuts](reference/shortcuts.md) · [Compatibility](reference/compatibility.md) · [Troubleshooting](reference/troubleshooting.md) · [FAQ](reference/faq.md) · [Glossary](reference/glossary.md) |
-| Development | [Building](development/building.md) · [Layout](development/repository-layout.md) · [Core](development/core.md) · [Quality gates](development/quality-gates.md) · [Releasing](development/releasing.md) · [Release notes](release-notes/v0.1.0.md) · [Contributing](development/contributing.md) |
-| Legal | [Licensing](legal/licensing.md) · [Porting](legal/porting-policy.md) · [Release licensing](legal/release-licensing.md) · [Source availability](legal/source-availability.md) |
+| Using XGrid | [Library](guides/library.md) · [Settings](guides/settings.md) · [Display](guides/display.md) · [Input](guides/input.md) · [Audio](guides/audio.md) · [Headless and CLI](guides/headless.md) · [Logging and diagnostics](guides/diagnostics.md) · [Supporting XGrid](guides/donations.md) · [Accessibility](guides/accessibility.md) · [Save states](guides/save-states.md) · [Media](guides/media.md) |
+| Reference | [Architecture](reference/architecture.md) · [Configuration](reference/configuration.md) · [Shortcuts](reference/shortcuts.md) · [Compatibility](reference/compatibility.md) · [Service endpoints](reference/service-endpoints.md) · [Donation API](reference/donation-api.md) · [Troubleshooting](reference/troubleshooting.md) · [FAQ](reference/faq.md) · [Glossary](reference/glossary.md) |
+| Development | [Building](development/building.md) · [Layout](development/repository-layout.md) · [Core](development/core.md) · [Quality gates](development/quality-gates.md) · [Testing](development/testing.md) · [Inspection](development/inspection.md) · [Releasing](development/releasing.md) · [Release notes](release-notes/v0.1.0.md) · [Contributing](development/contributing.md) |
+| Legal | [Licensing](legal/licensing.md) · [Privacy](legal/privacy.md) · [Porting](legal/porting-policy.md) · [Release licensing](legal/release-licensing.md) · [Source availability](legal/source-availability.md) |
 
 ## Project status
 

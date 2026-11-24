@@ -8,6 +8,9 @@
   * [Audio](Audio)
   * [Headless and CLI](Headless)
   * [Logging and diagnostics](Diagnostics)
+  * [Donations](Donations)
+  * [Accessibility](Accessibility)
+  * [Privacy and data](Privacy)
   * [Save states](Save-States)
   * [Media formats](Media-Formats)
 * **Help**
@@ -15,6 +18,7 @@
   * [FAQ](FAQ)
 * **Development**
   * [Building from source](Building-from-Source)
+  * [Testing](Testing)
   * [Licensing](Licensing)
 * **Repository**
   * [Documentation](https://github.com/purelogiccode/XGrid/tree/master/docs)

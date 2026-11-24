@@ -221,8 +221,23 @@ The shell reads it to decide which renderers to offer. A build without Vulkan
 does not show Vulkan, and a saved Vulkan choice is coerced to OpenGL with a
 warning.
 
+## Diagnostics and services
+
+The shell routes logs through Serilog and keeps rolling files beside its data.
+Warnings and errors go to a bounded background queue that forwards environment
+and exception details to the bug-report service. The same diagnostics project
+owns the single startup statistics hit, the GitHub release check and the
+donation verification client. None of these calls run on the emulation thread,
+and every one is best-effort: a network failure is logged and ignored.
+
+The donation banner is presentation state: `HasDonated` lives in
+`settings.json`, and only a successful verification response hides the banner.
+The API contract and privacy notes are in [Donation API](donation-api.md) and
+[Privacy and data](../legal/privacy.md).
+
 ## Related pages
 
-- [Configuration](configuration.md) — files, paths and environment variables.
-- [The XGrid core](../development/core.md) — building and extending the core.
-- [Save states](../guides/save-states.md) — user-facing behavior.
+- [Configuration](configuration.md) - files, paths and environment variables.
+- [Service endpoints](service-endpoints.md) - every outbound call and opt-out.
+- [The XGrid core](../development/core.md) - building and extending the core.
+- [Save states](../guides/save-states.md) - user-facing behavior.

@@ -63,7 +63,7 @@ and packaging.
 | **Display** | Shell frame sink or embedded core window; filters, resolution scale, aspect/fit, fullscreen |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
 | **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
-| **Quality of life** | Four save-state slots, library scan, per-title overrides, screenshots, activity log, tooltips on every control, accent themes |
+| **Quality of life** | Four save-state slots, library scan, per-title overrides, screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Platform** | Windows 10/11 x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell (bring your own core) |
 
@@ -169,23 +169,30 @@ macOS archives currently contain the shell only. Stage per-RID cores with
 - **Getting started** — [requirements](docs/getting-started/requirements.md),
   [installation](docs/getting-started/installation.md),
   [first boot](docs/getting-started/first-boot.md).
-- **Guides** — [library](docs/guides/library.md), [settings](docs/guides/settings.md),
+- **Guides** - [library](docs/guides/library.md), [settings](docs/guides/settings.md),
   [display](docs/guides/display.md), [input](docs/guides/input.md),
-  [audio](docs/guides/audio.md), [save states](docs/guides/save-states.md),
+  [audio](docs/guides/audio.md), [donations](docs/guides/donations.md),
+  [accessibility](docs/guides/accessibility.md),
+  [save states](docs/guides/save-states.md),
   [media](docs/guides/media.md).
-- **Reference** — [architecture](docs/reference/architecture.md),
+- **Reference** - [architecture](docs/reference/architecture.md),
   [configuration](docs/reference/configuration.md),
   [shortcuts](docs/reference/shortcuts.md),
   [compatibility](docs/reference/compatibility.md),
+  [service endpoints](docs/reference/service-endpoints.md),
+  [donation API](docs/reference/donation-api.md),
   [troubleshooting](docs/reference/troubleshooting.md), [FAQ](docs/reference/faq.md),
   [glossary](docs/reference/glossary.md).
-- **Development** — [building](docs/development/building.md),
+- **Development** - [building](docs/development/building.md),
   [layout](docs/development/repository-layout.md),
   [core](docs/development/core.md),
   [quality gates](docs/development/quality-gates.md),
+  [testing](docs/development/testing.md),
+  [inspection](docs/development/inspection.md),
   [releasing](docs/development/releasing.md),
   [contributing](docs/development/contributing.md).
-- **Legal** — [licensing](docs/legal/licensing.md),
+- **Legal** - [licensing](docs/legal/licensing.md),
+  [privacy](docs/legal/privacy.md),
   [porting](docs/legal/porting-policy.md),
   [release licensing](docs/legal/release-licensing.md),
   [source availability](docs/legal/source-availability.md).

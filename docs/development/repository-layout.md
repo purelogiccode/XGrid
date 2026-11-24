@@ -41,8 +41,9 @@ data/                         local firmware/media (git-ignored)
 - `src/XGrid.Frontend.Avalonia` — the shell.
 - `src/XGrid.Core.Xemu` — launch planning, generated configuration, process and
   in-process hosting, display/input sinks, save-state wrapper.
-- `src/XGrid.Diagnostics` — Serilog configuration, the warning/error bug-report
-  queue, the startup statistics call and the GitHub update check.
+- `src/XGrid.Diagnostics` - Serilog configuration, the warning/error bug-report
+  queue, the startup statistics call, the GitHub update check and the donation
+  verification client.
 - `xemu/` — the native core tree.
 - `scripts/build-native-xemu.ps1` — core build (Windows/MSYS2).
 - `scripts/build-native-xemu.sh` — core build (Linux).
