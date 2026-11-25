@@ -5,7 +5,8 @@
 # The output is xemu/dist, which the shell launches as its core.
 param(
     [int]$Jobs = 12,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$NoVulkan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,12 +19,18 @@ if (-not (Test-Path $tree)) {
 
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
 
+Write-Host "Building native xemu core (MSYS2 MINGW64)..."
+Write-Host "  log: $log"
+$buildStarted = Get-Date
+
 # Convert D:\repo\CSharp_XGrid to /d/repo/CSharp_XGrid for the MSYS2 shell.
 $drive = $root.Substring(0, 1).ToLowerInvariant()
 $rest = $root.Substring(2).Replace('\', '/')
 $rootPosix = "/$drive$rest"
 
 $cleanStep = if ($Clean) { 'rm -rf build' } else { '' }
+# Vulkan is part of the release build. Use -NoVulkan for an OpenGL-only core.
+$vulkanOption = if ($NoVulkan) { '-Dxgrid_vulkan=false' } else { '-Dxgrid_vulkan=true' }
 $script = @"
 export MSYSTEM=MINGW64
 # xemu's build.sh drives `make`; this host has ninja but no make, so provide a
@@ -34,18 +41,23 @@ chmod +x $rootPosix/wt-data/bin/make
 export PATH=$rootPosix/wt-data/bin:/c/cmake/bin:/mingw64/bin:/usr/bin:`$PATH
 cd $rootPosix/xemu
 $cleanStep
+echo "[xemu] configuring and building (full log: $rootPosix/wt-data/xemu-build.log)"
 ./build.sh -j$Jobs --disable-werror --disable-docs --disable-guest-agent \
   --disable-vnc --disable-spice --disable-gtk --disable-sdl-image \
-  --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools --disable-curl > $rootPosix/wt-data/xemu-build.log 2>&1
-status=`$?
+  --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools --disable-curl $vulkanOption 2>&1 \
+  | tee $rootPosix/wt-data/xemu-build.log \
+  | grep --line-buffered -E '^\[[0-9]+/[0-9]+\]|^Configuring|^Building|^Linking|^Compiling|^Generating|^ERROR|^FAILED|error:|no work to do'
+status=`${PIPESTATUS[0]}
 # The shell loads the core as a DLL so the loader initialises its CRT.
 if [ `$status -eq 0 ]; then
+  echo "[xemu] building xgrid_core.dll"
   ninja -C build xgrid_core.dll >> $rootPosix/wt-data/xemu-build.log 2>&1 || status=`$?
 fi
 # The media checks read snapshot lists and disc descriptors with the QEMU
 # tools; they live in the object tree (copying them into dist would ship them
 # in the release archive).
 if [ `$status -eq 0 ]; then
+  echo "[xemu] building qemu-img and qemu-io"
   ninja -C build qemu-img.exe qemu-io.exe >> $rootPosix/wt-data/xemu-build.log 2>&1 || status=`$?
 fi
 if [ `$status -eq 0 ]; then
@@ -75,9 +87,13 @@ $scriptPath = Join-Path $root 'wt-data/build-xemu.sh'
 Set-Content -Path $scriptPath -Value $script -NoNewline
 & 'C:\msys64\usr\bin\bash.exe' -lc "bash '$rootPosix/wt-data/build-xemu.sh'"
 if ($LASTEXITCODE -ne 0) {
-    Get-Content $log -Tail 30
+    Write-Host "Native core build FAILED. Last log lines:" -ForegroundColor Red
+    Get-Content $log -Tail 40
     throw "Core build failed (see $log)."
 }
+
+$elapsed = (Get-Date) - $buildStarted
+Write-Host ("Native core build finished in {0:N1} s." -f $elapsed.TotalSeconds)
 
 $exe = Join-Path $tree 'dist/xemu.exe'
 if (-not (Test-Path $exe)) { throw "Build finished but $exe is missing." }

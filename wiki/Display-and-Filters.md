@@ -1,40 +1,22 @@
 # Display and filters
 
-XGrid can present the core's picture in two ways.
+The core owns the picture. It renders and presents with its own swapchain; the
+Avalonia shell owns the window, layout and controls only.
 
-## Shell frame sink (default)
-
-**Settings → System → Present core frames in the shell** is on.
-
-- The core publishes BGRA frames to a shared section.
-- The shell presents the latest frame with pacing and filters.
-- The core window is hidden.
-- The shell pad is forwarded to the core.
-
-## Embedded core window
-
-Turn the setting off.
+## Windows: embedded core window
 
 - The core creates its own window; XGrid embeds it, in-process or separate.
-- The core paints directly; the shell filter does **not** apply.
-- The core reads its own SDL input.
-- This is the fastest mode at large window sizes.
-
-## Choosing a mode
-
-Use the shell sink for filters, the FPS overlay and uniform screenshots. Use the
-embedded window for the highest frame rate. If a game feels slow at a large
-window, switch the setting off and compare.
+- The core paints straight into that child surface. There is no per-frame copy,
+  upload or shell redraw.
+- The embedded child does not take activation, so the shell pad input stays live.
+- This is the fastest path.
 
 ## Linux and macOS
 
-The shell frame sink and embedding are Windows-only. On Linux the core opens
-its own SDL window outside the Home page; use it for the picture, filters and
-input. The macOS archives contain the shell only and need an external xemu
-build.
-
-Headless runs are the exception: `--headless` uses a POSIX shared-memory frame
-sink on Linux and macOS. See [Headless and CLI](Headless).
+Native in-window embedding is Windows-only for now. The core opens its own SDL
+window outside the Home page; use that window for the picture, filters and input.
+Headless runs use the POSIX frame sink instead. See
+[Headless and CLI](Headless).
 
 ## Filters
 
@@ -45,9 +27,9 @@ sink on Linux and macOS. See [Headless and CLI](Headless).
 | Scanlines | Every other row darkened. |
 | CRT mask | Scanlines plus an RGB phosphor triad. |
 
-Filters are applied at source resolution by the shell before scaling. The masks
-preserve alpha, and a frame whose size disagrees with its declared geometry is
-left unfiltered.
+Filters are implemented in the core's final blit shader; the shell only selects
+one. `XGRID_FILTER`/`--filter` sets the launch choice. In-process hosting can
+change it live through the core ABI.
 
 ## Core graphics settings
 
@@ -61,36 +43,40 @@ left unfiltered.
 
 ## Fullscreen and screenshots
 
-- **F11** toggles fullscreen.
+- **F11** toggles fullscreen; the toolbar's **Fullscreen** button enters it.
+  The shell chrome is hidden and the console picture fills the screen.
 - In fullscreen, **Esc** pauses a running game on the first press. Press **Esc**
   again to close XGrid. With no game running, Esc returns to the windowed shell.
-- **F8** saves the whole window as a PNG in `<data>/screenshots/`.
+- **F8** saves the whole window as a PNG in `<data>/screenshots/`. While the
+  embedded core runs on Windows, the capture reads the composed screen so the
+  native picture is included.
 - The Library page shows a strip of recent captures; click one to open it,
   **Refresh** to re-read the folder.
 
 ## Pause and frame step
 
-- **P** pauses on the next frame and keeps the last picture, with a **Paused**
-  badge over it.
+- **P** pauses on the next frame and keeps the last picture.
 - **F10** advances exactly one frame.
 
 Both need in-process core hosting, like save states. While paused, the status
 bar reads **Paused**.
 
-Press **Space** while a game runs to toggle **4x fast-forward**; press it again
-to return to normal speed. The status bar reads **Running 4x** while it is on.
+Press **Space** while a game runs, or click **4x** in the toolbar, to toggle
+**4x fast-forward**; do it again to return to normal speed. The status bar reads
+**Running 4x** while it is on. The core runs the guest clock four times faster,
+so timers and the picture speed up together.
 
 ## Frame-rate overlay
 
-Turn on **View  FPS Overlay** to show the present rate and average frame time
-over the console picture. It is hidden while the console is stopped and the
-choice is saved. The number is the shell's present rate, not the core's internal
-render rate, so a capped display shows the cap.
+Turn on **View → FPS Overlay** to draw the core's present rate and average frame
+time over the picture. The core draws the overlay; the shell never touches a
+frame. In-process hosting applies the toggle live; a separate process applies it
+on the next launch.
 
 ## If the picture is black
 
 1. Check **Activity**.
-2. Wait a few seconds for the first frame.
-3. Try the other presentation mode.
+2. Wait a few seconds for the core to start.
+3. On Linux or macOS, look for the core's own window.
 4. Try OpenGL and scale 1.
 5. See [Troubleshooting](Troubleshooting).

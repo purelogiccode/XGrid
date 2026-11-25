@@ -42,6 +42,7 @@
 #include "system/runstate.h"
 #include "system/runstate-action.h"
 #include "system/system.h"
+#include "system/cpu-timers.h"
 #include "xui/xemu-hud.h"
 #include "xemu-input.h"
 #include "xemu-settings.h"
@@ -98,6 +99,13 @@ void xemu_set_speed_multiplier(int multiplier)
     }
 
     qatomic_set(&xemu_speed_multiplier, multiplier);
+
+    /*
+     * Guest timers run on QEMU_CLOCK_VIRTUAL. Scaling that clock is what makes
+     * the machine itself faster; the vblank pace below only matches the
+     * display refresh to it.
+     */
+    cpus_set_virtual_clock_scale(multiplier);
 }
 
 int xemu_get_speed_multiplier(void)
@@ -1131,8 +1139,14 @@ static bool display_very_early_init(DisplayOptions *o)
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
     /* XGrid embeds this window: create it hidden and give it a title the
-     * shell can find, so it never flashes as a top-level window. */
-    if (xgrid_embed_enabled()) {
+     * shell can find, so it never flashes as a top-level window. The
+     * in-process library hides by default too: the shell may not have been
+     * able to update this DLL's CRT environment before the window exists. */
+    bool xgrid_hidden = xgrid_embed_enabled();
+#ifdef _WIN32
+    xgrid_hidden = xgrid_hidden || xemu_library_mode;
+#endif
+    if (xgrid_hidden) {
         window_flags |= SDL_WINDOW_HIDDEN;
     }
 
@@ -1146,7 +1160,7 @@ static bool display_very_early_init(DisplayOptions *o)
         return false;
     }
     g_free(title);
-    if (xgrid_embed_enabled()) {
+    if (xgrid_hidden) {
         SDL_SetWindowTitle(m_window, "XGridCore");
     }
     SDL_SetWindowMinimumSize(m_window, min_window_width, min_window_height);

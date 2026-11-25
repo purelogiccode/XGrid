@@ -3,10 +3,8 @@
 XGrid exposes up to four Xbox controllers, one per port. The keyboard always
 drives **player 1**; an XInput controller can drive any player.
 
-> The shell's remapping and pad forwarding are active when **Present core frames
-> in the shell** is enabled. With the embedded core window, the core reads its
-> own SDL input instead. On Linux, where the shell frame sink is unavailable, the
-> core also reads SDL input in its own window.
+> On Windows the shell's remapping and pad forwarding work in both presentation
+> modes. On Linux and macOS the core reads its own SDL input in its window.
 
 ## Default keyboard map
 
@@ -103,4 +101,4 @@ See [Shortcuts](../reference/shortcuts.md) for the full list.
 - **Wrong button** — remap the action or reset defaults.
 - **Stick drifts** — raise the dead zone.
 - **No input in game** — confirm the console is running, the shell window is
-  focused, and **Present core frames in the shell** is on.
+  focused, and you are on Windows (the mapped-pad sink is Windows-only).

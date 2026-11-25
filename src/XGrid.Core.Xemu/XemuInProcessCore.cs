@@ -46,6 +46,9 @@ public sealed class XemuInProcessCore : IDisposable
     private delegate int IntValueDelegate(int value);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void VoidIntDelegate(int value);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int NoArgIntDelegate();
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -73,6 +76,9 @@ public sealed class XemuInProcessCore : IDisposable
     private readonly NoArgIntDelegate? _frameStep;
     private readonly IntValueDelegate? _setSpeed;
     private readonly NoArgIntDelegate? _getSpeed;
+    private readonly IntValueDelegate? _setPresentFilter;
+    private readonly VoidIntDelegate? _setFpsOverlay;
+    private readonly VoidIntDelegate? _setEmbed;
     private readonly NameRequestDelegate? _discLoad;
     private readonly NoArgIntDelegate? _discEject;
     private readonly NoArgIntDelegate? _discStatus;
@@ -112,6 +118,12 @@ public sealed class XemuInProcessCore : IDisposable
             // but reports that the core cannot change its pace.
             _setSpeed = TryGet<IntValueDelegate>("xgrid_core_set_speed");
             _getSpeed = TryGet<NoArgIntDelegate>("xgrid_core_get_speed");
+
+            // Presentation filters and the overlay are core features. Older
+            // cores simply ignore the selection.
+            _setPresentFilter = TryGet<IntValueDelegate>("xgrid_core_set_present_filter");
+            _setFpsOverlay = TryGet<VoidIntDelegate>("xgrid_core_set_fps_overlay");
+            _setEmbed = TryGet<VoidIntDelegate>("xgrid_core_set_embed");
 
             // Disc change is also optional: a core built before the disc ABI
             // still boots, the shell just cannot swap while it runs.
@@ -154,6 +166,53 @@ public sealed class XemuInProcessCore : IDisposable
     /// <summary>Gets a value indicating whether the core can change discs while it runs.</summary>
     public bool SupportsDiscChange =>
         _discLoad is not null && _discEject is not null && _discStatus is not null && _discError is not null;
+
+    /// <summary>Gets a value indicating whether the core takes a presentation filter.</summary>
+    public bool SupportsPresentationFilter => _setPresentFilter is not null;
+
+    /// <summary>Gets a value indicating whether the core draws the frame-rate overlay.</summary>
+    public bool SupportsFpsOverlay => _setFpsOverlay is not null;
+
+    /// <summary>
+    /// Selects embedding before the machine creates its window. This is the
+    /// reliable path: the DLL's CRT may not see an environment variable set
+    /// after it was loaded.
+    /// </summary>
+    /// <param name="enabled">True to create the window hidden for embedding.</param>
+    /// <returns>True when the loaded core supports the selection.</returns>
+    public bool SetEmbed(bool enabled)
+    {
+        if (_setEmbed is null)
+        {
+            return false;
+        }
+
+        _setEmbed(enabled ? 1 : 0);
+        return true;
+    }
+
+    /// <summary>Selects the core-side presentation filter.</summary>
+    /// <param name="filter">Core filter value (see <see cref="XemuPresentationFilter"/>).</param>
+    /// <returns>True when the core accepted the value.</returns>
+    public bool SetPresentationFilter(int filter)
+    {
+        return _setPresentFilter is not null && _setPresentFilter(filter) == 0;
+    }
+
+    /// <summary>Turns the core-drawn frame-rate overlay on or off.</summary>
+    /// <param name="enabled">True to draw the overlay.</param>
+    /// <returns>True when the running core supports the overlay.</returns>
+    public bool SetFpsOverlay(bool enabled)
+    {
+        if (_setFpsOverlay is null)
+        {
+            return false;
+        }
+
+        _setFpsOverlay(enabled ? 1 : 0);
+        return true;
+    }
+
 
     /// <summary>
     /// Loads the core DLL when it exists beside the executable, returning null

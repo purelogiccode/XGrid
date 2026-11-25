@@ -5,13 +5,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -32,25 +30,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly LaunchArguments _launchOptions;
     private readonly XemuCoreSession _core;
     private readonly DispatcherTimer _uiTimer;
-    private readonly DispatcherTimer _frameTimer;
     private readonly DispatcherTimer _toastTimer;
-    private readonly Lock _coreFrameLock = new();
-    private byte[]? _coreFrameBuffer;
-    private byte[]? _coreFrameSpare;
-    private int _coreFrameWidth;
-    private int _coreFrameHeight;
-    private bool _coreFramePending;
-    private bool _coreFrameLogged;
-    private int _framesArrived;
-    private int _framesPresented;
-    private long _presentTicks;
-    private long _lastPresentTimestamp;
-    private long _frameWindowStart;
-    private const int FrameReportPeriodMs = 5000;
-    private readonly FrameRateMeter _fpsMeter = new();
 
     /// <summary>The pace Space holds the console at (four times real time).</summary>
     public const int FastForwardMultiplier = 4;
+
     private GamepadMappingOptions _gamepadOptions;
     private readonly XInputGamepadReader?[] _gamepads = new XInputGamepadReader?[XemuInputSink.PadCount];
     private readonly HostPad[] _gamepadPads = CreateNeutralPads();
@@ -58,14 +42,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private IReadOnlyList<Key> _pressedKeys = [];
     private int _coreDisplayWidth = 640;
     private int _coreDisplayHeight = 480;
-    private int _frameWidth;
-    private int _frameHeight;
-    private bool _lastFrameSinkActive;
     private bool _shuttingDown;
+    private bool _closeWhenStopped;
     private SaveStateRunner? _saveStates;
     private PlaybackController? _playback;
     private DiscChangeRunner? _discs;
-    private string? _sessionFilter;
     private bool _firstRunPending;
     private bool _saveStatesNeedRefresh;
     private CoreCapabilities? _coreCapabilities;
@@ -90,18 +71,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _statusDetail = "No console powered on";
-
-    [ObservableProperty]
-    private string _fpsText = "-- FPS";
-
-    [ObservableProperty]
-    private string _frameTimeText = string.Empty;
-
-    [ObservableProperty]
-    private WriteableBitmap? _frameBitmap;
-
-    [ObservableProperty]
-    private bool _hasFrame;
 
     /// <summary>The shell window, kept for window screenshots.</summary>
     private Window? _window;
@@ -145,7 +114,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         ConfigureGamepads();
         _core = new XemuCoreSession();
         _core.Log += OnCoreLog;
-        _core.FrameReady += OnCoreFrameReady;
         _core.Stopped += OnCoreStopped;
 
         Home = new HomeViewModel(this);
@@ -163,12 +131,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             new NavigationItem(PageKind.Logs, "Activity", AppIcons.Logs, Logs),
             new NavigationItem(PageKind.About, "About", AppIcons.Info, About),
         ];
-        SelectedNavigationItem = NavigationItems[0];
+        SelectedNavigationItem = NavigationItems[1];
 
         _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _uiTimer.Tick += OnUiTick;
-        _frameTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FramePacing.PollIntervalMilliseconds) };
-        _frameTimer.Tick += OnFrameTick;
         _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.4) };
         _toastTimer.Tick += OnToastTick;
     }
@@ -207,7 +173,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsBiosReady => IsBiosReadyForSession;
 
     /// <summary>Gets a value indicating whether the native core display should be shown.</summary>
-    public bool ShowCoreDisplay => IsRunning && !_core.IsFrameSinkActive;
+    public bool ShowCoreDisplay => IsRunning;
+
+    /// <summary>
+    /// Gets a value indicating whether the core's window can be embedded in the
+    /// console page on this host.
+    /// </summary>
+    public bool IsEmbeddedDisplaySupported { get; } = XemuWindowEmbedder.IsSupported;
 
     /// <summary>Gets a value indicating whether the console page is selected.</summary>
     public bool IsHomePage => SelectedNavigationItem?.Kind == PageKind.Home;
@@ -234,6 +206,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool ShowDonationBanner => !Config.HasDonated && !IsFullscreen;
 
+    /// <summary>Gets the page padding; fullscreen removes every shell margin.</summary>
+    public Thickness PageMargin => IsFullscreen ? default : new Thickness(16, 14, 16, 14);
+
+    /// <summary>Gets a value indicating whether the log dock is visible (never in fullscreen).</summary>
+    public bool IsLogDockVisible => ShowLogDock && !IsFullscreen;
+
+    /// <summary>Gets the picture border thickness; fullscreen is edge to edge.</summary>
+    public Thickness PictureBorderThickness => IsFullscreen ? default : new Thickness(1);
+
+    /// <summary>Gets the picture corner radius; fullscreen has square corners.</summary>
+    public CornerRadius PictureCornerRadius => IsFullscreen ? default : new CornerRadius(4);
+
+    /// <summary>Gets the console page row spacing; fullscreen removes it.</summary>
+    public double HomeRowSpacing => IsFullscreen ? 0 : 10;
+
     /// <summary>
     /// Gets or sets a value indicating whether the frame-rate overlay is
     /// enabled. The choice is persisted in <c>settings.json</c>.
@@ -259,21 +246,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsFpsOverlayVisible));
-            if (value && IsRunning && !_core.IsFrameSinkActive)
+            if (value && IsRunning && !_core.TrySetFpsOverlay(true))
             {
-                ShowToast("The FPS overlay needs 'Present core frames in the shell'.");
+                ShowToast("The FPS overlay takes effect on the next launch for a separate core process.");
+            }
+            else if (IsRunning && !value && !_core.TrySetFpsOverlay(false))
+            {
+                ShowToast("The FPS overlay takes effect on the next launch for a separate core process.");
             }
         }
     }
-
-    /// <summary>Gets a value indicating whether the overlay is drawn over a running console.</summary>
-    /// <remarks>
-    /// The meter counts frames the shell presents. With the embedded core window
-    /// the shell never sees a frame, so the overlay stays hidden instead of
-    /// showing a permanent placeholder.
-    /// </remarks>
-    public bool IsFpsOverlayVisible => ShowFpsOverlay && IsRunning && _core.IsFrameSinkActive;
 
     /// <summary>Gets the supporting copy shown on the home page.</summary>
     public string HomeDetail
@@ -294,19 +276,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 : "Insert a disc image, or power on to reach the dashboard.";
         }
     }
-
-    /// <summary>Gets the placeholder shown before the first frame is presented.</summary>
-    public string FramePlaceholder => IsRunning
-        ? "Starting the console."
-        : "Power on the console to see output here.";
-
-    /// <summary>Gets the caption under the display, read from the presented frame.</summary>
-    public string DisplayCaption => HasFrame
-        ? DisplayCaptionText.Describe(_frameWidth, _frameHeight, RendererName)
-        : string.Empty;
-
-    /// <summary>Gets a value indicating whether there is a caption to show.</summary>
-    public bool HasDisplayCaption => DisplayCaption.Length > 0;
 
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
@@ -388,23 +357,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 ? $"Running {FastForwardMultiplier}x"
                 : "Running"
         : "Ready";
-
-    /// <summary>Gets a value indicating whether the frame image should be scaled smoothly.</summary>
-    public bool SmoothFrame => FrameFilters.UsesBilinearSampling(ActiveFilter);
-
-    /// <summary>
-    /// Gets the presentation filter for the session: the per-title value the
-    /// launch resolved, or the global setting when nothing is running.
-    /// </summary>
-    private string ActiveFilter => _sessionFilter ?? Config.Filter;
-
-    /// <summary>
-    /// Raised after a core frame has been copied into <see cref="FrameBitmap"/>.
-    /// A bitmap write is invisible to Avalonia on its own (the image caches a
-    /// snapshot until its visual is invalidated), so the view re-renders the
-    /// picture on this event.
-    /// </summary>
-    public event EventHandler? FramePresented;
 
     /// <summary>Maps a keyboard key to the configured player-1 action.</summary>
     /// <param name="key">Pressed key.</param>
@@ -553,8 +505,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         _shuttingDown = true;
+        _closeWhenStopped = false;
         _uiTimer.Stop();
-        _frameTimer.Stop();
         _toastTimer.Stop();
         _core.Dispose();
         Library.Dispose();
@@ -645,18 +597,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         OnPropertyChanged(nameof(RendererLabel));
-        OnPropertyChanged(nameof(DisplayCaption));
     }
 
     /// <summary>Saves the supplied settings, applying them immediately.</summary>
     public void SaveSettings(EmulatorSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        string previousFilter = Config.Filter;
         settings.Normalize();
         Config = settings;
         RefreshCoreCapabilities();
         _gamepadOptions = InputMapping.Create(Config.Input);
         ConfigureGamepads();
+        if (IsRunning && !string.Equals(previousFilter, Config.Filter, StringComparison.Ordinal)
+            && !_core.TrySetPresentationFilter(Config.Filter))
+        {
+            AddLog(LogLevel.Info, "The presentation filter applies on the next launch for a separate core process.");
+        }
         try
         {
             _settingsStore.Save(Config);
@@ -715,6 +672,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         Library.RefreshRecentGames();
+    }
+
+    /// <summary>Persists the library's tile or row presentation.</summary>
+    /// <param name="gridView">True for thumbnail tiles, false for the detailed rows.</param>
+    public void SetLibraryView(bool gridView)
+    {
+        if (Config.LibraryGridView == gridView)
+        {
+            return;
+        }
+
+        Config.LibraryGridView = gridView;
+        try
+        {
+            _settingsStore.Save(Config);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Warning, "Could not save the library view: " + exception.Message);
+        }
     }
 
     /// <summary>Adds a library folder, persists it, and rescans.</summary>
@@ -891,8 +868,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        _coreDisplayWidth = Math.Max(1, width);
-        _coreDisplayHeight = Math.Max(1, height);
+        // The control publishes before its first layout pass (1x1); keep the
+        // last meaningful size until the real one arrives, so the core is not
+        // launched into a 64x64 window.
+        _coreDisplayWidth = width >= 64 ? width : _coreDisplayWidth;
+        _coreDisplayHeight = height >= 64 ? height : _coreDisplayHeight;
         _core.AttachDisplay(handle, _coreDisplayWidth, _coreDisplayHeight);
     }
 
@@ -905,6 +885,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Builds and starts the core for a title, logging why it cannot.</summary>
     private void StartCore(GameEntry? game)
     {
+        // The library scan is metadata-only; resolve this one disc now so a
+        // title-id override still applies to the launch.
+        game?.ResolveTitleId();
+
         string workingDirectory = Path.Combine(SettingsStore.ResolveDirectory(), "xemu");
         EmulatorSettings effective = game is null
             ? Config.Clone()
@@ -917,16 +901,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             throw new InvalidOperationException(problem);
         }
 
-        _sessionFilter = effective.Filter;
-        OnPropertyChanged(nameof(SmoothFrame));
-
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
             effective,
             game?.Path,
             _coreDisplayWidth,
             _coreDisplayHeight,
             workingDirectory);
-        FrontendTrace.Write($"sink='{launch.DisplaySinkName}' setting={Config.DisplaySink}");
+        FrontendTrace.Write($"filter={launch.PresentationFilter} overlay={launch.FpsOverlay}");
         _core.Start(launch);
         _saveStates = new SaveStateRunner(_core.SaveStates);
         _saveStatesNeedRefresh = _saveStates.IsSupported;
@@ -937,6 +918,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasPlayback));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StepFrameCommand.NotifyCanExecuteChanged();
+        ToggleFastForwardCommand.NotifyCanExecuteChanged();
         _discs = new DiscChangeRunner(_core.Discs);
         OnPropertyChanged(nameof(HasDiscChange));
         OnPropertyChanged(nameof(OpenDiscHint));
@@ -1020,9 +1002,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Toggles 4x fast-forward on or off (Space).</summary>
+    [RelayCommand(CanExecute = nameof(CanToggleFastForward))]
     public void ToggleFastForward()
     {
         SetFastForward(!IsFastForward);
+    }
+
+    private bool CanToggleFastForward()
+    {
+        return IsRunning && !IsPaused && _playback?.IsSupported == true;
     }
 
     /// <summary>
@@ -1119,8 +1107,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             var size = new PixelSize(
                 Math.Max(1, (int)Math.Ceiling(_window.ClientSize.Width * scaling)),
                 Math.Max(1, (int)Math.Ceiling(_window.ClientSize.Height * scaling)));
-            using (var target = new RenderTargetBitmap(size, new Vector(96 * scaling, 96 * scaling)))
+
+            // A native child window (the embedded core) is invisible to the
+            // visual-tree renderer, so read the composed desktop instead while
+            // a console is running.
+            IntPtr handle = WindowCapture.IsSupported
+                ? _window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero
+                : IntPtr.Zero;
+            using WriteableBitmap? captured = IsRunning && handle != IntPtr.Zero
+                ? WindowCapture.CaptureClient(handle, size)
+                : null;
+            if (captured is not null)
             {
+                captured.Save(path, PngBitmapEncoderOptions.Default);
+            }
+            else
+            {
+                using var target = new RenderTargetBitmap(size, new Vector(96 * scaling, 96 * scaling));
                 target.Render(_window);
                 target.Save(path, PngBitmapEncoderOptions.Default);
             }
@@ -1443,7 +1446,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             IsRunning = true;
             StatusText = "Running";
             StatusDetail = game?.Title ?? "Xbox dashboard";
-            ResetFrame();
             AddLog(LogLevel.Info, game is null
                 ? "Powering on the console."
                 : "Launching " + game.Title + ".");
@@ -1455,17 +1457,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                                               or XemuConfigurationException)
         {
             IsRunning = false;
-            ResetFrame();
             _playback?.Reset();
             _playback = null;
             IsPaused = false;
-            _sessionFilter = null;
             _discs = null;
             OnPropertyChanged(nameof(HasPlayback));
             OnPropertyChanged(nameof(HasDiscChange));
             OnPropertyChanged(nameof(OpenDiscHint));
             OnPropertyChanged(nameof(EjectDiscHint));
-            OnPropertyChanged(nameof(SmoothFrame));
             EjectDiscCommand.NotifyCanExecuteChanged();
             StatusText = "Idle";
             StatusDetail = "Power-on failed";
@@ -1713,29 +1712,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             IsFastForward = false;
         }
 
-        _fpsMeter.Reset();
-        FpsText = "-- FPS";
-        FrameTimeText = string.Empty;
-        OnPropertyChanged(nameof(IsFpsOverlayVisible));
-
         OnPropertyChanged(nameof(PowerButtonText));
         OnPropertyChanged(nameof(HomeDetail));
-        OnPropertyChanged(nameof(FramePlaceholder));
         OnPropertyChanged(nameof(ShowCoreDisplay));
         OnPropertyChanged(nameof(RunStateLabel));
         OnPropertyChanged(nameof(OpenDiscHint));
         StopSessionCommand.NotifyCanExecuteChanged();
         TogglePauseCommand.NotifyCanExecuteChanged();
         StepFrameCommand.NotifyCanExecuteChanged();
+        ToggleFastForwardCommand.NotifyCanExecuteChanged();
         EjectDiscCommand.NotifyCanExecuteChanged();
-        if (value)
-        {
-            _frameTimer.Start();
-        }
-        else
-        {
-            _frameTimer.Stop();
-        }
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -1747,6 +1733,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StepFrameHint));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StepFrameCommand.NotifyCanExecuteChanged();
+        ToggleFastForwardCommand.NotifyCanExecuteChanged();
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -1759,39 +1746,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnIsFullscreenChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowDonationBanner));
+        OnPropertyChanged(nameof(PageMargin));
+        OnPropertyChanged(nameof(IsLogDockVisible));
+        OnPropertyChanged(nameof(PictureBorderThickness));
+        OnPropertyChanged(nameof(PictureCornerRadius));
+        OnPropertyChanged(nameof(HomeRowSpacing));
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
-    partial void OnHasFrameChanged(bool value)
+    partial void OnShowLogDockChanged(bool value)
     {
-        OnPropertyChanged(nameof(DisplayCaption));
-        OnPropertyChanged(nameof(HasDisplayCaption));
-    }
-
-    /// <summary>
-    /// Forgets the presented frame, including its size, so the next power-on
-    /// never shows the previous session's caption.
-    /// </summary>
-    private void ResetFrame()
-    {
-        lock (_coreFrameLock)
-        {
-            // A frame left pending by the previous session must not be the first
-            // picture of the next one.
-            _coreFramePending = false;
-            _coreFrameBuffer = null;
-            _coreFrameSpare = null;
-        }
-
-        FrameBitmap = null;
-        HasFrame = false;
-        if (_frameWidth != 0 || _frameHeight != 0)
-        {
-            _frameWidth = 0;
-            _frameHeight = 0;
-            OnPropertyChanged(nameof(DisplayCaption));
-            OnPropertyChanged(nameof(HasDisplayCaption));
-        }
+        OnPropertyChanged(nameof(IsLogDockVisible));
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
@@ -1846,59 +1811,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeDetail));
     }
 
-    private void OnCoreFrameReady(object? sender, XemuDisplayFrame frame)
-    {
-        Interlocked.Increment(ref _framesArrived);
-        int length = frame.Width * frame.Height * 4;
-        lock (_coreFrameLock)
-        {
-            // Latest wins: a slow UI must never queue frames.
-            if (_coreFramePending)
-            {
-                return;
-            }
-
-            if (_coreFrameBuffer is null || _coreFrameBuffer.Length < length)
-            {
-                _coreFrameBuffer = new byte[length];
-            }
-
-            Buffer.BlockCopy(frame.Pixels, 0, _coreFrameBuffer, 0, length);
-            _coreFrameWidth = frame.Width;
-            _coreFrameHeight = frame.Height;
-            _coreFramePending = true;
-        }
-
-        if (!_coreFrameLogged)
-        {
-            _coreFrameLogged = true;
-            FrontendTrace.Write($"core frame {frame.Width}x{frame.Height} #{frame.Counter}");
-        }
-    }
-
-    private bool TryTakeCoreFrame(out FramePacket? packet)
-    {
-        lock (_coreFrameLock)
-        {
-            if (!_coreFramePending || _coreFrameBuffer is null)
-            {
-                packet = null;
-                return false;
-            }
-
-            _coreFramePending = false;
-
-            // Hand the UI the buffer the sink just filled and give the sink the
-            // previous one to write next. A single buffer let the next frame
-            // overwrite the pixels while PresentFrame was still reading them.
-            byte[] present = _coreFrameBuffer;
-            _coreFrameBuffer = _coreFrameSpare;
-            _coreFrameSpare = present;
-            packet = new FramePacket((uint)_coreFrameWidth, (uint)_coreFrameHeight, present);
-            return true;
-        }
-    }
-
     private void OnCoreLog(object? sender, string message)
     {
         Dispatcher.UIThread.Post(() =>
@@ -1919,72 +1831,30 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Dispatcher.UIThread.Post(() =>
         {
             IsRunning = false;
-            ResetFrame();
             _saveStates = null;
             _saveStatesNeedRefresh = false;
             _playback?.Reset();
             _playback = null;
             IsPaused = false;
-            _sessionFilter = null;
             _discs = null;
             OnPropertyChanged(nameof(HasSaveStates));
             OnPropertyChanged(nameof(HasPlayback));
             OnPropertyChanged(nameof(HasDiscChange));
             OnPropertyChanged(nameof(OpenDiscHint));
             OnPropertyChanged(nameof(EjectDiscHint));
-            OnPropertyChanged(nameof(SmoothFrame));
             EjectDiscCommand.NotifyCanExecuteChanged();
             StatusText = e.Faulted ? "Faulted" : "Off";
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
+
+            if (_closeWhenStopped)
+            {
+                _closeWhenStopped = false;
+                // Re-enter Closing with the core fully stopped, so SDL can
+                // destroy its window without waiting on this thread.
+                _window?.Close();
+            }
         });
-    }
-
-    private void OnFrameTick(object? sender, EventArgs e)
-    {
-        // The core can publish far faster than the screen refreshes (the sink
-        // poll runs every 8 ms), so a present is paced by wall clock rather than
-        // by the timer's own cadence.
-        long now = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (!FramePacing.ShouldPresent(now, _lastPresentTimestamp, System.Diagnostics.Stopwatch.Frequency))
-        {
-            return;
-        }
-
-        if (!TryTakeCoreFrame(out FramePacket? coreFrame))
-        {
-            return;
-        }
-
-        long start = System.Diagnostics.Stopwatch.GetTimestamp();
-        PresentFrame(coreFrame!);
-        Interlocked.Add(
-            ref _presentTicks,
-            (long)System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds);
-        _lastPresentTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
-        Interlocked.Increment(ref _framesPresented);
-        _fpsMeter.AddFrame();
-        HasFrame = true;
-        FramePresented?.Invoke(this, EventArgs.Empty);
-    }
-
-    private void UpdateFps(long now)
-    {
-        if (!IsRunning)
-        {
-            _fpsMeter.Reset();
-            return;
-        }
-
-        if (!_fpsMeter.TryUpdate(now, out double fps, out double frameTimeMs))
-        {
-            return;
-        }
-
-        FpsText = fps.ToString("F0", CultureInfo.InvariantCulture) + " FPS";
-        FrameTimeText = frameTimeMs > 0
-            ? frameTimeMs.ToString("F1", CultureInfo.InvariantCulture) + " ms"
-            : string.Empty;
     }
 
     private void OnUiTick(object? sender, EventArgs e)
@@ -1992,50 +1862,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         PollSaveStates();
         PollDiscChange();
 
-        long now = Environment.TickCount64;
-        UpdateFps(now);
-        if (_frameWindowStart == 0)
-        {
-            _frameWindowStart = now;
-        }
-        else if (now - _frameWindowStart >= FrameReportPeriodMs)
-        {
-            double seconds = (now - _frameWindowStart) / 1000.0;
-            int arrived = Interlocked.Exchange(ref _framesArrived, 0);
-            int presented = Interlocked.Exchange(ref _framesPresented, 0);
-            long ticks = Interlocked.Exchange(ref _presentTicks, 0);
-            FrontendTrace.Write(string.Create(
-                CultureInfo.InvariantCulture,
-                $"frames core={arrived / seconds:F1}/s shell={presented / seconds:F1}/s present={(presented == 0 ? 0 : (double)ticks / presented):F2}ms"));
-            _frameWindowStart = now;
-        }
-
-        // The native host is only shown while the core paints into it. When the
-        // frame sink takes over it must not sit above the frame image.
-        bool sinkActive = _core.IsFrameSinkActive;
-        if (sinkActive != _lastFrameSinkActive)
-        {
-            _lastFrameSinkActive = sinkActive;
-            OnPropertyChanged(nameof(ShowCoreDisplay));
-            OnPropertyChanged(nameof(IsFpsOverlayVisible));
-        }
-
-        // The core owns the picture, its pacing and its input; the shell only
-        // mirrors liveness so a crash is never silent.
+        // The core owns the picture, its pacing, filtering and overlay; the
+        // shell only mirrors liveness so a crash is never silent.
         if (IsRunning && !_core.IsRunning)
         {
             IsRunning = false;
-            ResetFrame();
-            return;
-        }
-
-        if (IsRunning)
-        {
-            HasFrame = _core.IsEmbedded || HasFrame;
-        }
-        else if (HasFrame)
-        {
-            ResetFrame();
         }
     }
 
@@ -2082,74 +1913,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void PresentFrame(FramePacket packet)
-    {
-        FrameFilters.Apply(ActiveFilter, packet.Bgra, (int)packet.Width, (int)packet.Height);
-        int width = (int)packet.Width;
-        int height = (int)packet.Height;
-        int rowBytes = width * 4;
-        if (_frameWidth != width || _frameHeight != height)
-        {
-            _frameWidth = width;
-            _frameHeight = height;
-            OnPropertyChanged(nameof(DisplayCaption));
-            OnPropertyChanged(nameof(HasDisplayCaption));
-        }
-        // Opaque presentation: one word per pixel rather than four byte writes,
-        // because this runs at the screen's refresh rate on the UI thread.
-        Span<uint> pixels = MemoryMarshal.Cast<byte, uint>(packet.Bgra.AsSpan(0, width * height * 4));
-        for (int index = 0; index < pixels.Length; index++)
-        {
-            pixels[index] |= 0xFF000000u;
-        }
-
-        if (FrameBitmap is null
-            || FrameBitmap.PixelSize.Width != width
-            || FrameBitmap.PixelSize.Height != height)
-        {
-            FrameBitmap = new WriteableBitmap(
-                new PixelSize(width, height),
-                new Vector(96, 96),
-                PixelFormat.Bgra8888,
-                AlphaFormat.Opaque);
-        }
-
-        using (ILockedFramebuffer buffer = FrameBitmap.Lock())
-        {
-            if (buffer.RowBytes == rowBytes)
-            {
-                Marshal.Copy(packet.Bgra, 0, buffer.Address, rowBytes * height);
-            }
-            else
-            {
-                for (int y = 0; y < height; y++)
-                {
-                    Marshal.Copy(packet.Bgra, y * rowBytes, IntPtr.Add(buffer.Address, y * buffer.RowBytes), rowBytes);
-                }
-            }
-        }
-
-        if (!HasFrame)
-        {
-            HasFrame = true;
-            OnPropertyChanged(nameof(FramePlaceholder));
-        }
-    }
-
     private void NotifyConfigChanged()
     {
         OnPropertyChanged(nameof(IsBiosReady));
         OnPropertyChanged(nameof(NeedsSetup));
         OnPropertyChanged(nameof(SettingsPath));
         OnPropertyChanged(nameof(HomeDetail));
-        OnPropertyChanged(nameof(FramePlaceholder));
-        OnPropertyChanged(nameof(DisplayCaption));
         OnPropertyChanged(nameof(RendererLabel));
-        OnPropertyChanged(nameof(SmoothFrame));
         OnPropertyChanged(nameof(ShowCoreDisplay));
         OnPropertyChanged(nameof(ShowDonationBanner));
         OnPropertyChanged(nameof(ShowFpsOverlay));
-        OnPropertyChanged(nameof(IsFpsOverlayVisible));
         StopSessionCommand.NotifyCanExecuteChanged();
     }
 
@@ -2161,6 +1934,27 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
+        // The core destroys its own GL window on its thread. That thread sends
+        // window messages to the shell's UI thread, so blocking here to wait
+        // for the core would deadlock until the stop timeout. Let the window
+        // close once the core has reported that it stopped.
+        if (_core.IsRunning)
+        {
+            if (!_closeWhenStopped)
+            {
+                e.Cancel = true;
+                _closeWhenStopped = true;
+                StopSession();
+                return;
+            }
+
+            // A second close request while the core is still stopping is the
+            // user's escape hatch: Dispose applies its bounded timeout and the
+            // window closes regardless.
+            Shutdown();
+            return;
+        }
+
         Shutdown();
     }
 }

@@ -36,11 +36,14 @@ later** leaves everything for Settings. The same fields stay available in
 1. Open **Settings → System**.
 2. Set **BIOS image**, **MCPX boot ROM**, **EEPROM image** and **Hard-disk image**.
 3. Leave **Guest memory** at 64 MB for a retail console.
-4. Leave **Present core frames in the shell** on for filters and shell input.
+4. The core owns the picture; leave the presentation filter at **Nearest** until
+   you want scanlines or a CRT mask.
 5. Click **Save settings**.
 6. Open **Settings → Library** and add your game folders.
-7. Return to **Home** and click **Power on** (or press **F5**).
-8. Pick a title in **Library**.
+7. Open **Library** and click a game tile (or **Play** in list mode). XGrid
+   powers on and switches to the **Console** page.
+8. To boot the dashboard without a disc, open **Home** and click **Power on**
+   (or press **F5**).
 
 ## Where files live
 

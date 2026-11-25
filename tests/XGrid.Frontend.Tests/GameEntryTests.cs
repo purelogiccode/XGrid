@@ -62,6 +62,21 @@ public sealed class GameEntryTests : IDisposable
     }
 
     [Fact]
+    public void FromFile_CanSkipTheTitleIdUntilLaunch()
+    {
+        string path = WriteXbe("lazy_game.xbe", "Lazy Game", 0x4D530002u);
+
+        GameEntry? entry = GameEntry.FromFile(path, resolveTitleId: false);
+
+        Assert.NotNull(entry);
+        Assert.Equal(0u, entry.TitleId);
+        Assert.Equal("lazy game", entry.Title);
+
+        Assert.Equal(0x4D530002u, entry.ResolveTitleId());
+        Assert.Equal("Title 4D530002", entry.TitleIdText);
+    }
+
+    [Fact]
     public void FromFile_ReportsNoIdForAForeignFile()
     {
         string path = Path.Combine(_root, "not-a-game.iso");

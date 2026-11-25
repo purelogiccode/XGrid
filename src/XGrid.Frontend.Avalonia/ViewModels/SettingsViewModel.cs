@@ -81,7 +81,7 @@ public sealed class TitleOverrideItem : ObservableObject
         FilterOptions =
         [
             new KeyedOption(string.Empty, "inherit"),
-            .. FrameFilters.All.Select(filter => new KeyedOption(filter.Key, filter.Label)),
+            .. XemuPresentationFilter.All.Select(filter => new KeyedOption(filter.Key, filter.Label)),
         ];
         _selectedRenderer = Pick(RendererOptions, value.Renderer);
         _selectedFiltering = Pick(FilteringOptions, value.Filtering);
@@ -392,9 +392,6 @@ public sealed partial class SettingsViewModel : PageViewModel
     private int _ramMb = 64;
 
     [ObservableProperty]
-    private bool _displaySink;
-
-    [ObservableProperty]
     private KeyedOption? _selectedCoreHosting;
 
     [ObservableProperty]
@@ -479,7 +476,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     public SettingsViewModel(MainWindowViewModel shell)
         : base(shell)
     {
-        FilterOptions = [.. FrameFilters.All.Select(item => new KeyedOption(item.Key, item.Label))];
+        FilterOptions = [.. XemuPresentationFilter.All.Select(item => new KeyedOption(item.Key, item.Label))];
         CoreHostingOptions =
         [
             new KeyedOption(EmulatorSettings.CoreHostingInProcess, "In-process (recommended)"),
@@ -677,7 +674,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         SelectedAudioBackend = AudioBackendOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Audio.Backend, StringComparison.Ordinal))
             ?? AudioBackendOptions[0];
-        DisplaySink = settings.DisplaySink;
         SelectedCoreHosting = CoreHostingOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.CoreHosting, StringComparison.Ordinal))
             ?? CoreHostingOptions[0];
@@ -732,15 +728,15 @@ public sealed partial class SettingsViewModel : PageViewModel
             Graphics = BuildGraphicsSettings(),
             Audio = BuildAudioSettings(),
             XemuCorePath = XemuCorePath.Trim(),
-            DisplaySink = DisplaySink,
             CoreHosting = SelectedCoreHosting?.Key ?? EmulatorSettings.CoreHostingInProcess,
-            Filter = SelectedFilter?.Key ?? FrameFilters.Nearest,
+            Filter = SelectedFilter?.Key ?? XemuPresentationFilter.Nearest,
             Accent = SelectedAccent?.Key ?? "Emerald",
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],
         };
         CopyDonationState(next, Shell.Config);
         CopyRecentGames(next, Shell.Config);
         next.ShowFpsOverlay = Shell.Config.ShowFpsOverlay;
+        next.LibraryGridView = Shell.Config.LibraryGridView;
         foreach (TitleOverrideItem item in TitleOverrides)
         {
             next.TitleOverrides[EmulatorSettings.CanonicalTitleKey(item.Path)] = item.ToOverride();

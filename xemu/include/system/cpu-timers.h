@@ -43,4 +43,7 @@ int64_t cpus_get_virtual_clock(void);
 void cpus_set_virtual_clock(int64_t new_time);
 int64_t cpus_get_elapsed_ticks(void);
 
+/* Scales the guest's VIRTUAL clock (1 is real time, 4 is four times faster). */
+void cpus_set_virtual_clock_scale(int scale);
+
 #endif /* SYSTEM_CPU_TIMERS_H */

@@ -15,7 +15,7 @@ has a tooltip that explains what it does.
 | `F11` | Toggle fullscreen |
 | `Esc` | Pause, then close the fullscreen shell on the next press |
 | `Ctrl+O` / `Ctrl+E` | Open/swap a disc / eject |
-| `Space` | Hold 4x fast-forward |
+| `Space` | Toggle 4x fast-forward |
 
 `Tab` and `Shift+Tab` move through pages; `Enter`/`Space` activate the focused
 button; `Esc` closes dialogs. Typing in a text box does not trigger pad input.

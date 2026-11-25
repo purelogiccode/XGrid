@@ -34,6 +34,7 @@
   - [Building from source](development/building.md)
   - [Repository layout](development/repository-layout.md)
   - [The XGrid core](development/core.md)
+  - [Platform embedding](development/platform-embedding.md)
   - [Quality gates](development/quality-gates.md)
   - [Testing](development/testing.md)
   - [Code inspection](development/inspection.md)

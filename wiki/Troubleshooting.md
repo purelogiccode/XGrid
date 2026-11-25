@@ -12,7 +12,7 @@ and failures. The same events are in the Serilog rolling log under
 | “Choose a BIOS image first.” | Set **Settings → System → BIOS image**. |
 | “The emulator binary was not found.” | Set the core path, `XGRID_XEMU_CORE`, or build `xemu/dist`. |
 | “The in-process core library is not available…” | Build `xgrid_core.dll` or accept the separate process. |
-| The core opens its own window | Linux/macOS hosting; the shell frame sink is Windows-only. |
+| The core opens its own window | Linux/macOS hosting; native in-window embedding is Windows-only. |
 | Save-state entries disabled | Switch to in-process hosting on Windows. |
 | A core crash closes the whole app | Switch **Core hosting** to **Separate process**. |
 
@@ -20,10 +20,10 @@ and failures. The same events are in the Serilog rolling log under
 
 | Symptom | Fix |
 | --- | --- |
-| Black display | Wait for first frame; check Activity; try the other presentation mode. |
-| No filters | Enable **Present core frames in the shell**. |
+| Black display | Wait for the core to start; check Activity; try OpenGL and scale 1. |
+| No filters | A separate process has not relaunched since the setting changed. Relaunch; in-process hosting applies filters live. |
 | Second game window | Update XGrid; both hosting modes embed the core window now. |
-| Low FPS | Scale 1, OpenGL, close background work; turn off **Present core frames in the shell** at large window sizes. |
+| Low FPS | Scale 1, OpenGL, close background work; keep filters/overlay in the core. |
 | Vulkan missing | Build has no Vulkan; use OpenGL. |
 
 ## Input
@@ -34,7 +34,7 @@ and failures. The same events are in the Serilog rolling log under
 | Controller not found | Connect before start; check Windows Game Controllers. |
 | Wrong button | Remap in Settings → Input. |
 | Drift | Raise the dead zone. |
-| No input with embedded window | Enable the frame sink. |
+| No input on Linux or macOS | The mapped-pad sink is Windows-only. | Use the core's own SDL input in its window. |
 
 ## Audio
 

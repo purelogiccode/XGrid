@@ -54,8 +54,8 @@ See [Media formats](../guides/media.md) for the details.
 
 - **Keyboard** — always available; bindings are configurable.
 - **XInput controller** — supported on Windows. Player 1 only.
-- The shell's input mapping is used when **Present core frames in the shell** is
-  enabled. Otherwise the core reads its own SDL input.
+- On Windows the shell publishes the mapped pads in both presentation modes.
+  Elsewhere the core reads its own SDL input.
 
 ## Legal
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Serilog;
+using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 
@@ -88,7 +89,7 @@ public sealed record LaunchArguments
     /// <summary>Gets the core texture filtering (<c>linear</c> or <c>nearest</c>), or null.</summary>
     public string? Filtering { get; init; }
 
-    /// <summary>Gets the shell presentation filter, or null for the configured one.</summary>
+    /// <summary>Gets the core presentation filter, or null for the configured one.</summary>
     public string? PresentationFilter { get; init; }
 
     /// <summary>Gets the aspect-ratio mode, or null for the configured one.</summary>
@@ -150,7 +151,7 @@ public sealed record LaunchArguments
           --renderer <name>           OPENGL, VULKAN or NULL.
           --scale <1-8>               Internal surface scale.
           --filtering <mode>          Core texture filtering: linear or nearest.
-          --filter <mode>             Shell filter: nearest, bilinear, scanline or crt.
+          --filter <mode>             Presentation filter: nearest, bilinear, scanline or crt.
           --aspect <mode>             native, auto, 4x3 or 16x9.
           --fit <mode>                center, scale or stretch.
           --ram <64|128>              Guest RAM in megabytes.
@@ -678,7 +679,7 @@ public sealed record LaunchArguments
 
         private void SetPresentationFilter(string value)
         {
-            foreach ((string key, _) in FrameFilters.All)
+            foreach ((string key, _) in XemuPresentationFilter.All)
             {
                 if (string.Equals(key, value, StringComparison.OrdinalIgnoreCase))
                 {
@@ -687,7 +688,7 @@ public sealed record LaunchArguments
                 }
             }
 
-            Errors.Add($"Unknown shell filter '{value}'. Use nearest, bilinear, scanline or crt.");
+            Errors.Add($"Unknown presentation filter '{value}'. Use nearest, bilinear, scanline or crt.");
         }
 
         private void SetAspectRatio(string value)

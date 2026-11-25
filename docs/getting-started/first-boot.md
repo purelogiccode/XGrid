@@ -5,10 +5,10 @@ game.
 
 ## 1. Start the shell
 
-Launch `XGrid.Frontend.Avalonia`. The Home page opens with the console powered
-off. On a fresh install, a **first-run wizard** asks for the BIOS, EEPROM and
-hard-disk images and an optional game folder. **Finish** saves the choices;
-**Set up later** leaves everything for the Settings page.
+Launch `XGrid.Frontend.Avalonia`. The Library page opens with the console
+powered off. On a fresh install, a **first-run wizard** asks for the BIOS,
+EEPROM and hard-disk images and an optional game folder. **Finish** saves the
+choices; **Set up later** leaves everything for the Settings page.
 
 If no BIOS is configured, XGrid keeps showing a setup warning on Home.
 
@@ -24,7 +24,6 @@ Open **Settings → System**.
 | **Hard-disk image** | Your Xbox HDD image (raw or qcow2). |
 | **Default disc image** | Optional ISO/CHD/ZAR inserted at power-on when no game is selected. |
 | **Guest memory** | 64 MB for a retail console, 128 MB for a debug kit. |
-| **Present core frames in the shell** | Leave on to use shell presentation, filters and the shell pad. |
 | **Core hosting** | **In-process (recommended)**. Use **Separate process** if a crashing core must not take the shell down. |
 
 Click **Save settings** at the top of the page.
@@ -54,8 +53,8 @@ Return to **Home** and click **Power on**, or press **F5**.
 - With a disc selected, XGrid boots the dashboard and inserts the disc, or boots
   the game directly depending on the image.
 
-The display caption shows the frame size and the renderer in use. The status bar
-shows whether the console is running.
+The status bar shows whether the console is running and which renderer is in
+use.
 
 ## 5. Launch a game
 

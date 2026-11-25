@@ -56,6 +56,7 @@ public sealed partial class XemuDisplaySink : IDisposable
     private IntPtr _unixAddress;
     private nuint _unixLength;
     private string? _unixName;
+    private bool _missingSectionLogged;
     private bool _disposed;
 
     /// <summary>
@@ -65,6 +66,13 @@ public sealed partial class XemuDisplaySink : IDisposable
     /// UI keeps the core's own SDL window.
     /// </summary>
     public static bool IsSupported => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// Gets a value indicating whether the shared section is mapped. Callers
+    /// can back off while the core is still starting instead of retrying the
+    /// open every few milliseconds.
+    /// </summary>
+    public bool IsOpen => _view is not null || _unixAddress != IntPtr.Zero;
 
     /// <summary>Creates a reader for a named section.</summary>
     /// <param name="name">Section name the core was started with.</param>
@@ -173,11 +181,12 @@ public sealed partial class XemuDisplaySink : IDisposable
         {
             _mapping = MemoryMappedFile.OpenExisting(_name, MemoryMappedFileRights.Read);
             _view = _mapping.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+            _missingSectionLogged = false;
             return true;
         }
-        catch (FileNotFoundException exception)
+        catch (FileNotFoundException)
         {
-            Log.Debug(exception, "The display section has not been created yet: {Name}", _name);
+            LogMissingSection();
             _mapping?.Dispose();
             _mapping = null;
             return false;
@@ -189,6 +198,20 @@ public sealed partial class XemuDisplaySink : IDisposable
             _mapping = null;
             return false;
         }
+    }
+
+    private void LogMissingSection()
+    {
+        // The shell polls this section while the core initializes. One line is
+        // enough; logging an exception per poll flooded the log and cost more
+        // than the poll itself.
+        if (_missingSectionLogged)
+        {
+            return;
+        }
+
+        _missingSectionLogged = true;
+        Log.Debug("Waiting for the display section: {Name}", _name);
     }
 
     private bool EnsureOpenUnix()

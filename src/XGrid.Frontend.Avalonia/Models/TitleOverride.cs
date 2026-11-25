@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using XGrid.Frontend.Avalonia.Services;
+using XGrid.Core.Xemu;
 
 namespace XGrid.Frontend.Avalonia.Models;
 
@@ -61,7 +61,7 @@ public sealed class TitleOverride
 
         string? filter = Filter?.Trim().ToLowerInvariant();
         Filter = null;
-        foreach ((string key, _) in FrameFilters.All)
+        foreach ((string key, _) in XemuPresentationFilter.All)
         {
             if (string.Equals(key, filter, StringComparison.Ordinal))
             {
@@ -104,7 +104,7 @@ public sealed class TitleOverride
 
     private static string FilterLabel(string key)
     {
-        foreach ((string candidate, string label) in FrameFilters.All)
+        foreach ((string candidate, string label) in XemuPresentationFilter.All)
         {
             if (string.Equals(candidate, key, StringComparison.Ordinal))
             {

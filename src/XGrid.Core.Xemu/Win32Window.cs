@@ -34,6 +34,7 @@ internal static partial class Win32Window
     internal const uint WsExClientEdge = 0x00000200;
     internal const uint WsExDlgModalFrame = 0x00000001;
     internal const uint WsExToolWindow = 0x00000080;
+    internal const uint WsExNoActivate = 0x08000000;
 
     internal const uint SwpNoZOrder = 0x0004;
     internal const uint SwpNoActivate = 0x0010;
@@ -81,9 +82,6 @@ internal static partial class Win32Window
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsWindowVisible(IntPtr hWnd);
-
-    [LibraryImport("user32.dll")]
-    internal static partial IntPtr SetFocus(IntPtr hWnd);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

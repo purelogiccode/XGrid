@@ -1,8 +1,8 @@
 using System;
 using System.IO;
+using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia;
 using XGrid.Frontend.Avalonia.Models;
-using XGrid.Frontend.Avalonia.Services;
 using Xunit;
 
 namespace XGrid.Frontend.Tests;
@@ -95,7 +95,7 @@ public sealed class LaunchArgumentsTests
         Assert.Equal(GraphicsSettings.RendererVulkan, options.Renderer);
         Assert.Equal(3, options.SurfaceScale);
         Assert.Equal(GraphicsSettings.FilterNearest, options.Filtering);
-        Assert.Equal(FrameFilters.Scanline, options.PresentationFilter);
+        Assert.Equal(XemuPresentationFilter.Scanline, options.PresentationFilter);
         Assert.Equal("16x9", options.AspectRatio);
         Assert.Equal("stretch", options.Fit);
         Assert.Equal(128, options.RamMb);
@@ -209,7 +209,7 @@ public sealed class LaunchArgumentsTests
         Assert.False(options.HasErrors);
         Assert.Equal(GraphicsSettings.RendererNull, options.Renderer);
         Assert.Equal(2, options.SurfaceScale);
-        Assert.Equal(FrameFilters.Crt, options.PresentationFilter);
+        Assert.Equal(XemuPresentationFilter.Crt, options.PresentationFilter);
         Assert.Equal(128, options.RamMb);
         Assert.Equal(AudioSettings.BackendWav, options.AudioBackend);
     }
@@ -278,7 +278,7 @@ public sealed class LaunchArgumentsTests
         {
             BiosPath = "old-bios.bin",
             RamMb = 64,
-            Filter = FrameFilters.Nearest,
+            Filter = XemuPresentationFilter.Nearest,
         };
         settings.Graphics.Renderer = GraphicsSettings.RendererOpenGl;
         settings.Graphics.SurfaceScale = 1;
@@ -290,7 +290,7 @@ public sealed class LaunchArgumentsTests
         Assert.Equal(GraphicsSettings.RendererNull, settings.Graphics.Renderer);
         Assert.Equal(4, settings.Graphics.SurfaceScale);
         Assert.Equal(128, settings.RamMb);
-        Assert.Equal(FrameFilters.Crt, settings.Filter);
+        Assert.Equal(XemuPresentationFilter.Crt, settings.Filter);
         Assert.Equal("old-bios.bin", settings.BiosPath);
     }
 

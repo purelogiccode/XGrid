@@ -14,7 +14,7 @@ save states, display/input plumbing, screenshots and packaging.
 | [Getting started](Getting-Started) | Install, configure firmware and boot. |
 | [Game library](Game-Library) | Scan folders, search and launch titles. |
 | [Settings](Settings) | Every tab and option. |
-| [Display and filters](Display-and-Filters) | Frame sink, embedded window, filters, fullscreen. |
+| [Display and filters](Display-and-Filters) | Embedded window, core filters, FPS overlay, fullscreen. |
 | [Input](Input) | Keyboard defaults, XInput, dead zones. |
 | [Audio](Audio) | Backends, DSP, HRTF and WAV capture. |
 | [Headless and CLI](Headless) | Settings overrides, headless runs and JSON reports. |

@@ -37,6 +37,7 @@
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
 #include "qemu/plugin.h"
+#include "qemu/atomic.h"
 #include "system/cpus.h"
 #include "qemu/guest-random.h"
 #include "hw/nmi.h"
@@ -210,6 +211,10 @@ void cpu_exec_reset_hold(CPUState *cpu)
     }
 }
 
+static int virtual_clock_scale = 1;
+static int64_t virtual_clock_scale_base;
+static int64_t virtual_clock_scale_anchor;
+
 int64_t cpus_get_virtual_clock(void)
 {
     /*
@@ -227,7 +232,40 @@ int64_t cpus_get_virtual_clock(void)
     if (cpus_accel && cpus_accel->get_virtual_clock) {
         return cpus_accel->get_virtual_clock();
     }
-    return cpu_get_clock();
+
+    int64_t raw = cpu_get_clock();
+    int scale = qatomic_read(&virtual_clock_scale);
+    if (scale == 1) {
+        return raw;
+    }
+
+    return qatomic_read(&virtual_clock_scale_base)
+        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * scale;
+}
+
+void cpus_set_virtual_clock_scale(int scale)
+{
+    if (scale < 1) {
+        scale = 1;
+    }
+
+    int old_scale = qatomic_read(&virtual_clock_scale);
+    if (scale == old_scale) {
+        return;
+    }
+
+    /*
+     * Keep the virtual clock continuous across the change: anchor the new
+     * scale at the current scaled time. Guest timers use this clock, so a
+     * larger scale makes the whole machine run faster, not just the display.
+     */
+    int64_t raw = cpu_get_clock();
+    int64_t current = qatomic_read(&virtual_clock_scale_base)
+        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * old_scale;
+
+    qatomic_set(&virtual_clock_scale_anchor, raw);
+    qatomic_set(&virtual_clock_scale_base, current);
+    qatomic_set(&virtual_clock_scale, scale);
 }
 
 /*

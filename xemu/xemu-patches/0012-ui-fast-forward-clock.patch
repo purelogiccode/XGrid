@@ -1,0 +1,103 @@
+diff --git a/xemu/include/system/cpu-timers.h b/xemu/include/system/cpu-timers.h
+index a1abed0d..07e8859d 100644
+--- a/xemu/include/system/cpu-timers.h
++++ b/xemu/include/system/cpu-timers.h
+@@ -43,4 +43,7 @@ int64_t cpus_get_virtual_clock(void);
+ void cpus_set_virtual_clock(int64_t new_time);
+ int64_t cpus_get_elapsed_ticks(void);
+ 
++/* Scales the guest's VIRTUAL clock (1 is real time, 4 is four times faster). */
++void cpus_set_virtual_clock_scale(int scale);
++
+ #endif /* SYSTEM_CPU_TIMERS_H */
+diff --git a/xemu/system/cpus.c b/xemu/system/cpus.c
+index ef2d2f24..d6d63323 100644
+--- a/xemu/system/cpus.c
++++ b/xemu/system/cpus.c
+@@ -37,6 +37,7 @@
+ #include "qemu/thread.h"
+ #include "qemu/main-loop.h"
+ #include "qemu/plugin.h"
++#include "qemu/atomic.h"
+ #include "system/cpus.h"
+ #include "qemu/guest-random.h"
+ #include "hw/nmi.h"
+@@ -210,6 +211,10 @@ void cpu_exec_reset_hold(CPUState *cpu)
+     }
+ }
+ 
++static int virtual_clock_scale = 1;
++static int64_t virtual_clock_scale_base;
++static int64_t virtual_clock_scale_anchor;
++
+ int64_t cpus_get_virtual_clock(void)
+ {
+     /*
+@@ -227,7 +232,40 @@ int64_t cpus_get_virtual_clock(void)
+     if (cpus_accel && cpus_accel->get_virtual_clock) {
+         return cpus_accel->get_virtual_clock();
+     }
+-    return cpu_get_clock();
++
++    int64_t raw = cpu_get_clock();
++    int scale = qatomic_read(&virtual_clock_scale);
++    if (scale == 1) {
++        return raw;
++    }
++
++    return qatomic_read(&virtual_clock_scale_base)
++        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * scale;
++}
++
++void cpus_set_virtual_clock_scale(int scale)
++{
++    if (scale < 1) {
++        scale = 1;
++    }
++
++    int old_scale = qatomic_read(&virtual_clock_scale);
++    if (scale == old_scale) {
++        return;
++    }
++
++    /*
++     * Keep the virtual clock continuous across the change: anchor the new
++     * scale at the current scaled time. Guest timers use this clock, so a
++     * larger scale makes the whole machine run faster, not just the display.
++     */
++    int64_t raw = cpu_get_clock();
++    int64_t current = qatomic_read(&virtual_clock_scale_base)
++        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * old_scale;
++
++    qatomic_set(&virtual_clock_scale_anchor, raw);
++    qatomic_set(&virtual_clock_scale_base, current);
++    qatomic_set(&virtual_clock_scale, scale);
+ }
+ 
+ /*
+diff --git a/xemu/ui/xemu.c b/xemu/ui/xemu.c
+--- a/xemu/ui/xemu.c
++++ b/xemu/ui/xemu.c
+@@ -43,3 +43,4 @@
+ #include "system/runstate-action.h"
+ #include "system/system.h"
++#include "system/cpu-timers.h"
+ #include "xui/xemu-hud.h"
+@@ -93,10 +94,17 @@ void xemu_set_speed_multiplier(int multiplier)
+ void xemu_set_speed_multiplier(int multiplier)
+ {
+     if (multiplier < 1) {
+         multiplier = 1;
+     } else if (multiplier > XEMU_MAX_SPEED_MULTIPLIER) {
+         multiplier = XEMU_MAX_SPEED_MULTIPLIER;
+     }
+ 
+     qatomic_set(&xemu_speed_multiplier, multiplier);
++
++    /*
++     * Guest timers run on QEMU_CLOCK_VIRTUAL. Scaling that clock is what makes
++     * the machine itself faster; the vblank pace below only matches the
++     * display refresh to it.
++     */
++    cpus_set_virtual_clock_scale(multiplier);
+ }

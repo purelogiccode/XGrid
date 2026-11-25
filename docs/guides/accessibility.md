@@ -30,7 +30,7 @@ important shortcuts are:
 | `F11` | Toggle fullscreen |
 | `Esc` | Pause a running game, then close the shell on the next press in fullscreen |
 | `Ctrl+O` / `Ctrl+E` | Open or swap a disc / eject |
-| `Space` | Hold 4x fast-forward while running |
+| `Space` | Toggle 4x fast-forward while running |
 
 Text boxes and other typing targets keep their normal editing keys; the pad
 handler ignores input while a text control has focus.

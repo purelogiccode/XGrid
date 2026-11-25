@@ -15,7 +15,7 @@ is a patch rebase, not a re-port.
 |---|---|
 | `block/xgridchd.c` | QEMU block driver that decodes CHD hunks on demand, so a compressed disc plays without extraction. |
 | `block/xgridzar.c` | QEMU block driver for ZArchive discs: serves an entry-form archive's `.iso` entry directly and synthesizes an XDVDFS volume for a file-tree archive, decoding zstd blocks on demand. |
-| `display/xgrid-display.c` | Host display sink: publishes presented frames to a named section for the shell. |
+| `display/xgrid-display.c` | Presentation filter/overlay selection and the headless display sink. The core always owns the picture; the shell never presents frames. |
 | `input/xgrid-input.c` | Host input source: each Xbox port reads its pad record from the shell's section. |
 | `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread, exposes stop/join/version, playback, disc and save-state requests. |
 | `abi-baseline.json` | Version, upstream commit and ABI export list checked by `scripts/core-baseline.ps1`. |
@@ -25,12 +25,22 @@ is a patch rebase, not a re-port.
 
 `meson.build` builds `xgrid_core.dll` from the same objects as the emulator
 executable (`xemu/meson.build`, the `xgrid_core` shared library). The shell
-loads it with `NativeLibrary.Load` and calls `xgrid_core_start`; frames and pad
-state use the same named sections as the out-of-process core, so the shell's
-presentation path does not change. The ABI is
-`xgrid_core_start(config, display_sink, input_sink, argv, argc)`,
+loads it with `NativeLibrary.Load` and calls `xgrid_core_start`; the core's own
+window paints with its own swapchain, so the shell never receives a frame. The
+ABI is `xgrid_core_start(config, display_sink, input_sink, argv, argc)`,
 `xgrid_core_request_stop`, `xgrid_core_is_running`, `xgrid_core_exit_code`,
-`xgrid_core_join` and `xgrid_core_version`.
+`xgrid_core_join`, `xgrid_core_version`,
+`xgrid_core_set_present_filter` and `xgrid_core_set_fps_overlay`.
+
+### Presentation filter and overlay
+
+The shell selects one of nearest, bilinear, scanline or CRT. The final blit
+shader in `ui/xui/gl-helpers.cc` applies it at source resolution; the shell never
+processes pixels. The frame-rate overlay is drawn by the core's ImGui HUD in
+`ui/xui/main.cc`. Both are patch-recorded in
+`xemu-patches/0010-ui-presentation-filter-overlay.patch`. The separate-process
+path passes the initial values through `XGRID_PRESENT_FILTER` and
+`XGRID_FPS_OVERLAY`.
 
 ### Playback control
 
@@ -53,7 +63,7 @@ and cycles the tray so the guest notices. No power cycle is involved.
 
 `xgrid_input_read(port, ...)` serves one 32-byte record per Xbox port from the
 shell's section: buttons, four stick axes, two triggers and a sequence word.
-When the sink is enabled, `ui/xemu-input.c` binds a synthetic controller to
+When the input sink is enabled, `ui/xemu-input.c` binds a synthetic controller to
 every port the keyboard did not take (recorded in
 `xemu-patches/0008-ui-shell-pads.patch`), so players 2-4 can be driven from the
 shell. The bindings are not saved to the core configuration.

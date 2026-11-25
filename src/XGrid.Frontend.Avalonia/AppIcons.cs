@@ -110,4 +110,16 @@ public static class AppIcons
         "M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2z" +
         "m-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2z" +
         "m9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z");
+
+    /// <summary>Enter-fullscreen glyph.</summary>
+    public static Geometry Fullscreen { get; } = Geometry.Parse(
+        "M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z");
+
+    /// <summary>Fast-forward glyph.</summary>
+    public static Geometry FastForward { get; } = Geometry.Parse(
+        "M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z");
+
+    /// <summary>List glyph.</summary>
+    public static Geometry List { get; } = Geometry.Parse(
+        "M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z");
 }

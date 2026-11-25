@@ -22,7 +22,8 @@ point, but XGrid's patches and media drivers can change the result.
 | XInput controllers, players 1–4 | Supported on Windows |
 | Live host audio and WAV capture | Supported through the core |
 | Four save-state slots | Supported with in-process hosting |
-| Shell filters (nearest, bilinear, scanlines, CRT) | Supported with the frame sink |
+| Core filters (nearest, bilinear, scanlines, CRT) | Supported in the core blit |
+| Core FPS overlay | Supported, in-process live; next launch for a separate process |
 | Per-title override (memory, renderer, filters) | Supported |
 | Disc swap while running | Supported with in-process hosting |
 | Whole-window screenshots | Supported |

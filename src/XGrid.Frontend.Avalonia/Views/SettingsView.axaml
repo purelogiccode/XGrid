@@ -224,20 +224,6 @@
                             ToolTip.Tip="Guest memory size for the console" />
                 </Grid>
 
-                <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel Spacing="2">
-                    <TextBlock Text="Present core frames in the shell" Classes="label" />
-                    <TextBlock Text="The shell draws the picture (needed for filters and the FPS overlay). When off, the core's own window is embedded in the console page; this is the fastest path at large window sizes. Requires the patched core."
-                               Classes="hint" TextWrapping="Wrap" />
-                  </StackPanel>
-                  <ToggleSwitch Grid.Column="1"
-                                IsChecked="{Binding DisplaySink, Mode=TwoWay}"
-                                OnContent=""
-                                OffContent=""
-                                VerticalAlignment="Center"
-                                ToolTip.Tip="Draw the picture in the shell instead of the core window" />
-                </Grid>
-
                 <Border Classes="divider" />
 
                 <Grid ColumnDefinitions="*,Auto">
@@ -432,8 +418,8 @@
 
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="2" VerticalAlignment="Center">
-                    <TextBlock Text="Shell presentation filter" Classes="label" />
-                    <TextBlock Text="Applied by the shell to the picture: nearest or bilinear sampling, or a scanline/CRT phosphor mask."
+                    <TextBlock Text="Presentation filter" Classes="label" />
+                    <TextBlock Text="Applied by the core to the final picture: nearest or bilinear sampling, or a scanline/CRT phosphor mask."
                                Classes="hint" TextWrapping="Wrap" />
                   </StackPanel>
                   <ComboBox Grid.Column="1"
@@ -441,7 +427,7 @@
                             ItemsSource="{Binding FilterOptions}"
                             SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
                             VerticalAlignment="Center"
-                            ToolTip.Tip="Choose the shell presentation filter">
+                            ToolTip.Tip="Choose the core presentation filter">
                     <ComboBox.ItemTemplate>
                       <DataTemplate DataType="vm:KeyedOption">
                         <TextBlock Text="{Binding Label}" />

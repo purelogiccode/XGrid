@@ -28,13 +28,9 @@ public sealed class XemuCoreStoppedEventArgs(bool faulted, string message, int e
 public sealed class XemuCoreSession : IDisposable
 {
     private readonly Lock _gate = new();
-    private readonly bool _readFrames;
     private IXemuCoreRuntime? _runtime;
     private XemuWindowEmbedder? _embedder;
-    private XemuDisplaySink? _sink;
     private XemuInputSink? _input;
-    private Timer? _sinkTimer;
-    private ulong _lastFrameCounter;
     private Timer? _monitor;
     private IntPtr _displayHost;
     private int _displayWidth;
@@ -42,29 +38,16 @@ public sealed class XemuCoreSession : IDisposable
     private bool _displayVisible = true;
     private long _stopDeadline;
     private bool _stopping;
+    private bool _stopDeadlineReported;
     private bool _disposed;
 
-    /// <summary>Creates a session that reads and raises the core's frames.</summary>
+    /// <summary>Creates a session that hosts one core launch.</summary>
     public XemuCoreSession()
-        : this(readFrames: true)
     {
-    }
-
-    /// <summary>Creates a session, optionally without the frame-reader sink.</summary>
-    /// <param name="readFrames">
-    /// True to create the display sink and raise <see cref="FrameReady"/>;
-    /// false for a headless run that only needs the session lifecycle.
-    /// </param>
-    public XemuCoreSession(bool readFrames)
-    {
-        _readFrames = readFrames;
     }
 
     /// <summary>Raised for each diagnostic line the shell should log.</summary>
     public event EventHandler<string>? Log;
-
-    /// <summary>Raised for each new frame the core publishes to the display sink.</summary>
-    public event EventHandler<XemuDisplayFrame>? FrameReady;
 
     /// <summary>Raised when the core process ends, by request or on its own.</summary>
     public event EventHandler<XemuCoreStoppedEventArgs>? Stopped;
@@ -77,9 +60,6 @@ public sealed class XemuCoreSession : IDisposable
 
     /// <summary>Gets a value indicating whether the core window is embedded in the shell.</summary>
     public bool IsEmbedded => _embedder?.IsEmbedded == true;
-
-    /// <summary>Gets a value indicating whether the shell is presenting core frames itself.</summary>
-    public bool IsFrameSinkActive => _sink is not null && _lastFrameCounter != 0;
 
     /// <summary>
     /// Gets the core's save-state controls, or null when the running core
@@ -185,20 +165,8 @@ public sealed class XemuCoreSession : IDisposable
             throw new InvalidOperationException("The core is already running.");
         }
 
-        // The host frame and pad sections are Windows-only. On other platforms
-        // the core presents and reads input through its own window instead.
-        bool hostSinks = XemuDisplaySink.IsSupported;
-
-        // Create the sinks first: an in-process core starts immediately, so a
-        // section created after it would miss the first frames and the first pad.
-        // The name is authoritative: headless runs request a sink on hosts where
-        // the shell's normal presentation path is not offered.
-        if (_readFrames && !string.IsNullOrWhiteSpace(launch.DisplaySinkName))
-        {
-            _sink = new XemuDisplaySink(launch.DisplaySinkName);
-            _sinkTimer = new Timer(_ => PollSink(), null, 8, 8);
-        }
-
+        // The core owns the picture. The shell never creates a frame reader;
+        // filters and the overlay are selected through the core ABI/env.
         if (XemuInputSink.IsSupported && !string.IsNullOrWhiteSpace(launch.InputSinkName))
         {
             _input = new XemuInputSink(launch.InputSinkName);
@@ -229,21 +197,29 @@ public sealed class XemuCoreSession : IDisposable
         {
             _runtime = runtime;
             _stopping = false;
+            _stopDeadlineReported = false;
         }
 
-        if (!string.IsNullOrWhiteSpace(launch.DisplaySinkName))
-        {
-            Log?.Invoke(this, _readFrames
-                ? "Emulator frames go to the shell surface."
-                : "Emulator renders off-screen into the display sink.");
-        }
-        else if (!hostSinks)
-        {
-            Log?.Invoke(this, "Emulator frames go to the core's own window on this platform.");
-        }
+        Log?.Invoke(this, "The core owns the picture; the shell does not read frames.");
 
         _monitor = new Timer(_ => Poll(), null, 250, 250);
         TryEmbed();
+    }
+
+    /// <summary>Selects the core-side presentation filter for a running core.</summary>
+    /// <param name="filter">Filter key (nearest, bilinear, scanline, crt).</param>
+    /// <returns>True when the running core accepted the change.</returns>
+    public bool TrySetPresentationFilter(string filter)
+    {
+        return _runtime?.TrySetPresentationFilter(filter) == true;
+    }
+
+    /// <summary>Turns the core-drawn frame-rate overlay on or off.</summary>
+    /// <param name="enabled">True to draw the overlay.</param>
+    /// <returns>True when the running core accepted the change.</returns>
+    public bool TrySetFpsOverlay(bool enabled)
+    {
+        return _runtime?.TrySetFpsOverlay(enabled) == true;
     }
 
     private XemuInProcessRuntime? StartInProcess(XemuLaunchSettings launch)
@@ -297,8 +273,11 @@ public sealed class XemuCoreSession : IDisposable
         {
             _stopping = true;
             _stopDeadline = Environment.TickCount64 + 8000;
+            _stopDeadlineReported = false;
         }
 
+        // A paused machine cannot process the shutdown path; resume first.
+        _ = runtime.Playback?.TrySetPaused(false, out _);
         runtime.RequestStop();
     }
 
@@ -336,9 +315,11 @@ public sealed class XemuCoreSession : IDisposable
             }
 
             // Dispose is the one place a blocking wait is correct: the core
-            // must not outlive the shell window.
+            // must not outlive the shell window. A paused machine cannot run
+            // the shutdown path, so resume it first.
+            _ = runtime.Playback?.TrySetPaused(false, out _);
             runtime.RequestStop();
-            long deadline = Environment.TickCount64 + 5000;
+            long deadline = Environment.TickCount64 + 10000;
             while (runtime.IsRunning && Environment.TickCount64 < deadline)
             {
                 Thread.Sleep(50);
@@ -347,17 +328,32 @@ public sealed class XemuCoreSession : IDisposable
             if (runtime.IsRunning)
             {
                 runtime.Kill();
+                long killDeadline = Environment.TickCount64 + 2000;
+                while (runtime.IsRunning && Environment.TickCount64 < killDeadline)
+                {
+                    Thread.Sleep(50);
+                }
             }
 
+            bool stopped = !runtime.IsRunning;
             Finish(runtime);
+            if (!stopped)
+            {
+                // Never reparent a live GL window: the driver can fault while
+                // its swapchain is still in use. The process is exiting.
+                Serilog.Log.Warning("The in-process core did not stop; leaving its display attached until process exit");
+                _monitor?.Dispose();
+                _monitor = null;
+                _input?.Dispose();
+                _input = null;
+                _runtime?.Dispose();
+                _runtime = null;
+                return;
+            }
         }
 
         _monitor?.Dispose();
         _monitor = null;
-        _sink?.Dispose();
-        _sink = null;
-        _sinkTimer?.Dispose();
-        _sinkTimer = null;
         _input?.Dispose();
         _input = null;
         _embedder?.Dispose();
@@ -375,18 +371,16 @@ public sealed class XemuCoreSession : IDisposable
 
         lock (_gate)
         {
-            if (_sink is not null && _lastFrameCounter != 0)
+            if (_displayHost == IntPtr.Zero || _embedder?.IsEmbedded == true)
             {
-                // The shell is presenting real frames; there is nothing to embed.
                 return;
             }
 
             XemuCoreProcess? process = _runtime as XemuCoreProcess;
             XemuInProcessRuntime? inProcess = _runtime as XemuInProcessRuntime;
-            if ((process is null && inProcess is null)
-                || _displayHost == IntPtr.Zero
-                || _embedder?.IsEmbedded == true)
+            if (process is null && inProcess is null)
             {
+                // The display host exists before the console is powered on.
                 return;
             }
 
@@ -438,10 +432,15 @@ public sealed class XemuCoreSession : IDisposable
             {
                 if (_stopping && Environment.TickCount64 > _stopDeadline)
                 {
-                    Log?.Invoke(this, runtime.IsInProcess
-                        ? "The in-process core did not stop in time; it is still shutting down."
-                        : "The core did not close in time; terminating it.");
-                    runtime.Kill();
+                    if (!_stopDeadlineReported)
+                    {
+                        _stopDeadlineReported = true;
+                        Log?.Invoke(this, runtime.IsInProcess
+                            ? "The in-process core did not stop in time; it is still shutting down."
+                            : "The core did not close in time; terminating it.");
+                        runtime.Kill();
+                    }
+
                     return;
                 }
 
@@ -454,34 +453,6 @@ public sealed class XemuCoreSession : IDisposable
         catch (ObjectDisposedException exception)
         {
             Serilog.Log.Debug(exception, "The core session was disposed while the start timer was queued");
-        }
-    }
-
-    private void PollSink()
-    {
-        XemuDisplaySink? sink = _sink;
-        if (sink is null)
-        {
-            return;
-        }
-
-        try
-        {
-            if (sink.TryRead(out XemuDisplayFrame frame) && frame.Counter != _lastFrameCounter)
-            {
-                _lastFrameCounter = frame.Counter;
-                if (_lastFrameCounter != 0 && _embedder?.IsEmbedded == true)
-                {
-                    // The core supports the sink: stop showing its window.
-                    _embedder.Detach();
-                }
-
-                FrameReady?.Invoke(this, frame);
-            }
-        }
-        catch (ObjectDisposedException exception)
-        {
-            Serilog.Log.Debug(exception, "The core session was disposed while a frame read was queued");
         }
     }
 
@@ -501,7 +472,10 @@ public sealed class XemuCoreSession : IDisposable
             exitCode = runtime.ExitCode;
             _monitor?.Dispose();
             _monitor = null;
-            _embedder?.Detach();
+            if (!runtime.IsRunning)
+            {
+                _embedder?.Detach();
+            }
         }
 
         bool faulted = !requested && exitCode != 0;

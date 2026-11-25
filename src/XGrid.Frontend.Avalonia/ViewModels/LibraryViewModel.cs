@@ -32,6 +32,18 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
     [ObservableProperty]
     private bool _hasScreenshots;
 
+    [ObservableProperty]
+    private bool _isGridView = shell.Config.LibraryGridView;
+
+    /// <summary>Gets a value indicating whether the detailed row list is shown.</summary>
+    public bool IsListView => !IsGridView;
+
+    /// <summary>Gets a value indicating whether the thumbnail tiles are on screen.</summary>
+    public bool ShowGameTiles => IsGridView && !ShowEmptyState;
+
+    /// <summary>Gets a value indicating whether the detailed rows are on screen.</summary>
+    public bool ShowGameRows => IsListView && !ShowEmptyState;
+
     /// <summary>Gets the currently visible games.</summary>
     public ObservableCollection<GameListItem> Games { get; } = [];
 
@@ -82,7 +94,7 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         try
         {
             string coversDirectory = CoverArtIndex.DefaultDirectory();
-            List<GameEntry> scanned = await Task.Run(() => GameLibraryService.Scan(folders, coversDirectory));
+            List<GameEntry> scanned = await Task.Run(() => GameLibraryService.Scan(folders, coversDirectory, resolveTitleIds: false));
             DisposeGames();
             _covers.Clear();
             _all.Clear();
@@ -104,6 +116,7 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
             IsScanning = false;
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(ShowEmptyState));
+            NotifyGameViews();
         }
     }
 
@@ -112,6 +125,20 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
     private Task RescanAsync()
     {
         return RefreshAsync();
+    }
+
+    /// <summary>Public command: shows the library as thumbnail tiles.</summary>
+    [RelayCommand]
+    private void ShowGrid()
+    {
+        IsGridView = true;
+    }
+
+    /// <summary>Public command: shows the detailed row list.</summary>
+    [RelayCommand]
+    private void ShowList()
+    {
+        IsGridView = false;
     }
 
     /// <summary>Rebuilds the recently played list from the persisted settings.</summary>
@@ -148,7 +175,7 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
             return;
         }
 
-        GameEntry? entry = GameEntry.FromFile(game.Path);
+        GameEntry? entry = GameEntry.FromFile(game.Path, resolveTitleId: false);
         if (entry is null)
         {
             Shell.ForgetRecentGame(game.Path);
@@ -249,12 +276,21 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnIsGridViewChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsListView));
+        NotifyGameViews();
+        Shell.SetLibraryView(value);
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnIsScanningChanged(bool value)
     {
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(ShowEmptyState));
         OnPropertyChanged(nameof(EmptyTitle));
         OnPropertyChanged(nameof(EmptyDetail));
+        NotifyGameViews();
     }
 
     private void ApplyFilter()
@@ -278,6 +314,13 @@ public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageVi
         OnPropertyChanged(nameof(ShowEmptyState));
         OnPropertyChanged(nameof(EmptyTitle));
         OnPropertyChanged(nameof(EmptyDetail));
+        NotifyGameViews();
+    }
+
+    private void NotifyGameViews()
+    {
+        OnPropertyChanged(nameof(ShowGameTiles));
+        OnPropertyChanged(nameof(ShowGameRows));
     }
 
     private void DisposeGames()
