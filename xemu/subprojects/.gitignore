@@ -44,3 +44,11 @@ nlohmann_json
 sdl3
 /dsp56300/*
 !/dsp56300/meson.build
+/tomlplusplus/.meson-subproject-wrap-hash.txt
+/slirp/.meson-subproject-wrap-hash.txt
+/nv2a_vsh_cpu/.meson-subproject-wrap-hash.txt
+/nlohmann_json/.meson-subproject-wrap-hash.txt
+/keycodemapdb/.meson-subproject-wrap-hash.txt
+/implot/.meson-subproject-wrap-hash.txt
+/imgui/.meson-subproject-wrap-hash.txt
+/genconfig/.meson-subproject-wrap-hash.txt
