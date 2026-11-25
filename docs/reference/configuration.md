@@ -41,7 +41,7 @@ the platform.
 | `--renderer <name>` | `OPENGL`, `VULKAN` or `NULL`. |
 | `--scale <1-8>` | Internal surface scale. |
 | `--filtering <mode>` | Core texture filtering: `linear` or `nearest`. |
-| `--filter <mode>` | Shell filter: `nearest`, `bilinear`, `scanline` or `crt`. |
+| `--filter <mode>` | Presentation filter: `nearest`, `bilinear`, `scanline` or `crt`. |
 | `--aspect <mode>` | `native`, `auto`, `4x3` (or `4:3`) or `16x9` (or `16:9`). |
 | `--fit <mode>` | `center`, `scale` or `stretch`. |
 | `--ram <64\|128>` | Guest RAM in megabytes. |
@@ -117,8 +117,8 @@ The shell writes indented JSON. The main fields are:
 | `HddPath` | Raw or qcow2 HDD image. |
 | `DvdPath` | Default disc image. |
 | `RamMb` | 64 or 128. |
-| `DisplaySink` | Shell presents frames instead of embedding the core window. |
-| `ShowFpsOverlay` | Draw the frame-rate overlay over a running console. |
+| `DisplaySink` | Removed. The core always owns the picture; the frame sink is only used by headless runs. |
+| `ShowFpsOverlay` | The core draws the frame-rate overlay over a running console. |
 | `CoreHosting` | `in-process` or `process`. |
 | `Filter` | `nearest`, `bilinear`, `scanline` or `crt`. |
 | `Graphics` | Renderer, scale, filtering, window, aspect, fit, AV pack. |

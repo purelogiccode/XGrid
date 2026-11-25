@@ -148,6 +148,17 @@
     <Setter Property="Padding" Value="14" />
     <Setter Property="CornerRadius" Value="14" />
   </Style>
+  <Style Selector="Border.card.gameTile">
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="CornerRadius" Value="12" />
+  </Style>
+  <Style Selector="Border.coverFrame">
+    <Setter Property="Background" Value="{DynamicResource XgInsetBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource XgBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="ClipToBounds" Value="True" />
+  </Style>
   <Style Selector="Border.inset">
     <Setter Property="Background" Value="{DynamicResource XgInsetBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource XgBorderBrush}" />
@@ -227,6 +238,11 @@
   </Style>
   <Style Selector="Button.ghost:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource XgSurfaceAltBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
+  </Style>
+  <Style Selector="Button.ghost.active /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource XgSelectionBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource XgAccentBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource XgTextBrush}" />
   </Style>
 

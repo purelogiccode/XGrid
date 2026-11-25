@@ -59,6 +59,24 @@ XGRID_CORE_EXPORT int xgrid_core_join(void);
 XGRID_CORE_EXPORT const char *xgrid_core_version(void);
 
 /*
+ * Picture presentation.
+ *
+ * The core owns the picture in both presentation modes. These select the
+ * core-side filter and overlay; no shell component processes pixels. The
+ * separate-process path passes the initial values through XGRID_PRESENT_FILTER
+ * and XGRID_FPS_OVERLAY.
+ */
+
+/** Selects a presentation filter; returns -1 for an unknown value. */
+XGRID_CORE_EXPORT int xgrid_core_set_present_filter(int filter);
+
+/** Enables (non-zero) or disables the core-drawn frame-rate overlay. */
+XGRID_CORE_EXPORT void xgrid_core_set_fps_overlay(int enabled);
+
+/** Selects embedding before the core creates its window. */
+XGRID_CORE_EXPORT void xgrid_core_set_embed(int enabled);
+
+/*
  * Playback control.
  *
  * Pause, resume and single-frame step are requested from the shell's thread

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json.Serialization;
 using Serilog;
+using XGrid.Core.Xemu;
 
 namespace XGrid.Frontend.Avalonia.Models;
 
@@ -35,14 +36,14 @@ public sealed class EmulatorSettings
     public int RamMb { get; set; } = 64;
 
     /// <summary>
-    /// Gets or sets a value indicating whether the core publishes frames to the
-    /// shell (shared section, shell presents) instead of showing its own window.
+    /// Gets or sets the presentation filter. The core applies it in its final
+    /// blit; the shell never processes picture pixels.
     /// </summary>
-    public bool DisplaySink { get; init; } = true;
+    public string Filter { get; set; } = XemuPresentationFilter.Nearest;
 
     /// <summary>
-    /// Gets or sets a value indicating whether the frame-rate overlay is shown
-    /// over the console picture.
+    /// Gets or sets a value indicating whether the core draws the frame-rate
+    /// overlay over the console picture.
     /// </summary>
     public bool ShowFpsOverlay { get; set; }
 
@@ -58,11 +59,6 @@ public sealed class EmulatorSettings
 
     /// <summary>Hosting mode that runs the core as a separate process.</summary>
     public const string CoreHostingProcess = "process";
-
-    /// <summary>
-    /// Gets or sets the presentation filter (nearest, bilinear, scanline, crt).
-    /// </summary>
-    public string Filter { get; set; } = Services.FrameFilters.Nearest;
 
     /// <summary>Gets or sets the player-1 keyboard and gamepad configuration.</summary>
     public InputSettings Input { get; set; } = new();
@@ -85,6 +81,12 @@ public sealed class EmulatorSettings
 
     /// <summary>Gets or sets the folders scanned by the game library.</summary>
     public List<string> LibraryFolders { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the library shows thumbnail
+    /// tiles (the default) or the detailed row list.
+    /// </summary>
+    public bool LibraryGridView { get; set; } = true;
 
     /// <summary>
     /// Gets or sets the most recently launched games, newest first. Entries are
@@ -253,7 +255,6 @@ public sealed class EmulatorSettings
             RamMb = RamMb,
             Accent = Accent,
             XemuCorePath = XemuCorePath,
-            DisplaySink = DisplaySink,
             ShowFpsOverlay = ShowFpsOverlay,
             CoreHosting = CoreHosting,
             Filter = Filter,
@@ -301,7 +302,7 @@ public sealed class EmulatorSettings
         CoreHosting = string.Equals(CoreHosting, CoreHostingProcess, StringComparison.OrdinalIgnoreCase)
             ? CoreHostingProcess
             : CoreHostingInProcess;
-        Filter = Services.FrameFilters.Normalize(Filter);
+        Filter = XemuPresentationFilter.Normalize(Filter);
         Input = NullSafe.Value(Input, new InputSettings());
         Graphics = NullSafe.Value(Graphics, new GraphicsSettings());
         Audio = NullSafe.Value(Audio, new AudioSettings());

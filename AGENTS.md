@@ -17,12 +17,17 @@ Read:
 
 1. **Do not re-implement the emulator in the shell.** New emulation behavior
    belongs in `xemu/xgrid-core/` or an upstream patch.
-2. **Upstream edits are patches.** Record them in `xemu/xemu-patches/`; keep the
+2. **The core owns every emulated pixel.** The shell must never receive, copy,
+   filter, overlay, scale or redraw the console picture. Presentation filters
+   and the FPS overlay are core features selected through the core ABI or the
+   launch environment. Do not add a `WriteableBitmap`/`Image` frame canvas, a
+   shell frame sink, or any per-frame Avalonia dependency on the picture.
+3. **Upstream edits are patches.** Record them in `xemu/xemu-patches/`; keep the
    original copyright/license notices.
-3. **C# first for the shell.** P/Invoke is only for host APIs/OS facilities.
-4. **No firmware or game data in git.** `data/`, HDD images, BIOS, EEPROM and
+4. **C# first for the shell.** P/Invoke is only for host APIs/OS facilities.
+5. **No firmware or game data in git.** `data/`, HDD images, BIOS, EEPROM and
    games stay local.
-5. **One logical change per commit.** Code, tests, docs and provenance together.
+6. **One logical change per commit.** Code, tests, docs and provenance together.
 
 ## Build and gates
 

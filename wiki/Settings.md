@@ -20,7 +20,7 @@ The Settings page is a draft editor. Change values, then click **Save settings**
 
 - **Emulator binary** — optional explicit path.
 - **Guest memory** — 64 MB retail, 128 MB debug kit.
-- **Present core frames in the shell** - shell presentation and filters (Windows only); off embeds the core window and is the fastest path.
+- **Presentation filter** - applied by the core's final blit. In-process hosting can change it live; a separate process applies it on the next launch.
 - **Core hosting** - **In-process (recommended, Windows)** enables save states, pause and disc swap but hosts one machine per shell; **Separate process** can start a new machine every time.
 
 ## Graphics
@@ -33,7 +33,7 @@ The Settings page is a draft editor. Change values, then click **Save settings**
 - **Aspect ratio** — Auto, Native, 4:3, 16:9.
 - **Fit mode** — Scale, Center, Stretch.
 - **AV pack** — HDTV, Composite, S-Video, SCART, VGA, RFU, None.
-- **Shell presentation filter** — Nearest, Bilinear, Scanlines, CRT mask.
+- **Presentation filter** - Nearest, Bilinear, Scanlines, CRT mask; applied by the core.
 
 ## Audio
 

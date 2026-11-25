@@ -132,6 +132,15 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the directory that holds the generated config and the core log.</summary>
     public string WorkingDirectory { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Gets the presentation filter the core applies in its final blit. The
+    /// shell selects it; it never processes picture pixels.
+    /// </summary>
+    public string PresentationFilter { get; init; } = XemuPresentationFilter.Nearest;
+
+    /// <summary>Gets a value indicating whether the core draws the frame-rate overlay.</summary>
+    public bool FpsOverlay { get; init; }
+
     private static readonly HashSet<string> StartupSizes = new(StringComparer.Ordinal)
     {
         "last_used",
@@ -230,6 +239,14 @@ public sealed record XemuLaunchSettings
             && !string.Equals(AudioBackend, "wav", StringComparison.Ordinal))
         {
             errors.Add($"Unknown audio backend '{AudioBackend}'.");
+        }
+
+        if (!string.Equals(PresentationFilter, XemuPresentationFilter.Nearest, StringComparison.Ordinal)
+            && !string.Equals(PresentationFilter, XemuPresentationFilter.Bilinear, StringComparison.Ordinal)
+            && !string.Equals(PresentationFilter, XemuPresentationFilter.Scanline, StringComparison.Ordinal)
+            && !string.Equals(PresentationFilter, XemuPresentationFilter.Crt, StringComparison.Ordinal))
+        {
+            errors.Add($"Unknown presentation filter '{PresentationFilter}'.");
         }
 
         if (string.Equals(AudioBackend, "wav", StringComparison.Ordinal)

@@ -104,6 +104,17 @@ A clean rebuild:
 pwsh -File scripts/build-native-xemu.ps1 -Clean
 ```
 
+Vulkan is built by default:
+
+```powershell
+pwsh -File scripts/build-native-xemu.ps1
+```
+
+For an OpenGL-only core, pass `-NoVulkan` (smaller binary and faster build).
+The first Vulkan build fetches the `glslang`, `volk` and `SPIRV-Reflect`
+subprojects and takes longer. `xemu/dist/xgrid-core.json` reports what the core
+can start, and the Settings page offers only those renderers.
+
 The build is also wired into the solution anchor:
 
 ```powershell
@@ -230,6 +241,6 @@ core on its own host or stage per-RID builds with `-CoreRoot`, or pass
 | `Dependency "samplerate" not found` | Install `libsamplerate0-dev`. |
 | `Dependency "gmp" not found` | Install `libgmp-dev`. |
 | `ModuleNotFoundError: No module named 'yaml'` | Install PyYAML into the Python that runs meson. |
-| Vulkan not listed after build | The Vulkan dependencies were absent; the core still builds with OpenGL. |
+| Vulkan not listed after build | The core was built with `-NoVulkan`, or the Vulkan subprojects could not be fetched. | Run `pwsh -File scripts/build-native-xemu.ps1` without `-NoVulkan`; otherwise the core still builds with OpenGL. |
 | `xgrid_core.dll` missing | Build the `xgrid_core` target; check `wt-data/xemu-build.log`. |
 | Shell cannot find the core | Set **Emulator binary** or `XGRID_XEMU_CORE`. |

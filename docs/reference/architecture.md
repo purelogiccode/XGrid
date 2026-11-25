@@ -63,9 +63,12 @@ The managed C# emulator and its test suite remain in the repository as a
 
 - The shell loads `xgrid_core.dll` with `NativeLibrary.Load`.
 - The machine runs on its own thread inside the shell process.
-- With the display sink on, frames and input use the same shared sections as the
-  separate-process path. With it off, the core's own window is embedded in the
-  Home page, exactly like a separate process.
+- The core's own window is embedded in the Home page and paints with its own
+  swapchain, exactly like the separate-process path. The shell copies no frames.
+- The pad shared section is used on Windows.
+- Presentation filters and the FPS overlay are core features. The shell selects
+  them through the ABI (`xgrid_core_set_present_filter`,
+  `xgrid_core_set_fps_overlay`); it never touches a pixel.
 - Save states are available through the in-process ABI.
 - Pause, resume and single-frame step are available through the same ABI.
 - QEMU's global state is single-use: the in-process core hosts one machine per
@@ -78,10 +81,11 @@ The managed C# emulator and its test suite remain in the repository as a
 
 - The shell starts `xemu.exe` (or `xemu` on Linux) with
   `-config_path <generated xemu.toml>`.
-- On Windows the process gets the display and input sink names through
-  environment variables (`XGRID_DISPLAY_SHM`, `XGRID_INPUT_SHM`). When the sink
-  is off, `XGRID_EMBED=1` asks the core to create its window hidden and titled
+- On Windows the process gets the input sink name through `XGRID_INPUT_SHM`.
+- `XGRID_EMBED=1` asks the core to create its window hidden and titled
   `XGridCore`, ready for the shell to reparent without a flash.
+- `XGRID_PRESENT_FILTER` and `XGRID_FPS_OVERLAY` carry the initial presentation
+  selection. A live change needs the in-process ABI.
 - The core writes `xemu.log` in its working directory.
 - Save states are not exposed; the shell has no ABI to call.
 - Pause and frame step are not exposed for the same reason.
@@ -90,19 +94,32 @@ The managed C# emulator and its test suite remain in the repository as a
 
 The packaged `linux-x64` frontend archive carries the standalone core under
 `core/xemu/`. The shell starts it as a separate process, and the core owns its
-SDL window: presentation, keyboard and gamepad input stay inside the core. The
-shell keeps the library, settings, logs and screenshots. Window embedding and
-the host frame/pad sinks are Windows-only, so save states, pause/step and disc
-swap are unavailable there. macOS archives carry the shell only; point the
-**Emulator binary** setting at an upstream xemu 0.8.139 build.
+SDL window: presentation, filters, overlay, keyboard and gamepad input stay
+inside the core. The shell keeps the library, settings, logs and screenshots.
+Native in-window embedding and the host pad sink are Windows-only, so save
+states, pause/step and disc swap are unavailable there. macOS archives carry the
+shell only; point the **Emulator binary** setting at an upstream xemu 0.8.139
+build. The platform embedding plan is in
+[Platform embedding](../development/platform-embedding.md).
 
 On Unix, `RequestStop` sends `SIGTERM`, which QEMU handles as a shutdown
 request, so the core flushes storage instead of being killed.
 
-## Display sink
+## Picture ownership
 
-When the shell presents frames, the core writes a top-down BGRA image into a
-named shared section:
+The core owns every emulated pixel. It renders, filters, overlays and presents
+with its own window and swapchain. The Avalonia shell owns chrome, layout and
+controls only. It must not receive frames, keep a frame bitmap, apply a filter
+or draw an overlay over the picture; doing so reintroduces a per-frame copy and
+a shell redraw into the hot path.
+
+The only shell-side picture work is native window hosting (Windows) and screen
+capture for the whole-window screenshot.
+
+## Headless display sink
+
+Headless runs and benchmarks request the core's display sink, which writes a
+top-down BGRA image into a named shared section:
 
 ```text
 uint32 magic   'XGDS'
@@ -114,11 +131,9 @@ pixel data     width × height BGRA, top row first
 ```
 
 Windows uses a named file mapping; Linux and macOS use a POSIX shared-memory
-object with the same layout. The core still creates an OpenGL context and renders
-off-screen when the sink is active. The shell polls the section every 8 ms on
-Windows, keeps the latest frame, and presents at a minimum 10 ms cadence. A slow
-UI drops frames instead of building latency; elsewhere the normal UI keeps the
-core's own SDL window.
+object with the same layout. The core renders off-screen when the sink is active.
+No shell window presents these frames; the runner reads the header to count
+throughput.
 
 Headless runs use the same sink on every host, but only read the 32-byte header:
 they count the frame counter without copying pixels, so a benchmark does not pay
@@ -154,8 +169,8 @@ core never reads uninitialized state.
 
 The core reads the section only when the input sink is configured. It binds a
 controller to every port the keyboard did not take, so all four records reach
-the guest; the bindings are not persisted. With the embedded core window, or on
-a non-Windows host, the core uses SDL input instead.
+the guest; the bindings are not persisted. The sink is used in both presentation
+modes on Windows. Elsewhere the core uses SDL input instead.
 
 ## Save states
 
@@ -191,9 +206,10 @@ off), a short timer stops the machine instead. The shell keeps the paused state
 it asked for and reports it in the status bar, the toolbar and a badge over the
 picture.
 
-Fast-forward does not touch the guest clock: it scales the vblank interval the
-display path uses, so the core presents more frames per real second. The shell
-toggles 4x with Space and restores 1x on the next press, pause or session end.
+Fast-forward scales the guest's `QEMU_CLOCK_VIRTUAL` and the vblank interval
+together, so the vCPU timers, the Xbox TSC and the presented frame rate all run
+at 4x. The shell toggles it with Space or the **4x** toolbar button and restores
+1x on the next press, pause or session end.
 
 ## Disc change
 

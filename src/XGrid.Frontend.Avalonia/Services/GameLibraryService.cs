@@ -14,7 +14,15 @@ public static class GameLibraryService
     /// <summary>Scans the given folders recursively (missing folders are skipped).</summary>
     /// <param name="folders">Library roots.</param>
     /// <param name="coversDirectory">Shared covers folder, or null for sibling images only.</param>
-    public static List<GameEntry> Scan(IEnumerable<string> folders, string? coversDirectory = null)
+    /// <param name="resolveTitleIds">
+    /// True to open each image and read its XBE certificate. The library page
+    /// passes false so adding a large folder is a directory scan; the title id
+    /// is resolved when a game launches.
+    /// </param>
+    public static List<GameEntry> Scan(
+        IEnumerable<string> folders,
+        string? coversDirectory = null,
+        bool resolveTitleIds = true)
     {
         ArgumentNullException.ThrowIfNull(folders);
         StringComparer pathComparer = OperatingSystem.IsWindows()
@@ -56,7 +64,7 @@ public static class GameLibraryService
                         continue;
                     }
 
-                    GameEntry? entry = GameEntry.FromFile(file, covers);
+                    GameEntry? entry = GameEntry.FromFile(file, covers, resolveTitleIds);
                     if (entry is not null)
                     {
                         entries.Add(entry);

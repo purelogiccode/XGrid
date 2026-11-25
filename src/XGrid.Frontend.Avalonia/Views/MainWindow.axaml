@@ -128,6 +128,12 @@
             BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Classes="toolbar" Click="OnMenuHome" ToolTip.Tip="Go to the console page">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Home}" />
+              <TextBlock Text="Console" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
           <Button Classes="toolbar" Click="OnMenuChooseDisc" ToolTip.Tip="{Binding OpenDiscHint}">
             <StackPanel Spacing="2">
               <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Disc}" />
@@ -162,6 +168,15 @@
               <TextBlock Text="Step" FontSize="10.5" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
+          <Button Classes="toolbar"
+                  Classes.active="{Binding IsFastForward}"
+                  Command="{Binding ToggleFastForwardCommand}"
+                  ToolTip.Tip="Toggle 4x fast-forward (Space)">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.FastForward}" />
+              <TextBlock Text="4x" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
 
           <Border Width="1" Margin="7,6" Background="{DynamicResource XgBorderBrush}" />
 
@@ -184,6 +199,16 @@
             <StackPanel Spacing="2">
               <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Logs}" />
               <TextBlock Text="Logs" FontSize="10.5" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+
+          <Border Width="1" Margin="7,6" Background="{DynamicResource XgBorderBrush}" />
+
+          <Button Classes="toolbar" Click="OnMenuFullscreen"
+                  ToolTip.Tip="Enter fullscreen (F11). Press Esc to pause or leave.">
+            <StackPanel Spacing="2">
+              <PathIcon Width="22" Height="22" HorizontalAlignment="Center" Data="{x:Static local:AppIcons.Fullscreen}" />
+              <TextBlock Text="Fullscreen" FontSize="10.5" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
         </StackPanel>
@@ -242,7 +267,7 @@
     <!-- ===================== Content ===================== -->
     <!-- Pages stay alive across navigation: the console page owns a native
          child window that must not be destroyed when the user opens settings. -->
-    <Grid Grid.Row="3" Margin="16,14,16,14">
+    <Grid Grid.Row="3" Margin="{Binding PageMargin}">
       <views:HomeView DataContext="{Binding Home}" IsVisible="{Binding IsActive}" />
       <views:LibraryView DataContext="{Binding Library}" IsVisible="{Binding IsActive}" />
       <views:SettingsView DataContext="{Binding Settings}" IsVisible="{Binding IsActive}" />
@@ -253,7 +278,7 @@
     <!-- ===================== Log dock ===================== -->
     <Border Grid.Row="4"
             Height="180"
-            IsVisible="{Binding ShowLogDock}"
+            IsVisible="{Binding IsLogDockVisible}"
             Background="{DynamicResource XgSurfaceBrush}"
             BorderBrush="{DynamicResource XgBorderBrush}"
             BorderThickness="0,1,0,0">
@@ -298,6 +323,7 @@
     <!-- ===================== Status bar ===================== -->
     <Border Grid.Row="5"
             Padding="10,4"
+            IsVisible="{Binding !IsFullscreen}"
             Background="{DynamicResource XgStatusBarBrush}"
             BorderBrush="{DynamicResource XgBorderBrush}"
             BorderThickness="0,1,0,0">

@@ -10,6 +10,7 @@
 
 #include "xgrid-display.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +39,80 @@ static uint32_t g_width;
 static uint32_t g_height;
 static uint32_t g_stride;
 static uint64_t g_frame;
+
+/* -1 means "not selected yet": the environment or the core config decides. */
+static atomic_int g_present_filter = ATOMIC_VAR_INIT(-1);
+static atomic_int g_present_overlay = ATOMIC_VAR_INIT(-1);
+static atomic_int g_embed = ATOMIC_VAR_INIT(-1);
+
+static int filter_from_environment(void)
+{
+    const char *value = getenv("XGRID_PRESENT_FILTER");
+
+    if (value == NULL) {
+        return -1;
+    }
+    if (strcmp(value, "bilinear") == 0) {
+        return XGRID_FILTER_BILINEAR;
+    }
+    if (strcmp(value, "scanline") == 0) {
+        return XGRID_FILTER_SCANLINE;
+    }
+    if (strcmp(value, "crt") == 0) {
+        return XGRID_FILTER_CRT;
+    }
+
+    return XGRID_FILTER_NEAREST;
+}
+
+int xgrid_present_set_filter(int filter)
+{
+    if (filter < XGRID_FILTER_NEAREST || filter > XGRID_FILTER_CRT) {
+        return -1;
+    }
+
+    atomic_store_explicit(&g_present_filter, filter, memory_order_release);
+    return 0;
+}
+
+int xgrid_present_filter(void)
+{
+    int value = atomic_load_explicit(&g_present_filter, memory_order_acquire);
+
+    if (value >= 0) {
+        return value;
+    }
+
+    /* The shell may only provide the choice through the environment (the
+     * separate-process path), so resolve it once and keep it. */
+    value = filter_from_environment();
+    if (value < 0) {
+        return -1;
+    }
+
+    atomic_store_explicit(&g_present_filter, value, memory_order_release);
+    return value;
+}
+
+void xgrid_present_set_overlay(bool enabled)
+{
+    atomic_store_explicit(&g_present_overlay, enabled ? 1 : 0,
+                          memory_order_release);
+}
+
+bool xgrid_present_overlay(void)
+{
+    int value = atomic_load_explicit(&g_present_overlay, memory_order_acquire);
+
+    if (value >= 0) {
+        return value != 0;
+    }
+
+    const char *enabled = getenv("XGRID_FPS_OVERLAY");
+    value = enabled != NULL && enabled[0] == '1' ? 1 : 0;
+    atomic_store_explicit(&g_present_overlay, value, memory_order_release);
+    return value != 0;
+}
 
 static const char *sink_name(void)
 {
@@ -199,11 +274,22 @@ void xgrid_display_set_sink(const char *name)
 bool xgrid_embed_enabled(void)
 {
 #ifdef _WIN32
-    const char *value = getenv("XGRID_EMBED");
-    return value != NULL && value[0] == '1';
+    int value = atomic_load_explicit(&g_embed, memory_order_acquire);
+    if (value >= 0) {
+        return value != 0;
+    }
+
+    const char *environment = getenv("XGRID_EMBED");
+    value = environment != NULL && environment[0] == '1' ? 1 : 0;
+    return value != 0;
 #else
     return false;
 #endif
+}
+
+void xgrid_present_set_embed(bool enabled)
+{
+    atomic_store_explicit(&g_embed, enabled ? 1 : 0, memory_order_release);
 }
 
 bool xgrid_display_enabled(void)

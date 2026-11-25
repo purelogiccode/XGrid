@@ -174,6 +174,23 @@ bool Win32DxgiPresenter::LoadWglInteropFunctions()
 
 void Win32DxgiPresenter::ReleaseSharedResources()
 {
+    /*
+     * The presenter is a static object, so its destructor also runs during
+     * process exit, after the GL context has been destroyed. Calling into GL
+     * then dereferences the driver's null current-context state and faults
+     * inside the OpenGL ICD. Only touch GL while a context is current; the
+     * handles are already gone with the context.
+     */
+    if (wglGetCurrentContext() == nullptr) {
+        m_render_fbo = 0;
+        m_render_tex = 0;
+        m_interop_fbo = 0;
+        m_interop_tex = 0;
+        m_wgl_object = nullptr;
+        m_shared_texture.Reset();
+        return;
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     if (m_render_fbo) {
@@ -528,7 +545,7 @@ void Win32DxgiPresenter::Cleanup()
     }
 
     if (m_wgl_device) {
-        if (m_wgl_dx_close_device_nv) {
+        if (m_wgl_dx_close_device_nv && wglGetCurrentContext() != nullptr) {
             m_wgl_dx_close_device_nv(m_wgl_device);
         }
         m_wgl_device = nullptr;

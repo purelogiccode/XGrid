@@ -43,6 +43,7 @@
 #include "scene.hh"
 #include "scene-manager.hh"
 #include "main-menu.hh"
+#include "../../xgrid-core/display/xgrid-display.h"
 #include "popup-menu.hh"
 #include "notifications.hh"
 #include "monitor.hh"
@@ -189,6 +190,46 @@ void xemu_hud_set_framebuffer_texture(GLuint tex, bool flip)
     g_flip_req = flip;
 }
 
+static uint32_t g_xgrid_overlay_last_ms;
+static uint32_t g_xgrid_overlay_frames;
+static float g_xgrid_overlay_fps;
+static float g_xgrid_overlay_frame_ms;
+
+static void xgrid_overlay_update_stats(uint32_t now)
+{
+    if (g_xgrid_overlay_last_ms == 0) {
+        g_xgrid_overlay_last_ms = now;
+    }
+
+    g_xgrid_overlay_frames++;
+
+    uint32_t elapsed = now - g_xgrid_overlay_last_ms;
+    if (elapsed >= 1000) {
+        g_xgrid_overlay_fps = g_xgrid_overlay_frames * 1000.0f / elapsed;
+        g_xgrid_overlay_frame_ms = g_xgrid_overlay_fps > 0
+                                       ? 1000.0f / g_xgrid_overlay_fps
+                                       : 0;
+        g_xgrid_overlay_frames = 0;
+        g_xgrid_overlay_last_ms = now;
+    }
+}
+
+static void xgrid_overlay_draw(void)
+{
+    char text[64];
+
+    snprintf(text, sizeof(text), "%.0f FPS  %.1f ms", g_xgrid_overlay_fps,
+             g_xgrid_overlay_frame_ms);
+
+    ImDrawList *draw = ImGui::GetForegroundDrawList();
+    ImVec2 pos(12.0f, 12.0f);
+    ImVec2 size = ImGui::CalcTextSize(text);
+    draw->AddRectFilled(ImVec2(pos.x - 6.0f, pos.y - 4.0f),
+                        ImVec2(pos.x + size.x + 6.0f, pos.y + size.y + 4.0f),
+                        IM_COL32(0, 0, 0, 180), 3.0f);
+    draw->AddText(pos, IM_COL32(255, 255, 255, 255), text);
+}
+
 void xemu_hud_update(void)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -317,6 +358,11 @@ void xemu_hud_update(void)
     g_scene_mgr.Draw();
     if (!first_boot_window.is_open) notification_manager.Draw();
     g_snapshot_mgr.Draw();
+
+    xgrid_overlay_update_stats(now);
+    if (xgrid_present_overlay()) {
+        xgrid_overlay_draw();
+    }
 
     // static bool show_demo = true;
     // if (show_demo) ImGui::ShowDemoWindow(&show_demo);

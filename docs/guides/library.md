@@ -16,10 +16,26 @@ Folders are scanned recursively. A scan:
 - skips inaccessible folders and reparse points;
 - stops at **4,096 entries**;
 - de-duplicates paths;
-- sorts by title.
+- sorts by title;
+- reads only file metadata (name, size, format). It does **not** hash the
+  images, open the disc, or decompress a CHD.
 
 Add as many roots as you need. Removing a folder from the list does not delete
 anything on disk.
+
+## Tile and list views
+
+XGrid opens the Library in **Tiles** mode: one card per game with its cover
+art, the title, format and size. Click a card to launch it.
+
+Use **Tiles** and **List** in the library toolbar to switch modes:
+
+- **Tiles** shows the cover grid (the default).
+- **List** shows the detailed rows with folder, title id, format, size and a
+  **Play** button.
+
+The choice is saved in `settings.json` and restored on the next start. XGrid
+still opens on the Library page; use **Console** to see the emulated picture.
 
 ## Recently played
 
@@ -46,10 +62,14 @@ across multiple roots if you need more.
 
 ## Titles and title IDs
 
-- For a **loose XBE**, XGrid reads the certificate title name.
+- For a **loose XBE**, XGrid reads the certificate title name when the title is
+  resolved.
 - For a **disc image**, the display title comes from the file name.
-- When the XBE certificate can be read, XGrid also records the **title ID**
-  (`Title XXXXXXXX`). That ID is what per-title overrides use when available.
+- The **title ID** (`Title XXXXXXXX`) is resolved when the game is launched, not
+  during the folder scan, so adding a large CHD collection does not decompress
+  every image. The launch uses the resolved ID for per-title overrides.
+- Cover art named by title ID is matched when that ID has been resolved; naming
+  the cover after the game title always works.
 
 Homebrew images that never set a certificate ID share a placeholder ID, so their
 file names remain the distinguishing text.

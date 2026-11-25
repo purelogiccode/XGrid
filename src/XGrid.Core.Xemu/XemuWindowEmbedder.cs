@@ -10,9 +10,8 @@ namespace XGrid.Core.Xemu;
 /// <remarks>
 /// Reparenting (rather than copying frames) is the whole performance argument:
 /// the core keeps its own OpenGL context and swapchain, and the shell adds no
-/// per-frame work at all. The embedded window is a real child, so the core
-/// receives the keyboard when the user clicks the display, with no key
-/// translation layer.
+/// per-frame work at all. The embedded child does not take activation, so the
+/// shell window keeps keyboard focus and its mapped pad input stays live.
 /// </remarks>
 public sealed class XemuWindowEmbedder : IDisposable
 {
@@ -88,6 +87,11 @@ public sealed class XemuWindowEmbedder : IDisposable
                      | Win32Window.WsExClientEdge
                      | Win32Window.WsExDlgModalFrame
                      | Win32Window.WsExToolWindow);
+        // Keep activation on the shell window. The shell's key handlers and pad
+        // poll are what publish input; if a click on the picture activated the
+        // core window, the shell would see the main window as inactive and
+        // publish neutral pads.
+        exStyle |= Win32Window.WsExNoActivate;
         _ = Win32Window.SetWindowLongW(child, Win32Window.GwlExStyle, unchecked((int)exStyle));
 
         // SetParent answers the previous parent, which is null for a top-level
@@ -108,7 +112,6 @@ public sealed class XemuWindowEmbedder : IDisposable
         _width = Math.Max(1, widthPx);
         _height = Math.Max(1, heightPx);
         ApplyGeometry();
-        _ = Win32Window.SetFocus(child);
     }
 
     /// <summary>Shows or hides the hosted core window without detaching it.</summary>

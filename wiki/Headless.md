@@ -52,7 +52,7 @@ The normal shell accepts the same overrides without `--headless`. A positional
 | `--renderer <OPENGL\|VULKAN\|NULL>` | Core renderer. |
 | `--scale <1-8>` | Internal surface scale. |
 | `--filtering <linear\|nearest>` | Core texture filtering. |
-| `--filter <nearest\|bilinear\|scanline\|crt>` | Shell presentation filter. |
+| `--filter <nearest\|bilinear\|scanline\|crt>` | Presentation filter, applied by the core. |
 | `--aspect`, `--fit`, `--ram`, `--audio` | Display, memory and audio overrides. |
 | `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` | Headless and benchmark controls. |
 | `-h`, `--help`, `--version` | Reference and version. |

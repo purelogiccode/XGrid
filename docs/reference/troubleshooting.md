@@ -8,7 +8,7 @@ disc, audio backend and every failure the shell sees.
 1. Is the console powered on and the status bar showing **Running**?
 2. Is a BIOS image configured and found on disk?
 3. Is the core executable present (packaged `core/xemu/` or an explicit path)?
-4. Is the display caption visible?
+4. Is the core's own window visible (on Linux/macOS it is outside XGrid)?
 5. What is the last error in **Activity**?
 
 Use **File → Open Config Folder** to reach `settings.json` and the generated
@@ -27,7 +27,7 @@ message. See [Logging and diagnostics](../guides/diagnostics.md).
 | “The emulator binary was not found.” | The packaged core is missing and no path is set. | Set **Emulator binary**, set `XGRID_XEMU_CORE`, or build `xemu/dist`. |
 | “The in-process core library is not available; starting a separate core process.” | `xgrid_core.dll` is missing or incompatible. | Build the core, or use separate process deliberately. |
 | “Power-on failed: …” | Validation or process start error. | Read the full message and the Activity log. |
-| The core opens its own window | Linux/macOS separate-process hosting; the normal shell frame sink is Windows-only. | Use the core window; headless runs use the POSIX sink instead. |
+| The core opens its own window | Linux/macOS hosting; native in-window embedding is Windows-only. | Use the core window; headless runs use the POSIX sink instead. |
 | Save-state entries disabled | Separate-process hosting, including Linux. | Switch to in-process on Windows and power-cycle. |
 | A core crash closes the whole app | In-process hosting shares the shell's process. | Switch **Core hosting** to **Separate process** for isolation. |
 
@@ -35,13 +35,13 @@ message. See [Logging and diagnostics](../guides/diagnostics.md).
 
 | Symptom | Likely cause | Action |
 | --- | --- | --- |
-| Black display | Renderer or core start failure; first frames not yet published. | Wait a few seconds, check Activity, try the other presentation mode. |
+| Black display | Renderer or core start failure. | Wait a few seconds, check Activity, try OpenGL and a scale of 1. |
 | Black display only in a game | The title may not render yet; compatibility. | Try a known-good title, check the core log. |
 | Frozen picture | Core stopped or UI stalled. | Check status; stop and power on again. |
 | Upside-down picture | Should not occur in current releases. | Report it with the renderer and a screenshot. |
-| No filters | Shell presentation is off. | Enable **Present core frames in the shell**. |
+| No filters | A core build without the filter shader, or a separate process that has not relaunched. | Use the XGrid core build and relaunch the separate process. |
 | A second game window appears | An older build could not embed the in-process core's window. | Update XGrid; both hosting modes embed the core window now. |
-| Low frame rate at a large window | The shell frame sink copies and scales every frame on the UI thread. | Turn **Present core frames in the shell** off to use the core's native window, or lower the window size. |
+| Low frame rate at a large window | High internal resolution, heavy title, or shell presentation from an older build. | Set scale to 1, try OpenGL, and keep filters/overlay in the core. |
 | Vulkan missing | Core build has no Vulkan. | Use OpenGL; the settings hint explains why. |
 | Very low frame rate | High internal resolution scale, heavy title, or CPU load. | Set scale to 1, try OpenGL, close background work. |
 | Headless run publishes no frames | The binary is not the XGrid core, or the renderer cannot render. | Point `--core` at the XGrid build; try `--renderer OPENGL`. See [Headless runs](../guides/headless.md). |
@@ -55,7 +55,7 @@ message. See [Logging and diagnostics](../guides/diagnostics.md).
 | Controller not detected | Not connected before start, or driver issue. | Connect, restart, check Windows Game Controllers. |
 | Wrong button | Binding mismatch. | Remap in **Settings → Input**. |
 | Sticks drift | Dead zone too low. | Raise the radial dead zone. |
-| No input with embedded window | Shell pad is only used with the frame sink. | Enable **Present core frames in the shell**. |
+| No input on Linux or macOS | The mapped-pad sink is Windows-only. | Use the core's own SDL input in its window. |
 
 ## Audio problems
 

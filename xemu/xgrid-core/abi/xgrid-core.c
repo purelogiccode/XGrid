@@ -629,12 +629,49 @@ XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
     return 0;
 }
 
+/** Selects the core-side presentation filter (see XGridPresentFilter). */
+XGRID_CORE_EXPORT int xgrid_core_set_present_filter(int filter)
+{
+    return xgrid_present_set_filter(filter);
+}
+
+/** Turns the core-drawn frame-rate overlay on or off. */
+XGRID_CORE_EXPORT void xgrid_core_set_fps_overlay(int enabled)
+{
+    xgrid_present_set_overlay(enabled != 0);
+}
+
+/** Selects embedding before the core creates its window. */
+XGRID_CORE_EXPORT void xgrid_core_set_embed(int enabled)
+{
+    xgrid_present_set_embed(enabled != 0);
+}
+
 /** Asks the machine to power off. Safe to call from any thread. */
+static void xgrid_core_request_shutdown(void *opaque)
+{
+    (void)opaque;
+    qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
+}
+
 XGRID_CORE_EXPORT void xgrid_core_request_stop(void)
 {
-    if (qatomic_read(&g_running)) {
-        xemu_request_shutdown();
+    if (!qatomic_read(&g_running)) {
+        return;
     }
+
+    /*
+     * The UI loop also watches xemu_stop_requested, but that loop can be
+     * blocked in a window/swap call while paused. Queue the QEMU shutdown on
+     * the main loop as well, so the machine stops even when the window path
+     * is not consuming the flag.
+     */
+    AioContext *context = qemu_get_aio_context();
+    if (context != NULL) {
+        aio_bh_schedule_oneshot(context, xgrid_core_request_shutdown, NULL);
+    }
+
+    xemu_request_shutdown();
 }
 
 /** Returns 1 while the machine is running, 0 otherwise. */

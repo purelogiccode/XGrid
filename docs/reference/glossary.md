@@ -8,7 +8,7 @@
 | **Core** | The native xemu 0.8.139 emulator built from `xemu/`. |
 | **DSP** | The guest audio microcode executed by the APU. |
 | **EEPROM** | 256-byte console configuration storage. |
-| **Frame sink** | Shared-memory path where the core publishes frames for the shell. |
+| **Frame sink** | Shared-memory path used by headless runs to count rendered frames. The shell never presents it. |
 | **HRTF** | Head-related transfer function; spatial audio filtering. |
 | **In-process** | Hosting mode where the core library runs inside the shell process. |
 | **Input sink** | Shared-memory path where the shell publishes the player-1 pad. |

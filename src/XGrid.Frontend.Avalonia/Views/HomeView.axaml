@@ -5,12 +5,13 @@
              xmlns:views="using:XGrid.Frontend.Avalonia.Views"
              x:Class="XGrid.Frontend.Avalonia.Views.HomeView"
              x:DataType="vm:HomeViewModel">
-  <Grid Name="PageRoot" RowDefinitions="Auto,*,Auto" RowSpacing="10">
+  <Grid Name="PageRoot" RowDefinitions="Auto,*,Auto" RowSpacing="{Binding Shell.HomeRowSpacing}">
 
     <!-- ===================== Game view header ===================== -->
     <Border Grid.Row="0" Background="{DynamicResource XgSurfaceBrush}"
             BorderBrush="{DynamicResource XgBorderBrush}" BorderThickness="1"
-            CornerRadius="4" Padding="12,8">
+            CornerRadius="4" Padding="12,8"
+            IsVisible="{Binding !Shell.IsFullscreen}">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Spacing="1" VerticalAlignment="Center">
           <TextBlock Text="{Binding Shell.CurrentGameTitle}" Classes="sectionTitle" FontSize="14" />
@@ -32,102 +33,35 @@
     <Border Grid.Row="1"
             Background="#050608"
             BorderBrush="{DynamicResource XgBorderBrush}"
-            BorderThickness="1"
-            CornerRadius="4"
+            BorderThickness="{Binding Shell.PictureBorderThickness}"
+            CornerRadius="{Binding Shell.PictureCornerRadius}"
             ClipToBounds="True"
             MinHeight="320"
             ToolTip.Tip="The emulated console's picture">
       <Grid>
-        <Image x:Name="FrameImage"
-               Source="{Binding Shell.FrameBitmap}"
-               Stretch="Uniform"
-               RenderOptions.BitmapInterpolationMode="HighQuality" />
-
-        <!-- The xemu core paints into this native surface with its own
-             swapchain; the shell never copies a frame. -->
-        <views:XemuDisplayHost x:Name="CoreDisplay"
-                               IsVisible="{Binding Shell.ShowCoreDisplay}" />
+        <!-- The core's own swapchain paints into this native child. Avalonia
+             never copies, filters, overlays or redraws a frame. -->
+        <Grid x:Name="CoreDisplayContainer"
+              IsVisible="{Binding Shell.ShowCoreDisplay}" />
 
         <StackPanel HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Spacing="12"
-                    IsVisible="{Binding !Shell.HasFrame}">
-          <Grid Width="64" Height="64">
-            <Ellipse Stroke="{DynamicResource XgBorderStrongBrush}" StrokeThickness="1.5" />
-            <Ellipse Stroke="{DynamicResource XgAccentBrush}"
-                     StrokeThickness="1.5"
-                     Width="46"
-                     Height="46"
-                     Opacity="0.7" />
-            <Path Data="M21 21 L43 43 M43 21 L21 43"
-                  Stroke="{DynamicResource XgAccentBrush}"
-                  StrokeThickness="2.6"
-                  StrokeLineCap="Round" />
-          </Grid>
-          <TextBlock Text="{Binding Shell.FramePlaceholder}"
+                    Spacing="8"
+                    IsVisible="{Binding !Shell.IsEmbeddedDisplaySupported}">
+          <TextBlock Text="The emulator window is open outside XGrid on this platform."
                      Classes="muted"
                      TextAlignment="Center"
                      HorizontalAlignment="Center" />
+          <TextBlock Text="Native in-window embedding is available on Windows."
+                     Classes="caption"
+                     TextAlignment="Center"
+                     HorizontalAlignment="Center" />
         </StackPanel>
-
-        <!-- Paused is a shell state, not a frame: the core keeps presenting the
-             last picture, so the badge sits over it. -->
-        <Border HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Margin="10"
-                Padding="8,3"
-                CornerRadius="3"
-                Background="#B3000000"
-                BorderBrush="{DynamicResource XgAccentBrush}"
-                BorderThickness="1"
-                IsVisible="{Binding Shell.IsPaused}">
-          <TextBlock Text="PAUSED"
-                     Classes="mono"
-                     FontSize="10"
-                     Foreground="{DynamicResource XgAccentBrush}" />
-        </Border>
-
-        <!-- Frame-rate overlay: shell present rate and the average frame time. -->
-        <Border HorizontalAlignment="Left"
-                VerticalAlignment="Top"
-                Margin="10"
-                Padding="8,3"
-                CornerRadius="3"
-                Background="#B3000000"
-                BorderBrush="{DynamicResource XgBorderBrush}"
-                BorderThickness="1"
-                IsVisible="{Binding Shell.IsFpsOverlayVisible}">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="{Binding Shell.FpsText}"
-                       Classes="mono"
-                       FontSize="10"
-                       Foreground="{DynamicResource XgAccentBrush}" />
-            <TextBlock Text="{Binding Shell.FrameTimeText}"
-                       Classes="mono"
-                       FontSize="10"
-                       Foreground="#B3FFFFFF" />
-          </StackPanel>
-        </Border>
-
-        <!-- The caption reports the frame the core actually published; it is
-             not shown until there is one. -->
-        <Border HorizontalAlignment="Left"
-                VerticalAlignment="Bottom"
-                Margin="10"
-                Padding="7,3"
-                CornerRadius="3"
-                Background="#99000000"
-                IsVisible="{Binding Shell.HasDisplayCaption}">
-          <TextBlock Text="{Binding Shell.DisplayCaption}"
-                     Classes="mono"
-                     FontSize="10"
-                     Foreground="#D8FFFFFF" />
-        </Border>
       </Grid>
     </Border>
 
     <!-- ===================== Transport strip ===================== -->
-    <StackPanel Grid.Row="2" Spacing="8">
+    <StackPanel Grid.Row="2" Spacing="8" IsVisible="{Binding !Shell.IsFullscreen}">
       <Border Classes="warning" IsVisible="{Binding ShowSetupWarning}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <PathIcon Data="{x:Static local:AppIcons.Warning}"

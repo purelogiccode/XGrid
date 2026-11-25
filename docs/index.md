@@ -18,10 +18,10 @@ diagnostics, packaging and the documentation you are reading.
 | **Shell** | Avalonia 12 desktop application with Home, Library, Settings, Activity and About pages |
 | **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
 | **Media** | ISO/XISO, compressed CHD, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
-| **Display** | Shell frame sink with nearest, bilinear, scanline and CRT filters; embedded core window mode; resolution scale, aspect and fit controls |
+| **Display** | Core-owned picture with nearest, bilinear, scanline and CRT filters; embedded core window; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
 | **Quality of life** | Four save-state slots, multiple library roots, recently played list, per-title overrides, 4x fast-forward, local cover art, whole-window screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
-| **Performance** | Optional FPS overlay with present rate and frame time; headless `--benchmark` runs with JSON reports |
+| **Performance** | Core-drawn FPS overlay with present rate and frame time; headless `--benchmark` runs with JSON reports |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Automation** | Command-line settings overrides and headless runs with a JSON report for scripts and benchmarks |
 | **Platform** | Windows x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell with an external core |
@@ -80,12 +80,13 @@ inserts the chosen disc; **Ctrl+E** ejects and leaves the tray empty. The core
 changes the block medium on its own loop, so the guest sees a tray cycle rather
 than a reboot. In-process hosting only, like save states.
 
-### Display and input done in the shell
+### Display and input
 
-When **Present core frames in the shell** is enabled, the core publishes BGRA
-frames to a shared section and the shell presents them with pacing, scaling and
-filters. The same session publishes one 32-byte pad record per Xbox port, so the
-keyboard and XInput mapping for players 1–4 is XGrid's, not the core's.
+The core owns the picture: its window is embedded in the console page and paints
+with its own swapchain, so the shell never copies, filters or redraws a frame.
+The presentation filter and the FPS overlay are core features selected from the
+shell. On Windows the same session publishes one 32-byte pad record per Xbox port,
+so the keyboard and XInput mapping for players 1–4 is XGrid's, not the core's.
 
 ### Scriptable runs
 

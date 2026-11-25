@@ -20,7 +20,7 @@ xemu/
 | --- | --- |
 | `block/xgridchd.c` | CHD block driver; decodes hunks on demand through libchdr. |
 | `block/xgridzar.c` | ZArchive block driver; decodes zstd blocks, exposes an entry-form `.iso`, and synthesizes XDVDFS for file-tree archives. |
-| `display/xgrid-display.c` | Frame sink; publishes BGRA frames to a Windows named section or POSIX shared memory. |
+| `display/xgrid-display.c` | Presentation filter/overlay selection plus the headless frame sink (Windows named section or POSIX shared memory). |
 | `input/xgrid-input.c` | Input sink; reads one pad record per Xbox port. |
 | `abi/xgrid-core.c` | In-process host ABI and save-state request bridge. |
 | `thirdparty/libchdr/` | Vendored libchdr 0.3.0 (BSD-3-Clause). |
@@ -30,8 +30,12 @@ xemu/
 
 Edits to upstream files are kept as patches. The current patch record includes
 the in-process host changes (the Windows `sigsetjmp`/`siglongjmp` shim, the
-QEMU thread stack size and the xemu run entry point) and the shell-pad binding
-in `ui/xemu-input.c` that gives players 2-4 a controller to feed.
+QEMU thread stack size and the xemu run entry point), the shell-pad binding in
+`ui/xemu-input.c` that gives players 2-4 a controller to feed, the core-side
+presentation filter/overlay in `ui/xui/gl-helpers.cc` and `ui/xui/main.cc`
+(`0010-ui-presentation-filter-overlay.patch`), the exit-time GL guard in the
+Windows DXGI presenter (`0011-ui-dxgi-exit-cleanup.patch`), and the guest-clock
+part of fast-forward (`0012-ui-fast-forward-clock.patch`).
 
 A new xemu release is handled by rebasing the patch set and the `xgrid-core/`
 additions, not by re-porting the emulator.
@@ -93,10 +97,11 @@ core's main loop. A pause stops the machine on the next published frame, and a
 step resumes from that boundary and stops after the next frame. A 50 ms timer is
 the fallback when the display sink is off, because then no frame is published.
 
-The speed multiplier scales the vblank pace the display path presents at; it
-does not change the guest clock. The value is atomic, so the shell can set 4x
-while the vblank thread reads it. The shell toggles 4x with Space and returns to
-1x on the next press, pause or session end.
+The speed multiplier scales the guest's `QEMU_CLOCK_VIRTUAL` and the vblank pace
+together, so the vCPU timers, the Xbox TSC and the presented frame rate all run
+at the same faster pace. The value is atomic, so the shell can set 4x while the
+core reads it. The shell toggles 4x with Space or the **4x** toolbar button and
+returns to 1x on the next press, pause or session end.
 
 One process hosts one machine. Start is accepted once; join releases the thread
 handle after the run loop stops.

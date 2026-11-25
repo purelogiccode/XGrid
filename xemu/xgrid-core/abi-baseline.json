@@ -1,5 +1,4 @@
 {
-  "note": "Refresh with scripts/core-baseline.ps1 -Refresh after a deliberate xemu rebase, then re-run the media boot checks and the tests.",
   "version": "0.8.139",
   "commit": "aa54c34cae1c09410d74c69a44210a9867fe2d16",
   "abi": [
@@ -9,11 +8,16 @@
     "xgrid_core_disc_status",
     "xgrid_core_exit_code",
     "xgrid_core_frame_step",
+    "xgrid_core_get_speed",
     "xgrid_core_is_paused",
     "xgrid_core_is_running",
     "xgrid_core_join",
     "xgrid_core_request_stop",
+    "xgrid_core_set_embed",
+    "xgrid_core_set_fps_overlay",
     "xgrid_core_set_paused",
+    "xgrid_core_set_present_filter",
+    "xgrid_core_set_speed",
     "xgrid_core_snapshot_count",
     "xgrid_core_snapshot_delete",
     "xgrid_core_snapshot_error",

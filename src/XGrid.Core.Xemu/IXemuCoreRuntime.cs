@@ -44,6 +44,20 @@ public interface IXemuCoreRuntime : IDisposable
     /// <summary>Starts the machine.</summary>
     void Start();
 
+    /// <summary>
+    /// Selects the core-side presentation filter. Returns false when this
+    /// hosting mode cannot change it while the machine runs.
+    /// </summary>
+    /// <param name="filter">Filter key understood by the core.</param>
+    bool TrySetPresentationFilter(string filter);
+
+    /// <summary>
+    /// Enables or disables the core-drawn frame-rate overlay. Returns false
+    /// when this hosting mode cannot change it while the machine runs.
+    /// </summary>
+    /// <param name="enabled">True to draw the overlay.</param>
+    bool TrySetFpsOverlay(bool enabled);
+
     /// <summary>Asks the guest to power off through its own shutdown path.</summary>
     void RequestStop();
 

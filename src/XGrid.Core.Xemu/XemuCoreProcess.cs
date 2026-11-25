@@ -94,6 +94,20 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
         RequestClose();
     }
 
+    /// <inheritdoc />
+    public bool TrySetPresentationFilter(string filter)
+    {
+        // The separate process receives the filter at launch; there is no live
+        // channel back into it.
+        return false;
+    }
+
+    /// <inheritdoc />
+    public bool TrySetFpsOverlay(bool enabled)
+    {
+        return false;
+    }
+
     /// <summary>Gets a value indicating whether the core process is alive.</summary>
     public bool IsRunning
     {
@@ -224,6 +238,12 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
         {
             startInfo.Environment["XGRID_INPUT_SHM"] = _settings.InputSinkName;
         }
+
+        // The core owns filtering and the overlay. The separate-process path
+        // passes the initial selection through the environment; a live change
+        // needs the in-process ABI.
+        startInfo.Environment["XGRID_PRESENT_FILTER"] = _settings.PresentationFilter;
+        startInfo.Environment["XGRID_FPS_OVERLAY"] = _settings.FpsOverlay ? "1" : "0";
 
         // Tell the core the shell will reparent its window: create it hidden
         // and give it the title the locator matches, so it never flashes as a

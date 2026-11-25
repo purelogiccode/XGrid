@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "ui/shader/xemu-logo-frag.h"
+#include "../../xgrid-core/display/xgrid-display.h"
 
 Fbo *controller_fbo, *xmu_fbo, *logo_fbo;
 GLuint g_controller_duke_tex, g_controller_s_tex, g_logo_tex, g_icon_tex, g_xmu_tex;
@@ -58,6 +59,8 @@ typedef struct DecalShader_
     GLint color_fill_loc;
     GLint time_loc;
     GLint scale_loc;
+    GLint present_filter_loc;
+    GLint frame_size_loc;
     GLint palette_loc[256];
 } DecalShader;
 
@@ -238,6 +241,10 @@ void main() {
 #version 400 core
 uniform sampler2D tex;
 uniform uint palette[256];
+uniform int in_PresentFilter;
+uniform vec2 in_FrameSize;
+in  vec2 Texcoord;
+out vec4 out_Color;
 float gamma_ch(int ch, float col)
 {
     return float(bitfieldExtract(palette[uint(col * 255.0)], ch*8, 8)) / 255.0;
@@ -247,10 +254,31 @@ vec4 gamma(vec4 col)
 {
     return vec4(gamma_ch(0, col.r), gamma_ch(1, col.g), gamma_ch(2, col.b), col.a);
 }
-in  vec2 Texcoord;
-out vec4 out_Color;
+vec4 present_filter(vec4 col)
+{
+    if (in_PresentFilter == 2 || in_PresentFilter == 3) {
+        int y = int(Texcoord.y * in_FrameSize.y);
+        if ((y & 1) != 0) {
+            col.rgb *= 0.6;
+        }
+    }
+
+    if (in_PresentFilter == 3) {
+        int x = int(Texcoord.x * in_FrameSize.x);
+        int column = x % 3;
+        if (column == 0) {
+            col.b *= 0.8;
+        } else if (column == 1) {
+            col.g *= 0.8;
+        } else {
+            col.r *= 0.8;
+        }
+    }
+
+    return col;
+}
 void main() {
-    out_Color.rgba = gamma(texture(tex, Texcoord));
+    out_Color.rgba = present_filter(gamma(texture(tex, Texcoord)));
 }
 )";
 
@@ -309,6 +337,8 @@ void main() {
     s->color_fill_loc = glGetUniformLocation(s->prog, "in_ColorFill");
     s->time_loc = glGetUniformLocation(s->prog, "iTime");
     s->scale_loc = glGetUniformLocation(s->prog, "scale");
+    s->present_filter_loc = glGetUniformLocation(s->prog, "in_PresentFilter");
+    s->frame_size_loc = glGetUniformLocation(s->prog, "in_FrameSize");
     for (int i = 0; i < 256; i++) {
         char name[64];
         snprintf(name, sizeof(name), "palette[%d]", i);
@@ -889,16 +919,31 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
     
-    switch (g_config.display.filtering) {
-    case CONFIG_DISPLAY_FILTERING_LINEAR:
+    /*
+     * The shell selects the presentation filter. A standalone launch has no
+     * selection (-1) and keeps the core's configured filter method.
+     */
+    int filter = xgrid_present_filter();
+    if (filter < 0) {
+        filter = g_config.display.filtering == CONFIG_DISPLAY_FILTERING_LINEAR
+                     ? XGRID_FILTER_BILINEAR
+                     : XGRID_FILTER_NEAREST;
+    }
+
+    switch (filter) {
+    case XGRID_FILTER_BILINEAR:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     break;
-    case CONFIG_DISPLAY_FILTERING_NEAREST:
+    default:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     break;
     }
+
+    int tw, th;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
 
     DecalShader *s = g_framebuffer_shader;
     s->flip = flip;
@@ -909,6 +954,8 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
     glUniform4f(s->scale_offset_loc, scale[0], scale[1], 0, 0);
     glUniform4f(s->tex_scale_offset_loc, 1.0, 1.0, 0, 0);
     glUniform1i(s->tex_loc, 0);
+    glUniform1i(s->present_filter_loc, filter);
+    glUniform2f(s->frame_size_loc, (float)tw, (float)th);
 
     const uint8_t *palette = nv2a_get_dac_palette();
     for (int i = 0; i < 256; i++) {

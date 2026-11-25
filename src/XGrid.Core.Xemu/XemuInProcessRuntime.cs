@@ -99,13 +99,17 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
     public void Start()
     {
         IReadOnlyList<string> extra = XemuCoreProcess.BuildExtraArguments(_settings);
-        if (string.IsNullOrEmpty(_settings.DisplaySinkName) && XemuWindowEmbedder.IsSupported)
+
+        bool embed = string.IsNullOrEmpty(_settings.DisplaySinkName) && XemuWindowEmbedder.IsSupported;
+        if (embed)
         {
             // Best effort: ask the core to create its window hidden. The DLL's
-            // CRT can snapshot the environment at load time, so the shell also
-            // finds the window by its SDL class and hides it before reparenting.
+            // CRT can snapshot the environment at load time, so the ABI call
+            // below is the authoritative path.
             Environment.SetEnvironmentVariable("XGRID_EMBED", "1");
         }
+
+        _ = _core.SetEmbed(embed);
 
         int status = _core.Start(
             _configPath,
@@ -126,6 +130,24 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
         _startedAt = Stopwatch.GetTimestamp();
         _stoppedAt = 0;
         _exitCode = null;
+
+        // The core owns the picture. Apply the shell's selection now; the
+        // separate-process path receives the same values through the environment.
+        _ = _core.SetPresentationFilter(
+            XemuPresentationFilter.ToCoreValue(_settings.PresentationFilter));
+        _ = _core.SetFpsOverlay(_settings.FpsOverlay);
+    }
+
+    /// <inheritdoc />
+    public bool TrySetPresentationFilter(string filter)
+    {
+        return _core.SetPresentationFilter(XemuPresentationFilter.ToCoreValue(filter));
+    }
+
+    /// <inheritdoc />
+    public bool TrySetFpsOverlay(bool enabled)
+    {
+        return _core.SetFpsOverlay(enabled);
     }
 
     /// <summary>

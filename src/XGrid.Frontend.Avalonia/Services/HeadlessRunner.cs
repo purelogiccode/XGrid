@@ -87,7 +87,7 @@ public static class HeadlessRunner
             with
         {
             // Headless always needs the frame sink, including on hosts where
-            // the shell's normal presentation path is not available.
+            // the shell has no native embedding backend.
             DisplaySinkName = XemuDisplaySink.CreateName(),
             InputSinkName = string.Empty,
             VSync = false,
@@ -137,7 +137,7 @@ public static class HeadlessRunner
         long frameLimit = options.Frames ?? 0;
 
         using var sink = new XemuDisplaySink(launch.DisplaySinkName);
-        using var session = new XemuCoreSession(readFrames: false);
+        using var session = new XemuCoreSession();
         var exitSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var clock = Stopwatch.StartNew();
         XemuCoreStoppedEventArgs? stopped = null;

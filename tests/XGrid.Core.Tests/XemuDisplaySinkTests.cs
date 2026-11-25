@@ -69,4 +69,32 @@ public sealed class XemuDisplaySinkTests
         Assert.Equal(7UL, frame.Counter);
         Assert.Equal(pixels, frame.Pixels.AsSpan(0, pixels.Length).ToArray());
     }
+
+    [Fact]
+    public void IsOpen_ReportsWhenTheSectionAppears()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string name = "Local\\XGridDisplayTest-" + Guid.NewGuid().ToString("N");
+        using var sink = new XemuDisplaySink(name);
+        Assert.False(sink.IsOpen);
+        Assert.False(sink.TryReadCounter(out _));
+
+        using var mapping = MemoryMappedFile.CreateNew(name, 32 + 16);
+        using (MemoryMappedViewAccessor view = mapping.CreateViewAccessor())
+        {
+            view.Write(0, 0x53444758u);
+            view.Write(4, 2u);
+            view.Write(8, 2u);
+            view.Write(12, 8u);
+            view.Write(16, 1UL);
+        }
+
+        Assert.True(sink.TryReadCounter(out ulong counter));
+        Assert.Equal(1UL, counter);
+        Assert.True(sink.IsOpen);
+    }
 }

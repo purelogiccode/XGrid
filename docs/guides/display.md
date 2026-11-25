@@ -1,61 +1,40 @@
 # Display and filters
 
-XGrid can present the emulator's picture in two ways. The default is the shell
-frame sink; the fallback is the core's own window embedded in the Home page.
+The core owns the emulator's picture. It renders and presents with its own
+swapchain; the Avalonia shell provides the window, layout and controls but never
+receives, copies, filters or redraws a frame.
 
-## Presentation modes
+## Presentation
 
-### Shell frame sink (default)
-
-**Settings → System → Present core frames in the shell** is on by default.
-
-- The patched core publishes every presented frame as top-down BGRA into a named
-  shared section.
-- The shell reads the latest frame, ignores stale frames, and presents at a
-  paced cadence (latest wins; it never queues frames).
-- The core window is hidden; the shell owns scaling, filtering, the caption and
-  screenshots.
-- The shell also publishes the player-1 pad to the core.
-
-### Embedded core window
-
-Turn **Present core frames in the shell** off.
+### Windows: embedded core window
 
 - The core creates its own window; XGrid finds it and reparents it into the Home
   page, whether the core is in-process or a separate process.
-- The core paints with its own swapchain, so the shell adds no per-frame copy.
-  This is the fastest mode at large window sizes.
+- The core paints directly into that child surface. The shell performs no
+  per-frame work: this is the fastest path and the one to use for maximum
+  performance.
 - The core window is created hidden and shown only after the reparent, so it
   does not flash as a second top-level window.
-- The shell presentation filter does not apply.
-- The shell pad is not forwarded; the core reads its own SDL input.
-
-### Choosing a mode
-
-| Mode | Best for | Trade-offs |
-| --- | --- | --- |
-| Shell frame sink | Shell filters, FPS overlay, uniform screenshots | Copies and scales each frame on the UI thread; high resolutions can cap below 60 fps |
-| Embedded core window | Maximum frame rate and native input | No shell filters or FPS overlay; the core's window is a child of the Home page |
-
-If a game feels slow at a large window size, turn **Present core frames in the
-shell** off and compare. The embedded window is the path upstream xemu uses.
-
-> Both modes require the patched core. A stock xemu executable has neither the
-> display sink nor the input sink.
+- The embedded child is created `WS_EX_NOACTIVATE`, so the shell window keeps
+  keyboard focus and the mapped pad input stays live.
 
 ### Linux and macOS
 
-The shell frame sink and window embedding are Windows-only. On Linux the core
-opens its own SDL window, outside the Home page; use that window for the
-picture, filters and input. The shell keeps the library, settings, log and
-screenshots. The macOS archives contain the shell only; point them at an
-external xemu build.
+Native in-window embedding is Windows-only for now. On Linux and macOS the core
+opens its own SDL window outside the Home page; use that window for the picture,
+filters and input. The shell keeps the library, settings, log and screenshots.
+The macOS archives contain the shell only; point them at an external xemu build.
+The platform embedding plan is in
+[Platform embedding](../development/platform-embedding.md).
 
-Headless runs are the exception: `--headless` uses a POSIX shared-memory display
-sink on Linux and macOS, so the core still renders off-screen with no visible
-window. See [Headless runs](headless.md).
+Headless runs use the POSIX shared-memory display sink on Linux and macOS, so the
+core still renders off-screen with no visible window. See
+[Headless runs](headless.md).
 
-## Shell presentation filters
+## Presentation filters
+
+Filters are implemented in the core's final blit shader; the shell only selects
+one.
 
 | Filter | Effect |
 | --- | --- |
@@ -64,15 +43,13 @@ window. See [Headless runs](headless.md).
 | **Scanlines** | Nearest sampling plus an every-other-row light reduction. |
 | **CRT mask** | Scanlines plus a repeating R/G/B phosphor triad. |
 
-Filters are applied at the source resolution by the shell before scaling, so the
-mask stays stable at any window size. The masks preserve the frame's alpha and
-leave a frame that does not match its declared geometry unfiltered rather than
-half-masked. The filter is a shell setting; the core's **Texture filtering**
-setting is separate.
+Filters are applied by the core at the source resolution before scaling, so the
+mask stays stable at any window size. The filter is a core setting; the core's
+**Texture filtering** setting is separate.
 
 ## Core rendering settings
 
-These belong to the emulator and affect the picture before the shell sees it:
+These belong to the emulator and affect the picture before the blit:
 
 - **Renderer** — OpenGL, Vulkan (if compiled in) or Null.
 - **Internal resolution scale** — up to 8× the guest resolution (the list offers
@@ -90,7 +67,9 @@ the Activity log.
 
 ## Fullscreen
 
-- **F11** toggles fullscreen.
+- **F11** toggles fullscreen; the toolbar's **Fullscreen** button enters it.
+  The shell chrome (menu, toolbar, header, transport strip, log dock and status
+  bar) is hidden, and the console picture fills the screen.
 - In fullscreen, **Esc** pauses a running game on the first press. Press **Esc**
   again to close XGrid.
 - With no game running, **Esc** returns to the windowed shell.
@@ -100,13 +79,15 @@ setting. Use F11 when you only want to leave fullscreen during play.
 
 ## Captions and screenshots
 
-The caption under the display shows the actual frame size and renderer, for
-example `1280 x 960 - OpenGL`. It appears only after the first frame.
+The caption under the display shows the renderer; it no longer reports a frame
+size because the shell never sees a frame.
 
-**F8** (or **View → Save Screenshot**) renders the whole shell window to a PNG in
-`<data>/screenshots/`. The file name is timestamped
-(`screenshot-YYYYMMDD-HHMMSS.png`), with a suffix if two captures land in the same
-second.
+**F8** (or **View → Save Screenshot**) saves a PNG of the XGrid window,
+including the console picture, to `<data>/screenshots/`. The file name is
+timestamped (`screenshot-YYYYMMDD-HHMMSS.png`), with a suffix if two captures land
+in the same second. While a console runs on Windows the window is captured from
+the screen so the native picture is included; otherwise the shell's visual tree
+is rendered.
 
 The Library page shows the newest captures as a thumbnail strip. Click a picture
 to open it in the default viewer, use **Refresh** to re-read the folder after
@@ -124,31 +105,33 @@ shows **Paused** and the picture stays until the next step or resume.
 
 ## Fast forward
 
-Press **Space** while a game runs to turn on **4x**; press it again to return to
-normal speed. The status bar shows **Running 4x** while it is on. Fast-forward
-speeds up the vblank pace the core presents at, so it needs in-process core
-hosting like pause and frame step.
+Press **Space** while a game runs, or click **4x** in the toolbar, to turn on
+**4x**; press Space again or click **4x** to return to normal speed. The status
+bar shows **Running 4x** while it is on. The core scales the guest clock and the
+vblank pace together, so timers, the TSC and the picture all run four times
+faster. It needs in-process core hosting like pause and frame step.
 
 ## Frame-rate overlay
 
-Turn on **View  FPS Overlay** to draw the shell's present rate and the average
-frame time over the console picture. The overlay is hidden while the console is
-stopped and is remembered in `settings.json`. It reports what the shell actually
-presented, so a fast core with a capped display still shows the cap. Use it with
-the headless `--benchmark` mode when you need a repeatable number.
+Turn on **View → FPS Overlay** to draw the core's present rate and the average
+frame time over the console picture. The core draws the overlay in its own HUD,
+so it needs no shell frame path and works with the same performance as the game.
+The choice is remembered in `settings.json`. With a separate core process the
+setting takes effect on the next launch; in-process hosting applies it live.
 
 ## Performance notes
 
+- The core's own window is embedded directly; the shell adds no per-frame work.
 - Prefer **OpenGL** unless your build reports Vulkan and your driver is stable.
 - Lower **Internal resolution scale** first when frames are slow.
 - Leave **Vertical sync** off unless you see tearing.
-- The shell presents the latest available frame; a slow UI drops frames instead
-  of building latency.
+- Keep filters in the core. A shell-side filter or bitmap canvas is not
+  supported by design.
 
 ## If the picture is black or frozen
 
 1. Check the **Activity** log for a renderer or launch error.
-2. Confirm the core is running and the caption appeared.
-3. Try the other presentation mode.
+2. Confirm the core is running.
+3. On Linux or macOS, look for the core's own window.
 4. Try OpenGL and a scale of 1.
 5. See [Troubleshooting](../reference/troubleshooting.md).

@@ -78,7 +78,7 @@ public sealed class GameEntry
     /// that never sets a certificate id shares the placeholder below, which is
     /// why the row keeps the file name as the distinguishing text.
     /// </remarks>
-    public uint TitleId { get; private init; }
+    public uint TitleId { get; private set; }
 
     /// <summary>Gets the title id as the `title:XXXXXXXX` key fragment, or an empty string when unknown.</summary>
     public string TitleIdText => TitleId == 0
@@ -96,7 +96,12 @@ public sealed class GameEntry
     /// <summary>Creates an entry for a discovered file, parsing direct XBE titles.</summary>
     /// <param name="path">Discovered image or executable.</param>
     /// <param name="covers">Cover index for the scan, or null for sibling covers only.</param>
-    public static GameEntry? FromFile(string path, CoverArtIndex? covers = null)
+    /// <param name="resolveTitleId">
+    /// True to open the image and read its XBE certificate now. A large library
+    /// scan passes false: opening every disc (and decompressing every CHD) is
+    /// what made the scan take minutes.
+    /// </param>
+    public static GameEntry? FromFile(string path, CoverArtIndex? covers = null, bool resolveTitleId = true)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -121,7 +126,7 @@ public sealed class GameEntry
             };
 
             string title = Prettify(System.IO.Path.GetFileNameWithoutExtension(path));
-            if (format == GameFormat.Xbe)
+            if (resolveTitleId && format == GameFormat.Xbe)
             {
                 title = ReadXbeTitle(path) ?? title;
             }
@@ -129,7 +134,10 @@ public sealed class GameEntry
             // Covers .xbe directly and every launchable image; a container the
             // resolver cannot read (or a homebrew title with no certificate)
             // leaves the id at 0 / the shared placeholder.
-            uint resolvedTitleId = DiscTitleId.TryRead(path, out uint titleId, out _) ? titleId : 0u;
+            uint resolvedTitleId = resolveTitleId
+                && DiscTitleId.TryRead(path, out uint titleId, out _)
+                    ? titleId
+                    : 0u;
             CoverArtIndex coverIndex = covers ?? CoverArtIndex.Empty;
             return new GameEntry(
                 path,
@@ -151,6 +159,20 @@ public sealed class GameEntry
             Log.Debug(exception, "Could not read disc {Path}", path);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Resolves the XBE certificate title id now, when the scan skipped it.
+    /// </summary>
+    /// <returns>The resolved title id, or 0 when the image has none.</returns>
+    internal uint ResolveTitleId()
+    {
+        if (TitleId == 0 && DiscTitleId.TryRead(Path, out uint titleId, out _))
+        {
+            TitleId = titleId;
+        }
+
+        return TitleId;
     }
 
     private static string? ReadXbeTitle(string path)

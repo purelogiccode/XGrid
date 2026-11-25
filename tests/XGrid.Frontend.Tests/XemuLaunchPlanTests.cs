@@ -195,21 +195,19 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
-    public void Create_PublishesHostSinksOnlyWhereThePlatformSupportsThem()
+    public void Create_UsesNativePresentationByDefaultAndKeepsThePadSink()
     {
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
             Settings(), null, 640, 480, Path.Combine(_root, "work"));
 
-        // The shared frame/pad sections are a Windows seam. Everywhere else the
-        // core opens its own window and reads SDL input, so the names stay empty.
-        if (XemuDisplaySink.IsSupported)
+        // The shell never requests a frame section: the core owns the picture.
+        Assert.Empty(launch.DisplaySinkName);
+        if (XemuInputSink.IsSupported)
         {
-            Assert.NotEmpty(launch.DisplaySinkName);
             Assert.NotEmpty(launch.InputSinkName);
         }
         else
         {
-            Assert.Empty(launch.DisplaySinkName);
             Assert.Empty(launch.InputSinkName);
         }
     }
