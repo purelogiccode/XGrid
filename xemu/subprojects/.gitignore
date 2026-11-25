@@ -1,5 +1,8 @@
 /packagecache
 
+# Meson wrap bookkeeping, recreated when the subprojects are fetched
+.meson-subproject-wrap-hash.txt
+
 /berkeley-softfloat-3
 /berkeley-testfloat-3
 /dtc

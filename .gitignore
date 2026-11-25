@@ -80,3 +80,6 @@ xemu/build/
 xemu/dist/
 xemu/obj/
 xemu/bin/
+
+# Meson subproject bookkeeping (generated when wrap dependencies are fetched)
+.meson-subproject-wrap-hash.txt
