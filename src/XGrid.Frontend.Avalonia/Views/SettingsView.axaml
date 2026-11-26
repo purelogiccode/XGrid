@@ -284,11 +284,11 @@
                   <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Spacing="2">
                       <TextBlock Text="Force feedback" Classes="label" />
-                      <TextBlock Text="Rumble the first gamepad from the drive board." Classes="hint" />
+                      <TextBlock Text="Send the drive board's forces to a wheel, or the first gamepad when no wheel is found." Classes="hint" />
                     </StackPanel>
                     <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroForceFeedback, Mode=TwoWay}"
                                   OnContent="" OffContent="" VerticalAlignment="Center"
-                                  ToolTip.Tip="Send the drive board's effects to the gamepad" />
+                                  ToolTip.Tip="Send the drive board's effects to the wheel or gamepad" />
                   </Grid>
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10"
                         IsEnabled="{Binding ChihiroForceFeedback}">
@@ -303,6 +303,55 @@
                     <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
                                VerticalAlignment="Center" TextAlignment="Right"
                                Text="{Binding ChihiroFfbStrength, StringFormat={}{0}%}" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10"
+                        IsEnabled="{Binding ChihiroForceFeedback}">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Wheel weight" Classes="label" />
+                      <TextBlock Text="0 to 100%; how much of the drive board's damper the wheel applies." Classes="hint" />
+                    </StackPanel>
+                    <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="100"
+                            TickFrequency="5" IsSnapToTickEnabled="True"
+                            Value="{Binding ChihiroWheelWeight, Mode=TwoWay}"
+                            ToolTip.Tip="Scale the wheel's damping" />
+                    <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
+                               VerticalAlignment="Center" TextAlignment="Right"
+                               Text="{Binding ChihiroWheelWeight, StringFormat={}{0}%}" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding ChihiroForceFeedback}">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Autocenter" Classes="label" />
+                      <TextBlock Text="Spring the wheel back to centre when the game is not driving it." Classes="hint" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroWheelAutocenter, Mode=TwoWay}"
+                                  OnContent="" OffContent="" VerticalAlignment="Center"
+                                  ToolTip.Tip="Center the wheel when the game's spring is off" />
+                  </Grid>
+                  <StackPanel IsEnabled="{Binding ChihiroForceFeedback}">
+                    <StackPanel IsEnabled="{Binding ChihiroWheelAutocenter}">
+                      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                          <TextBlock Text="Autocenter strength" Classes="label" />
+                          <TextBlock Text="0 to 100%." Classes="hint" />
+                        </StackPanel>
+                        <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="100"
+                                TickFrequency="5" IsSnapToTickEnabled="True"
+                                Value="{Binding ChihiroWheelAutocenterStrength, Mode=TwoWay}"
+                                ToolTip.Tip="Scale the wheel's self-centering" />
+                        <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
+                                   VerticalAlignment="Center" TextAlignment="Right"
+                                   Text="{Binding ChihiroWheelAutocenterStrength, StringFormat={}{0}%}" />
+                      </Grid>
+                    </StackPanel>
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding ChihiroForceFeedback}">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Invert direction" Classes="label" />
+                      <TextBlock Text="Enable if the wheel pulls away from centre instead of toward it." Classes="hint" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroFfbInvert, Mode=TwoWay}"
+                                  OnContent="" OffContent="" VerticalAlignment="Center"
+                                  ToolTip.Tip="Flip the drive board's force direction" />
                   </Grid>
                 </StackPanel>
 

@@ -212,6 +212,10 @@ public static class XemuTomlWriter
             text.Append("board_type = '").Append(settings.ChihiroBoardType).Append("'\n");
             text.Append("force_feedback = ").Append(Bool(settings.ChihiroForceFeedback)).Append('\n');
             AppendInt(text, "ffb_strength", settings.ChihiroFfbStrength);
+            text.Append("ffb_invert = ").Append(Bool(settings.ChihiroFfbInvert)).Append('\n');
+            AppendInt(text, "wheel_weight", settings.ChihiroWheelWeight);
+            text.Append("wheel_autocenter = ").Append(Bool(settings.ChihiroWheelAutocenter)).Append('\n');
+            AppendInt(text, "wheel_autocenter_strength", settings.ChihiroWheelAutocenterStrength);
 
             if (settings.ChihiroLinkEnabled)
             {

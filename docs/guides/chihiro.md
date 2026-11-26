@@ -59,9 +59,10 @@ disk. The shell writes `default_machine = 'chihiro'` and the
   1024 MB; other titles use 128 to 512 MB.
 - **Media board** defaults to Auto. Early Crazy Taxi High Roller and House of
   the Dead III cabinets are Type 1; most others are Type 3.
-- **Force feedback** sends the drive board's event pulses to the first
-  gamepad as rumble. The strength slider scales it from 0 to 200%. Steering
-  wheel haptic effects are not exposed yet.
+- **Force feedback** sends the drive board's forces to a force-feedback wheel,
+  or the first gamepad's rumble when no wheel is found. **Feedback strength**
+  scales it from 0 to 200%; a wheel also has **Wheel weight**, **Autocenter**,
+  **Autocenter strength** and **Invert direction**.
 
 ## Linked cabinets
 
@@ -255,6 +256,21 @@ a game asks for one. Choose a `.bin` card to keep a specific card; the game
 writes its progress back to that file. **Card readers** turns both readers off
 for games that should not see them.
 
+## Force feedback
+
+With **Force feedback** on, the core maps the drive board's effects to an SDL
+haptic wheel:
+
+- OutRun 2's Sega 838 spring, road resistance and event packages.
+- Maximum Tune's V257 centering, damper and directional pushes.
+- The Sega 838 vibration channel as a periodic buzz.
+
+**Feedback strength** scales everything. **Wheel weight** is the share of the
+drive board's damper the wheel applies. **Autocenter** and **Autocenter
+strength** center the wheel while the game is not driving it. **Invert
+direction** flips the push if the wheel pulls away from centre. With no
+force-feedback wheel, the event channel rumbles the first gamepad instead.
+
 ## Limits
 
 - **No direct GD-ROM boot.** The ported machine loads a FATX netboot image into
@@ -263,7 +279,7 @@ for games that should not see them.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
   the cabinet (stick, triggers, D-pad and face buttons); a second gamepad aims
   player 2's gun. The cabinet keys are editable in Settings, including the
-  Gundam cockpit; steering-wheel haptics are still follow-ups.
+  Gundam cockpit.
 - **Raw light guns are not exposed.** Player 1 aims with the host pointer and
   player 2 with the second gamepad's right stick or the arrow keys; per-device
   light-gun aiming is not mapped yet.

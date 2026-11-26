@@ -175,6 +175,10 @@ public sealed class XemuLaunchPlanTests : IDisposable
         settings.Chihiro.BoardType = "type3";
         settings.Chihiro.ForceFeedback = true;
         settings.Chihiro.FfbStrength = 150;
+        settings.Chihiro.FfbInvert = true;
+        settings.Chihiro.WheelWeight = 70;
+        settings.Chihiro.WheelAutocenter = false;
+        settings.Chihiro.WheelAutocenterStrength = 80;
         string image = Path.Combine(_root, "media", "game.bin");
 
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
@@ -186,6 +190,10 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.Equal("type3", launch.ChihiroBoardType);
         Assert.True(launch.ChihiroForceFeedback);
         Assert.Equal(150, launch.ChihiroFfbStrength);
+        Assert.True(launch.ChihiroFfbInvert);
+        Assert.Equal(70, launch.ChihiroWheelWeight);
+        Assert.False(launch.ChihiroWheelAutocenter);
+        Assert.Equal(80, launch.ChihiroWheelAutocenterStrength);
         Assert.Empty(launch.Validate());
     }
 

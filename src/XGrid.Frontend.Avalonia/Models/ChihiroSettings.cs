@@ -86,6 +86,18 @@ public sealed class ChihiroSettings
     /// <summary>Gets or sets the force-feedback strength, 0 to 200 percent.</summary>
     public int FfbStrength { get; set; } = 100;
 
+    /// <summary>Gets or sets a value indicating whether the wheel pulls the other way.</summary>
+    public bool FfbInvert { get; set; }
+
+    /// <summary>Gets or sets the wheel's damping share, 0 to 100 percent.</summary>
+    public int WheelWeight { get; set; } = 40;
+
+    /// <summary>Gets or sets a value indicating whether the wheel centers itself.</summary>
+    public bool WheelAutocenter { get; set; } = true;
+
+    /// <summary>Gets or sets the self-centering strength, 0 to 100 percent.</summary>
+    public int WheelAutocenterStrength { get; set; } = 50;
+
     /// <summary>The Chihiro flash ROM file name.</summary>
     public const string BiosFileName = "chihiro_xbox_bios.bin";
 
@@ -137,6 +149,10 @@ public sealed class ChihiroSettings
             BoardType = BoardType,
             ForceFeedback = ForceFeedback,
             FfbStrength = FfbStrength,
+            FfbInvert = FfbInvert,
+            WheelWeight = WheelWeight,
+            WheelAutocenter = WheelAutocenter,
+            WheelAutocenterStrength = WheelAutocenterStrength,
         };
     }
 
@@ -156,6 +172,8 @@ public sealed class ChihiroSettings
         DimmSize = DimmSize is "128" or "256" or "512" or "1024" or "auto" ? DimmSize : "auto";
         BoardType = BoardType is "type1" or "type3" or "auto" ? BoardType : "auto";
         FfbStrength = Math.Clamp(FfbStrength, 0, 200);
+        WheelWeight = Math.Clamp(WheelWeight, 0, 100);
+        WheelAutocenterStrength = Math.Clamp(WheelAutocenterStrength, 0, 100);
     }
 }
 
