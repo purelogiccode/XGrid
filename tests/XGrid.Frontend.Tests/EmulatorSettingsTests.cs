@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 using XGrid.Frontend.Avalonia.ViewModels;
@@ -49,6 +50,37 @@ public sealed class EmulatorSettingsTests
         Assert.True(copy.SaveStateOnExit);
         Assert.True(copy.ResumeStateOnStart);
         Assert.False(copy.ShowPoweredOffScreen);
+    }
+
+    [Fact]
+    public void CloneCopiesTheAudioDevice()
+    {
+        var settings = new EmulatorSettings();
+        settings.Audio.Backend = AudioBackends.DirectSound;
+        settings.Audio.Device = "{c847f520-6c79-4ae1-ab1e-b9cc32469df8}";
+
+        EmulatorSettings copy = settings.Clone();
+
+        Assert.Equal(AudioBackends.DirectSound, copy.Audio.Backend);
+        Assert.Equal(settings.Audio.Device, copy.Audio.Device);
+    }
+
+    [Fact]
+    public void AudioNormalizeDropsAnUnsafeDeviceAndUnavailableBackend()
+    {
+        string unavailable = OperatingSystem.IsWindows()
+            ? AudioBackends.PulseAudio
+            : AudioBackends.DirectSound;
+        var audio = new AudioSettings
+        {
+            Backend = unavailable,
+            Device = "sink,other",
+        };
+
+        audio.Normalize();
+
+        Assert.Equal(AudioBackends.Auto, audio.Backend);
+        Assert.Empty(audio.Device);
     }
 
     [Fact]

@@ -31,10 +31,11 @@ public sealed class CoreCapabilities
     /// <summary>Renderer key for the headless null backend.</summary>
     public const string RendererNull = "NULL";
 
-    private CoreCapabilities(string version, IReadOnlyList<string> renderers)
+    private CoreCapabilities(string version, IReadOnlyList<string> renderers, IReadOnlyList<string> audioDrivers)
     {
         Version = version;
         Renderers = renderers;
+        AudioDrivers = audioDrivers;
         SupportsVulkan = renderers.Contains(RendererVulkan, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -43,6 +44,9 @@ public sealed class CoreCapabilities
 
     /// <summary>Gets the renderer keys the build compiled in.</summary>
     public IReadOnlyList<string> Renderers { get; }
+
+    /// <summary>Gets the audio driver keys the build registered.</summary>
+    public IReadOnlyList<string> AudioDrivers { get; }
 
     /// <summary>Gets a value indicating whether the build has the Vulkan renderer.</summary>
     public bool SupportsVulkan { get; }
@@ -115,7 +119,20 @@ public sealed class CoreCapabilities
                 }
             }
 
-            return new CoreCapabilities(version, renderers);
+            var audioDrivers = new List<string>();
+            if (root.TryGetProperty("audioDrivers", out JsonElement audioElement)
+                && audioElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement entry in audioElement.EnumerateArray())
+                {
+                    if (entry.ValueKind == JsonValueKind.String && entry.GetString() is { Length: > 0 } key)
+                    {
+                        audioDrivers.Add(key.ToLowerInvariant());
+                    }
+                }
+            }
+
+            return new CoreCapabilities(version, renderers, audioDrivers);
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
         {

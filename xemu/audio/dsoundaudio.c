@@ -595,6 +595,8 @@ static void *dsound_audio_init(Audiodev *dev, Error **errp)
     HRESULT hr;
     dsound *s = g_new0(dsound, 1);
     AudiodevDsoundOptions *dso;
+    GUID device_guid;
+    LPGUID device_guid_ptr = NULL;
 
     assert(dev->driver == AUDIODEV_DRIVER_DSOUND);
     s->dev = dev;
@@ -603,6 +605,24 @@ static void *dsound_audio_init(Audiodev *dev, Error **errp)
     if (!dso->has_latency) {
         dso->has_latency = true;
         dso->latency = 10000; /* 10 ms */
+    }
+
+    if (dso->device != NULL && dso->device[0] != '\0') {
+        gunichar2 *wide = g_utf8_to_utf16(dso->device, -1, NULL, NULL, NULL);
+        if (wide == NULL) {
+            error_setg(errp, "Could not convert DirectSound device id");
+            dsound_audio_fini(s);
+            return NULL;
+        }
+        hr = CLSIDFromString((LPCOLESTR)wide, &device_guid);
+        g_free(wide);
+        if (FAILED(hr)) {
+            dserror_set(errp, hr,
+                        "Invalid DirectSound device id (expected a device GUID)");
+            dsound_audio_fini(s);
+            return NULL;
+        }
+        device_guid_ptr = &device_guid;
     }
 
     hr = CoInitialize (NULL);
@@ -625,7 +645,7 @@ static void *dsound_audio_init(Audiodev *dev, Error **errp)
         return NULL;
     }
 
-    hr = IDirectSound_Initialize (s->dsound, NULL);
+    hr = IDirectSound_Initialize (s->dsound, device_guid_ptr);
     if (FAILED (hr)) {
         dserror_set(errp, hr, "Could not initialize DirectSound");
         dsound_audio_fini(s);

@@ -53,7 +53,7 @@ The normal shell accepts the same overrides without `--headless`. A positional
 | `--scale <1-8>` | Internal surface scale. |
 | `--filtering <linear\|nearest>` | Core texture filtering. |
 | `--filter <nearest\|bilinear\|scanline\|crt>` | Presentation filter, applied by the core. |
-| `--aspect`, `--fit`, `--ram`, `--audio` | Display, memory and audio overrides. |
+| `--aspect`, `--fit`, `--ram`, `--audio`, `--audio-device` | Display, memory and audio overrides. |
 | `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` | Headless and benchmark controls. |
 | `-h`, `--help`, `--version` | Reference and version. |
 
@@ -77,7 +77,8 @@ xgrid: frames=1800 seconds=30.04 firstFrame=1.20 fps=60.02 frameTime=16.66ms sto
 | `2` | Invalid switches, firmware or media. |
 | `3` | No frames were published. |
 
-Audio defaults to the `none` backend in a headless run. The hard disk is written
+Audio defaults to the `none` (null) sink in a headless run; pass `--audio` and
+`--audio-device` for an explicit backend or device. The hard disk is written
 at shutdown, so benchmark jobs should use a copy of the image. Off-screen
 rendering still needs a working OpenGL context; on a Linux server without a
 display, run it under Xvfb.

@@ -45,7 +45,8 @@ the platform.
 | `--aspect <mode>` | `native`, `auto`, `4x3` (or `4:3`) or `16x9` (or `16:9`). |
 | `--fit <mode>` | `center`, `scale` or `stretch`. |
 | `--ram <64\|128>` | Guest RAM in megabytes. |
-| `--audio <backend>` | `auto`, `dsound` (Windows), `none` or `wav`. |
+| `--audio <backend>` | `auto`, `dsound`, `pa`, `alsa`, `jack`, `pipewire`, `oss`, `sndio`, `sdl`, `coreaudio`, `none` or `wav`. |
+| `--audio-device <id>` | Backend-specific output device. DirectSound uses a device GUID; the other backends use their device/server name. |
 | `--headless` | Run without the shell window; see [Headless runs](../guides/headless.md). |
 | `--benchmark` | Headless benchmark run; 600 frames when no other limit is set. |
 | `--seconds <n>` | Headless wall-clock limit (60 when no frame limit is set). |
@@ -68,7 +69,8 @@ never written into `settings.json`, and they win over per-title overrides.
 ### Headless runs
 
 `--headless` boots the core without the Avalonia window and without presenting a
-picture. The core still renders off-screen. `--seconds`, `--frames`,
+picture. The core still renders off-screen. Headless runs use the null audio sink
+unless `--audio` explicitly selects another backend. `--seconds`, `--frames`,
 `--summary` and `--benchmark` select headless mode on their own. Without
 `--seconds` or `--frames`, a normal headless run stops after 60 seconds and a
 benchmark run stops after 600 frames. A frame limit without a time limit runs
@@ -129,7 +131,7 @@ The shell writes indented JSON. The main fields are:
 | `CoreHosting` | `in-process` or `process`. |
 | `Filter` | `nearest`, `bilinear`, `scanline` or `crt`. |
 | `Graphics` | Renderer, scale, filtering, window, aspect, fit, AV pack. |
-| `Audio` | Backend, DSP, JIT, HRTF, volume, workers. |
+| `Audio` | Backend key, output device, DSP, JIT, HRTF, volume and worker count. |
 | `Input` | Keyboard and gamepad maps, player-to-XInput-slot assignments, dead zones, trigger threshold, inversion, stick swap. |
 | `Accent` | Accent palette key. |
 | `XemuCorePath` | Explicit core executable, or empty for auto-detect. |

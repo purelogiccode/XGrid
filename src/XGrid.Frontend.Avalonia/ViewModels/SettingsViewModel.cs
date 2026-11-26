@@ -441,7 +441,10 @@ public sealed partial class SettingsViewModel : PageViewModel
     private KeyedOption? _selectedRenderer;
 
     private IReadOnlyList<KeyedOption> _rendererOptions = [];
+    private IReadOnlyList<KeyedOption> _audioBackendOptions = [];
     private CoreCapabilities? _coreCapabilities;
+    private bool _loadingAudioSettings;
+    private string? _lastAudioBackend;
 
     [ObservableProperty]
     private int _surfaceScale = 1;
@@ -529,20 +532,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         [
             .. GraphicsSettings.AvPacks.Select(pack => new KeyedOption(pack, pack)),
         ];
-        AudioBackendOptions = OperatingSystem.IsWindows()
-            ?
-            [
-                new KeyedOption(AudioSettings.BackendAuto, "Auto"),
-                new KeyedOption(AudioSettings.BackendDirectSound, "DirectSound"),
-                new KeyedOption(AudioSettings.BackendNone, "None"),
-                new KeyedOption(AudioSettings.BackendWav, "WAV capture"),
-            ]
-            :
-            [
-                new KeyedOption(AudioSettings.BackendAuto, "Auto"),
-                new KeyedOption(AudioSettings.BackendNone, "None"),
-                new KeyedOption(AudioSettings.BackendWav, "WAV capture"),
-            ];
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -592,8 +581,40 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the selectable AV packs.</summary>
     public IReadOnlyList<KeyedOption> AvPackOptions { get; }
 
-    /// <summary>Gets the selectable host audio backends.</summary>
-    public IReadOnlyList<KeyedOption> AudioBackendOptions { get; }
+    /// <summary>Gets the selectable audio backends reported by the core.</summary>
+    public IReadOnlyList<KeyedOption> AudioBackendOptions
+    {
+        get => _audioBackendOptions;
+        private set => SetProperty(ref _audioBackendOptions, value);
+    }
+
+    /// <summary>Gets the detected DirectSound devices plus the system default.</summary>
+    public ObservableCollection<KeyedOption> AudioDeviceOptions { get; } = [];
+
+    [ObservableProperty]
+    private KeyedOption? _selectedAudioDevice;
+
+    [ObservableProperty]
+    private string _audioDevice = string.Empty;
+
+    /// <summary>Gets a value indicating whether the device is a DirectSound selector.</summary>
+    public bool ShowAudioDeviceList =>
+        OperatingSystem.IsWindows()
+        && string.Equals(SelectedAudioBackend?.Key, AudioBackends.DirectSound, StringComparison.Ordinal);
+
+    /// <summary>Gets a value indicating whether the device is a free-form backend name.</summary>
+    public bool ShowAudioDeviceText => SelectedAudioBackend?.Key is
+        AudioBackends.PulseAudio or AudioBackends.Alsa or AudioBackends.Jack
+        or AudioBackends.PipeWire or AudioBackends.Oss or AudioBackends.Sndio;
+
+    /// <summary>Gets a value indicating whether the device row is informational only.</summary>
+    public bool ShowAudioDeviceHint => !ShowAudioDeviceList && !ShowAudioDeviceText;
+
+    /// <summary>Gets the hint under the backend row.</summary>
+    public string AudioBackendHint => AudioChoices.Hint(_coreCapabilities);
+
+    /// <summary>Gets the hint under the device row.</summary>
+    public string AudioDeviceHint => AudioChoices.DeviceHint(SelectedAudioBackend?.Key);
 
     /// <summary>Gets the selectable voice-worker counts (0 = auto).</summary>
     public IReadOnlyList<int> VoiceWorkerOptions { get; } = [0, 1, 2, 4, 8];
@@ -711,9 +732,14 @@ public sealed partial class SettingsViewModel : PageViewModel
         Hrtf = settings.Audio.Hrtf;
         VolumeLimit = settings.Audio.VolumeLimit;
         VoiceWorkers = settings.Audio.VoiceWorkers;
+        RefreshAudioBackends(settings.Audio.Backend);
+        _loadingAudioSettings = true;
         SelectedAudioBackend = AudioBackendOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Audio.Backend, StringComparison.Ordinal))
             ?? AudioBackendOptions[0];
+        _loadingAudioSettings = false;
+        AudioDevice = settings.Audio.Device;
+        RefreshAudioDevices();
         SelectedCoreHosting = CoreHostingOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.CoreHosting, StringComparison.Ordinal))
             ?? CoreHostingOptions[0];
@@ -973,6 +999,12 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     private AudioSettings BuildAudioSettings()
     {
+        string backend = SelectedAudioBackend?.Key ?? AudioBackends.Auto;
+        string device = AudioBackends.SupportsDevice(backend)
+            ? string.Equals(backend, AudioBackends.DirectSound, StringComparison.Ordinal)
+                ? SelectedAudioDevice?.Key ?? string.Empty
+                : AudioDevice.Trim()
+            : string.Empty;
         var audio = new AudioSettings
         {
             UseDsp = UseDsp,
@@ -980,7 +1012,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             Hrtf = Hrtf,
             VolumeLimit = VolumeLimit,
             VoiceWorkers = VoiceWorkers,
-            Backend = SelectedAudioBackend?.Key ?? AudioSettings.BackendAuto,
+            Backend = backend,
+            Device = device,
         };
         audio.Normalize();
         return audio;
@@ -1295,6 +1328,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     partial void OnXemuCorePathChanged(string value)
     {
         RefreshRenderers();
+        RefreshAudioBackends();
     }
 
     /// <summary>
@@ -1311,6 +1345,97 @@ public sealed partial class SettingsViewModel : PageViewModel
             option => string.Equals(option.Key, selected, StringComparison.Ordinal))
             ?? RendererOptions[0];
         OnPropertyChanged(nameof(RendererHint));
+    }
+
+    /// <summary>
+    /// Rebuilds the audio backend list from what the selected core reports.
+    /// </summary>
+    /// <param name="preferredKey">Backend key to select instead of the current choice.</param>
+    private void RefreshAudioBackends(string? preferredKey = null)
+    {
+        string selected = preferredKey ?? SelectedAudioBackend?.Key ?? AudioBackends.Auto;
+        AudioBackendOptions = [.. AudioChoices.Keys(_coreCapabilities)
+            .Select(key => new KeyedOption(key, AudioChoices.Label(key)))];
+        _loadingAudioSettings = true;
+        SelectedAudioBackend = AudioBackendOptions.FirstOrDefault(
+            option => string.Equals(option.Key, selected, StringComparison.Ordinal))
+            ?? AudioBackendOptions[0];
+        _loadingAudioSettings = false;
+        _lastAudioBackend = SelectedAudioBackend?.Key;
+        OnPropertyChanged(nameof(AudioBackendHint));
+        OnPropertyChanged(nameof(AudioDeviceHint));
+        OnPropertyChanged(nameof(ShowAudioDeviceList));
+        OnPropertyChanged(nameof(ShowAudioDeviceText));
+        OnPropertyChanged(nameof(ShowAudioDeviceHint));
+    }
+
+    /// <summary>Public command: re-reads the DirectSound output devices.</summary>
+    [RelayCommand]
+    private void RefreshAudioDevices()
+    {
+        string current = SelectedAudioDevice?.Key ?? AudioDevice;
+        AudioDeviceOptions.Clear();
+        AudioDeviceOptions.Add(new KeyedOption(string.Empty, "System default"));
+        foreach (AudioDeviceInfo device in AudioDeviceService.Enumerate())
+        {
+            AudioDeviceOptions.Add(new KeyedOption(device.Id, device.Name));
+        }
+
+        KeyedOption? match = AudioDeviceOptions.FirstOrDefault(
+            option => string.Equals(option.Key, current, StringComparison.OrdinalIgnoreCase));
+        if (match is null
+            && !string.IsNullOrWhiteSpace(current)
+            && string.Equals(SelectedAudioBackend?.Key, AudioBackends.DirectSound, StringComparison.Ordinal))
+        {
+            // Keep a saved device visible when it was unplugged, so the user
+            // can see why the launch will fall back to the system default.
+            match = new KeyedOption(current, "Missing device (" + current + ")");
+            AudioDeviceOptions.Add(match);
+        }
+
+        SelectedAudioDevice = match ?? AudioDeviceOptions[0];
+    }
+
+    partial void OnSelectedAudioBackendChanged(KeyedOption? value)
+    {
+        if (_loadingAudioSettings)
+        {
+            return;
+        }
+
+        string? backend = value?.Key;
+        if (string.Equals(_lastAudioBackend, AudioBackends.DirectSound, StringComparison.Ordinal)
+            && !string.Equals(backend, AudioBackends.DirectSound, StringComparison.Ordinal))
+        {
+            // A DirectSound device is a GUID; it is not a PulseAudio/ALSA name.
+            AudioDevice = string.Empty;
+        }
+
+        if (string.Equals(backend, AudioBackends.DirectSound, StringComparison.Ordinal)
+            && !string.Equals(_lastAudioBackend, AudioBackends.DirectSound, StringComparison.Ordinal))
+        {
+            // A backend name is not a DirectSound GUID; start on the default.
+            AudioDevice = string.Empty;
+        }
+
+        _lastAudioBackend = backend;
+        if (string.Equals(backend, AudioBackends.DirectSound, StringComparison.Ordinal))
+        {
+            RefreshAudioDevices();
+        }
+
+        OnPropertyChanged(nameof(AudioDeviceHint));
+        OnPropertyChanged(nameof(ShowAudioDeviceList));
+        OnPropertyChanged(nameof(ShowAudioDeviceText));
+        OnPropertyChanged(nameof(ShowAudioDeviceHint));
+    }
+
+    partial void OnSelectedAudioDeviceChanged(KeyedOption? value)
+    {
+        if (value is not null)
+        {
+            AudioDevice = value.Key;
+        }
     }
 
     partial void OnSelectedAccentChanged(AccentOption? value)

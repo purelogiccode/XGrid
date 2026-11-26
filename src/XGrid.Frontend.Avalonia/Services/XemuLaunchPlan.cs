@@ -72,6 +72,7 @@ public static class XemuLaunchPlan
             VolumeLimit = settings.Audio.VolumeLimit,
             VoiceWorkers = settings.Audio.VoiceWorkers,
             AudioBackend = settings.Audio.Backend,
+            AudioDevice = settings.Audio.Device,
             AudioWavPath = string.Equals(settings.Audio.Backend, AudioSettings.BackendWav, StringComparison.Ordinal)
                 ? Path.Combine(workingDirectory, "audio.wav")
                 : string.Empty,

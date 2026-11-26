@@ -41,8 +41,9 @@ presentation filter/overlay in `ui/xui/gl-helpers.cc` and `ui/xui/main.cc`
 Windows DXGI presenter (`0011-ui-dxgi-exit-cleanup.patch`), the WGL interop
 attachment fix that keeps native flip presentation active on NVIDIA drivers
 (`0015-ui-dxgi-interop-presentation.patch`), the guest-clock part of
-fast-forward (`0012-ui-fast-forward-clock.patch`), and the disc-driver selection
-in `system/vl.c` (`0016-core-disc-formats.patch`).
+fast-forward (`0012-ui-fast-forward-clock.patch`), the disc-driver selection in
+`system/vl.c` (`0016-core-disc-formats.patch`), and the DirectSound device
+option plus the `-audio-drivers` probe (`0017-core-audio-device.patch`).
 
 A new xemu release is handled by rebasing the patch set and the `xgrid-core/`
 additions, not by re-porting the emulator.
@@ -199,7 +200,8 @@ pwsh -File scripts/build-native-xemu.ps1
 ```
 
 Output: `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll`,
-`xemu/dist/xgrid-core.json` and the runtime DLLs.
+`xemu/dist/xgrid-core.json` and the runtime DLLs. The manifest lists the
+compiled renderers and audio drivers; the shell offers only those backends.
 
 Linux:
 

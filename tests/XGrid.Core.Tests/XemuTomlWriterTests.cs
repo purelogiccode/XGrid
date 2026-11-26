@@ -148,6 +148,21 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Validate_RejectsAnAudioDeviceWithAComma()
+    {
+        using var files = new TemporaryFiles();
+        XemuLaunchSettings settings = files.Settings with
+        {
+            AudioBackend = "pa",
+            AudioDevice = "sink,other",
+        };
+
+        IReadOnlyList<string> errors = settings.Validate();
+
+        Assert.Contains(errors, error => error.Contains("audio device", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Build_DisablesTheWelcomeOverlayUpdateCheckAndMenuBar()
     {
         string toml = XemuTomlWriter.Build(CreateSettings());

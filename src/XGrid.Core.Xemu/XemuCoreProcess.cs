@@ -71,17 +71,26 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
         var arguments = new System.Collections.Generic.List<string>();
         switch (settings.AudioBackend)
         {
-            case "dsound":
+            case AudioBackends.None:
                 arguments.Add("-audio");
-                arguments.Add("dsound");
+                arguments.Add(AudioBackends.None);
                 break;
-            case "none":
-                arguments.Add("-audio");
-                arguments.Add("none");
-                break;
-            case "wav":
+            case AudioBackends.Wav:
                 arguments.Add("-audio");
                 arguments.Add("wav,path=" + settings.AudioWavPath);
+                break;
+            case AudioBackends.Auto:
+                break;
+            default:
+                string audio = settings.AudioBackend;
+                string? deviceOption = AudioBackends.DeviceOptionKey(audio);
+                if (!string.IsNullOrWhiteSpace(settings.AudioDevice) && deviceOption is not null)
+                {
+                    audio += "," + deviceOption + "=" + settings.AudioDevice;
+                }
+
+                arguments.Add("-audio");
+                arguments.Add(audio);
                 break;
         }
 

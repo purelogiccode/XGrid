@@ -38,6 +38,7 @@ save states, display/input plumbing, screenshots and packaging.
 - **Shell:** Home, Library, Settings, Activity, About.
 - **Hosting:** in-process `xgrid_core.dll` on Windows; separate process on Linux and as a fallback.
 - **Media:** ISO/XISO (optimized or full Redump), compressed CHD, CCI, ZArchive (entry form or file tree), raw/qcow2 HDD.
+- **Audio:** core-reported backends with DirectSound device selection and a null sink for headless runs.
 - **Session:** powered-off screen, stay-open option, power on at launch and optional automatic save/resume.
 - **Automation:** command-line settings overrides and headless runs with JSON reports.
 - **Diagnostics:** Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check.

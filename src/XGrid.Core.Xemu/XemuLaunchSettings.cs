@@ -94,8 +94,15 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the voice-processor worker count (0 = auto).</summary>
     public int VoiceWorkers { get; init; }
 
-    /// <summary>Gets the host audio backend: <c>auto</c>, <c>dsound</c>, <c>none</c> or <c>wav</c>.</summary>
-    public string AudioBackend { get; init; } = "auto";
+    /// <summary>Gets the host audio backend key the core registered.</summary>
+    public string AudioBackend { get; init; } = AudioBackends.Auto;
+
+    /// <summary>
+    /// Gets the backend-specific output device. DirectSound uses a device GUID;
+    /// PulseAudio, PipeWire, ALSA, OSS, sndio and JACK use their own device or
+    /// server name. Empty follows the system default.
+    /// </summary>
+    public string AudioDevice { get; init; } = string.Empty;
 
     /// <summary>Gets the WAV capture path when <see cref="AudioBackend"/> is <c>wav</c>.</summary>
     public string AudioWavPath { get; init; } = string.Empty;
@@ -246,12 +253,19 @@ public sealed record XemuLaunchSettings
             errors.Add($"Audio worker count must be between 0 and 16, not {VoiceWorkers}.");
         }
 
-        if (!string.Equals(AudioBackend, "auto", StringComparison.Ordinal)
-            && !string.Equals(AudioBackend, "dsound", StringComparison.Ordinal)
-            && !string.Equals(AudioBackend, "none", StringComparison.Ordinal)
-            && !string.Equals(AudioBackend, "wav", StringComparison.Ordinal))
+        if (!AudioBackends.IsKnown(AudioBackend))
         {
             errors.Add($"Unknown audio backend '{AudioBackend}'.");
+        }
+        else if (!AudioBackends.IsAvailableOnThisHost(AudioBackend))
+        {
+            errors.Add($"The {AudioBackend} audio backend is not available on this platform.");
+        }
+
+        if (!string.IsNullOrEmpty(AudioDevice)
+            && AudioDevice.AsSpan().IndexOfAny(",\r\n") >= 0)
+        {
+            errors.Add("The audio device name cannot contain a comma or a line break.");
         }
 
         if (!string.Equals(PresentationFilter, XemuPresentationFilter.Nearest, StringComparison.Ordinal)
@@ -262,7 +276,7 @@ public sealed record XemuLaunchSettings
             errors.Add($"Unknown presentation filter '{PresentationFilter}'.");
         }
 
-        if (string.Equals(AudioBackend, "wav", StringComparison.Ordinal)
+        if (string.Equals(AudioBackend, AudioBackends.Wav, StringComparison.Ordinal)
             && string.IsNullOrWhiteSpace(AudioWavPath))
         {
             errors.Add("The WAV audio backend needs a capture path.");

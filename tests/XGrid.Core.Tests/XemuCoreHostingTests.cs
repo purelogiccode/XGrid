@@ -51,6 +51,31 @@ public sealed class XemuCoreHostingTests : IDisposable
             ["-audio", "wav,path=C:\\capture.wav"],
             XemuCoreProcess.BuildExtraArguments(
                 new XemuLaunchSettings { AudioBackend = "wav", AudioWavPath = "C:\\capture.wav" }));
+
+        Assert.Equal(
+            ["-audio", "dsound,device={c847f520-6c79-4ae1-ab1e-b9cc32469df8}"],
+            XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings
+            {
+                AudioBackend = "dsound",
+                AudioDevice = "{c847f520-6c79-4ae1-ab1e-b9cc32469df8}",
+            }));
+
+        Assert.Equal(
+            ["-audio", "pa,out.name=alsa_output.usb"],
+            XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings
+            {
+                AudioBackend = "pa",
+                AudioDevice = "alsa_output.usb",
+            }));
+
+        // The null sink never takes a device, even if an old setting kept one.
+        Assert.Equal(
+            ["-audio", "none"],
+            XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings
+            {
+                AudioBackend = "none",
+                AudioDevice = "{c847f520-6c79-4ae1-ab1e-b9cc32469df8}",
+            }));
     }
 
     [Fact]

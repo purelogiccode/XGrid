@@ -67,7 +67,7 @@ and packaging.
 | **Media** | ISO/XISO (optimized or full Redump), CHD, CCI, ZAR (entry form or file tree); raw/qcow2 HDD |
 | **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
 | **Display** | Shell frame sink or embedded core window (in-process or separate); filters, resolution scale, aspect/fit, fullscreen, optional FPS overlay |
-| **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
+| **Audio** | Core APU/DSP, Auto/DirectSound/native backends/Null/WAV capture, output-device selection, HRTF, volume limit |
 | **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
 | **Quality of life** | Four save-state slots, automatic session save/resume, powered-off screen, multiple library roots, recently played list, per-title overrides, screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |

@@ -65,6 +65,17 @@ Read [Architecture](reference/architecture.md) for the full picture.
   it to LBA 0; an optimized XISO needs no shift.
 - **XBE** files are listed for inspection but must be wrapped in a disc image to boot.
 
+### Audio without guesswork
+
+- The settings page lists the audio backends the core actually compiled, read
+  from its `-audio-drivers` report.
+- Windows DirectSound devices are enumerated and selectable; PulseAudio,
+  PipeWire, ALSA, OSS, sndio and JACK accept their own device or server names.
+- **Null (no output)** discards host audio and is selected automatically by
+  headless runs.
+- A missing DirectSound device falls back to the system default instead of
+  stopping the core.
+
 ### Save states that belong to the machine
 
 XGrid does not invent a snapshot format. It exposes xemu/QEMU snapshots as four

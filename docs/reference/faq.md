@@ -111,6 +111,17 @@ The console finishes its early boot first, so the dashboard or game may appear
 for about 12 seconds before the saved state is restored. See
 [Save states](../guides/save-states.md#automatic-session-state).
 
+## How do I choose the audio device?
+
+Open **Settings → Audio**. The backend list comes from the core's compiled
+audio drivers. For DirectSound, **Output device** lists the host playback
+devices; use **Refresh** after plugging in a device. PulseAudio, PipeWire, ALSA,
+OSS, sndio and JACK accept an optional device or server name. **Null (no
+output)** discards audio and is used automatically by headless runs.
+
+A saved DirectSound device that is no longer attached falls back to the system
+default with a warning in **Activity**.
+
 ## Do save states work in the separate process?
 
 No. They require the in-process core ABI. Switch **Core hosting** to **In-process
