@@ -213,6 +213,19 @@ King and Gundam have their own layouts. The first detected gamepad drives the
 cabinet; a second gamepad aims player 2's gun in the gun games. A wheel that SDL
 exposes as a gamepad works through its stick and triggers.
 
+Gundam Battle Operating Simulator's twin-stick cockpit is under **Gundam
+cockpit** in Settings:
+
+| Action | Keyboard |
+| --- | --- |
+| Left stick | `W` / `S` / `A` / `D` |
+| Left trigger / button | `Q` / `E` |
+| Right stick | `Up` / `Down` / `Left` / `Right` |
+| Right trigger / button | `Right Shift` / `Right Ctrl` |
+| Pedal | `Space` |
+
+These bindings are written to `[chihiro.jvs.gundam]` at launch.
+
 In the gun games, move the host cursor over the picture to aim player 1; the
 left mouse button fires, the right button is the body/action or reload button,
 and RT/A/B do the same on a gamepad. Moving off the picture reports the
@@ -235,8 +248,8 @@ Squad's two-player card screen uses both readers, one per player.
   using the game's key.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
   the cabinet (stick, triggers, D-pad and face buttons); a second gamepad aims
-  player 2's gun. The cabinet keys are editable in Settings;
-  Gundam-specific bindings and steering-wheel haptics are still follow-ups.
+  player 2's gun. The cabinet keys are editable in Settings, including the
+  Gundam cockpit; steering-wheel haptics are still follow-ups.
 - **Raw light guns are not exposed.** Player 1 aims with the host pointer and
   player 2 with the second gamepad's right stick or the arrow keys; per-device
   light-gun aiming is not mapped yet.

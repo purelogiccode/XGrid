@@ -792,6 +792,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets player 2's gun and card binding rows.</summary>
     public ObservableCollection<ChihiroBindingItem> ChihiroPlayer2Bindings { get; } = [];
 
+    /// <summary>Gets the Gundam cockpit binding rows.</summary>
+    public ObservableCollection<ChihiroBindingItem> ChihiroGundamBindings { get; } = [];
+
     /// <summary>Gets the gamepad binding rows.</summary>
     public ObservableCollection<GamepadBindingItem> GamepadBindings { get; } = [];
 
@@ -806,6 +809,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         .Concat(ChihiroDrivingBindings)
         .Concat(ChihiroGunBindings)
         .Concat(ChihiroPlayer2Bindings)
+        .Concat(ChihiroGundamBindings)
         .FirstOrDefault(item => item.IsCapturing);
 
     /// <summary>Gets a value indicating whether a key capture is in progress.</summary>
@@ -1383,6 +1387,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroDrivingBindings.Clear();
         ChihiroGunBindings.Clear();
         ChihiroPlayer2Bindings.Clear();
+        ChihiroGundamBindings.Clear();
 
         AddChihiroBinding(ChihiroSystemBindings, "Start",
             () => _chihiroJvs.Start, value => _chihiroJvs.Start = value);
@@ -1460,6 +1465,33 @@ public sealed partial class SettingsViewModel : PageViewModel
         AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Ghost Squad reload",
             () => _chihiroJvsP2.GsReload, value => _chihiroJvsP2.GsReload = value);
 
+        AddChihiroBinding(ChihiroGundamBindings, "Left stick up",
+            () => _chihiroJvs.GundamLUp, value => _chihiroJvs.GundamLUp = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Left stick down",
+            () => _chihiroJvs.GundamLDown, value => _chihiroJvs.GundamLDown = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Left stick left",
+            () => _chihiroJvs.GundamLLeft, value => _chihiroJvs.GundamLLeft = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Left stick right",
+            () => _chihiroJvs.GundamLRight, value => _chihiroJvs.GundamLRight = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Left trigger",
+            () => _chihiroJvs.GundamLTrigger, value => _chihiroJvs.GundamLTrigger = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Left button",
+            () => _chihiroJvs.GundamLButton, value => _chihiroJvs.GundamLButton = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Right stick up",
+            () => _chihiroJvs.GundamRUp, value => _chihiroJvs.GundamRUp = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Right stick down",
+            () => _chihiroJvs.GundamRDown, value => _chihiroJvs.GundamRDown = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Right stick left",
+            () => _chihiroJvs.GundamRLeft, value => _chihiroJvs.GundamRLeft = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Right stick right",
+            () => _chihiroJvs.GundamRRight, value => _chihiroJvs.GundamRRight = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Right trigger",
+            () => _chihiroJvs.GundamRTrigger, value => _chihiroJvs.GundamRTrigger = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Right button",
+            () => _chihiroJvs.GundamRButton, value => _chihiroJvs.GundamRButton = value);
+        AddChihiroBinding(ChihiroGundamBindings, "Pedal",
+            () => _chihiroJvs.GundamPedal, value => _chihiroJvs.GundamPedal = value);
+
         OnPropertyChanged(nameof(CapturingChihiroBinding));
         OnPropertyChanged(nameof(IsCapturingKey));
     }
@@ -1483,7 +1515,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         foreach (ChihiroBindingItem binding in ChihiroSystemBindings
                      .Concat(ChihiroDrivingBindings)
                      .Concat(ChihiroGunBindings)
-                     .Concat(ChihiroPlayer2Bindings))
+                     .Concat(ChihiroPlayer2Bindings)
+                     .Concat(ChihiroGundamBindings))
         {
             binding.IsCapturing = false;
         }
@@ -1516,7 +1549,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         foreach (ChihiroBindingItem binding in ChihiroSystemBindings
                      .Concat(ChihiroDrivingBindings)
                      .Concat(ChihiroGunBindings)
-                     .Concat(ChihiroPlayer2Bindings))
+                     .Concat(ChihiroPlayer2Bindings)
+                     .Concat(ChihiroGundamBindings))
         {
             binding.IsCapturing = false;
         }

@@ -150,6 +150,22 @@ public static class XemuTomlWriter
             AppendInt(text, "body_button", jvs.GsBody);
             AppendInt(text, "change", jvs.GsChange);
 
+            text.Append('\n');
+            text.Append("[chihiro.jvs.gundam]\n");
+            AppendInt(text, "l_up", jvs.GundamLUp);
+            AppendInt(text, "l_down", jvs.GundamLDown);
+            AppendInt(text, "l_left", jvs.GundamLLeft);
+            AppendInt(text, "l_right", jvs.GundamLRight);
+            AppendInt(text, "l_trigger", jvs.GundamLTrigger);
+            AppendInt(text, "l_button", jvs.GundamLButton);
+            AppendInt(text, "r_up", jvs.GundamRUp);
+            AppendInt(text, "r_down", jvs.GundamRDown);
+            AppendInt(text, "r_left", jvs.GundamRLeft);
+            AppendInt(text, "r_right", jvs.GundamRRight);
+            AppendInt(text, "r_trigger", jvs.GundamRTrigger);
+            AppendInt(text, "r_button", jvs.GundamRButton);
+            AppendInt(text, "pedal", jvs.GundamPedal);
+
             ChihiroJvsP2Settings p2 = settings.ChihiroJvsP2;
             text.Append('\n');
             text.Append("[chihiro.jvs_p2]\n");

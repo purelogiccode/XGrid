@@ -97,6 +97,9 @@ public sealed class XemuTomlWriterTests
                 Coin = 35,
                 Hotd3Trigger = 1003,
                 GsChange = 15,
+                GundamLUp = 20,
+                GundamRTrigger = 230,
+                GundamPedal = 46,
             },
         };
 
@@ -108,6 +111,10 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("trigger = 1003", toml, StringComparison.Ordinal);
         Assert.Contains("[chihiro.jvs.gs]", toml, StringComparison.Ordinal);
         Assert.Contains("change = 15", toml, StringComparison.Ordinal);
+        Assert.Contains("[chihiro.jvs.gundam]", toml, StringComparison.Ordinal);
+        Assert.Contains("l_up = 20", toml, StringComparison.Ordinal);
+        Assert.Contains("r_trigger = 230", toml, StringComparison.Ordinal);
+        Assert.Contains("pedal = 46", toml, StringComparison.Ordinal);
     }
 
     [Fact]
