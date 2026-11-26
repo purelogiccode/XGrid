@@ -86,9 +86,9 @@ Read [Architecture](reference/architecture.md) for the full picture.
 - Chihiro launches use 128 MB and skip the Xbox hard disk. Xbox discs and
   Chihiro images coexist in the same library, labelled **ISO/CHD/CCI/ZAR** and
   **BIN**.
-- Homebrew `XBOXOG - Chihiro` Xbox ISOs convert to netboot `.bin` in Settings;
-  raw Redump GD-ROM sets still need the external `chihiro-netboot` and their key.
-  See [Sega Chihiro](guides/chihiro.md).
+- Homebrew `XBOXOG - Chihiro` Xbox ISOs and raw Redump GD-ROM cue/bin sets
+  convert to netboot `.bin` in Settings (the Redump path needs the game's MAME
+  key ZIP). See [Sega Chihiro](guides/chihiro.md).
 
 ### Save states that belong to the machine
 

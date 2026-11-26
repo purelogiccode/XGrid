@@ -22,7 +22,7 @@ off. The machine uses 128 MB of RAM and no Xbox hard disk.
 ## Converting an Xbox-format Chihiro ISO
 
 The `XBOXOG - Chihiro` patched ISOs already contain the decrypted Chihiro file
-tree. Use **Settings -> System -> Sega Chihiro -> Convert Chihiro ISO...**, or:
+tree. Use **Settings -> System -> Sega Chihiro -> Convert ISO...**, or:
 
 ```text
 XGrid.Cli.exe chihiro-netboot --image "Ghost Squad (XBOXOG).iso" --out "ghost-squad.bin"
@@ -33,18 +33,23 @@ The converter writes a FATX netboot image and aliases a renamed executable
 
 ## Converting a GD-ROM
 
-Raw Redump/MAME GD-ROM sets need
-[chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot) with the
-game's MAME key `.zip` and its `.cue`/`.bin` or `.chd`:
+XGrid converts a Redump cue/bin set with the game's small MAME key `.zip`:
+
+1. Extract the `.cue` and its `.bin` tracks into one folder.
+2. Open **Settings -> System -> Sega Chihiro -> Convert GD-ROM...**.
+3. Pick the `.cue`, the key `.zip`, and the output `.bin`.
+
+Or use the CLI:
 
 ```text
-python chihiro-netboot.py "House of the Dead 3, The (World).cue" hotd3.zip -o output
+XGrid.Cli.exe chihiro-redump --cue "House of the Dead 3, The (World).cue" --key hotd3.zip --out hotd3.bin
 ```
 
-Key sets: `hotd3.zip`, `outr2.zip`, `vcop3.zip`, `ghostsqu.zip`,
-`crtaxihr.zip`, `wangmid.zip`, `wangmid2.zip`, `ollie.zip`, `mj2.zip`,
-`mj3.zip`, `mj3evo.zip`. Put the resulting `.bin` in a library folder and
-launch it. XGrid bundles no keys, firmware or game data.
+Both `80`-byte `.data` and 16 KB `.pic` keys are read. MAME `.chd` sets must be
+extracted to cue/bin first. Key sets: `hotd3.zip`, `outr2.zip`, `vcop3.zip`,
+`ghostsqu.zip`, `crtaxihr.zip`, `wangmid.zip`, `wangmid2.zip`, `ollie.zip`,
+`mj2.zip`, `mj3.zip`, `mj3evo.zip`. Put the resulting `.bin` in a library
+folder and launch it. XGrid bundles no keys, firmware or game data.
 
 ## Controls
 

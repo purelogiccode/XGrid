@@ -49,10 +49,13 @@ memory-backed block driver `xemu/block/blkmemory.c` is GPL-2.0-or-later and
 comes from the same lineage (originally espes / IBM). `xemu/xemu-patches/0018-core-chihiro.patch`
 records the changes to the vendored xemu tree.
 
-The Chihiro netboot converter is **not** bundled. Users who have Redump or
-MAME GD-ROM dumps can convert them with the external, MIT-licensed
+The Chihiro netboot converters are part of XGrid. The Redump GD-ROM
+converter (`src/XGrid.XboxFs/ChihiroRedumpConverter.cs`) is an independent
+C# implementation of the format used by the MIT-licensed
 `chihiro-netboot` tool (Tovarichtch/chihiro-netboot, based on JayFoxRox's
-Chihiro-Tools). XGrid ships no game keys, GD-ROM data or firmware.
+Chihiro-Tools); its format and DES byte-swap scheme follow that tool, and
+its MIT notice is kept in the file. XGrid ships no game keys, GD-ROM data or
+firmware.
 
 Vendored inside the core additions:
 

@@ -35,6 +35,7 @@ files are recorded in `xemu/xemu-patches/`.
 | Silk.NET.OpenGL | MIT | Managed OpenGL bindings in the oracle. |
 | XISOSharp | MIT | XDVDFS reader adapter. |
 | CHDSharp | MIT | Managed CHD reader in the oracle. |
+| chihiro-netboot | MIT | Format reference for the in-tree Chihiro Redump GD-ROM converter. |
 | SDL3, GLib, OpenSSL, libcurl, zstd, and other core DLLs | see notices | Redistributed with the Windows core package; linked from the host on Linux. |
 
 The complete list, including every runtime DLL and ported file, is

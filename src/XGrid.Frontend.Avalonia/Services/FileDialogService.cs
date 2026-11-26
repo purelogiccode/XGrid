@@ -131,6 +131,20 @@ public sealed class FileDialogService
         new FilePickerFileType("All files") { Patterns = ["*"] },
     ];
 
+    /// <summary>Redump cue sheets for a Chihiro GD-ROM.</summary>
+    public static IReadOnlyList<FilePickerFileType> CueTypes { get; } =
+    [
+        new FilePickerFileType("Cue sheets") { Patterns = ["*.cue"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
+
+    /// <summary>MAME key archives for a Chihiro GD-ROM.</summary>
+    public static IReadOnlyList<FilePickerFileType> KeyArchiveTypes { get; } =
+    [
+        new FilePickerFileType("MAME key archives") { Patterns = ["*.zip"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
+
     /// <summary>Common hard-disk-image filter.</summary>
     public static IReadOnlyList<FilePickerFileType> DiskTypes { get; } =
     [

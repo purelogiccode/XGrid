@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Avalonia.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -1327,6 +1328,68 @@ public sealed partial class SettingsViewModel : PageViewModel
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                               or InvalidDataException or FileNotFoundException
                                               or DirectoryNotFoundException)
+        {
+            ChihiroConvertStatus = "Conversion failed: " + exception.Message;
+            Shell.ShowToast("Chihiro conversion failed: " + exception.Message);
+        }
+        finally
+        {
+            ChihiroConverting = false;
+        }
+    }
+
+    /// <summary>
+    /// Public command: converts a raw Redump GD-ROM cue/bin set into a netboot
+    /// image. The game's small MAME key ZIP supplies the DES key and the
+    /// loader; the high-density track is decrypted directly.
+    /// </summary>
+    [RelayCommand]
+    private async Task ConvertChihiroGdRomAsync()
+    {
+        string? cue = await Shell.Dialogs.PickFileAsync(
+            "Choose the game's cue sheet",
+            FileDialogService.CueTypes);
+        if (cue is null)
+        {
+            return;
+        }
+
+        string? key = await Shell.Dialogs.PickFileAsync(
+            "Choose the game's MAME key ZIP",
+            FileDialogService.KeyArchiveTypes);
+        if (key is null)
+        {
+            return;
+        }
+
+        string suggested = Path.GetFileNameWithoutExtension(cue) + ".bin";
+        string? output = await Shell.Dialogs.PickSaveFileAsync(
+            "Save the Chihiro netboot image",
+            suggested,
+            FileDialogService.NetbootTypes);
+        if (output is null)
+        {
+            return;
+        }
+
+        ChihiroConverting = true;
+        ChihiroConvertStatus = "Converting...";
+        try
+        {
+            var progress = new Progress<double>(
+                value => ChihiroConvertStatus = $"Converting... {value * 100:0}%");
+            ChihiroRedumpConverter.Result result = await Task.Run(
+                () => ChihiroRedumpConverter.Convert(cue, key, output, progress));
+            ChihiroConvertStatus =
+                $"Wrote {Path.GetFileName(result.OutputPath)} " +
+                $"({result.ImageBytes / (1024 * 1024)} MiB, {result.Loader} -> {result.FatxName}).";
+            ChihiroEnabled = true;
+            Shell.ShowToast("Chihiro netboot image created.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException or FileNotFoundException
+                                              or DirectoryNotFoundException
+                                              or CryptographicException)
         {
             ChihiroConvertStatus = "Conversion failed: " + exception.Message;
             Shell.ShowToast("Chihiro conversion failed: " + exception.Message);
