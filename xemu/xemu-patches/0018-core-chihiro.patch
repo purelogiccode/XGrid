@@ -12,8 +12,8 @@ New files (whole files, not shown as hunks):
   hw/xbox/chihiro/*.c, *.h and meson.build
 
 The diff below covers the edits to the existing xemu tree, including the OHCI
-enumeration hooks and the keyboard/gamepad JVS mapping. It applies on top of
-the XGrid 0.8.139 tree with patches 0001-0017.
+enumeration hooks, the keyboard/gamepad JVS mapping and the pointer aim for the
+gun games. It applies on top of the XGrid 0.8.139 tree with patches 0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
 index 34b1b2a3..5f3be43e 100644
 --- a/xemu/block/meson.build
@@ -1224,7 +1224,7 @@ index 7900f869..8d5a18d0 100644
      for (int i = 1; i < argc; i++) {
          if (argv[i] != NULL) {
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 54595e1b..e70d4b81 100644
+index 54595e1b..760eac12 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
 @@ -36,6 +36,8 @@
@@ -1236,7 +1236,7 @@ index 54595e1b..e70d4b81 100644
  
  // #define DEBUG_INPUT
  
-@@ -564,6 +566,247 @@ void xemu_input_update_controller(ControllerState *state)
+@@ -564,6 +566,277 @@ void xemu_input_update_controller(ControllerState *state)
      state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
  }
  
@@ -1288,6 +1288,39 @@ index 54595e1b..e70d4b81 100644
 +    int value = pad->axis[axis];
 +    value = value < 0 ? 0 : value > 32767 ? 32767 : value;
 +    return (uint16_t)(value * 2);
++}
++
++/* The gun games aim with the host pointer. The SDL window is the picture, so
++ * the cursor position maps straight onto the JVS analog pair; leaving the
++ * picture reports the off-screen position the games treat as a reload. */
++static void chihiro_gun_aim(ChihiroJVSState *jvs)
++{
++    SDL_Window *window = SDL_GetMouseFocus();
++    if (!window) {
++        window = SDL_GetKeyboardFocus();
++    }
++    float mouse_x = 0.5f, mouse_y = 0.5f;
++    int width = 0, height = 0;
++    if (window) {
++        SDL_GetMouseState(&mouse_x, &mouse_y);
++        SDL_GetWindowSize(window, &width, &height);
++    }
++
++    if (width <= 0 || height <= 0) {
++        jvs->analog[0] = 0x8000;
++        jvs->analog[1] = 0x8000;
++        return;
++    }
++
++    float nx = mouse_x / (float)width;
++    float ny = mouse_y / (float)height;
++    if (nx < 0.01f || nx > 0.99f || ny < 0.01f || ny > 0.99f) {
++        jvs->analog[0] = 0;
++        jvs->analog[1] = 0;
++    } else {
++        jvs->analog[0] = (uint16_t)(nx * 0xFFFF);
++        jvs->analog[1] = (uint16_t)(ny * 0xFFFF);
++    }
 +}
 +
 +/* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
@@ -1343,10 +1376,7 @@ index 54595e1b..e70d4b81 100644
 +            chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) {
 +            sw1 |= 0x40;
 +        }
-+        /* Aim at the middle of the picture: the games need a position to
-+         * fire, and a keyboard has none. */
-+        jvs->analog[0] = 0x8000;
-+        jvs->analog[1] = 0x8000;
++        chihiro_gun_aim(jvs);
 +        break;
 +    }
 +    case CONFIG_CHIHIRO_JVS_PROFILE_CTX:
@@ -1484,7 +1514,7 @@ index 54595e1b..e70d4b81 100644
  void xemu_input_update_controllers(void)
  {
      ControllerState *iter;
-@@ -573,6 +816,7 @@ void xemu_input_update_controllers(void)
+@@ -573,6 +846,7 @@ void xemu_input_update_controllers(void)
      QTAILQ_FOREACH(iter, &available_controllers, entry) {
          xemu_input_update_rumble(iter);
      }

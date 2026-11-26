@@ -137,8 +137,12 @@ The House of the Dead III, Virtua Cop 3 and Ghost Squad use the gun layout;
 Crazy Taxi High Roller, OutRun 2 and Maximum Tune use the driving layout; Ollie
 King and Gundam have their own layouts. The first detected gamepad drives the
 cabinet; a wheel that SDL exposes as a gamepad works through its stick and
-triggers. The light gun currently aims at the centre of the picture; pointer
-devices and force feedback are not exposed by the shell yet.
+triggers.
+
+In the gun games, move the host cursor over the picture to aim; RT or the
+configured trigger fires and A is the body/action button. Moving off the
+picture reports the off-screen/reload position. The shell cursor is still
+visible, so use fullscreen or a large picture for the best aim.
 
 ## Limits
 

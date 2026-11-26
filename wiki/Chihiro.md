@@ -63,8 +63,9 @@ launch it. XGrid bundles no keys, firmware or game data.
 
 The game's cabinet profile is detected from its executable; gun, driving,
 Ollie King and Gundam layouts are supported. The first detected gamepad drives
-the cabinet; pointer devices, light-gun aim and force feedback are not exposed
-yet.
+the cabinet. In gun games, move the host cursor over the picture to aim; RT/A
+fire and act, and leaving the picture reports the off-screen/reload position.
+Force feedback is not exposed yet.
 
 Click the game picture once after launch so the embedded core takes keyboard
 focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a
