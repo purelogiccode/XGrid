@@ -82,22 +82,27 @@ The core's default Chihiro keyboard map is below. The keys can be changed in
 `xemu.toml` under `[chihiro.jvs]`; the shell does not expose a Chihiro key editor
 yet.
 
-| Action | Default key |
-| --- | --- |
-| Start | Enter |
-| Service | `L` |
-| Coin | `5` |
-| Test | `K` |
-| Steer left / right | `Left` / `Right` |
-| Gas / brake | `Up` / `Down` |
-| Gear up / down | `]` / `[` |
-| Card in | `C` |
+| Action | Keyboard | Gamepad |
+| --- | --- | --- |
+| Start | Enter | Start |
+| Service | `L` | D-pad down |
+| Coin | `5` | Back |
+| Test | `K` | D-pad up |
+| Steer left / right | `Left` / `Right` | Left stick X |
+| Gas / brake | `Up` / `Down` | RT / LT |
+| Gear up / down | `]` / `[` | D-pad up / down |
+| View change | (game-specific) | Y |
+| Card in | `C` | X / Back |
+| Gun trigger / body | (game-specific) | RT / A |
+| Gun change / reload | (game-specific) | B |
 
 The core selects the cabinet profile from the game's `boot.id`/executable:
 The House of the Dead III, Virtua Cop 3 and Ghost Squad use the gun layout;
 Crazy Taxi High Roller, OutRun 2 and Maximum Tune use the driving layout; Ollie
-King and Gundam have their own layouts. The light gun aims at the centre of the
-picture with keyboard-only input.
+King and Gundam have their own layouts. The first detected gamepad drives the
+cabinet; a wheel that SDL exposes as a gamepad works through its stick and
+triggers. The light gun currently aims at the centre of the picture; pointer
+devices and force feedback are not exposed by the shell yet.
 
 ## Limits
 
@@ -105,9 +110,9 @@ picture with keyboard-only input.
   DIMM; it does not emulate the GD-ROM drive. Convert the disc first. The
   `XBOXOG - Chihiro` patched ISOs can be converted in XGrid itself; raw Redump
   `.cue` sets still need the external `chihiro-netboot` and their key.
-- **Keyboard-only controls in this build.** The full Chihiro fork also maps
-  gamepads, wheels, light guns and force feedback; XGrid currently exposes the
-  keyboard defaults. Gamepad and wheel mapping is a follow-up.
+- **Basic gamepad mapping in this build.** The first detected gamepad drives
+  the cabinet (stick, triggers, D-pad and face buttons). Per-game bindings,
+  force feedback, pointer devices and light-gun aim are still follow-ups.
 - **Linked cabinets and card-reader UI** are present in the core but not exposed
   by the shell. They are for later work.
 - **Shell save-state slots are Xbox-oriented.** The Chihiro core keeps its own

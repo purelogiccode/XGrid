@@ -41,20 +41,23 @@ game data.
 
 ## Controls
 
-| Action | Key |
-| --- | --- |
-| Start | Enter |
-| Service | L |
-| Coin | 5 |
-| Test | K |
-| Steer | Left / Right |
-| Gas / brake | Up / Down |
-| Gear up / down | ] / [ |
-| Card in | C |
+| Action | Keyboard | Gamepad |
+| --- | --- | --- |
+| Start | Enter | Start |
+| Service | L | D-pad down |
+| Coin | 5 | Back |
+| Test | K | D-pad up |
+| Steer | Left / Right | Left stick X |
+| Gas / brake | Up / Down | RT / LT |
+| Gear up / down | ] / [ | D-pad up / down |
+| Card in | C | X / Back |
+| Gun trigger / body | game-specific | RT / A |
+| Gun change / reload | game-specific | B |
 
 The game's cabinet profile is detected from its executable; gun, driving,
-Ollie King and Gundam layouts are supported. Keyboard input is the exposed
-control path in this build.
+Ollie King and Gundam layouts are supported. The first detected gamepad drives
+the cabinet; pointer devices, light-gun aim and force feedback are not exposed
+yet.
 
 ## Limits
 
