@@ -43,6 +43,30 @@ public sealed class ChihiroSettings
     /// </summary>
     public ChihiroJvsSettings Jvs { get; set; } = new();
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the cabinet is on free play.
+    /// Start begins a game without inserting a coin.
+    /// </summary>
+    public bool FreePlay { get; set; }
+
+    /// <summary>
+    /// Gets or sets the cabinet region: <c>auto</c>, <c>jp</c>, <c>us</c> or
+    /// <c>ex</c>. A game that stops with Error 05 may need another region.
+    /// </summary>
+    public string Region { get; set; } = "ex";
+
+    /// <summary>
+    /// Gets or sets the media-board DIMM size: <c>auto</c>, <c>128</c>,
+    /// <c>256</c>, <c>512</c> or <c>1024</c> MB.
+    /// </summary>
+    public string DimmSize { get; set; } = "auto";
+
+    /// <summary>
+    /// Gets or sets the media-board type: <c>auto</c>, <c>type1</c> or
+    /// <c>type3</c>.
+    /// </summary>
+    public string BoardType { get; set; } = "auto";
+
     /// <summary>The Chihiro flash ROM file name.</summary>
     public const string BiosFileName = "chihiro_xbox_bios.bin";
 
@@ -86,6 +110,10 @@ public sealed class ChihiroSettings
             FirmwareDirectory = FirmwareDirectory,
             Link = Link.Clone(),
             Jvs = Jvs.Clone(),
+            FreePlay = FreePlay,
+            Region = Region,
+            DimmSize = DimmSize,
+            BoardType = BoardType,
         };
     }
 
@@ -97,6 +125,9 @@ public sealed class ChihiroSettings
         Link.Normalize();
         Jvs ??= new ChihiroJvsSettings();
         Jvs.Normalize();
+        Region = Region is "auto" or "jp" or "us" or "ex" ? Region : "ex";
+        DimmSize = DimmSize is "128" or "256" or "512" or "1024" or "auto" ? DimmSize : "auto";
+        BoardType = BoardType is "type1" or "type3" or "auto" ? BoardType : "auto";
     }
 }
 

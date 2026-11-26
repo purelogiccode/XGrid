@@ -75,6 +75,18 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the qcow2 file that holds the Chihiro snapshots.</summary>
     public string ChihiroSnapshotStorePath { get; init; } = string.Empty;
 
+    /// <summary>Gets a value indicating whether the cabinet is on free play.</summary>
+    public bool ChihiroFreePlay { get; init; }
+
+    /// <summary>Gets the cabinet region (<c>auto</c>, <c>jp</c>, <c>us</c>, <c>ex</c>).</summary>
+    public string ChihiroRegion { get; init; } = "ex";
+
+    /// <summary>Gets the DIMM size (<c>auto</c>, <c>128</c>, <c>256</c>, <c>512</c>, <c>1024</c>).</summary>
+    public string ChihiroDimmSize { get; init; } = "auto";
+
+    /// <summary>Gets the media-board type (<c>auto</c>, <c>type1</c>, <c>type3</c>).</summary>
+    public string ChihiroBoardType { get; init; } = "auto";
+
     /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
     public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
 
@@ -275,6 +287,21 @@ public sealed record XemuLaunchSettings
                 {
                     errors.Add("The cabinet link needs the host cabinet's address.");
                 }
+            }
+
+            if (ChihiroRegion is not ("auto" or "jp" or "us" or "ex"))
+            {
+                errors.Add($"Unknown Chihiro region '{ChihiroRegion}'.");
+            }
+
+            if (ChihiroDimmSize is not ("auto" or "128" or "256" or "512" or "1024"))
+            {
+                errors.Add($"Unknown Chihiro DIMM size '{ChihiroDimmSize}'.");
+            }
+
+            if (ChihiroBoardType is not ("auto" or "type1" or "type3"))
+            {
+                errors.Add($"Unknown Chihiro media-board type '{ChihiroBoardType}'.");
             }
         }
         else

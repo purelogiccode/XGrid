@@ -48,6 +48,18 @@ A Chihiro launch uses the Chihiro BIOS, 128 MB of guest RAM and no Xbox hard
 disk. The shell writes `default_machine = 'chihiro'` and the
 `[chihiro.roms]` paths into the generated `xemu.toml`.
 
+## Cabinet settings
+
+**Settings → System → Sega Chihiro** also controls the cabinet:
+
+- **Free play** lets Start begin a game without inserting a coin.
+- **Region** chooses Auto, Japan, USA or Export. A game that stops with
+  `Error 05` may need another region.
+- **DIMM size** defaults to Auto. Gundam Battle Operating Simulator needs
+  1024 MB; other titles use 128 to 512 MB.
+- **Media board** defaults to Auto. Early Crazy Taxi High Roller and House of
+  the Dead III cabinets are Type 1; most others are Type 3.
+
 ## Linked cabinets
 
 Ollie King, OutRun 2, OutRun 2 SP and Maximum Tune support two to four linked
@@ -223,6 +235,7 @@ it up again. Ghost Squad's second reader is not exposed by the shell yet.
 | `is not a FATX image` | The `.bin` is still a GD-ROM or encrypted image; convert it to netboot format. |
 | Stuck on SEGABOOT or a black screen | Check the core log for the media-board flash and the game's `boot.id`; a bad or missing image leaves SEGABOOT waiting. |
 | "Error 14" / "Network firmware version" | Put `ver1305.bin` in the firmware folder. MJ2 needs 12.06, MJ3 13.05. |
+| "Error 05" / region error | Try another **Region** in Settings; the game may not accept the cabinet's current region. |
 | "DNS failed" or a network wait screen | MJ2/MJ3 need their own network server; the cabinet link is not a substitute. |
 | No sound in a Chihiro game | Known upstream xemu Chihiro limitation; the host audio backend and the Xbox path work. |
 | Linked cabinets do not connect | Start cabinet 1 first, use its LAN address on the others, allow TCP 9102-9104 through the firewall, and use the same game and firmware on every instance. |

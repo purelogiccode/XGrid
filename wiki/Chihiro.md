@@ -21,6 +21,10 @@ Open **Settings -> System -> Sega Chihiro**, choose the folder, and turn on
 **Enable Chihiro**. A `.bin` launch selects the Chihiro even when the switch is
 off. The machine uses 128 MB of RAM and no Xbox hard disk.
 
+The same page sets **Free play** (Start without a coin), **Region** (Auto,
+Japan, USA, Export; Error 05 may need another), **DIMM size** (Auto; Gundam
+needs 1024 MB) and **Media board** (Auto, Type 1, Type 3).
+
 ## Linked cabinets
 
 Ollie King, OutRun 2, OutRun 2 SP and Maximum Tune support two to four linked

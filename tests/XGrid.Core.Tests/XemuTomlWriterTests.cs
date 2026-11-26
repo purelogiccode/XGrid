@@ -42,6 +42,10 @@ public sealed class XemuTomlWriterTests
             ChihiroPc20Path = "C:\\firmware\\pc20_g24lc64.bin",
             ChihiroNetFirmwarePath = "C:\\firmware\\ver1305.bin",
             ChihiroSnapshotStorePath = "C:\\data\\xemu\\chihiro_snapshots.qcow2",
+            ChihiroFreePlay = true,
+            ChihiroRegion = "jp",
+            ChihiroDimmSize = "512",
+            ChihiroBoardType = "type3",
         };
 
         string toml = XemuTomlWriter.Build(settings);
@@ -58,6 +62,11 @@ public sealed class XemuTomlWriterTests
             "snapshot_store_path = 'C:\\data\\xemu\\chihiro_snapshots.qcow2'",
             toml,
             StringComparison.Ordinal);
+        Assert.Contains("[chihiro.settings]", toml, StringComparison.Ordinal);
+        Assert.Contains("freeplay = true", toml, StringComparison.Ordinal);
+        Assert.Contains("region = 'jp'", toml, StringComparison.Ordinal);
+        Assert.Contains("dimm_size = '512'", toml, StringComparison.Ordinal);
+        Assert.Contains("board_type = 'type3'", toml, StringComparison.Ordinal);
     }
 
     [Fact]
