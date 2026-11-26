@@ -1,8 +1,9 @@
 # Save states
 
 XGrid exposes **xemu/QEMU snapshots** as four named slots. There is no private
-XGrid snapshot format; the machine's state is written into the hard-disk image
-using the core's own snapshot support.
+XGrid snapshot format; the machine's state is written into the core's snapshot
+store using its own snapshot support. An Xbox uses its hard-disk image; a Sega
+Chihiro uses a dedicated qcow2 file.
 
 ## Requirements
 
@@ -11,7 +12,16 @@ using the core's own snapshot support.
   are disabled because the shell has no ABI to call. The Linux core is a
   separate process, so it has no shell save-state controls yet.
 - A running console.
-- A writable HDD image.
+- A writable HDD image for Xbox, or the Chihiro snapshot store.
+
+## Sega Chihiro
+
+A Chihiro launch writes snapshots into `chihiro_snapshots.qcow2` in the launch's
+data folder (the shell sets `snapshot_store_path`). The core creates the qcow2 on
+the first boot. The DIMM's game data is stored as a delta against the netboot
+image, so a slot is typically tens of megabytes. Load a Chihiro slot with the
+same `.bin` image; the core rejects a snapshot taken with a different game.
+Save states are refused while a cabinet link is enabled.
 
 ## Slots
 
@@ -46,7 +56,8 @@ Windows and a writable HDD image.
   the dashboard path resume the snapshot.
 - If the snapshot is missing or cannot be read, the console continues booting
   normally and the Activity log records why.
-- Use the same HDD image and core version that wrote the snapshot.
+- Use the same store (HDD image or Chihiro qcow2) and core version that wrote
+  the snapshot.
 
 ## Saving, loading and deleting
 
@@ -64,14 +75,16 @@ a time; a second request is refused while the first is in flight.
 ## What is captured
 
 A snapshot includes the VM state: CPU, RAM, devices and the frame thumbnail. It
-is stored inside the HDD image, so it survives replacing the application folder.
+is stored inside the machine's snapshot store (the HDD image on Xbox, the
+Chihiro qcow2 on Chihiro), so it survives replacing the application folder.
 
 State size depends on guest RAM and device state; expect tens of megabytes per
 slot.
 
 ## Loading caveats
 
-- Load into a machine that booted from the same HDD image and disc configuration.
+- Load into a machine that booted from the same store and disc configuration:
+  the same HDD image on Xbox, or the same netboot `.bin` on Chihiro.
 - The core restores the machine; the shell does not rewind its own library or
   settings.
 - A failed load is reported in the Activity log. The core resumes the guest if

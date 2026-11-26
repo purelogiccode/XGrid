@@ -72,6 +72,9 @@ public sealed record XemuLaunchSettings
     /// </summary>
     public string ChihiroNetFirmwarePath { get; init; } = string.Empty;
 
+    /// <summary>Gets the qcow2 file that holds the Chihiro snapshots.</summary>
+    public string ChihiroSnapshotStorePath { get; init; } = string.Empty;
+
     /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
     public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
 

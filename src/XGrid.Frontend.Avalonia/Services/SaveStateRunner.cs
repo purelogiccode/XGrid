@@ -27,8 +27,9 @@ public sealed class SaveStateResult
 /// <summary>
 /// Turns the core's one-at-a-time save-state requests into a shell operation:
 /// named slots, a single outstanding request and one completion message. The
-/// core writes a save state as an internal snapshot of the hard disk image, so
-/// the work happens on the core's own loop and this type waits by polling.
+/// core writes a save state as an internal snapshot of the machine's snapshot
+/// store, so the work happens on the core's own loop and this type waits by
+/// polling.
 /// </summary>
 public sealed class SaveStateRunner
 {

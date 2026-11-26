@@ -41,6 +41,7 @@ public sealed class XemuTomlWriterTests
             ChihiroIc11Path = "C:\\firmware\\ic11_24lc024.bin",
             ChihiroPc20Path = "C:\\firmware\\pc20_g24lc64.bin",
             ChihiroNetFirmwarePath = "C:\\firmware\\ver1305.bin",
+            ChihiroSnapshotStorePath = "C:\\data\\xemu\\chihiro_snapshots.qcow2",
         };
 
         string toml = XemuTomlWriter.Build(settings);
@@ -53,6 +54,10 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("ic11_path = 'C:\\firmware\\ic11_24lc024.bin'", toml, StringComparison.Ordinal);
         Assert.Contains("pc20_path = 'C:\\firmware\\pc20_g24lc64.bin'", toml, StringComparison.Ordinal);
         Assert.Contains("net_firmware_path = 'C:\\firmware\\ver1305.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains(
+            "snapshot_store_path = 'C:\\data\\xemu\\chihiro_snapshots.qcow2'",
+            toml,
+            StringComparison.Ordinal);
     }
 
     [Fact]

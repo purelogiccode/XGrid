@@ -40,6 +40,7 @@
 #include "block/blkmemory.h"
 #include "block/block-global-state.h"
 #include "block/block_int-global-state.h"
+#include "qobject/qdict.h"
 #include "migration/vmstate.h"
 #include <zlib.h>
 #include "qemu/main-loop.h"
@@ -3793,6 +3794,8 @@ static const VMStateDescription vmstate_chihiro_dimm = {
     }
 };
 
+static void chihiro_snapshot_store_init(void);
+
 void chihiro_ide_interface_init(void)
 {
     memory_region_init(&chihiro_interface_container, NULL,
@@ -3828,9 +3831,42 @@ void chihiro_ide_interface_init(void)
     dinfo->media_cd = false;
     blk_set_legacy_dinfo(blk, dinfo);
 
+    chihiro_snapshot_store_init();
     chihiro_interface_ready = true;
     printf("Chihiro: IDE interface initialized (%u MB fs, ROM via hook)\n",
            (uint32_t)(chihiro_fs_size() / (1024 * 1024)));
+    fflush(stdout);
+}
+
+/* A qcow2 just for QEMU's internal snapshots. The DIMM state itself is the
+ * chihiro-dimm vmstate; this file only has to accept the VM state stream. */
+static void chihiro_snapshot_store_init(void)
+{
+    const char *path = g_config.chihiro.roms.snapshot_store_path;
+    if (!path || !path[0]) {
+        return;
+    }
+
+    Error *err = NULL;
+    if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
+        bdrv_img_create(path, "qcow2", NULL, NULL, NULL, 512ULL << 20,
+                        0, true, &err);
+        if (err != NULL) {
+            error_reportf_err(err, "Chihiro: cannot create the snapshot store: ");
+            return;
+        }
+    }
+
+    QDict *options = qdict_new();
+    qdict_put_str(options, "driver", "qcow2");
+    BlockDriverState *store = bdrv_open(path, NULL, options, BDRV_O_RDWR, &err);
+    if (store == NULL) {
+        error_reportf_err(err, "Chihiro: cannot open the snapshot store: ");
+        return;
+    }
+
+    bdrv_set_monitor_owned(store);
+    printf("Chihiro: snapshots in %s (%s)\n", path, store->drv->format_name);
     fflush(stdout);
 }
 

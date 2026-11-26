@@ -116,6 +116,8 @@ public static class XemuTomlWriter
                 AppendPath(text, "net_firmware_path", settings.ChihiroNetFirmwarePath);
             }
 
+            AppendPath(text, "snapshot_store_path", settings.ChihiroSnapshotStorePath);
+
             ChihiroJvsSettings jvs = settings.ChihiroJvs;
             text.Append('\n');
             text.Append("[chihiro.jvs]\n");
