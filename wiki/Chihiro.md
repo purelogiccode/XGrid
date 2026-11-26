@@ -105,7 +105,8 @@ aims with the second pad's right stick or the arrow keys; RT fires, A is body,
 B is change or pedal and LT reloads. Press **C** (or X) to insert player 1's
 card and **V** (or X on the second pad) for player 2's; Ghost Squad and Maximum
 Tune create a blank card when none is in hand, and the core keeps it for later
-sessions. In gun games the mouse buttons belong to the gun, so the core's
+sessions. The HW210 and CRP-1231 card files are assignable under **Card files**
+in Settings. In gun games the mouse buttons belong to the gun, so the core's
 pop-up menu stays on **F2** (or the Guide button) and a double-click does not
 toggle fullscreen. Force feedback rumbles the first gamepad from the drive
 board and is scaled in Settings. Gundam's twin-stick keys (WASD + Q/E, the

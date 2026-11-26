@@ -727,6 +727,24 @@ public sealed partial class SettingsViewModel : PageViewModel
     private int _chihiroP2AimSpeed = 100;
 
     [ObservableProperty]
+    private bool _chihiroCardsEnabled = true;
+
+    [ObservableProperty]
+    private string _chihiroCardSlot1 = string.Empty;
+
+    [ObservableProperty]
+    private string _chihiroCardSlot2 = string.Empty;
+
+    [ObservableProperty]
+    private string _chihiroCardGundam = string.Empty;
+
+    [ObservableProperty]
+    private string _chihiroCardMt1 = string.Empty;
+
+    [ObservableProperty]
+    private string _chihiroCardMt2 = string.Empty;
+
+    [ObservableProperty]
     private KeyedOption? _selectedChihiroRegion;
 
     [ObservableProperty]
@@ -946,6 +964,13 @@ public sealed partial class SettingsViewModel : PageViewModel
         _chihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone();
         _chihiroJvsP2 = (settings.Chihiro.JvsP2 ?? new ChihiroJvsP2Settings()).Clone();
         ChihiroP2AimSpeed = _chihiroJvsP2.AimSpeed;
+        ChihiroCardReaderSettings cards = settings.Chihiro.CardReader ?? new ChihiroCardReaderSettings();
+        ChihiroCardsEnabled = cards.Enabled;
+        ChihiroCardSlot1 = cards.Hw210Slot1;
+        ChihiroCardSlot2 = cards.Hw210Slot2;
+        ChihiroCardGundam = cards.Hw210Gundam;
+        ChihiroCardMt1 = cards.Crp1231Mt1;
+        ChihiroCardMt2 = cards.Crp1231Mt2;
         RebuildChihiroBindings();
         ChihiroFreePlay = settings.Chihiro.FreePlay;
         ChihiroForceFeedback = settings.Chihiro.ForceFeedback;
@@ -1083,6 +1108,15 @@ public sealed partial class SettingsViewModel : PageViewModel
                 },
                 Jvs = _chihiroJvs.Clone(),
                 JvsP2 = _chihiroJvsP2.Clone(),
+                CardReader = new ChihiroCardReaderSettings
+                {
+                    Enabled = ChihiroCardsEnabled,
+                    Hw210Slot1 = ChihiroCardSlot1.Trim(),
+                    Hw210Slot2 = ChihiroCardSlot2.Trim(),
+                    Hw210Gundam = ChihiroCardGundam.Trim(),
+                    Crp1231Mt1 = ChihiroCardMt1.Trim(),
+                    Crp1231Mt2 = ChihiroCardMt2.Trim(),
+                },
                 FreePlay = ChihiroFreePlay,
                 Region = SelectedChihiroRegion?.Key ?? "ex",
                 DimmSize = SelectedChihiroDimm?.Key ?? "auto",
@@ -1834,6 +1868,36 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
     }
 
+    /// <summary>Public command: browses for one of the cabinet's card images.</summary>
+    [RelayCommand]
+    private async Task BrowseChihiroCardAsync(string? slot)
+    {
+        string? path = await Shell.Dialogs.PickFileAsync("Choose a Chihiro card image", FileDialogService.CardTypes);
+        if (path is null)
+        {
+            return;
+        }
+
+        switch (slot)
+        {
+            case "hw210-slot1":
+                ChihiroCardSlot1 = path;
+                break;
+            case "hw210-slot2":
+                ChihiroCardSlot2 = path;
+                break;
+            case "hw210-gundam":
+                ChihiroCardGundam = path;
+                break;
+            case "crp1231-mt1":
+                ChihiroCardMt1 = path;
+                break;
+            case "crp1231-mt2":
+                ChihiroCardMt2 = path;
+                break;
+        }
+    }
+
     /// <summary>Public command: browses for a disc image.</summary>
     [RelayCommand]
     private async Task BrowseDvdAsync()
@@ -1914,6 +1978,21 @@ public sealed partial class SettingsViewModel : PageViewModel
                 break;
             case "chihiro-firmware":
                 ChihiroFirmwareDirectory = string.Empty;
+                break;
+            case "chihiro-card-hw210-slot1":
+                ChihiroCardSlot1 = string.Empty;
+                break;
+            case "chihiro-card-hw210-slot2":
+                ChihiroCardSlot2 = string.Empty;
+                break;
+            case "chihiro-card-hw210-gundam":
+                ChihiroCardGundam = string.Empty;
+                break;
+            case "chihiro-card-crp1231-mt1":
+                ChihiroCardMt1 = string.Empty;
+                break;
+            case "chihiro-card-crp1231-mt2":
+                ChihiroCardMt2 = string.Empty;
                 break;
         }
     }

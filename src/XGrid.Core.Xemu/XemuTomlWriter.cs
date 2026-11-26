@@ -118,6 +118,22 @@ public static class XemuTomlWriter
 
             AppendPath(text, "snapshot_store_path", settings.ChihiroSnapshotStorePath);
 
+            ChihiroCardReaderSettings cards = settings.ChihiroCardReader;
+            text.Append('\n');
+            text.Append("[chihiro.card_reader]\n");
+            text.Append("enable = ").Append(Bool(cards.Enabled)).Append('\n');
+
+            text.Append('\n');
+            text.Append("[chihiro.card_reader.hw210]\n");
+            AppendPath(text, "slot1", cards.Hw210Slot1);
+            AppendPath(text, "slot2", cards.Hw210Slot2);
+            AppendPath(text, "gundam", cards.Hw210Gundam);
+
+            text.Append('\n');
+            text.Append("[chihiro.card_reader.crp1231]\n");
+            AppendPath(text, "mt1", cards.Crp1231Mt1);
+            AppendPath(text, "mt2", cards.Crp1231Mt2);
+
             ChihiroJvsSettings jvs = settings.ChihiroJvs;
             text.Append('\n');
             text.Append("[chihiro.jvs]\n");

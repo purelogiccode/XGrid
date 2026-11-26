@@ -190,6 +190,30 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_CopiesTheCardReaderSettings()
+    {
+        EmulatorSettings settings = Settings();
+        settings.Chihiro.CardReader.Enabled = false;
+        settings.Chihiro.CardReader.Hw210Slot1 = "C:\\cards\\p1.bin";
+        settings.Chihiro.CardReader.Hw210Slot2 = "C:\\cards\\p2.bin";
+        settings.Chihiro.CardReader.Hw210Gundam = "C:\\cards\\gundam.bin";
+        settings.Chihiro.CardReader.Crp1231Mt1 = "C:\\cards\\mt1.bin";
+        settings.Chihiro.CardReader.Crp1231Mt2 = "C:\\cards\\mt2.bin";
+        string image = Path.Combine(_root, "media", "game.bin");
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, image, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.False(launch.ChihiroCardReader.Enabled);
+        Assert.Equal("C:\\cards\\p1.bin", launch.ChihiroCardReader.Hw210Slot1);
+        Assert.Equal("C:\\cards\\p2.bin", launch.ChihiroCardReader.Hw210Slot2);
+        Assert.Equal("C:\\cards\\gundam.bin", launch.ChihiroCardReader.Hw210Gundam);
+        Assert.Equal("C:\\cards\\mt1.bin", launch.ChihiroCardReader.Crp1231Mt1);
+        Assert.Equal("C:\\cards\\mt2.bin", launch.ChihiroCardReader.Crp1231Mt2);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
     public void DescribeProblem_ReportsMissingChihiroFirmware()
     {
         string directory = Path.Combine(_root, "empty-chihiro");

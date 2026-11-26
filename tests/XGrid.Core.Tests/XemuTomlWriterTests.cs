@@ -146,6 +146,36 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Build_WritesTheChihiroCardReaders()
+    {
+        XemuLaunchSettings settings = CreateSettings(128) with
+        {
+            Machine = XemuLaunchSettings.MachineChihiro,
+            ChihiroCardReader = new ChihiroCardReaderSettings
+            {
+                Enabled = false,
+                Hw210Slot1 = "C:\\cards\\p1.bin",
+                Hw210Slot2 = "C:\\cards\\p2.bin",
+                Hw210Gundam = "C:\\cards\\gundam.bin",
+                Crp1231Mt1 = "C:\\cards\\mt1.bin",
+                Crp1231Mt2 = "C:\\cards\\mt2.bin",
+            },
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains("[chihiro.card_reader]", toml, StringComparison.Ordinal);
+        Assert.Contains("enable = false", toml, StringComparison.Ordinal);
+        Assert.Contains("[chihiro.card_reader.hw210]", toml, StringComparison.Ordinal);
+        Assert.Contains("slot1 = 'C:\\cards\\p1.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("slot2 = 'C:\\cards\\p2.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("gundam = 'C:\\cards\\gundam.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("[chihiro.card_reader.crp1231]", toml, StringComparison.Ordinal);
+        Assert.Contains("mt1 = 'C:\\cards\\mt1.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("mt2 = 'C:\\cards\\mt2.bin'", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_WritesTheChihiroCabinetLink()
     {
         XemuLaunchSettings settings = CreateSettings(128) with
