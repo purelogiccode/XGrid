@@ -146,6 +146,7 @@ public sealed class XemuLaunchPlanTests : IDisposable
         settings.Chihiro.Jvs.Coin = 35;
         settings.Chihiro.Jvs.GsTrigger = 1003;
         settings.Chihiro.Jvs.GundamPedal = 46;
+        settings.Chihiro.Jvs.Profile = "wmmt2";
         settings.Chihiro.JvsP2.Start = 89;
         settings.Chihiro.JvsP2.CardIn = 20;
         settings.Chihiro.JvsP2.AimSpeed = 125;
@@ -158,6 +159,7 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.Equal(35, launch.ChihiroJvs.Coin);
         Assert.Equal(1003, launch.ChihiroJvs.GsTrigger);
         Assert.Equal(46, launch.ChihiroJvs.GundamPedal);
+        Assert.Equal("wmmt2", launch.ChihiroJvs.Profile);
         Assert.Equal(89, launch.ChihiroJvsP2.Start);
         Assert.Equal(20, launch.ChihiroJvsP2.CardIn);
         Assert.Equal(125, launch.ChihiroJvsP2.AimSpeed);

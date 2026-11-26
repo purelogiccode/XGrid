@@ -714,6 +714,19 @@ public sealed partial class SettingsViewModel : PageViewModel
         new KeyedOption("type3", "Type 3"),
     ];
 
+    /// <summary>Gets the fallback cabinet profiles for unrecognized games.</summary>
+    public IReadOnlyList<KeyedOption> ChihiroProfileOptions { get; } =
+    [
+        new KeyedOption("hotd3", "The House of the Dead III"),
+        new KeyedOption("vc3", "Virtua Cop 3"),
+        new KeyedOption("gs", "Ghost Squad"),
+        new KeyedOption("ctx", "Crazy Taxi High Roller"),
+        new KeyedOption("or2", "OutRun 2"),
+        new KeyedOption("ok", "Ollie King"),
+        new KeyedOption("wmmt2", "Maximum Tune"),
+        new KeyedOption("gundam", "Gundam B.O.S."),
+    ];
+
     [ObservableProperty]
     private bool _chihiroFreePlay;
 
@@ -766,6 +779,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     [ObservableProperty]
     private KeyedOption? _selectedChihiroRegion;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedChihiroProfile;
 
     [ObservableProperty]
     private KeyedOption? _selectedChihiroDimm;
@@ -982,6 +998,9 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroLinkHost = link.Host;
         ChihiroLinkPort = link.Port;
         _chihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone();
+        SelectedChihiroProfile = ChihiroProfileOptions.FirstOrDefault(
+            option => string.Equals(option.Key, _chihiroJvs.Profile, StringComparison.Ordinal))
+            ?? ChihiroProfileOptions[0];
         _chihiroJvsP2 = (settings.Chihiro.JvsP2 ?? new ChihiroJvsP2Settings()).Clone();
         ChihiroP2AimSpeed = _chihiroJvsP2.AimSpeed;
         ChihiroCardReaderSettings cards = settings.Chihiro.CardReader ?? new ChihiroCardReaderSettings();
@@ -1113,6 +1132,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroP2AimSpeed = Math.Clamp(ChihiroP2AimSpeed, 0, 400);
         ChihiroWheelWeight = Math.Clamp(ChihiroWheelWeight, 0, 100);
         ChihiroWheelAutocenterStrength = Math.Clamp(ChihiroWheelAutocenterStrength, 0, 100);
+        _chihiroJvs.Profile = SelectedChihiroProfile?.Key ?? "hotd3";
         _chihiroJvsP2.AimSpeed = ChihiroP2AimSpeed;
         var next = new EmulatorSettings
         {
@@ -1599,6 +1619,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     private void ResetChihiroKeys()
     {
         _chihiroJvs = new ChihiroJvsSettings();
+        SelectedChihiroProfile = ChihiroProfileOptions[0];
         _chihiroJvsP2 = new ChihiroJvsP2Settings();
         ChihiroP2AimSpeed = 100;
         RebuildChihiroBindings();

@@ -1152,6 +1152,22 @@
                 </StackPanel>
                 <Border Classes="divider" />
 
+                <Grid ColumnDefinitions="170,*" ColumnSpacing="10">
+                  <TextBlock Text="Undetected game" Classes="label" VerticalAlignment="Center" />
+                  <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                            ItemsSource="{Binding ChihiroProfileOptions}"
+                            SelectedItem="{Binding SelectedChihiroProfile, Mode=TwoWay}"
+                            ToolTip.Tip="Cabinet layout used when the executable is not recognized">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+                <TextBlock Text="Used only when the game's executable is not in the cabinet table."
+                           Classes="hint" TextWrapping="Wrap" />
+
                 <TextBlock Text="System" Classes="label" />
                 <ItemsControl ItemsSource="{Binding ChihiroSystemBindings}">
                   <ItemsControl.ItemTemplate>

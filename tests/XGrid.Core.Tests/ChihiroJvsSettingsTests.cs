@@ -11,6 +11,7 @@ public sealed class ChihiroJvsSettingsTests
     {
         var settings = new ChihiroJvsSettings
         {
+            Profile = "unknown",
             GundamLUp = 3,
             GundamRTrigger = 1009,
             GundamPedal = 44,
@@ -19,6 +20,7 @@ public sealed class ChihiroJvsSettingsTests
 
         settings.Normalize();
 
+        Assert.Equal("hotd3", settings.Profile);
         Assert.Equal(0, settings.GundamLUp);
         Assert.Equal(0, settings.GundamRTrigger);
         Assert.Equal(44, settings.GundamPedal);

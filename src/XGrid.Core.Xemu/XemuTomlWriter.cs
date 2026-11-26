@@ -137,6 +137,7 @@ public static class XemuTomlWriter
             ChihiroJvsSettings jvs = settings.ChihiroJvs;
             text.Append('\n');
             text.Append("[chihiro.jvs]\n");
+            text.Append("profile = '").Append(jvs.Profile).Append("'\n");
             AppendInt(text, "start", jvs.Start);
             AppendInt(text, "service", jvs.Service);
             AppendInt(text, "coin", jvs.Coin);

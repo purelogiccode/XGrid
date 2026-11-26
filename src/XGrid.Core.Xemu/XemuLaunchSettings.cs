@@ -350,6 +350,12 @@ public sealed record XemuLaunchSettings
             {
                 errors.Add($"Player 2's aim speed must be 0 to 400%, not {ChihiroJvsP2.AimSpeed}%.");
             }
+
+            if (ChihiroJvs.Profile is not ("hotd3" or "vc3" or "gs" or "ctx" or "or2"
+                                           or "ok" or "wmmt2" or "gundam"))
+            {
+                errors.Add($"Unknown Chihiro cabinet profile '{ChihiroJvs.Profile}'.");
+            }
         }
         else
         {
