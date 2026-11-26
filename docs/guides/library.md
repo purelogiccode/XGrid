@@ -123,9 +123,9 @@ Cloudflare R2:
 https://assets.purelogiccode.com/xgrid/v1/catalog.json
 ```
 
-This is the planned default endpoint. Until the Xbox catalog is published there,
-the request fails gracefully and local covers continue to work; a self-hosted or
-`file://` catalog can be used in the meantime.
+This is the live default endpoint. The 2026-11-26 pack contains 1,632
+deduplicated covers. If the catalog is unavailable, local covers keep working;
+a self-hosted or `file://` catalog can be used instead.
 
 The catalog contains a JSON index plus immutable WebP images. XGrid:
 

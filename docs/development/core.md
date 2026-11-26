@@ -83,6 +83,10 @@ every downloaded image is verified before it enters the cache. The default
 catalog is `https://assets.purelogiccode.com/xgrid/v1/catalog.json`; it is
 configurable and may be a `file://` catalog for offline use.
 
+`scripts/package-covers.ps1` builds the local pack with ffmpeg and
+`scripts/publish-covers.ps1` mirrors it to R2 with rclone. The schema, matching
+rules and publish commands are in [Cover catalog packaging](covers.md).
+
 ## In-process ABI
 
 ```c

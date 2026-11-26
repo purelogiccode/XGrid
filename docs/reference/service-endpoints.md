@@ -14,6 +14,8 @@ the quick reference; the detailed contracts are linked below.
 | Donation page | `GET https://www.purelogiccode.com/donate?app=xgrid&email=...` | Anonymous | Do not press **Donate** |
 | Update check | `GET https://api.github.com/repos/purelogiccode/XGrid/releases/latest` | Optional `XGRID_GITHUB_TOKEN` | `XGRID_DISABLE_UPDATE_CHECK=1` |
 | Tag fallback | `GET https://api.github.com/repos/purelogiccode/XGrid/tags` | Optional token | Same as update check |
+| Cover catalog | `GET https://assets.purelogiccode.com/xgrid/v1/catalog.json` | Anonymous | Settings → Library → Cover art |
+| Cover images | `GET https://assets.purelogiccode.com/xgrid/v1/images/<sha256>.webp` | Anonymous | Settings → Library → Cover art |
 
 ## Request summaries
 
@@ -54,6 +56,14 @@ More: [Logging and diagnostics](../guides/diagnostics.md) and
 
 More: [Donation API](donation-api.md).
 
+### Cover catalog
+
+`catalog.json` is a static JSON index. Images are immutable, content-addressed
+WebP files named by the SHA-256 of their bytes. Matching runs locally; only the
+catalog and matched images are requested. The default endpoint is configurable
+under **Settings → Library → Cover art**. More:
+[Game library](../guides/library.md#online-covers).
+
 ## Timeouts and failure behavior
 
 | Client | Timeout | On failure |
@@ -62,6 +72,8 @@ More: [Donation API](donation-api.md).
 | Bug report | 12 seconds per report | Queue logs the failure and continues. |
 | Donation | 10 seconds | Returns `Unavailable`; the banner stays. |
 | Update check | 8 seconds | Debug log, no prompt. |
+| Cover catalog | 30 seconds | Keeps the cached catalog; local covers remain. |
+| Cover image | 120 seconds | Records a failed cover; local covers remain. |
 
 No service call is retried in a tight loop. The bug-report queue enforces the
 service limit of ten reports per minute.

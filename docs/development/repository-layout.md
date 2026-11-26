@@ -48,7 +48,9 @@ data/                         local firmware/media (git-ignored)
 - `xemu/` — the native core tree.
 - `scripts/build-native-xemu.ps1` — core build (Windows/MSYS2).
 - `scripts/build-native-xemu.sh` — core build (Linux).
-- `scripts/package.ps1` — release tree.
+- `scripts/package.ps1` - release tree.
+- `scripts/package-covers.ps1` - build the R2 cover catalog with ffmpeg.
+- `scripts/publish-covers.ps1` - mirror the cover catalog to R2 with rclone.
 
 ### Validation
 
