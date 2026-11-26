@@ -24,6 +24,8 @@ public sealed class ChihiroSettings
     /// Expected files: <c>chihiro_xbox_bios.bin</c>,
     /// <c>fpr21042_m29w160et.bin</c>, <c>ic10_g24lc64.bin</c>,
     /// <c>ic11_24lc024.bin</c> and <c>pc20_g24lc64.bin</c>.
+    /// <c>ver1305.bin</c> is optional but required by network titles such as
+    /// MJ2 and MJ3, which check its version.
     /// </remarks>
     public string FirmwareDirectory { get; set; } = string.Empty;
 
@@ -41,6 +43,9 @@ public sealed class ChihiroSettings
 
     /// <summary>The SC EEPROM file name.</summary>
     public const string Pc20FileName = "pc20_g24lc64.bin";
+
+    /// <summary>The optional network-board firmware file name.</summary>
+    public const string NetFirmwareFileName = "ver1305.bin";
 
     /// <summary>Gets the firmware folder to use, given the Xbox BIOS path.</summary>
     /// <param name="biosPath">The configured Xbox BIOS path, if any.</param>

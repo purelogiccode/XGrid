@@ -26,14 +26,19 @@ files in one folder:
 | `ic10_g24lc64.bin` | 8 KB | The QC board's EEPROM. |
 | `ic11_24lc024.bin` | 128 bytes | The baseboard's EEPROM (cabinet settings and saves). |
 | `pc20_g24lc64.bin` | 8 KB | The SC board's EEPROM. |
+| `ver1305.bin` | 1 MiB | Optional network-board firmware (Au1500/VxWorks). |
 
-The same folder may also hold `ver1305.bin`, the network-board firmware. It is
-optional for single cabinets.
+The network firmware is not needed by the gun and driving games, but network
+titles check its version: MJ2 requires 12.06, MJ3 13.05, OutRun 2 SP 11.01 and
+Gundam 12.09 or later. Without it the board reports 3.17 and those titles stop
+with their firmware-version error. `ver1305.bin` comes from a Chihiro firmware
+update disc, not from the MAME ROM set.
 
 ## Setup
 
 1. Open **Settings → System → Sega Chihiro**.
-2. Choose the folder with the five firmware files.
+2. Choose the folder with the five required firmware files. Add
+   `ver1305.bin` if you have it.
 3. Turn **Enable Chihiro** on if you want every launch to use the Chihiro.
    Launching a `.bin` image selects it for that launch even when this is off.
 4. Add the folder with your netboot images in **Settings → Library**.
@@ -111,16 +116,17 @@ The cabinet table covers the main Chihiro releases:
 | Ollie King | Yes |
 | Wangan Midnight Maximum Tune | Yes |
 | Wangan Midnight Maximum Tune 2 | Yes |
-| Sega Network Taisen Mahjong MJ2 / MJ3 / MJ3 Evolution | Converted; the static cabinet profile is selected |
+| Sega Network Taisen Mahjong MJ2 / MJ3 / MJ3 Evolution | Boots past the firmware check with `ver1305.bin`; the games then wait for their network |
 
 The test means SEGABOOT reached the game and the cabinet profile was selected;
-it is not a promise for every scene or network mode.
+it is not a promise for every scene or network mode. The MJ titles are network
+mahjong games and need a linked cabinet or server to go further.
 
 ## Controls
 
-The core's default Chihiro keyboard map is below. The keys can be changed in
-`xemu.toml` under `[chihiro.jvs]`; the shell does not expose a Chihiro key editor
-yet.
+The core's default Chihiro keyboard map is below. The shell does not expose a
+Chihiro key editor yet, and it regenerates `xemu.toml` on every launch, so the
+defaults below are what a shell launch uses.
 
 Click the game picture once after launch: the embedded core takes keyboard
 focus for the cabinet (the Xbox path keeps focus in the shell for its pad
@@ -170,8 +176,11 @@ exposed by the shell yet.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
   the cabinet (stick, triggers, D-pad and face buttons). Per-game bindings and
   force feedback are still follow-ups.
-- **Linked cabinets and the second card reader** are present in the core but
-  not exposed by the shell. Player 1's card insert works.
+- **Linked cabinets, the network board and the second card reader** are present
+  in the core but not exposed by the shell. Player 1's card insert works.
+- **Network titles stop at their network startup.** MJ2/MJ3/MJ3 Evolution boot
+  past the firmware-version check with `ver1305.bin`, but they need a linked
+  cabinet or server and do not reach a solo game.
 - **Shell save-state slots are Xbox-oriented.** The Chihiro core keeps its own
   cabinet saves in the baseboard EEPROM; the shell's HDD-backed snapshot slots
   are not a Chihiro feature yet.
@@ -183,10 +192,12 @@ exposed by the shell yet.
 
 | Problem | Check |
 | --- | --- |
-| "Chihiro files not found" | All five files are in the chosen folder and the names match the table above. |
+| "Chihiro files not found" | All five required files are in the chosen folder and the names match the table above. Add `ver1305.bin` for MJ2/MJ3. |
 | "is not a Chihiro BIOS" | Use `chihiro_xbox_bios.bin`, not `Complex_4627.bin` or another Xbox BIOS. |
 | `is not a FATX image` | The `.bin` is still a GD-ROM or encrypted image; convert it to netboot format. |
 | Stuck on SEGABOOT or a black screen | Check the core log for the media-board flash and the game's `boot.id`; a bad or missing image leaves SEGABOOT waiting. |
+| "Error 14" / "Network firmware version" | Put `ver1305.bin` in the firmware folder. MJ2 needs 12.06, MJ3 13.05. |
+| "DNS failed" or a network wait screen | The game needs a linked cabinet or server; the shell does not expose cabinet link yet. |
 | No input | The core window must have keyboard focus. See [Controls](#controls). |
 
 The core log is in **Activity** and, in separate-process mode,

@@ -111,6 +111,10 @@ public static class XemuTomlWriter
             AppendPath(text, "ic10_path", settings.ChihiroIc10Path);
             AppendPath(text, "ic11_path", settings.ChihiroIc11Path);
             AppendPath(text, "pc20_path", settings.ChihiroPc20Path);
+            if (!string.IsNullOrWhiteSpace(settings.ChihiroNetFirmwarePath))
+            {
+                AppendPath(text, "net_firmware_path", settings.ChihiroNetFirmwarePath);
+            }
         }
 
         return text.ToString();
