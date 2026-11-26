@@ -122,8 +122,10 @@ shell page to return focus to XGrid.
 Boot-tested: Ghost Squad, OutRun 2, The House of the Dead III, Virtua Cop 3,
 Crazy Taxi High Roller, Ollie King and Wangan Midnight Maximum Tune 1/2. Two
 OutRun 2 instances linked as cabinets 1 and 2 and both showed **CONNECTION WAS
-ESTABLISHED**. The MJ2/MJ3/MJ3 Evolution conversions boot past the
-network-firmware check with `ver1305.bin` and then wait for their own server.
+ESTABLISHED**; four headless OutRun 2 instances linked as cabinets 1-4 on TCP
+9102-9104 and each reported its cabinet number of 4. The MJ2/MJ3/MJ3 Evolution
+conversions boot past the network-firmware check with `ver1305.bin` and then
+wait for their own server.
 
 ## Limits
 
