@@ -40,6 +40,7 @@ typedef struct NV2AState NV2AState;
 typedef struct PGRAPHNullState PGRAPHNullState;
 typedef struct PGRAPHGLState PGRAPHGLState;
 typedef struct PGRAPHVkState PGRAPHVkState;
+typedef struct PGRAPHD3D11State PGRAPHD3D11State;
 
 typedef struct VertexAttribute {
     bool dma_select;
@@ -128,6 +129,7 @@ typedef struct PGRAPHRenderer {
         void (*pre_shutdown_wait)(NV2AState *d);
         void (*process_pending)(NV2AState *d);
         void (*process_pending_reports)(NV2AState *d);
+        void (*post_load)(NV2AState *d);
         void (*surface_flush)(NV2AState *d);
         void (*surface_update)(NV2AState *d, bool upload, bool color_write, bool zeta_write);
         void (*set_surface_scale_factor)(NV2AState *d, unsigned int scale);
@@ -272,6 +274,7 @@ typedef struct PGRAPHState {
         PGRAPHNullState *null_renderer_state;
         PGRAPHGLState *gl_renderer_state;
         PGRAPHVkState *vk_renderer_state;
+        PGRAPHD3D11State *d3d11_renderer_state;
     };
 } PGRAPHState;
 

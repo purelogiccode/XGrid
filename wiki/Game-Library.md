@@ -96,4 +96,5 @@ For boot failures, see [Media formats](Media-Formats) and
 
 The newest captures appear as a thumbnail strip at the bottom of the page.
 Click a picture to open it, **Refresh** to re-read the folder, or **Open folder**
-to browse the PNGs. **F8** captures the whole window.
+to browse the PNGs. **F8** saves the console picture; with separate-process
+hosting it captures the whole window instead.

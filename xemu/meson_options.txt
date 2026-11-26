@@ -2,6 +2,11 @@
 option('xgrid_vulkan', type : 'boolean', value : false,
        description: 'Build the Vulkan renderer (XGrid: OpenGL only)')
 
+# XGrid: the native Direct3D 11 renderer is Windows only. It is enabled on
+# Windows by default and ignored on other hosts.
+option('xgrid_d3d11', type : 'boolean', value : true,
+       description: 'Build the Direct3D 11 NV2A renderer (Windows only)')
+
 # These options do not correspond to a --enable/--disable-* option
 # on the configure script command line.  If you add more, list them in
 # scripts/meson-buildoptions.py's SKIP_OPTIONS constant too.

@@ -1,0 +1,51 @@
+diff --git a/xemu/ui/xemu-snapshots.h b/xemu/ui/xemu-snapshots.h
+index 9d793f0c..815b69d7 100644
+--- a/xemu/ui/xemu-snapshots.h
++++ b/xemu/ui/xemu-snapshots.h
+@@ -55,6 +55,9 @@ void xemu_snapshots_save_extra_data(QEMUFile *f);
+ bool xemu_snapshots_offset_extra_data(QEMUFile *f);
+ void xemu_snapshots_mark_dirty(void);
+ 
++/* Queues a capture of the core's current picture on its render loop. */
++void xemu_request_screenshot(void);
++
+ // Implemented in xemu-thumbnail.cc
+ void xemu_snapshots_set_framebuffer_texture(GLuint tex, bool flip);
+ bool xemu_snapshots_load_png_to_texture(GLuint tex, void *buf, size_t size);
+diff --git a/xemu/ui/xui/main.cc b/xemu/ui/xui/main.cc
+index 7b933667..81305e1e 100644
+--- a/xemu/ui/xui/main.cc
++++ b/xemu/ui/xui/main.cc
+@@ -30,6 +30,7 @@
+ #include <vector>
+ #include <string>
+ #include <memory>
++#include <atomic>
+ 
+ #include "actions.hh"
+ #include "common.hh"
+@@ -58,6 +59,13 @@
+ bool g_screenshot_pending;
+ const char *g_snapshot_pending_load_name;
+ 
++static std::atomic<bool> g_screenshot_request;
++
++extern "C" void xemu_request_screenshot(void)
++{
++    g_screenshot_request.store(true, std::memory_order_relaxed);
++}
++
+ float g_main_menu_height;
+ 
+ static ImGuiStyle g_base_style;
+@@ -378,6 +386,10 @@ void xemu_hud_render()
+         SDL_GL_SetSwapInterval(g_vsync ? 1 : 0);
+     }
+ 
++    if (g_screenshot_request.exchange(false, std::memory_order_relaxed)) {
++        g_screenshot_pending = true;
++    }
++
+     if (g_screenshot_pending) {
+         SaveScreenshot(g_tex, g_flip_req);
+         g_screenshot_pending = false;

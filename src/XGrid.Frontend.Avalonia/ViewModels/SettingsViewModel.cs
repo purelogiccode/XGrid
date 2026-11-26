@@ -189,6 +189,7 @@ public sealed class TitleOverrideItem : ObservableObject
         {
             GraphicsSettings.RendererOpenGl => "OpenGL",
             GraphicsSettings.RendererVulkan => "Vulkan",
+            GraphicsSettings.RendererDirect3D11 => "Direct3D 11",
             GraphicsSettings.RendererNull => "Null",
             _ => key,
         };

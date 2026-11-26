@@ -239,6 +239,7 @@ public sealed class GraphicsSettingsTests
     [InlineData("vulkan", GraphicsSettings.RendererVulkan)]
     [InlineData("NULL", GraphicsSettings.RendererNull)]
     [InlineData("opengl", GraphicsSettings.RendererOpenGl)]
+    [InlineData("d3d11", GraphicsSettings.RendererDirect3D11)]
     [InlineData("direct3d", GraphicsSettings.RendererOpenGl)]
     [InlineData(null, GraphicsSettings.RendererOpenGl)]
     public void Normalize_RepairsTheRenderer(string? value, string expected)

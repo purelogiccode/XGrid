@@ -12,6 +12,7 @@
     "xgrid_core_is_paused",
     "xgrid_core_is_running",
     "xgrid_core_join",
+    "xgrid_core_request_screenshot",
     "xgrid_core_request_stop",
     "xgrid_core_set_embed",
     "xgrid_core_set_fps_overlay",

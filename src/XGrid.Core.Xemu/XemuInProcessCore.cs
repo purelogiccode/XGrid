@@ -79,6 +79,7 @@ public sealed class XemuInProcessCore : IDisposable
     private readonly IntValueDelegate? _setPresentFilter;
     private readonly VoidIntDelegate? _setFpsOverlay;
     private readonly VoidIntDelegate? _setEmbed;
+    private readonly NoArgIntDelegate? _requestScreenshot;
     private readonly NameRequestDelegate? _discLoad;
     private readonly NoArgIntDelegate? _discEject;
     private readonly NoArgIntDelegate? _discStatus;
@@ -124,6 +125,7 @@ public sealed class XemuInProcessCore : IDisposable
             _setPresentFilter = TryGet<IntValueDelegate>("xgrid_core_set_present_filter");
             _setFpsOverlay = TryGet<VoidIntDelegate>("xgrid_core_set_fps_overlay");
             _setEmbed = TryGet<VoidIntDelegate>("xgrid_core_set_embed");
+            _requestScreenshot = TryGet<NoArgIntDelegate>("xgrid_core_request_screenshot");
 
             // Disc change is also optional: a core built before the disc ABI
             // still boots, the shell just cannot swap while it runs.
@@ -173,6 +175,9 @@ public sealed class XemuInProcessCore : IDisposable
     /// <summary>Gets a value indicating whether the core draws the frame-rate overlay.</summary>
     public bool SupportsFpsOverlay => _setFpsOverlay is not null;
 
+    /// <summary>Gets a value indicating whether the core can capture its picture.</summary>
+    public bool SupportsScreenshot => _requestScreenshot is not null;
+
     /// <summary>
     /// Selects embedding before the machine creates its window. This is the
     /// reliable path: the DLL's CRT may not see an environment variable set
@@ -211,6 +216,13 @@ public sealed class XemuInProcessCore : IDisposable
 
         _setFpsOverlay(enabled ? 1 : 0);
         return true;
+    }
+
+    /// <summary>Queues a screenshot of the core's current picture.</summary>
+    /// <returns>True when the running core accepted the request.</returns>
+    public bool RequestScreenshot()
+    {
+        return _requestScreenshot is not null && _requestScreenshot() == 0;
     }
 
 

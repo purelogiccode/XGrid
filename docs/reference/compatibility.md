@@ -26,7 +26,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Core FPS overlay | Supported, in-process live; next launch for a separate process |
 | Per-title override (memory, renderer, filters) | Supported |
 | Disc swap while running | Supported with in-process hosting |
-| Whole-window screenshots | Supported |
+| Console screenshots | Supported core-side with in-process hosting; whole-window fallback otherwise |
 | Headless runs and CLI overrides | Supported with the XGrid core |
 | Linux core from the tracked tree | Supported as a separate process with its own window |
 | macOS core | Bring your own upstream xemu 0.8.139 build |
@@ -40,7 +40,7 @@ point, but XGrid's patches and media drivers can change the result.
 | **Save states are in-process only** | The separate-process host has no ABI for snapshot control. |
 | **Pause, frame stepping and disc swap need in-process hosting** | On Linux, power off before changing a disc. |
 | **No shell netplay UI** | The core may support netplay, but the shell does not expose it. |
-| **No software or DirectX renderer** | xemu 0.8.139 offers OpenGL, Vulkan and NULL. The shell does not offer renderers the build cannot start. |
+| **Direct3D 11 renderer is a preview** | The native Direct3D 11 NV2A backend renders the boot chain, menus and gameplay draws through HLSL shaders, a surface/zeta cache, occlusion queries and a texture cache. Remaining differences are the CPU presentation readback (no D3D11↔GL interop yet), line smoothing and some texture/filter edge cases; `ImplementDirectX.md` tracks them. Windows builds report `D3D11` only when the backend is compiled. OpenGL remains the safe default. |
 | **No firmware or games** | Everything copyrighted must come from the user. |
 | **Alpha shell** | UI and settings may change between releases. |
 
@@ -49,6 +49,9 @@ point, but XGrid's patches and media drivers can change the result.
 - The build writes `xgrid-core.json` with the renderers it compiled.
 - A build without Vulkan hides Vulkan in Settings and coerces a saved Vulkan
   choice to OpenGL.
+- Direct3D 11 is Windows-only and is listed only when the native backend is
+  compiled. `ImplementDirectX.md` records the current phase. A saved `D3D11`
+  choice on another build is coerced to OpenGL.
 - The NULL renderer runs the machine with no picture; use it for diagnostics.
 
 ## Media notes

@@ -28,7 +28,8 @@ The emulator is the tracked **xemu 0.8.139** tree in `xemu/`, with a QEMU 10.2
 base. It is not re-implemented in C#. It provides:
 
 - the QEMU TCG i386 CPU core;
-- the NV2A GPU and its OpenGL/Vulkan/NULL renderers;
+- the NV2A GPU and its OpenGL/Vulkan/Direct3D 11/NULL renderers (Direct3D 11
+  is Windows only and currently a preview backend);
 - MCPX, APU/ACI, IDE/ATAPI, USB/OHCI, SMBus/SMC, PCI and the rest of the Xbox;
 - the retail boot chain (MCPX ROM → 1BL → 2BL → kernel → dashboard);
 - xemu's own configuration, snapshot and input infrastructure.
@@ -113,8 +114,9 @@ controls only. It must not receive frames, keep a frame bitmap, apply a filter
 or draw an overlay over the picture; doing so reintroduces a per-frame copy and
 a shell redraw into the hot path.
 
-The only shell-side picture work is native window hosting (Windows) and screen
-capture for the whole-window screenshot.
+The only shell-side picture work is native window hosting (Windows). In-process
+screenshots are written by the core on request; the shell never reads the frame.
+Separate-process hosting falls back to a whole-window capture.
 
 ## Headless display sink
 
@@ -241,7 +243,9 @@ The core build scripts (`scripts/build-native-xemu.ps1` on Windows and
 
 The shell reads it to decide which renderers to offer. A build without Vulkan
 does not show Vulkan, and a saved Vulkan choice is coerced to OpenGL with a
-warning.
+warning. The same rule applies to Direct3D 11: only a Windows core that reports
+`D3D11` offers it, and a saved `D3D11` choice on another build is coerced to
+OpenGL. `ImplementDirectX.md` records the renderer plan and current phase.
 
 ## Diagnostics and services
 

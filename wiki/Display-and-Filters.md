@@ -33,7 +33,7 @@ change it live through the core ABI.
 
 ## Core graphics settings
 
-- Renderer: OpenGL, Vulkan (if compiled) or Null.
+- Renderer: Direct3D 11 (Windows builds, preview), OpenGL, Vulkan (if compiled) or Null.
 - Internal resolution scale 1–8.
 - Texture filtering: linear or nearest.
 - Aspect ratio: auto, native, 4:3, 16:9.
@@ -47,9 +47,9 @@ change it live through the core ABI.
   The shell chrome is hidden and the console picture fills the screen.
 - In fullscreen, **Esc** pauses a running game on the first press. Press **Esc**
   again to close XGrid. With no game running, Esc returns to the windowed shell.
-- **F8** saves the whole window as a PNG in `<data>/screenshots/`. While the
-  embedded core runs on Windows, the capture reads the composed screen so the
-  native picture is included.
+- **F8** saves the console picture as a PNG in `<data>/screenshots/`. With
+  in-process hosting the core writes the capture; with separate-process hosting
+  the shell captures the whole window instead.
 - The Library page shows a strip of recent captures; click one to open it,
   **Refresh** to re-read the folder.
 

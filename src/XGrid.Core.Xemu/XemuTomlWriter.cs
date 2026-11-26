@@ -30,6 +30,8 @@ public static class XemuTomlWriter
         // The welcome overlay disables autostart; the shell owns configuration.
         text.Append("show_welcome = false\n");
         text.Append("skip_boot_anim = ").Append(Bool(settings.SkipBootAnimation)).Append('\n');
+        AppendPath(text, "screenshot_dir", settings.ScreenshotDirectory);
+        AppendPath(text, "shader_cache_dir", settings.ShaderCacheDirectory);
         text.Append('\n');
 
         // No update check: a launch must never touch the network for this.

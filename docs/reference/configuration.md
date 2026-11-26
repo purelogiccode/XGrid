@@ -38,7 +38,7 @@ the platform.
 | `--mcpx <path>` | 512-byte MCPX boot ROM for the session. |
 | `--eeprom <path>` | 256-byte EEPROM image for the session. |
 | `--hdd <path>` | Raw or qcow2 hard-disk image for the session. |
-| `--renderer <name>` | `OPENGL`, `VULKAN` or `NULL`. |
+| `--renderer <name>` | `OPENGL`, `VULKAN`, `D3D11` (Windows builds) or `NULL`. |
 | `--scale <1-8>` | Internal surface scale. |
 | `--filtering <mode>` | Core texture filtering: `linear` or `nearest`. |
 | `--filter <mode>` | Presentation filter: `nearest`, `bilinear`, `scanline` or `crt`. |
@@ -100,6 +100,7 @@ The console output and JSON report are documented in
     xemu.toml            generated core configuration
     xemu.log             core log (separate-process mode)
     audio.wav            WAV capture, when selected
+    d3d11-shader-cache/  compiled HLSL blobs (safe to delete)
 ```
 
 A headless run writes its report only where `--summary` points; no file is
@@ -168,7 +169,7 @@ complete file, so two launches cannot inherit each other's state.
 {
   "core": "xemu",
   "version": "0.8.139",
-  "renderers": ["OPENGL", "NULL"]
+  "renderers": ["D3D11", "OPENGL", "NULL"]
 }
 ```
 
@@ -212,13 +213,21 @@ They are QEMU/xemu snapshots, not files in the data folder. See
 
 ## Screenshots
 
-**F8** writes a PNG to `<data>/screenshots/`:
+**F8** writes a PNG to `<data>/screenshots/`. With in-process hosting the core
+captures its own picture:
+
+```text
+xemu-YYYY-MM-DD-HH-MM-SS.png
+```
+
+When no console runs, or with separate-process hosting, the shell captures the
+whole window:
 
 ```text
 screenshot-YYYYMMDD-HHMMSS.png
 ```
 
-Collisions get `-1`, `-2`, and so on.
+Shell captures get `-1`, `-2`, and so on when two land in the same second.
 
 ## Core working directory
 

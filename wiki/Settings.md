@@ -25,7 +25,7 @@ The Settings page is a draft editor. Change values, then click **Save settings**
 
 ## Graphics
 
-- **Renderer** — OpenGL, Vulkan (if compiled), Null.
+- **Renderer** — Direct3D 11 (Windows builds, preview), OpenGL, Vulkan (if compiled), Null.
 - **Internal resolution scale** — 1–8 (the list offers 1–6 and 8).
 - **Texture filtering** — Linear or Nearest.
 - **Window startup size**, **Vertical sync**, **Start fullscreen**,

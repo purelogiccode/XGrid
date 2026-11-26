@@ -112,8 +112,12 @@ pwsh -File scripts/build-native-xemu.ps1
 
 For an OpenGL-only core, pass `-NoVulkan` (smaller binary and faster build).
 The first Vulkan build fetches the `glslang`, `volk` and `SPIRV-Reflect`
-subprojects and takes longer. `xemu/dist/xgrid-core.json` reports what the core
-can start, and the Settings page offers only those renderers.
+subprojects and takes longer. Windows builds also compile the Direct3D 11
+renderer; `-Dxgrid_d3d11=false` disables it. `xemu/dist/xgrid-core.json` reports
+what the core can start, and the Settings page offers only those renderers.
+The Direct3D 11 backend compiles HLSL at runtime through `d3dcompiler_47.dll`,
+a Windows system component present on supported versions; the release does not
+bundle a private copy.
 
 The build is also wired into the solution anchor:
 

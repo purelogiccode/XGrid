@@ -281,6 +281,11 @@ static CONFIG_DISPLAY_RENDERER get_default_renderer(void)
         return CONFIG_DISPLAY_RENDERER_VULKAN;
     }
 #endif
+#ifdef CONFIG_D3D11
+    if (renderers[CONFIG_DISPLAY_RENDERER_D3D11]) {
+        return CONFIG_DISPLAY_RENDERER_D3D11;
+    }
+#endif
     fprintf(stderr, "Warning: No available renderer\n");
     return CONFIG_DISPLAY_RENDERER_NULL;
 }

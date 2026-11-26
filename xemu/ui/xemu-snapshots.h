@@ -55,6 +55,9 @@ void xemu_snapshots_save_extra_data(QEMUFile *f);
 bool xemu_snapshots_offset_extra_data(QEMUFile *f);
 void xemu_snapshots_mark_dirty(void);
 
+/* Queues a capture of the core's current picture on its render loop. */
+void xemu_request_screenshot(void);
+
 // Implemented in xemu-thumbnail.cc
 void xemu_snapshots_set_framebuffer_texture(GLuint tex, bool flip);
 bool xemu_snapshots_load_png_to_texture(GLuint tex, void *buf, size_t size);

@@ -222,6 +222,13 @@ public sealed class XemuCoreSession : IDisposable
         return _runtime?.TrySetFpsOverlay(enabled) == true;
     }
 
+    /// <summary>Queues a core-side screenshot of the running picture.</summary>
+    /// <returns>True when the running core accepted the request.</returns>
+    public bool TryRequestScreenshot()
+    {
+        return _runtime?.TryRequestScreenshot() == true;
+    }
+
     private XemuInProcessRuntime? StartInProcess(XemuLaunchSettings launch)
     {
         XemuInProcessCore? core = XemuInProcessCore.TryLoad(launch.CorePath, out string libraryPath);

@@ -46,6 +46,8 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.Equal(128, launch.RamMb);
         Assert.Equal(640, launch.WindowWidth);
         Assert.Equal(480, launch.WindowHeight);
+        Assert.Equal(Path.Combine(_root, "screenshots"), launch.ScreenshotDirectory);
+        Assert.Equal(Path.Combine(_root, "work", "d3d11-shader-cache"), launch.ShaderCacheDirectory);
         Assert.Empty(launch.Validate());
     }
 
@@ -164,6 +166,36 @@ public sealed class XemuLaunchPlanTests : IDisposable
             settings, null, 640, 480, Path.Combine(_root, "work"));
 
         Assert.Equal(GraphicsSettings.RendererVulkan, launch.Renderer);
+    }
+
+    [Fact]
+    public void Create_StartsOpenGlWhenTheCoreHasNoDirect3D11()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "firmware", CoreCapabilities.FileName),
+            """{"version":"0.8.139","renderers":["OPENGL","NULL"]}""");
+        EmulatorSettings settings = Settings();
+        settings.Graphics.Renderer = GraphicsSettings.RendererDirect3D11;
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(GraphicsSettings.RendererOpenGl, launch.Renderer);
+    }
+
+    [Fact]
+    public void Create_KeepsDirect3D11WhenTheCoreReportsIt()
+    {
+        File.WriteAllText(
+            Path.Combine(_root, "firmware", CoreCapabilities.FileName),
+            """{"version":"0.8.139","renderers":["D3D11","OPENGL","NULL"]}""");
+        EmulatorSettings settings = Settings();
+        settings.Graphics.Renderer = GraphicsSettings.RendererDirect3D11;
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(GraphicsSettings.RendererDirect3D11, launch.Renderer);
     }
 
     [Fact]

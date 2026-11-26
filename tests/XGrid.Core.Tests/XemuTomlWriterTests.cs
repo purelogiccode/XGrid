@@ -29,6 +29,43 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("dvd_path = 'C:\\media\\game.iso'", toml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Build_WritesTheScreenshotDirectoryWhenSet()
+    {
+        XemuLaunchSettings settings = CreateSettings() with
+        {
+            ScreenshotDirectory = "C:\\data\\screenshots",
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains("screenshot_dir = 'C:\\data\\screenshots'", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_OmitsTheScreenshotDirectoryWhenUnset()
+    {
+        string toml = XemuTomlWriter.Build(CreateSettings());
+
+        Assert.DoesNotContain("screenshot_dir", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_WritesTheShaderCacheDirectoryWhenSet()
+    {
+        XemuLaunchSettings settings = CreateSettings() with
+        {
+            ShaderCacheDirectory = "C:\\data\\xemu\\d3d11-shader-cache",
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains(
+            "shader_cache_dir = 'C:\\data\\xemu\\d3d11-shader-cache'",
+            toml,
+            StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(64, "64")]
     [InlineData(128, "128")]

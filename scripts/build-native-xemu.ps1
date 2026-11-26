@@ -34,11 +34,12 @@ $vulkanOption = if ($NoVulkan) { '-Dxgrid_vulkan=false' } else { '-Dxgrid_vulkan
 $script = @"
 export MSYSTEM=MINGW64
 # xemu's build.sh drives `make`; this host has ninja but no make, so provide a
-# repo-local shim that forwards the same targets/options to ninja.
+# repo-local shim that forwards the same targets/options to ninja. The host
+# tool folders are C:\ninja and C:\cmake; both are used when present.
 mkdir -p $rootPosix/wt-data/bin
-printf '#!/bin/sh\nexec /mingw64/bin/ninja -C build "`$@"\n' > $rootPosix/wt-data/bin/make
+printf '#!/bin/sh\nexec /c/ninja/ninja.exe -C build "`$@"\n' > $rootPosix/wt-data/bin/make
 chmod +x $rootPosix/wt-data/bin/make
-export PATH=$rootPosix/wt-data/bin:/c/cmake/bin:/mingw64/bin:/usr/bin:`$PATH
+export PATH=$rootPosix/wt-data/bin:/c/ninja:/c/cmake/bin:/mingw64/bin:/usr/bin:`$PATH
 cd $rootPosix/xemu
 $cleanStep
 echo "[xemu] configuring and building (full log: $rootPosix/wt-data/xemu-build.log)"
@@ -104,11 +105,15 @@ if (-not (Test-Path $exe)) { throw "Build finished but $exe is missing." }
 $configHeader = Join-Path $tree 'build/config-host.h'
 $hasVulkan = (Test-Path $configHeader) -and
     [bool](Select-String -Path $configHeader -Pattern '^#define CONFIG_VULKAN\b' -Quiet)
+$hasD3D11 = (Test-Path $configHeader) -and
+    [bool](Select-String -Path $configHeader -Pattern '^#define CONFIG_D3D11\b' -Quiet)
 $version = if (Test-Path (Join-Path $tree 'XEMU_VERSION')) {
     (Get-Content (Join-Path $tree 'XEMU_VERSION') -TotalCount 1).Trim()
 }
 else { '' }
-$renderers = @('OPENGL')
+$renderers = @()
+if ($hasD3D11) { $renderers += 'D3D11' }
+$renderers += 'OPENGL'
 if ($hasVulkan) { $renderers += 'VULKAN' }
 $renderers += 'NULL'
 [ordered]@{ core = 'xemu'; version = $version; renderers = $renderers } |

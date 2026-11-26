@@ -342,9 +342,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public string LoadStateHint =>
         "Restore slot " + SelectedSaveSlot.ToString(CultureInfo.InvariantCulture) + " (F7)";
 
-    private string RendererName => XemuLaunchPlan.ResolveRenderer(Config.Graphics.Renderer, _coreCapabilities) switch
+    private string RendererName => XemuLaunchPlan.ResolveRenderer(
+        _launchOptions.Renderer ?? Config.Graphics.Renderer, _coreCapabilities) switch
     {
         GraphicsSettings.RendererVulkan => "Vulkan",
+        GraphicsSettings.RendererDirect3D11 => "Direct3D 11",
         GraphicsSettings.RendererNull => "Null",
         _ => "OpenGL",
     };
@@ -587,7 +589,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private void RefreshCoreCapabilities()
     {
         _coreCapabilities = CoreCapabilities.Read(XemuPaths.FindCore(Config.XemuCorePath));
-        string requested = Config.Graphics.Renderer;
+        string requested = _launchOptions.Renderer ?? Config.Graphics.Renderer;
         string effective = XemuLaunchPlan.ResolveRenderer(requested, _coreCapabilities);
         if (!string.Equals(requested, effective, StringComparison.Ordinal))
         {
@@ -1095,6 +1097,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // A running in-process core can capture its own picture, which is the
+        // only path that includes the embedded GL child window.
+        if (IsRunning)
+        {
+            _ = Directory.CreateDirectory(ScreenshotNaming.Directory(SettingsStore.ResolveDirectory()));
+            if (_core.TryRequestScreenshot())
+            {
+                AddLog(LogLevel.Info, "Screenshot requested from the core.");
+                ShowToast("Saving screenshot...");
+                _ = RefreshScreenshotsSoonAsync();
+                return;
+            }
+        }
+
         try
         {
             string directory = ScreenshotNaming.Directory(SettingsStore.ResolveDirectory());
@@ -1140,6 +1156,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             AddLog(LogLevel.Error, "Could not save the screenshot: " + exception.Message);
             ShowToast("Could not save the screenshot.");
         }
+    }
+
+    private async Task RefreshScreenshotsSoonAsync()
+    {
+        await Task.Delay(500).ConfigureAwait(false);
+        Dispatcher.UIThread.Post(() =>
+        {
+            Library.RefreshScreenshots();
+            ShowToast("Screenshot saved to the screenshots folder.");
+        });
     }
 
     /// <summary>

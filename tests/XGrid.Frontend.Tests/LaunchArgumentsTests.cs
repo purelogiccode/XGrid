@@ -108,6 +108,18 @@ public sealed class LaunchArgumentsTests
         Assert.True(options.HasOverrides);
     }
 
+    [Theory]
+    [InlineData("d3d11")]
+    [InlineData("direct3d11")]
+    [InlineData("directx")]
+    public void Parse_MapsTheDirect3D11Aliases(string value)
+    {
+        LaunchArguments options = LaunchArguments.Parse(["--renderer", value]);
+
+        Assert.False(options.HasErrors);
+        Assert.Equal(GraphicsSettings.RendererDirect3D11, options.Renderer);
+    }
+
     [Fact]
     public void Parse_ReadsTheHeadlessLimits()
     {

@@ -50,6 +50,7 @@ public sealed class TitleOverride
         string? renderer = Renderer?.Trim().ToUpperInvariant();
         Renderer = renderer is GraphicsSettings.RendererOpenGl
             or GraphicsSettings.RendererVulkan
+            or GraphicsSettings.RendererDirect3D11
             or GraphicsSettings.RendererNull
             ? renderer
             : null;
@@ -85,6 +86,7 @@ public sealed class TitleOverride
             {
                 GraphicsSettings.RendererOpenGl => "OpenGL",
                 GraphicsSettings.RendererVulkan => "Vulkan",
+                GraphicsSettings.RendererDirect3D11 => "Direct3D 11",
                 _ => "Null renderer",
             });
         }

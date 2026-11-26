@@ -15,4 +15,8 @@ subdir('null')
 subdir('gl')
 subdir('glsl')
 subdir('vk')
+if d3d11.found()
+  subdir('hlsl')
+  subdir('d3d11')
+endif
 specific_ss.add(nv2a_vsh_cpu)

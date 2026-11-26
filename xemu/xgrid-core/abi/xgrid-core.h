@@ -76,6 +76,15 @@ XGRID_CORE_EXPORT void xgrid_core_set_fps_overlay(int enabled);
 /** Selects embedding before the core creates its window. */
 XGRID_CORE_EXPORT void xgrid_core_set_embed(int enabled);
 
+/**
+ * Queues a screenshot of the running picture. The core writes the PNG into
+ * its configured screenshot directory on the next rendered frame, so the
+ * shell never receives or copies the picture.
+ *
+ * @return 0 when queued, -1 when no machine is running.
+ */
+XGRID_CORE_EXPORT int xgrid_core_request_screenshot(void);
+
 /*
  * Playback control.
  *

@@ -61,8 +61,9 @@ the log or a bug report.
 
 ## Which renderer should I use?
 
-**OpenGL** is the safe default. **Vulkan** is offered only when the core build
-includes it. **NULL** is headless and shows no picture.
+**OpenGL** is the safe default. **Vulkan** and **Direct3D 11** (Windows) are
+offered only when the core build includes them. **NULL** is headless and shows
+no picture.
 
 ## Why is Vulkan missing?
 

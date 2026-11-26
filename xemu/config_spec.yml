@@ -7,6 +7,7 @@ general:
       type: bool
       default: true
   screenshot_dir: string
+  shader_cache_dir: string
   games_dir: string
   skip_boot_anim: bool
   # throttle_io: bool
@@ -226,7 +227,7 @@ input:
 display:
   renderer:
     type: enum
-    values: ["NULL", OPENGL, VULKAN]
+    values: ["NULL", OPENGL, VULKAN, D3D11]
     default: OPENGL
   vulkan:
     validation_layers: bool

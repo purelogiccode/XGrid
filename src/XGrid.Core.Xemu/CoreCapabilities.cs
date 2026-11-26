@@ -25,6 +25,9 @@ public sealed class CoreCapabilities
     /// <summary>Renderer key for the Vulkan backend.</summary>
     public const string RendererVulkan = "VULKAN";
 
+    /// <summary>Renderer key for the Direct3D 11 backend.</summary>
+    public const string RendererDirect3D11 = "D3D11";
+
     /// <summary>Renderer key for the headless null backend.</summary>
     public const string RendererNull = "NULL";
 

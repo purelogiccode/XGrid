@@ -147,4 +147,5 @@ The bottom of the library page shows the newest captures from
 - **Refresh** re-reads the folder after captures are added or removed.
 - **Open folder** shows the PNGs in the file manager.
 
-**F8** captures the whole shell window. See [Display](display.md#captions-and-screenshots).
+**F8** saves the console picture; with separate-process hosting it captures the
+whole shell window. See [Display](display.md#captions-and-screenshots).

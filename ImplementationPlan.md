@@ -50,7 +50,8 @@ current product roadmap; user documentation lives in `docs/`.
       and DSP settings.
 - [x] Four save-state slots through the in-process ABI.
 - [x] Renderer capability manifest (`xgrid-core.json`).
-- [ ] Implement Direct-X rendering.
+- [x] Implement Direct-X rendering (Direct3D 11 preview; parity and
+      performance tracked in `ImplementDirectX.md`).
 - [x] Review and test all graphic filters.
 
 
@@ -77,16 +78,20 @@ current product roadmap; user documentation lives in `docs/`.
 
 ### Graphics
 
-The core has OpenGL, Vulkan and NULL render backends plus DXGI presentation;
-a DirectX NV2A renderer is still a new backend, not a shell switch.
+The core has OpenGL, Vulkan, Direct3D 11 and NULL render backends plus DXGI
+presentation. The native Direct3D 11 NV2A backend is implemented and remains a
+preview while parity, performance and packaging work continues; see
+`ImplementDirectX.md`.
 
-- [ ] Choose Direct3D 11 or 12 and document the choice.
-- [ ] Share NV2A command decoding between the OpenGL backend and the DirectX backend.
-- [ ] Translate Xbox vertex and pixel shaders for the chosen DirectX API.
-- [ ] Add a DirectX texture cache with Xbox tiling and swizzle handling.
-- [ ] Implement surface/render-target caching and presentation.
-- [ ] Add the renderer to the capability manifest and Settings choices.
+- [x] Choose Direct3D 11 or 12 and document the choice.
+- [x] Share NV2A command decoding between the OpenGL backend and the DirectX backend.
+- [x] Translate Xbox vertex and pixel shaders for the chosen DirectX API.
+- [x] Add a DirectX texture cache with Xbox tiling and swizzle handling.
+- [x] Implement surface/render-target caching and presentation.
+- [x] Add the renderer to the capability manifest and Settings choices.
 - [ ] Test a retail-title sample against OpenGL for visual and performance parity.
+      The boot sequence and Halo main menu have been compared; gameplay and a
+      benchmark run are still pending.
 
 ### Media
 

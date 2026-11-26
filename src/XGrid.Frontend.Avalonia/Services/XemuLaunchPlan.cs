@@ -80,6 +80,11 @@ public static class XemuLaunchPlan
             PresentationFilter = XemuPresentationFilter.Normalize(settings.Filter),
             FpsOverlay = settings.ShowFpsOverlay,
             WorkingDirectory = workingDirectory,
+            // The core writes in-process captures; the shell only lists them.
+            ScreenshotDirectory = Path.Combine(
+                Path.GetDirectoryName(workingDirectory) ?? workingDirectory,
+                ScreenshotNaming.FolderName),
+            ShaderCacheDirectory = Path.Combine(workingDirectory, "d3d11-shader-cache"),
         };
     }
 
@@ -133,8 +138,15 @@ public static class XemuLaunchPlan
     /// <returns>The renderer key to write into the core configuration.</returns>
     public static string ResolveRenderer(string renderer, CoreCapabilities? capabilities)
     {
+        if (capabilities is null || capabilities.Has(renderer))
+        {
+            return renderer;
+        }
+
+        // A renderer the core did not compile cannot start. Vulkan and
+        // Direct3D 11 both fall back to OpenGL rather than to the null device.
         if (string.Equals(renderer, GraphicsSettings.RendererVulkan, StringComparison.OrdinalIgnoreCase)
-            && capabilities is { SupportsVulkan: false })
+            || string.Equals(renderer, GraphicsSettings.RendererDirect3D11, StringComparison.OrdinalIgnoreCase))
         {
             return GraphicsSettings.RendererOpenGl;
         }

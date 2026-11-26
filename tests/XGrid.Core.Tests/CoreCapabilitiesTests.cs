@@ -47,6 +47,17 @@ public sealed class CoreCapabilitiesTests : IDisposable
     }
 
     [Fact]
+    public void Read_ReportsDirect3D11WhenTheBuildHasIt()
+    {
+        Manifest("""{"version":"0.8.139","renderers":["D3D11","OPENGL","NULL"]}""");
+
+        CoreCapabilities? capabilities = CoreCapabilities.ReadFromDirectory(_directory);
+
+        Assert.NotNull(capabilities);
+        Assert.True(capabilities.Has(CoreCapabilities.RendererDirect3D11));
+    }
+
+    [Fact]
     public void Read_NormalizesLowercaseRendererKeys()
     {
         Manifest("""{"version":"0.8.139","renderers":["opengl","vulkan","null"]}""");

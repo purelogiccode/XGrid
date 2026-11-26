@@ -7,7 +7,7 @@
 | `F5` | Power on / off |
 | `F6` | Quick save to the selected slot |
 | `F7` | Quick load from the selected slot |
-| `F8` | Save a screenshot of the whole window |
+| `F8` | Save a screenshot (core picture in-process, whole window otherwise) |
 | `F10` | Step one frame while paused |
 | `F11` | Toggle fullscreen |
 | `Space` | Toggle 4x fast-forward |
