@@ -42,6 +42,8 @@ public static class XemuLaunchPlan
             chihiroDirectory = firmwareDirectory;
         }
 
+        ChihiroLinkSettings link = settings.Chihiro.Link ?? new ChihiroLinkSettings();
+
         // The core owns the picture. The shell only selects the filter and the
         // overlay; it never receives or presents frames. The pad section is a
         // Windows integration used in both presentation modes.
@@ -79,6 +81,11 @@ public static class XemuLaunchPlan
             ChihiroNetFirmwarePath = chihiro
                 ? ResolveChihiroOptional(chihiroDirectory, ChihiroSettings.NetFirmwareFileName, firmwareDirectory)
                 : string.Empty,
+            ChihiroLinkEnabled = chihiro && link.Enabled,
+            ChihiroLinkCabinets = link.Cabinets,
+            ChihiroLinkCabinet = link.Cabinet,
+            ChihiroLinkHost = link.Host,
+            ChihiroLinkPort = link.Port,
             RamMb = chihiro ? 128 : settings.RamMb,
             // The display control publishes 1x1 before its first layout pass.
             WindowWidth = Math.Max(64, width),

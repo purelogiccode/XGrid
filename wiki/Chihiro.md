@@ -21,6 +21,23 @@ Open **Settings -> System -> Sega Chihiro**, choose the folder, and turn on
 **Enable Chihiro**. A `.bin` launch selects the Chihiro even when the switch is
 off. The machine uses 128 MB of RAM and no Xbox hard disk.
 
+## Linked cabinets
+
+Ollie King, OutRun 2, OutRun 2 SP and Maximum Tune support two to four linked
+cabinets. In **Settings -> System -> Sega Chihiro**:
+
+1. Give every instance its own data folder.
+2. Start cabinet 1 first and turn on **Link cabinets** in every instance.
+3. Choose the same **Cabinets** count and a different **This cabinet** number.
+4. Cabinet 1 leaves **Host address** empty; the others enter its LAN address
+   (two instances on one PC can use `127.0.0.1`).
+5. Put `ver1305.bin` in the firmware folder and launch the same game.
+
+The host listens on TCP 9100 plus each other cabinet's number (9102-9104). The
+games show **CONNECTION WAS ESTABLISHED** when the link is up. Save states are
+disabled while the link runs. MJ2/MJ3 need their own network server; the link
+is not a substitute.
+
 ## Converting an Xbox-format Chihiro ISO
 
 The `XBOXOG - Chihiro` patched ISOs already contain the decrypted Chihiro file
@@ -87,17 +104,20 @@ focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a
 shell page to return focus to XGrid.
 
 Boot-tested: Ghost Squad, OutRun 2, The House of the Dead III, Virtua Cop 3,
-Crazy Taxi High Roller, Ollie King and Wangan Midnight Maximum Tune 1/2. The
-MJ2/MJ3/MJ3 Evolution conversions boot past the network-firmware check with
-`ver1305.bin` and then wait for their cabinet network.
+Crazy Taxi High Roller, Ollie King and Wangan Midnight Maximum Tune 1/2. Two
+OutRun 2 instances linked as cabinets 1 and 2 and both showed **CONNECTION WAS
+ESTABLISHED**. The MJ2/MJ3/MJ3 Evolution conversions boot past the
+network-firmware check with `ver1305.bin` and then wait for their own server.
 
 ## Limits
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
-- Per-game bindings, force feedback, linked cabinets, the network board and the
-  second card reader are not exposed by the shell yet.
-- MJ2/MJ3/MJ3 Evolution boot to their network startup but need a linked cabinet
-  or server to play.
+- Per-game bindings, force feedback and the second card reader are not exposed
+  by the shell yet.
+- Linked cabinets are exposed in Settings; save states are disabled while the
+  link runs.
+- MJ2/MJ3/MJ3 Evolution boot to their network startup but need their own
+  network server to play.
 - The Chihiro BIOS must be MAME's `chihiro_xbox_bios.bin`; a retail Xbox BIOS
   will not boot it.
 - Shell save-state slots are Xbox-oriented; Chihiro cabinet saves live in the

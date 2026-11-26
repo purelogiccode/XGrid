@@ -69,6 +69,43 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Build_WritesTheChihiroCabinetLink()
+    {
+        XemuLaunchSettings settings = CreateSettings(128) with
+        {
+            Machine = XemuLaunchSettings.MachineChihiro,
+            ChihiroLinkEnabled = true,
+            ChihiroLinkCabinets = 3,
+            ChihiroLinkCabinet = 2,
+            ChihiroLinkHost = "10.0.0.1",
+            ChihiroLinkPort = 9200,
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains("[chihiro.link]", toml, StringComparison.Ordinal);
+        Assert.Contains("enable = true", toml, StringComparison.Ordinal);
+        Assert.Contains("cabinets = 3", toml, StringComparison.Ordinal);
+        Assert.Contains("cabinet = 2", toml, StringComparison.Ordinal);
+        Assert.Contains("host = '10.0.0.1'", toml, StringComparison.Ordinal);
+        Assert.Contains("port = 9200", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_OmitsTheChihiroCabinetLinkWhenDisabled()
+    {
+        XemuLaunchSettings settings = CreateSettings(128) with
+        {
+            Machine = XemuLaunchSettings.MachineChihiro,
+            ChihiroLinkEnabled = false,
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.DoesNotContain("[chihiro.link]", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_WritesTheScreenshotDirectoryWhenSet()
     {
         XemuLaunchSettings settings = CreateSettings() with
