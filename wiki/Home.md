@@ -32,8 +32,9 @@ save states, display/input plumbing, screenshots and packaging.
 
 ## At a glance
 
-- **Core:** xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL,
-  MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus.
+- **Core:** xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A
+  OpenGL/Vulkan/Direct3D 11/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI,
+  SMBus.
 - **Shell:** Home, Library, Settings, Activity, About.
 - **Hosting:** in-process `xgrid_core.dll` on Windows; separate process on Linux and as a fallback.
 - **Media:** ISO/XISO, compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.

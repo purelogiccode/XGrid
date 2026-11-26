@@ -20,7 +20,7 @@ diagnostics, packaging and the documentation you are reading.
 | **Media** | ISO/XISO, compressed CHD, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
 | **Display** | Core-owned picture with nearest, bilinear, scanline and CRT filters; embedded core window; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
-| **Quality of life** | Four save-state slots, multiple library roots, recently played list, per-title overrides, 4x fast-forward, local cover art, whole-window screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
+| **Quality of life** | Four save-state slots, multiple library roots, recently played list, per-title overrides, 4x fast-forward, local cover art, core-owned console screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
 | **Performance** | Core-drawn FPS overlay with present rate and frame time; headless `--benchmark` runs with JSON reports |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Automation** | Command-line settings overrides and headless runs with a JSON report for scripts and benchmarks |

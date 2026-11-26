@@ -30,6 +30,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <atomic>
 
 #include "actions.hh"
 #include "common.hh"
@@ -57,6 +58,13 @@
 
 bool g_screenshot_pending;
 const char *g_snapshot_pending_load_name;
+
+static std::atomic<bool> g_screenshot_request;
+
+extern "C" void xemu_request_screenshot(void)
+{
+    g_screenshot_request.store(true, std::memory_order_relaxed);
+}
 
 float g_main_menu_height;
 
@@ -376,6 +384,10 @@ void xemu_hud_render()
     if (g_vsync != g_config.display.window.vsync) {
         g_vsync = g_config.display.window.vsync;
         SDL_GL_SetSwapInterval(g_vsync ? 1 : 0);
+    }
+
+    if (g_screenshot_request.exchange(false, std::memory_order_relaxed)) {
+        g_screenshot_pending = true;
     }
 
     if (g_screenshot_pending) {

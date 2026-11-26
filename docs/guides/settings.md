@@ -43,7 +43,7 @@ XGrid ships no firmware. Configure these from files you own.
 
 | Setting | Options | Meaning |
 | --- | --- | --- |
-| **Renderer** | OpenGL, Vulkan, Null | The core renderer. Vulkan is offered only when the core build reports it; Null is headless. |
+| **Renderer** | Direct3D 11 (Windows, preview), OpenGL, Vulkan, Null | The core renderer. Direct3D 11 and Vulkan are offered only when the core build reports them; Null is headless. |
 | **Internal resolution scale** | 1–8 (the list offers 1–6 and 8) | Renders the guest at a multiple of its native resolution. Higher values cost GPU time and memory. |
 | **Texture filtering** | Linear, Nearest | Applied by the core to guest textures. |
 | **Window startup size** | various | Used when the core starts in a window; the shell still embeds it. |

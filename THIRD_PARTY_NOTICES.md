@@ -73,6 +73,10 @@ separate programs invoked by it.
 | GCC runtime | `libgcc_s_seh-1.dll`, `libstdc++-6.dll` | GPL-3.0-or-later WITH GCC-exception-3.1 |
 | winpthreads (mingw-w64) | `libwinpthread-1.dll` | MIT / BSD-3-Clause |
 
+The Direct3D 11 renderer imports `d3d11.dll` and `d3dcompiler_47.dll`. Both are
+Windows system components on supported versions and are not redistributed with
+XGrid; they are covered by the Windows SDK/DirectX redistribution terms.
+
 `libidn2` and `libunistring` are LGPL-3.0-or-later. They are compatible because
 XGrid's own code and the core additions are **GPL-2.0-or-later**: the combined
 work is distributed under GPL-3.0-or-later where those libraries are included.

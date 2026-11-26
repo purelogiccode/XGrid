@@ -447,6 +447,9 @@ static int nv2a_post_load(void *opaque, int version_id)
         d->pgraph.vsh_carry_fog[3] = 1.0f;
     }
     d->pgraph.vsh_carry_cache_dirty = true;
+    if (d->pgraph.renderer && d->pgraph.renderer->ops.post_load) {
+        d->pgraph.renderer->ops.post_load(d);
+    }
     qatomic_set(&d->pgraph.flush_pending, true);
     nv2a_unlock_fifo(d);
     return 0;

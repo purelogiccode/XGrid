@@ -150,6 +150,12 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
         return _core.SetFpsOverlay(enabled);
     }
 
+    /// <inheritdoc />
+    public bool TryRequestScreenshot()
+    {
+        return _core.RequestScreenshot();
+    }
+
     /// <summary>
     /// Returns the core's own window if it exists yet, without blocking. The
     /// window is created on the core's thread a second or two after start.

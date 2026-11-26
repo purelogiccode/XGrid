@@ -58,6 +58,12 @@ public interface IXemuCoreRuntime : IDisposable
     /// <param name="enabled">True to draw the overlay.</param>
     bool TrySetFpsOverlay(bool enabled);
 
+    /// <summary>
+    /// Asks the core to write a screenshot of the current picture. Returns
+    /// false when this hosting mode cannot capture the core's picture.
+    /// </summary>
+    bool TryRequestScreenshot();
+
     /// <summary>Asks the guest to power off through its own shutdown path.</summary>
     void RequestStop();
 

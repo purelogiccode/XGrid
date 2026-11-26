@@ -148,7 +148,7 @@ public sealed record LaunchArguments
           --hdd <path>                Hard-disk image for this run.
 
         Graphics and audio:
-          --renderer <name>           OPENGL, VULKAN or NULL.
+          --renderer <name>           D3D11, OPENGL, VULKAN or NULL.
           --scale <1-8>               Internal surface scale.
           --filtering <mode>          Core texture filtering: linear or nearest.
           --filter <mode>             Presentation filter: nearest, bilinear, scanline or crt.
@@ -640,11 +640,16 @@ public sealed record LaunchArguments
                 case "VK":
                     _renderer = GraphicsSettings.RendererVulkan;
                     break;
+                case "D3D11":
+                case "DIRECT3D11":
+                case "DIRECTX":
+                    _renderer = GraphicsSettings.RendererDirect3D11;
+                    break;
                 case "NULL":
                     _renderer = GraphicsSettings.RendererNull;
                     break;
                 default:
-                    Errors.Add($"Unknown renderer '{value}'. Use OPENGL, VULKAN or NULL.");
+                    Errors.Add($"Unknown renderer '{value}'. Use OPENGL, VULKAN, D3D11 or NULL.");
                     break;
             }
         }

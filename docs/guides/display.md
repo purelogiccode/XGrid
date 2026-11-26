@@ -51,7 +51,8 @@ mask stays stable at any window size. The filter is a core setting; the core's
 
 These belong to the emulator and affect the picture before the blit:
 
-- **Renderer** — OpenGL, Vulkan (if compiled in) or Null.
+- **Renderer** — Direct3D 11 (Windows builds, preview), OpenGL,
+  Vulkan (if compiled in) or Null.
 - **Internal resolution scale** — up to 8× the guest resolution (the list offers
   1–6 and 8). Higher scales cost GPU time and memory.
 - **Texture filtering** — linear or nearest.
@@ -82,12 +83,12 @@ setting. Use F11 when you only want to leave fullscreen during play.
 The caption under the display shows the renderer; it no longer reports a frame
 size because the shell never sees a frame.
 
-**F8** (or **View → Save Screenshot**) saves a PNG of the XGrid window,
-including the console picture, to `<data>/screenshots/`. The file name is
-timestamped (`screenshot-YYYYMMDD-HHMMSS.png`), with a suffix if two captures land
-in the same second. While a console runs on Windows the window is captured from
-the screen so the native picture is included; otherwise the shell's visual tree
-is rendered.
+**F8** (or **View → Save Screenshot**) saves a PNG of the console picture to
+`<data>/screenshots/`. With in-process hosting the core writes the capture
+itself (`xemu-YYYY-MM-DD-HH-MM-SS.png`), so the embedded picture is included
+without the shell reading frames. When no console runs, or with separate-process
+hosting, the shell captures the whole window instead
+(`screenshot-YYYYMMDD-HHMMSS.png`).
 
 The Library page shows the newest captures as a thumbnail strip. Click a picture
 to open it in the default viewer, use **Refresh** to re-read the folder after
@@ -122,7 +123,8 @@ setting takes effect on the next launch; in-process hosting applies it live.
 ## Performance notes
 
 - The core's own window is embedded directly; the shell adds no per-frame work.
-- Prefer **OpenGL** unless your build reports Vulkan and your driver is stable.
+- Prefer **OpenGL** unless your build reports Vulkan or Direct3D 11 and that
+  backend is stable for your titles.
 - Lower **Internal resolution scale** first when frames are slow.
 - Leave **Vertical sync** off unless you see tearing.
 - Keep filters in the core. A shell-side filter or bitmap canvas is not

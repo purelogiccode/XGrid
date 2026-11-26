@@ -133,6 +133,18 @@ public sealed record XemuLaunchSettings
     public string WorkingDirectory { get; init; } = string.Empty;
 
     /// <summary>
+    /// Gets the directory the core writes in-process screenshots to. Empty
+    /// leaves the core's own default (its working directory).
+    /// </summary>
+    public string ScreenshotDirectory { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets the directory the D3D11 backend keeps compiled shader blobs in.
+    /// Empty leaves the core's own default (its working directory).
+    /// </summary>
+    public string ShaderCacheDirectory { get; init; } = string.Empty;
+
+    /// <summary>
     /// Gets the presentation filter the core applies in its final blit. The
     /// shell selects it; it never processes picture pixels.
     /// </summary>
@@ -187,6 +199,7 @@ public sealed record XemuLaunchSettings
 
         if (!string.Equals(Renderer, "OPENGL", StringComparison.Ordinal)
             && !string.Equals(Renderer, "VULKAN", StringComparison.Ordinal)
+            && !string.Equals(Renderer, "D3D11", StringComparison.Ordinal)
             && !string.Equals(Renderer, "NULL", StringComparison.Ordinal))
         {
             errors.Add($"Unknown renderer '{Renderer}'.");

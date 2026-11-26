@@ -647,6 +647,16 @@ XGRID_CORE_EXPORT void xgrid_core_set_embed(int enabled)
     xgrid_present_set_embed(enabled != 0);
 }
 
+/** Queues a screenshot of the running picture. */
+XGRID_CORE_EXPORT int xgrid_core_request_screenshot(void)
+{
+    if (!qatomic_read(&g_running)) {
+        return -1;
+    }
+    xemu_request_screenshot();
+    return 0;
+}
+
 /** Asks the machine to power off. Safe to call from any thread. */
 static void xgrid_core_request_shutdown(void *opaque)
 {

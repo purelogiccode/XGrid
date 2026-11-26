@@ -49,7 +49,7 @@ The normal shell accepts the same overrides without `--headless`. A positional
 | `--core <path>` | Emulator binary for this run. |
 | `--data-dir <path>` | Shell data folder for this run. |
 | `--bios`, `--mcpx`, `--eeprom`, `--hdd` | Firmware and storage overrides. |
-| `--renderer <OPENGL\|VULKAN\|NULL>` | Core renderer. |
+| `--renderer <OPENGL\|VULKAN\|D3D11\|NULL>` | Core renderer. |
 | `--scale <1-8>` | Internal surface scale. |
 | `--filtering <linear\|nearest>` | Core texture filtering. |
 | `--filter <nearest\|bilinear\|scanline\|crt>` | Presentation filter, applied by the core. |

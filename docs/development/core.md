@@ -40,6 +40,26 @@ part of fast-forward (`0012-ui-fast-forward-clock.patch`).
 A new xemu release is handled by rebasing the patch set and the `xgrid-core/`
 additions, not by re-porting the emulator.
 
+## Renderers
+
+The NV2A has four renderer backends:
+
+| Backend | Path | Host |
+| --- | --- | --- |
+| OpenGL | `hw/xbox/nv2a/pgraph/gl/`, shaders in `pgraph/glsl/` | All |
+| Vulkan | `hw/xbox/nv2a/pgraph/vk/`, shaders in `pgraph/glsl/` | All with Vulkan |
+| Direct3D 11 | `hw/xbox/nv2a/pgraph/d3d11/`, shaders in `pgraph/hlsl/` (preview) | Windows |
+| NULL | `hw/xbox/nv2a/pgraph/null/` | All |
+
+Each backend registers a `PGRAPHRenderer`; PGRAPH owns the state extraction
+and calls the selected backend's operations. The Direct3D 11 backend is built
+when `xgrid_d3d11` is enabled (default on Windows), and only then is `D3D11`
+listed in `xgrid-core.json`. It has its own device/context, surface and zeta
+caches, HLSL vertex/pixel shader translation, a CPU vertex decoder, pipeline
+state objects, occlusion-query reporting and a texture cache; presentation is a
+D3D11 readback into the core GL display texture. The staged plan, current phase
+and known limitations are in `ImplementDirectX.md` at the repository root.
+
 ## In-process ABI
 
 ```c
@@ -91,6 +111,15 @@ A disc load opens the medium through the block layer with the format the file
 extension names: `.chd` uses `xgridchd`, `.zar` uses `xgridzar`, everything else
 is raw. The tray is cycled so Xbox software notices the change; no power cycle
 is involved.
+
+Screenshot requests are queued on the core's render loop:
+
+```c
+int xgrid_core_request_screenshot(void);
+```
+
+The core writes the PNG into `general.screenshot_dir`; the shell never receives
+the pixels.
 
 Pause and frame step are queued like the save-state requests and applied on the
 core's main loop. A pause stops the machine on the next published frame, and a

@@ -108,6 +108,14 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
         return false;
     }
 
+    /// <inheritdoc />
+    public bool TryRequestScreenshot()
+    {
+        // The separate process has no live ABI; the shell falls back to its
+        // window capture.
+        return false;
+    }
+
     /// <summary>Gets a value indicating whether the core process is alive.</summary>
     public bool IsRunning
     {

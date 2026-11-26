@@ -15,14 +15,26 @@ public static class RendererChoices
     /// <returns>The keys, always including OpenGL and the null renderer.</returns>
     public static IReadOnlyList<string> Keys(CoreCapabilities? capabilities)
     {
-        if (capabilities is { SupportsVulkan: false })
+        if (capabilities is null)
         {
-            return [CoreCapabilities.RendererOpenGl, CoreCapabilities.RendererNull];
+            // No manifest: the shell cannot prove anything is missing, so it
+            // keeps offering what an older configuration may have selected.
+            // Direct3D 11 appeared with the Windows core, so it is not guessed.
+            return [CoreCapabilities.RendererOpenGl, CoreCapabilities.RendererVulkan, CoreCapabilities.RendererNull];
         }
 
-        // No manifest: the shell cannot prove Vulkan is missing, so it keeps
-        // offering what an older configuration may have selected.
-        return [CoreCapabilities.RendererOpenGl, CoreCapabilities.RendererVulkan, CoreCapabilities.RendererNull];
+        var keys = new List<string>();
+        if (capabilities.Has(CoreCapabilities.RendererDirect3D11))
+        {
+            keys.Add(CoreCapabilities.RendererDirect3D11);
+        }
+        keys.Add(CoreCapabilities.RendererOpenGl);
+        if (capabilities.SupportsVulkan)
+        {
+            keys.Add(CoreCapabilities.RendererVulkan);
+        }
+        keys.Add(CoreCapabilities.RendererNull);
+        return keys;
     }
 
     /// <summary>Returns the display label for a renderer key.</summary>
@@ -34,6 +46,7 @@ public static class RendererChoices
         {
             CoreCapabilities.RendererOpenGl => "OpenGL",
             CoreCapabilities.RendererVulkan => "Vulkan",
+            CoreCapabilities.RendererDirect3D11 => "Direct3D 11",
             CoreCapabilities.RendererNull => "Null (headless, no picture)",
             _ => key,
         };
@@ -46,7 +59,7 @@ public static class RendererChoices
     {
         return capabilities switch
         {
-            { SupportsVulkan: true } => "OpenGL and Vulkan are both built into this emulator.",
+            { SupportsVulkan: true } => "Direct3D 11, OpenGL and Vulkan are built into this emulator.",
             { SupportsVulkan: false } => "This emulator build has no Vulkan renderer, so Vulkan is not offered.",
             _ => "This emulator does not report which renderers it has, so Vulkan is offered but may fall back to OpenGL.",
         };

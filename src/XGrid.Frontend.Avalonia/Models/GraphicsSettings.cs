@@ -6,8 +6,8 @@ namespace XGrid.Frontend.Avalonia.Models;
 
 /// <summary>Graphics options written into the xemu core configuration.</summary>
 /// <remarks>
-/// xemu 0.8.139 has three renderers: OpenGL, Vulkan and a null renderer. It has
-/// no DirectX backend, so DirectX is deliberately not offered here.
+/// xemu has OpenGL, Vulkan, Direct3D 11 and a null renderer. Direct3D 11 is
+/// Windows-only; the shell only offers it when the core manifest lists it.
 /// </remarks>
 public sealed class GraphicsSettings
 {
@@ -16,6 +16,9 @@ public sealed class GraphicsSettings
 
     /// <summary>Renderer key for the Vulkan backend.</summary>
     public const string RendererVulkan = "VULKAN";
+
+    /// <summary>Renderer key for the Windows Direct3D 11 backend.</summary>
+    public const string RendererDirect3D11 = "D3D11";
 
     /// <summary>Renderer key for the headless null backend.</summary>
     public const string RendererNull = "NULL";
@@ -26,7 +29,7 @@ public sealed class GraphicsSettings
     /// <summary>Texture filtering key for nearest sampling.</summary>
     public const string FilterNearest = "nearest";
 
-    /// <summary>Gets or sets the core renderer (<c>OPENGL</c>, <c>VULKAN</c> or <c>NULL</c>).</summary>
+    /// <summary>Gets or sets the core renderer (<c>OPENGL</c>, <c>VULKAN</c>, <c>D3D11</c> or <c>NULL</c>).</summary>
     public string Renderer { get; set; } = RendererOpenGl;
 
     /// <summary>Gets or sets the internal surface scale (1-8).</summary>
@@ -80,6 +83,7 @@ public sealed class GraphicsSettings
         Renderer = NullSafe.Text(Renderer).ToUpperInvariant() switch
         {
             RendererVulkan => RendererVulkan,
+            RendererDirect3D11 => RendererDirect3D11,
             RendererNull => RendererNull,
             _ => RendererOpenGl,
         };

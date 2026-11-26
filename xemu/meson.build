@@ -2387,6 +2387,18 @@ endif
 vulkan = not_found
 libglslang = not_found
 
+d3d11 = not_found
+if get_option('xgrid_d3d11') and host_os == 'windows'
+  d3d11 = declare_dependency(
+    dependencies: [
+      cc.find_library('d3d11', required: true),
+      cc.find_library('dxgi', required: true),
+      cc.find_library('dxguid', required: true),
+      cc.find_library('d3dcompiler', required: true),
+    ],
+  )
+endif
+
 if get_option('xgrid_vulkan')
   if host_os == 'windows'
     vulkan = declare_dependency(compile_args: ['-DVK_USE_PLATFORM_WIN32_KHR'])
@@ -2700,6 +2712,7 @@ if numa.found()
 endif
 config_host_data.set('CONFIG_OPENGL', opengl.found())
 config_host_data.set('CONFIG_VULKAN', vulkan.found())
+config_host_data.set('CONFIG_D3D11', d3d11.found())
 config_host_data.set('CONFIG_PLUGIN', get_option('plugins'))
 config_host_data.set('CONFIG_RBD', rbd.found())
 config_host_data.set('CONFIG_RDMA', rdma.found())

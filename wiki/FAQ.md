@@ -38,7 +38,8 @@ No for release archives. Yes for building from source (.NET 11 SDK).
 
 ### Which renderer?
 
-OpenGL by default. Vulkan only if the core build includes it. Null is headless.
+OpenGL by default. Direct3D 11 on Windows builds that report it. Vulkan only if
+the core build includes it. Null is headless.
 
 ### Why is Vulkan missing?
 
