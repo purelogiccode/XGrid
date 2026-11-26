@@ -19,12 +19,25 @@ Open **Settings -> System -> Sega Chihiro**, choose the folder, and turn on
 **Enable Chihiro**. A `.bin` launch selects the Chihiro even when the switch is
 off. The machine uses 128 MB of RAM and no Xbox hard disk.
 
+## Converting an Xbox-format Chihiro ISO
+
+The `XBOXOG - Chihiro` patched ISOs already contain the decrypted Chihiro file
+tree. Use **Settings -> System -> Sega Chihiro -> Convert Chihiro ISO...**, or:
+
+```text
+XGrid.Cli.exe chihiro-netboot --image "Ghost Squad (XBOXOG).iso" --out "ghost-squad.bin"
+```
+
+The converter writes a FATX netboot image and aliases a renamed executable
+(`vsg.xbe` -> `vsg.xbe.bak`/`default.xbe`) when the patch renamed it.
+
 ## Converting a GD-ROM
 
-Use [chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot) with the
+Raw Redump/MAME GD-ROM sets need
+[chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot) with the
 game's MAME key `.zip` and its `.cue`/`.bin` or `.chd`. Put the resulting
-`.bin` in a library folder and launch it. XGrid bundles no converter, keys,
-firmware or game data.
+`.bin` in a library folder and launch it. XGrid bundles no keys, firmware or
+game data.
 
 ## Controls
 

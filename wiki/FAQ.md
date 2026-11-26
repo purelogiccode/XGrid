@@ -58,8 +58,10 @@ Yes, with netboot `.bin` images and the Chihiro firmware. Put
 `chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`, `ic10_g24lc64.bin`,
 `ic11_24lc024.bin` and `pc20_g24lc64.bin` in one folder, select it under
 **Settings -> System -> Sega Chihiro**, and launch a `.bin` from the Library.
-Redump/MAME GD-ROM sets need conversion with the external `chihiro-netboot`
-tool; `.cue` GD-ROM sets do not boot directly. See [Sega Chihiro](Chihiro).
+The `XBOXOG - Chihiro` style ISOs convert in Settings (or with
+`XGrid.Cli chihiro-netboot`); raw Redump/MAME GD-ROM sets still need the
+external `chihiro-netboot` and their key. `.cue` GD-ROM sets do not boot
+directly. See [Sega Chihiro](Chihiro).
 
 ### Why does my ZAR fail?
 

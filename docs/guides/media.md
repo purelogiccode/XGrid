@@ -85,7 +85,9 @@ archives in `ZarArchiveTests`, so the shape check also runs on a clean checkout.
 A `.bin` in the library is a Sega Chihiro netboot image: a raw FATX image
 loaded into the Chihiro DIMM, not an Xbox disc and not a raw GD-ROM track.
 Launching one selects the Chihiro machine and uses the firmware folder from
-**Settings → System → Sega Chihiro**. See [Sega Chihiro](chihiro.md).
+**Settings → System → Sega Chihiro**. An Xbox-format Chihiro ISO can be
+converted in Settings or with `XGrid.Cli chihiro-netboot`; a raw GD-ROM needs
+the external `chihiro-netboot` and its key. See [Sega Chihiro](chihiro.md).
 
 ### XBE
 

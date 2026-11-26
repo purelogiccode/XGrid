@@ -396,6 +396,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private string _chihiroFirmwareDirectory = string.Empty;
 
     [ObservableProperty]
+    private bool _chihiroConverting;
+
+    [ObservableProperty]
+    private string _chihiroConvertStatus = string.Empty;
+
+    [ObservableProperty]
     private int _ramMb = 64;
 
     [ObservableProperty]
@@ -1275,6 +1281,59 @@ public sealed partial class SettingsViewModel : PageViewModel
         if (path is not null)
         {
             HddPath = path;
+        }
+    }
+
+    /// <summary>
+    /// Public command: converts an Xbox-format Chihiro ISO into the FATX
+    /// netboot image the Chihiro machine boots. The game files in these
+    /// homebrew conversions are already decrypted; a raw GD-ROM is not.
+    /// </summary>
+    [RelayCommand]
+    private async Task ConvertChihiroIsoAsync()
+    {
+        string? iso = await Shell.Dialogs.PickFileAsync(
+            "Choose a Chihiro Xbox-format ISO",
+            FileDialogService.ChihiroIsoTypes);
+        if (iso is null)
+        {
+            return;
+        }
+
+        string suggested = Path.GetFileNameWithoutExtension(iso) + ".bin";
+        string? output = await Shell.Dialogs.PickSaveFileAsync(
+            "Save the Chihiro netboot image",
+            suggested,
+            FileDialogService.NetbootTypes);
+        if (output is null)
+        {
+            return;
+        }
+
+        ChihiroConverting = true;
+        ChihiroConvertStatus = "Converting...";
+        try
+        {
+            var progress = new Progress<double>(
+                value => ChihiroConvertStatus = $"Converting... {value * 100:0}%");
+            ChihiroNetbootBuilder.Result result = await Task.Run(
+                () => ChihiroNetbootBuilder.Build(iso, output, progress));
+            ChihiroConvertStatus =
+                $"Wrote {Path.GetFileName(result.OutputPath)} " +
+                $"({result.ImageBytes / (1024 * 1024)} MiB game area, {result.GameId}).";
+            ChihiroEnabled = true;
+            Shell.ShowToast("Chihiro netboot image created.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException or FileNotFoundException
+                                              or DirectoryNotFoundException)
+        {
+            ChihiroConvertStatus = "Conversion failed: " + exception.Message;
+            Shell.ShowToast("Chihiro conversion failed: " + exception.Message);
+        }
+        finally
+        {
+            ChihiroConverting = false;
         }
     }
 

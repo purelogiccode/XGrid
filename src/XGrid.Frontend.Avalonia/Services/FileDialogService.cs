@@ -31,6 +31,29 @@ public sealed class FileDialogService
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 
+    /// <summary>Opens a save picker and returns a local path, or null when cancelled.</summary>
+    public async Task<string?> PickSaveFileAsync(
+        string title,
+        string suggestedName,
+        IReadOnlyList<FilePickerFileType>? types = null)
+    {
+        if (Window?.StorageProvider is not { } storage)
+        {
+            return null;
+        }
+
+        IStorageFile? file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = title,
+            SuggestedFileName = suggestedName,
+            FileTypeChoices = types,
+            DefaultExtension = "bin",
+            ShowOverwritePrompt = true,
+        });
+
+        return file?.TryGetLocalPath();
+    }
+
     /// <summary>Opens a folder picker and returns a local path, or null when cancelled.</summary>
     public async Task<string?> PickFolderAsync(string title)
     {
@@ -91,6 +114,20 @@ public sealed class FileDialogService
     public static IReadOnlyList<FilePickerFileType> DiscTypes { get; } =
     [
         new FilePickerFileType("Xbox and Chihiro images") { Patterns = ["*.iso", "*.xiso", "*.chd", "*.cci", "*.zar", "*.bin", "*.xbe"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
+
+    /// <summary>Xbox-format Chihiro games that can be converted to netboot images.</summary>
+    public static IReadOnlyList<FilePickerFileType> ChihiroIsoTypes { get; } =
+    [
+        new FilePickerFileType("Chihiro Xbox-format ISOs") { Patterns = ["*.iso", "*.xiso"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
+
+    /// <summary>Chihiro netboot images.</summary>
+    public static IReadOnlyList<FilePickerFileType> NetbootTypes { get; } =
+    [
+        new FilePickerFileType("Chihiro netboot images") { Patterns = ["*.bin"] },
         new FilePickerFileType("All files") { Patterns = ["*"] },
     ];
 
