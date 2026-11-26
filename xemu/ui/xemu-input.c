@@ -616,6 +616,14 @@ static uint16_t chihiro_trigger_u16(ControllerState *pad, int axis)
     return (uint16_t)(value * 2);
 }
 
+/* A Chihiro binding in the 1000 range is a mouse button (1001 = left,
+ * 1003 = right), the convention the Chihiro configuration uses. */
+static bool chihiro_mouse_button(int binding, uint32_t buttons)
+{
+    int index = binding - 1000;
+    return index >= 0 && index < 8 && (buttons & (1u << index)) != 0;
+}
+
 /* The gun games aim with the host pointer. The SDL window is the picture, so
  * the cursor position maps straight onto the JVS analog pair; leaving the
  * picture reports the off-screen position the games treat as a reload. */
@@ -660,6 +668,7 @@ static void xemu_input_update_chihiro(void)
 
     ChihiroJVSState *jvs = chihiro_jvs_global;
     const bool *kbd = SDL_GetKeyboardState(NULL);
+    uint32_t mouse_buttons = SDL_GetMouseState(NULL, NULL);
     ControllerState *pad = chihiro_gamepad();
     const __typeof__(g_config.chihiro.jvs) *jvs_cfg = &g_config.chihiro.jvs;
     int profile = chihiro_detected_game_profile();
@@ -691,14 +700,17 @@ static void xemu_input_update_chihiro(void)
             ? jvs_cfg->vc3.pedal : jvs_cfg->gs.change;
 
         if (chihiro_key_down(kbd, trigger) ||
+            chihiro_mouse_button(trigger, mouse_buttons) ||
             chihiro_trigger_u16(pad, CONTROLLER_AXIS_RTRIG) > 0x4000) {
             sw0 |= 0x02;
         }
         if (chihiro_key_down(kbd, body) ||
+            chihiro_mouse_button(body, mouse_buttons) ||
             chihiro_pad_down(pad, CONTROLLER_BUTTON_A)) {
             sw1 |= 0x80;
         }
         if (chihiro_key_down(kbd, extra) ||
+            chihiro_mouse_button(extra, mouse_buttons) ||
             chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) {
             sw1 |= 0x40;
         }
