@@ -97,8 +97,10 @@ The keys can be changed in **Settings -> Input -> Sega Chihiro cabinet keys**.
 | Gun change / reload | game-specific | B |
 
 The game's cabinet profile is detected from its executable; gun, driving,
-Ollie King and Gundam layouts are supported. The first detected gamepad drives
-the cabinet, and a second gamepad aims player 2's gun in the gun games. In gun
+Ollie King and Gundam layouts are supported. If a homebrew or renamed
+executable is not recognized, choose its layout under **Undetected game** in
+the cabinet keys; known games still auto-detect. The first detected gamepad
+drives the cabinet, and a second gamepad aims player 2's gun in the gun games. In gun
 games, move the host cursor over the picture to aim player 1; left-click fires,
 right-click is the body/action or reload button, and RT/A/B do the same on a
 gamepad. Leaving the picture reports the off-screen/reload position. Player 2

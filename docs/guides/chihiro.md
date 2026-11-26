@@ -223,6 +223,10 @@ King and Gundam have their own layouts. The first detected gamepad drives the
 cabinet; a second gamepad aims player 2's gun in the gun games. A wheel that SDL
 exposes as a gamepad works through its stick and triggers.
 
+If a homebrew or renamed executable is not recognized, choose its cabinet under
+**Undetected game** in the cabinet keys. The core still auto-detects games in
+its cabinet table; the selection is only the fallback.
+
 Gundam Battle Operating Simulator's twin-stick cockpit is under **Gundam
 cockpit** in Settings:
 

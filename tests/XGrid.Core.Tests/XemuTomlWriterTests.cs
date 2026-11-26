@@ -104,6 +104,7 @@ public sealed class XemuTomlWriterTests
             Machine = XemuLaunchSettings.MachineChihiro,
             ChihiroJvs = new ChihiroJvsSettings
             {
+                Profile = "gs",
                 Coin = 35,
                 Hotd3Trigger = 1003,
                 GsChange = 15,
@@ -116,6 +117,7 @@ public sealed class XemuTomlWriterTests
         string toml = XemuTomlWriter.Build(settings);
 
         Assert.Contains("[chihiro.jvs]", toml, StringComparison.Ordinal);
+        Assert.Contains("profile = 'gs'", toml, StringComparison.Ordinal);
         Assert.Contains("coin = 35", toml, StringComparison.Ordinal);
         Assert.Contains("[chihiro.jvs.hotd3]", toml, StringComparison.Ordinal);
         Assert.Contains("trigger = 1003", toml, StringComparison.Ordinal);

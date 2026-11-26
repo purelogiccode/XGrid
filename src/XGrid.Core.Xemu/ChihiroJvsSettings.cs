@@ -7,6 +7,13 @@ namespace XGrid.Core.Xemu;
 /// </summary>
 public sealed class ChihiroJvsSettings
 {
+    /// <summary>
+    /// Gets or sets the cabinet layout used when the game's executable is not
+    /// recognized: <c>hotd3</c>, <c>vc3</c>, <c>gs</c>, <c>ctx</c>, <c>or2</c>,
+    /// <c>ok</c>, <c>wmmt2</c> or <c>gundam</c>.
+    /// </summary>
+    public string Profile { get; set; } = "hotd3";
+
     /// <summary>Gets or sets the Start button.</summary>
     public int Start { get; set; } = 40;
 
@@ -154,6 +161,8 @@ public sealed class ChihiroJvsSettings
     /// <summary>Repairs values outside the keyboard and mouse ranges.</summary>
     public void Normalize()
     {
+        Profile = Profile is "hotd3" or "vc3" or "gs" or "ctx" or "or2" or "ok"
+            or "wmmt2" or "gundam" ? Profile : "hotd3";
         Start = Clamp(Start);
         Service = Clamp(Service);
         Coin = Clamp(Coin);
