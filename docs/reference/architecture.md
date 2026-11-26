@@ -18,7 +18,7 @@ touches.
 ┌───────────────────────────▼──────────────────────────────────┐
 │ xemu core (xemu 0.8.139 + XGrid additions)                   │
 │ QEMU TCG i386 · NV2A · MCPX · APU/ACI · IDE · USB · SMBus    │
-│ xgridchd · xgridzar · display sink · input sink · ABI        │
+│ xgridiso · xgridchd · xgridzar · display/input/ABI          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -38,8 +38,10 @@ XGrid's additions live in `xemu/xgrid-core/`:
 
 | Path | Purpose |
 | --- | --- |
-| `block/xgridchd.c` | Real-time CHD block driver (vendored libchdr). |
-| `block/xgridzar.c` | Real-time ZArchive block driver (zstd). |
+| `block/xgrid-iso.c` | Shared XDVDFS game-partition detection for the disc drivers. |
+| `block/xgridiso.c` | ISO/XISO block driver; maps optimized and full Redump game partitions to LBA 0. |
+| `block/xgridchd.c` | Real-time CHD block driver (vendored libchdr) with partition-offset detection. |
+| `block/xgridzar.c` | Real-time ZArchive block driver (zstd); entry form and synthesized file tree. |
 | `display/xgrid-display.c` | Publishes presented frames to a named shared section. |
 | `input/xgrid-input.c` | Reads player 1 from a named shared section. |
 | `abi/xgrid-core.c` | In-process start/stop/join/version and save-state bridge. |
@@ -223,9 +225,9 @@ xgrid_core_disc_status()     xgrid_core_disc_error()
 ```
 
 The request runs as a bottom half on the core's main loop, where the block
-layer expects it. The medium format follows the file extension (`.chd` and
-`.zar` through the XGrid block drivers, everything else raw), and the tray is
-cycled so the guest notices. The shell polls the status, then updates the
+layer expects it. The medium format follows the file extension (`.iso`/`.xiso`
+through `xgridiso`, `.chd` through `xgridchd`, `.zar` through `xgridzar`), and
+the tray is cycled so the guest notices. The shell polls the status, then updates the
 current title. This needs in-process hosting, like save states.
 
 ## Core capabilities

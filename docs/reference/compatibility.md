@@ -11,8 +11,8 @@ point, but XGrid's patches and media drivers can change the result.
 | Area | Status |
 | --- | --- |
 | Retail boot chain and dashboard from an HDD image | Supported |
-| ISO/XISO disc images | Supported |
-| Compressed CHD disc images | Supported (real-time decode) |
+| ISO/XISO disc images | Supported, optimized or full Redump (game partition mapped automatically) |
+| Compressed CHD disc images | Supported (real-time decode, optimized or full Redump) |
 | ZArchive discs | Supported, entry form or synthesized file tree |
 | 64 MB and 128 MB guest RAM | Supported |
 | OpenGL renderer | Supported |
@@ -36,7 +36,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Limitation | Detail |
 | --- | --- |
 | **Windows is the integrated emulation host** | In-process hosting, the shell frame/pad sinks, save states, pause/step, disc swap and window embedding are Windows-only. The `linux-x64` archive bundles the standalone core, which presents and reads input through its own window; headless runs use the shared-memory sink there too. macOS archives contain the shell only. |
-| **ZArchive file-tree archives** | Supported by the XDVDFS synthesizer; entry-form archives remain the simplest shape. |
+| **ZArchive file-tree names** | The synthesizer uses XDVDFS rules: Latin-1, up to 42 characters, no separators. Entry-form archives have no such limit. |
 | **Save states are in-process only** | The separate-process host has no ABI for snapshot control. |
 | **Pause, frame stepping and disc swap need in-process hosting** | On Linux, power off before changing a disc. |
 | **No shell netplay UI** | The core may support netplay, but the shell does not expose it. |

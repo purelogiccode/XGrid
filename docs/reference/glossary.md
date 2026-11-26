@@ -12,7 +12,7 @@
 | **HRTF** | Head-related transfer function; spatial audio filtering. |
 | **In-process** | Hosting mode where the core library runs inside the shell process. |
 | **Input sink** | Shared-memory path where the shell publishes the player-1 pad. |
-| **ISO/XISO** | An XDVDFS disc image. |
+| **ISO/XISO** | An XDVDFS disc image; optimized or full Redump. |
 | **MCPX** | The Xbox southbridge/multimedia chip; also the boot ROM. |
 | **NV2A** | The Xbox GPU. |
 | **QEMU TCG** | Tiny Code Generator, the dynamic translation CPU core used by xemu. |

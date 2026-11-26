@@ -10,7 +10,7 @@
   - MCPX boot ROM (`mcpx_1.0.bin`, 512 bytes);
   - EEPROM (`eeprom.bin`, 256 bytes);
   - HDD image (raw or qcow2).
-- A disc image: ISO/XISO, CHD, or ZArchive (entry form or file tree).
+- A disc image: ISO/XISO (optimized or full Redump), CHD, or ZArchive (entry form or file tree).
 
 ## Install
 

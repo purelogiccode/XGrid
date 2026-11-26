@@ -20,6 +20,7 @@
 #include "qemu/module.h"
 #include "qemu/iov.h"
 #include <zstd.h>
+#include "xgrid-iso.h"
 
 #define XGRIDZAR_MAGIC 0x169F52D6u
 #define XGRIDZAR_VERSION 0x61BF3A01u
@@ -44,6 +45,7 @@ typedef struct BDRVXgridZarState {
     uint64_t compressed_size;
     uint64_t file_offset;
     uint64_t file_size;
+    uint64_t game_offset;
     uint8_t *block;
     uint8_t *compressed;
     uint64_t cached_block;
@@ -58,6 +60,8 @@ typedef struct BDRVXgridZarState {
 
 static bool zar_iso_build(BDRVXgridZarState *s, Error **errp);
 static void zar_iso_free(BDRVXgridZarState *s);
+static bool xgridzar_disc_probe_read(void *opaque, uint64_t offset,
+                                     void *buffer, size_t size);
 
 static uint32_t zar_be32(const uint8_t *p)
 {
@@ -264,16 +268,25 @@ static int xgridzar_open(BlockDriverState *bs, QDict *options, int flags,
         }
     }
 
+    s->cached_block = UINT64_MAX;
+    s->block = g_malloc(XGRIDZAR_BLOCK_SIZE);
+    s->compressed = g_malloc(XGRIDZAR_BLOCK_SIZE + 1);
+
     if (!found) {
         if (!zar_iso_build(s, errp)) {
             return -EINVAL;
         }
+    } else {
+        s->game_offset = xgrid_iso_find_game_offset(xgridzar_disc_probe_read,
+                                                    s, s->file_size);
+        if (s->game_offset == UINT64_MAX) {
+            s->game_offset = 0;
+        }
     }
 
-    s->cached_block = UINT64_MAX;
-    s->block = g_malloc(XGRIDZAR_BLOCK_SIZE);
-    s->compressed = g_malloc(XGRIDZAR_BLOCK_SIZE + 1);
-    bs->total_sectors = (s->synthesized ? s->iso_size : s->file_size) /
+    bs->total_sectors = (s->synthesized
+                         ? s->iso_size
+                         : s->file_size - s->game_offset) /
                         BDRV_SECTOR_SIZE;
     bs->bl.request_alignment = 1;
 
@@ -341,6 +354,46 @@ static int xgridzar_read_block(BDRVXgridZarState *s, uint64_t archive_block)
     }
 
     return 0;
+}
+
+/* Reads logical bytes at an absolute position in the uncompressed stream. */
+static int zar_read_bytes(BDRVXgridZarState *s, uint64_t absolute,
+                          uint8_t *out, uint32_t length)
+{
+    while (length > 0) {
+        uint64_t block = absolute / XGRIDZAR_BLOCK_SIZE;
+        uint32_t within = absolute % XGRIDZAR_BLOCK_SIZE;
+        uint32_t chunk = MIN(length, XGRIDZAR_BLOCK_SIZE - within);
+
+        if (s->cached_block != block) {
+            int ret = xgridzar_read_block(s, block);
+            if (ret < 0) {
+                return ret;
+            }
+            s->cached_block = block;
+        }
+
+        memcpy(out, s->block + within, chunk);
+        out += chunk;
+        absolute += chunk;
+        length -= chunk;
+    }
+
+    return 0;
+}
+
+/* Probes the entry-form .iso for its XDVDFS game-partition offset. */
+static bool xgridzar_disc_probe_read(void *opaque, uint64_t offset,
+                                     void *buffer, size_t size)
+{
+    BDRVXgridZarState *s = opaque;
+
+    if (size > UINT32_MAX) {
+        return false;
+    }
+
+    return zar_read_bytes(s, s->file_offset + offset, buffer,
+                          (uint32_t)size) == 0;
 }
 
 /*
@@ -835,27 +888,7 @@ static void zar_iso_free(BDRVXgridZarState *s)
 static int zar_iso_read_file(BDRVXgridZarState *s, XGridZarIsoNode *file,
                              uint64_t position, uint8_t *out, uint32_t length)
 {
-    while (length > 0) {
-        uint64_t absolute = file->archive_offset + position;
-        uint64_t block = absolute / XGRIDZAR_BLOCK_SIZE;
-        uint32_t within = (uint32_t)(absolute % XGRIDZAR_BLOCK_SIZE);
-        uint32_t chunk = MIN(length, (uint32_t)(XGRIDZAR_BLOCK_SIZE - within));
-
-        if (s->cached_block != block) {
-            int ret = xgridzar_read_block(s, block);
-            if (ret < 0) {
-                return ret;
-            }
-            s->cached_block = block;
-        }
-
-        memcpy(out, s->block + within, chunk);
-        out += chunk;
-        position += chunk;
-        length -= chunk;
-    }
-
-    return 0;
+    return zar_read_bytes(s, file->archive_offset + position, out, length);
 }
 
 static int coroutine_fn GRAPH_RDLOCK
@@ -940,7 +973,8 @@ xgridzar_entry_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
     (void)flags;
 
     while (done < bytes) {
-        uint64_t position = s->file_offset + (uint64_t)offset + (uint64_t)done;
+        uint64_t position = s->file_offset + s->game_offset +
+                            (uint64_t)offset + (uint64_t)done;
         uint64_t archive_block = position / XGRIDZAR_BLOCK_SIZE;
         uint32_t within = position % XGRIDZAR_BLOCK_SIZE;
         uint32_t length = MIN((uint64_t)(bytes - done),

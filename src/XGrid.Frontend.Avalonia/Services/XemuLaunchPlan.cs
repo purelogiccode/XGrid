@@ -109,20 +109,6 @@ public static class XemuLaunchPlan
             return "Choose a BIOS image first.";
         }
 
-        // A .zar that stores the game as a file tree cannot be mounted: the
-        // guest needs an XDVDFS volume and the synthesizer is not built yet.
-        string disc = discPath ?? settings.DvdPath;
-        if (!string.IsNullOrWhiteSpace(disc)
-            && disc.EndsWith(".zar", StringComparison.OrdinalIgnoreCase)
-            && ZarArchive.TryOpen(disc, out ZarArchive? archive)
-            && archive is not null
-            && !archive.HasDiscImage)
-        {
-            return "This .zar stores the game as files rather than one ISO entry, "
-                   + "so it needs the disc synthesizer (not built yet). Repack it "
-                   + "with a folder that contains the .iso.";
-        }
-
         XemuLaunchSettings launch = Create(settings, discPath, 640, 480, workingDirectory);
         System.Collections.Generic.IReadOnlyList<string> errors = launch.Validate();
         return errors.Count == 0 ? null : errors[0];

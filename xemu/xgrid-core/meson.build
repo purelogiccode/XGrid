@@ -43,7 +43,9 @@ xgrid_core_dep = declare_dependency(
 )
 
 block_ss.add(xgrid_core_dep)
+block_ss.add(files('block/xgrid-iso.c'))
 block_ss.add(files('block/xgridchd.c'))
+block_ss.add(files('block/xgridiso.c'))
 block_ss.add(files('block/xgridzar.c'))
 
 # Host display sink (frames to a named shared section; no SDL presentation).

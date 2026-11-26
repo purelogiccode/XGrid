@@ -3090,12 +3090,22 @@ void qemu_init(int argc, char **argv)
     // connected but no media present.
     fake_argv[fake_argc++] = strdup("-drive");
     char *escaped_dvd_path = strdup_double_commas(dvd_path);
-    /* XGrid: a .zar keeps its magic at the end, so QEMU cannot probe it. */
-    bool dvd_is_zar = strlen(dvd_path) > 4 &&
-                      g_ascii_strcasecmp(dvd_path + strlen(dvd_path) - 4,
-                                         ".zar") == 0;
+    /* XGrid: pick the driver the core needs; a .zar keeps its magic at the
+     * end and an ISO needs the XDVDFS partition offset detected. */
+    const char *dvd_format = "";
+    const char *dvd_extension = strrchr(dvd_path, '.');
+    if (dvd_extension != NULL) {
+        if (g_ascii_strcasecmp(dvd_extension, ".zar") == 0) {
+            dvd_format = ",format=xgridzar";
+        } else if (g_ascii_strcasecmp(dvd_extension, ".chd") == 0) {
+            dvd_format = ",format=xgridchd";
+        } else if (g_ascii_strcasecmp(dvd_extension, ".iso") == 0 ||
+                   g_ascii_strcasecmp(dvd_extension, ".xiso") == 0) {
+            dvd_format = ",format=xgridiso";
+        }
+    }
     fake_argv[fake_argc++] = g_strdup_printf("index=1,media=cdrom,file=%s%s",
-        escaped_dvd_path, dvd_is_zar ? ",format=xgridzar" : "");
+        escaped_dvd_path, dvd_format);
     free(escaped_dvd_path);
 
     fake_argv[fake_argc++] = strdup("-display");

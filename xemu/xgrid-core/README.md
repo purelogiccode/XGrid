@@ -13,7 +13,9 @@ is a patch rebase, not a re-port.
 
 | Path | What it is |
 |---|---|
-| `block/xgridchd.c` | QEMU block driver that decodes CHD hunks on demand, so a compressed disc plays without extraction. |
+| `block/xgrid-iso.c` | Shared XDVDFS game-partition detection (optimized XISO and the XGD retail offsets) used by the disc drivers. |
+| `block/xgridiso.c` | QEMU block driver for ISO/XISO images: maps the detected game partition to LBA 0, so a full Redump image boots without conversion. |
+| `block/xgridchd.c` | QEMU block driver that decodes CHD hunks on demand and maps the detected game partition. |
 | `block/xgridzar.c` | QEMU block driver for ZArchive discs: serves an entry-form archive's `.iso` entry directly and synthesizes an XDVDFS volume for a file-tree archive, decoding zstd blocks on demand. |
 | `display/xgrid-display.c` | Presentation filter/overlay selection and the headless display sink. The core always owns the picture; the shell never presents frames. |
 | `input/xgrid-input.c` | Host input source: each Xbox port reads its pad record from the shell's section. |
@@ -56,8 +58,11 @@ because then no frame is published.
 
 `xgrid_core_disc_load(path)` and `xgrid_core_disc_eject` queue a block-layer
 medium change; `xgrid_core_disc_status` and `xgrid_core_disc_error` report it.
-The load picks the driver from the extension (`xgridchd`, `xgridzar`, or raw)
-and cycles the tray so the guest notices. No power cycle is involved.
+The load picks the driver from the extension (`xgridiso` for `.iso`/`.xiso`,
+`xgridchd` for `.chd`, `xgridzar` for `.zar`) and cycles the tray so the guest
+notices. No power cycle is involved. The ISO/XISO, CHD and entry-form ZArchive
+drivers detect the XDVDFS game-partition offset, so optimized and full Redump
+images both appear at LBA 0.
 
 ### Input
 

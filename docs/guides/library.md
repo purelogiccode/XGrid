@@ -60,8 +60,8 @@ folder**.
 
 | Extension | Listed | Launchable | Notes |
 | --- | --- | --- | --- |
-| `.iso` | Yes | Yes | XDVDFS ISO/XISO. |
-| `.chd` | Yes | Yes | Compressed disc image. |
+| `.iso` | Yes | Yes | Optimized XISO or full Redump; the game partition is mapped automatically. |
+| `.chd` | Yes | Yes | Compressed disc image, with the same partition-offset detection. |
 | `.zar` | Yes | Yes | Entry form or synthesized file tree. |
 | `.xbe` | Yes | No | Shown for inspection; wrap it in an image to boot. |
 

@@ -37,7 +37,7 @@ save states, display/input plumbing, screenshots and packaging.
   SMBus.
 - **Shell:** Home, Library, Settings, Activity, About.
 - **Hosting:** in-process `xgrid_core.dll` on Windows; separate process on Linux and as a fallback.
-- **Media:** ISO/XISO, compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.
+- **Media:** ISO/XISO (optimized or full Redump), compressed CHD, ZArchive (entry form or file tree), raw/qcow2 HDD.
 - **Automation:** command-line settings overrides and headless runs with JSON reports.
 - **Diagnostics:** Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check.
 - **Donationware:** optional banner and email-based recognition; no feature locks.

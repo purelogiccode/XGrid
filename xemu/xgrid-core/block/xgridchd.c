@@ -21,6 +21,7 @@
 #include "qemu/module.h"
 #include "qemu/iov.h"
 #include "libchdr/chd.h"
+#include "xgrid-iso.h"
 
 #define XGRIDCHD_PROBE_SCORE 100
 #define XGRIDCHD_MAGIC "MComprHD"
@@ -30,6 +31,7 @@ typedef struct BDRVXgridChdState {
     const chd_header *header;
     uint8_t *hunk;
     uint32_t cached_hunk;
+    uint64_t offset;
 } BDRVXgridChdState;
 
 static int xgridchd_probe(const uint8_t *buf, int buf_size, const char *filename)
@@ -39,6 +41,36 @@ static int xgridchd_probe(const uint8_t *buf, int buf_size, const char *filename
     }
 
     return XGRIDCHD_PROBE_SCORE;
+}
+
+/* Reads logical image bytes through the hunk cache, for partition probing. */
+static bool xgridchd_read_at(void *opaque, uint64_t offset, void *buffer,
+                             size_t size)
+{
+    BDRVXgridChdState *s = opaque;
+    uint8_t *out = buffer;
+
+    while (size > 0) {
+        uint32_t hunk = offset / s->header->hunkbytes;
+        uint32_t within = offset % s->header->hunkbytes;
+        uint32_t length = MIN((uint64_t)size,
+                              (uint64_t)(s->header->hunkbytes - within));
+
+        if (s->cached_hunk != hunk) {
+            if (chd_read(s->chd, hunk, s->hunk) != CHDERR_NONE) {
+                return false;
+            }
+
+            s->cached_hunk = hunk;
+        }
+
+        memcpy(out, s->hunk + within, length);
+        out += length;
+        offset += length;
+        size -= length;
+    }
+
+    return true;
 }
 
 static int xgridchd_open(BlockDriverState *bs, QDict *options, int flags,
@@ -73,7 +105,13 @@ static int xgridchd_open(BlockDriverState *bs, QDict *options, int flags,
 
     s->hunk = g_malloc(s->header->hunkbytes);
     s->cached_hunk = UINT32_MAX;
-    bs->total_sectors = s->header->logicalbytes / BDRV_SECTOR_SIZE;
+    s->offset = xgrid_iso_find_game_offset(xgridchd_read_at, s,
+                                           s->header->logicalbytes);
+    if (s->offset == UINT64_MAX) {
+        s->offset = 0;
+    }
+    bs->total_sectors = (s->header->logicalbytes - s->offset) /
+                        BDRV_SECTOR_SIZE;
     bs->bl.request_alignment = 1;
 
     return 0;
@@ -100,7 +138,7 @@ xgridchd_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
     int64_t done = 0;
 
     while (done < bytes) {
-        uint64_t position = (uint64_t)offset + (uint64_t)done;
+        uint64_t position = s->offset + (uint64_t)offset + (uint64_t)done;
         uint32_t hunk = position / s->header->hunkbytes;
         uint32_t within = position % s->header->hunkbytes;
         uint32_t length = MIN((uint64_t)(bytes - done),

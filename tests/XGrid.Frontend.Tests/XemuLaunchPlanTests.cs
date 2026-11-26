@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
@@ -289,6 +290,20 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.Contains("does not exist", problem, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void DescribeProblem_AcceptsAFileTreeZar()
+    {
+        // The core synthesizes an XDVDFS volume for a file-tree archive, so the
+        // shell must not pre-reject it as it did before the synthesizer landed.
+        string archive = Path.Combine(_root, "media", "tree.zar");
+        WriteFileTreeArchive(archive);
+
+        string? problem = XemuLaunchPlan.DescribeProblem(
+            Settings(), archive, Path.Combine(_root, "work"));
+
+        Assert.Null(problem);
+    }
+
     public void Dispose()
     {
         Directory.Delete(_root, recursive: true);
@@ -311,5 +326,41 @@ public sealed class XemuLaunchPlanTests : IDisposable
     private static void Touch(string path)
     {
         File.WriteAllBytes(path, []);
+    }
+
+    /// <summary>
+    /// Writes a minimal file-tree ZArchive: a root directory and no files. The
+    /// shell only needs a valid directory to classify the shape; the core builds
+    /// the XDVDFS volume at open time.
+    /// </summary>
+    private static void WriteFileTreeArchive(string path)
+    {
+        const uint magic = 0x169F52D6;
+        const uint version = 0x61BF3A01;
+        const int footerSize = 144;
+        const int treeEntrySize = 16;
+        const int namesOffset = 32;
+        const int treeOffset = 64;
+
+        byte[] names = [0];
+        var tree = new byte[treeEntrySize];
+        BinaryPrimitives.WriteUInt32BigEndian(tree, 0x7FFF_FFFFu);
+        int footerOffset = treeOffset + tree.Length;
+        int total = footerOffset + footerSize;
+
+        var file = new byte[total];
+        names.CopyTo(file, namesOffset);
+        tree.CopyTo(file, treeOffset);
+
+        Span<byte> footer = file.AsSpan(footerOffset, footerSize);
+        BinaryPrimitives.WriteUInt64BigEndian(footer[32..], namesOffset);
+        BinaryPrimitives.WriteUInt64BigEndian(footer[40..], (ulong)names.Length);
+        BinaryPrimitives.WriteUInt64BigEndian(footer[48..], treeOffset);
+        BinaryPrimitives.WriteUInt64BigEndian(footer[56..], (ulong)tree.Length);
+        BinaryPrimitives.WriteUInt64BigEndian(footer[128..], (ulong)total);
+        BinaryPrimitives.WriteUInt32BigEndian(footer[136..], version);
+        BinaryPrimitives.WriteUInt32BigEndian(footer[140..], magic);
+
+        File.WriteAllBytes(path, file);
     }
 }
