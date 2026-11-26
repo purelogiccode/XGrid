@@ -648,6 +648,24 @@ chihiro:
     card_in:
       type: integer
       default: 25
+    # Player 2's aim, for a gun cabinet: the crosshair moves while an aim key
+    # or the second gamepad's right stick is held. aim_speed is percent
+    # (100 crosses the picture in about 0.75 seconds).
+    aim_left:
+      type: integer
+      default: 80
+    aim_right:
+      type: integer
+      default: 79
+    aim_up:
+      type: integer
+      default: 82
+    aim_down:
+      type: integer
+      default: 81
+    aim_speed:
+      type: integer
+      default: 100
   settings:
     lightgun_mode:
       type: bool

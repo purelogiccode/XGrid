@@ -1050,6 +1050,43 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <Border Classes="divider" />
+
+                <TextBlock Text="Player 2 (gun cabinets)" Classes="label" />
+                <TextBlock Text="A second gamepad aims with its right stick; the arrow keys also move the crosshair. RT fires, A is body, B is change or pedal, LT reloads and X inserts a card. These rows name the keyboard and mouse alternatives."
+                           Classes="hint" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding ChihiroPlayer2Bindings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ChihiroBindingItem">
+                      <Grid ColumnDefinitions="170,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding ActionName}" Classes="caption" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="ghost"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                Command="{Binding CaptureCommand}" Content="{Binding KeysDisplay}"
+                                ToolTip.Tip="Click, then press the new key; Esc cancels" />
+                        <Button Grid.Column="2" Classes="subtle icon" Width="32" Height="32"
+                                Command="{Binding ClearCommand}" ToolTip.Tip="Clear binding">
+                          <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Player 2 aim speed" Classes="label" />
+                    <TextBlock Text="0 to 400%; 100 crosses the picture in about 0.75 seconds." Classes="hint" />
+                  </StackPanel>
+                  <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="400"
+                          TickFrequency="5" IsSnapToTickEnabled="True"
+                          Value="{Binding ChihiroP2AimSpeed, Mode=TwoWay}"
+                          ToolTip.Tip="Scale how fast player 2's crosshair moves" />
+                  <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
+                             VerticalAlignment="Center" TextAlignment="Right"
+                             Text="{Binding ChihiroP2AimSpeed, StringFormat={}{0}%}" />
+                </Grid>
+
                 <Button Classes="ghost" Command="{Binding ResetChihiroKeysCommand}"
                         HorizontalAlignment="Left" Content="Reset cabinet keys"
                         ToolTip.Tip="Restore the default Chihiro cabinet bindings" />

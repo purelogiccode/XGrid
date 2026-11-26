@@ -724,6 +724,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     private int _chihiroFfbStrength = 100;
 
     [ObservableProperty]
+    private int _chihiroP2AimSpeed = 100;
+
+    [ObservableProperty]
     private KeyedOption? _selectedChihiroRegion;
 
     [ObservableProperty]
@@ -775,6 +778,8 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     private ChihiroJvsSettings _chihiroJvs = new();
 
+    private ChihiroJvsP2Settings _chihiroJvsP2 = new();
+
     /// <summary>Gets the Chihiro system-key rows.</summary>
     public ObservableCollection<ChihiroBindingItem> ChihiroSystemBindings { get; } = [];
 
@@ -783,6 +788,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the Chihiro gun-key rows.</summary>
     public ObservableCollection<ChihiroBindingItem> ChihiroGunBindings { get; } = [];
+
+    /// <summary>Gets player 2's gun and card binding rows.</summary>
+    public ObservableCollection<ChihiroBindingItem> ChihiroPlayer2Bindings { get; } = [];
 
     /// <summary>Gets the gamepad binding rows.</summary>
     public ObservableCollection<GamepadBindingItem> GamepadBindings { get; } = [];
@@ -797,6 +805,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     public ChihiroBindingItem? CapturingChihiroBinding => ChihiroSystemBindings
         .Concat(ChihiroDrivingBindings)
         .Concat(ChihiroGunBindings)
+        .Concat(ChihiroPlayer2Bindings)
         .FirstOrDefault(item => item.IsCapturing);
 
     /// <summary>Gets a value indicating whether a key capture is in progress.</summary>
@@ -931,6 +940,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroLinkHost = link.Host;
         ChihiroLinkPort = link.Port;
         _chihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone();
+        _chihiroJvsP2 = (settings.Chihiro.JvsP2 ?? new ChihiroJvsP2Settings()).Clone();
+        ChihiroP2AimSpeed = _chihiroJvsP2.AimSpeed;
         RebuildChihiroBindings();
         ChihiroFreePlay = settings.Chihiro.FreePlay;
         ChihiroForceFeedback = settings.Chihiro.ForceFeedback;
@@ -1045,6 +1056,8 @@ public sealed partial class SettingsViewModel : PageViewModel
     [RelayCommand]
     private void Save()
     {
+        ChihiroP2AimSpeed = Math.Clamp(ChihiroP2AimSpeed, 0, 400);
+        _chihiroJvsP2.AimSpeed = ChihiroP2AimSpeed;
         var next = new EmulatorSettings
         {
             BiosPath = BiosPath.Trim(),
@@ -1065,6 +1078,7 @@ public sealed partial class SettingsViewModel : PageViewModel
                     Port = ChihiroLinkPort,
                 },
                 Jvs = _chihiroJvs.Clone(),
+                JvsP2 = _chihiroJvsP2.Clone(),
                 FreePlay = ChihiroFreePlay,
                 Region = SelectedChihiroRegion?.Key ?? "ex",
                 DimmSize = SelectedChihiroDimm?.Key ?? "auto",
@@ -1368,6 +1382,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroSystemBindings.Clear();
         ChihiroDrivingBindings.Clear();
         ChihiroGunBindings.Clear();
+        ChihiroPlayer2Bindings.Clear();
 
         AddChihiroBinding(ChihiroSystemBindings, "Start",
             () => _chihiroJvs.Start, value => _chihiroJvs.Start = value);
@@ -1410,6 +1425,41 @@ public sealed partial class SettingsViewModel : PageViewModel
         AddChihiroBinding(ChihiroGunBindings, "Ghost Squad change",
             () => _chihiroJvs.GsChange, value => _chihiroJvs.GsChange = value);
 
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Start",
+            () => _chihiroJvsP2.Start, value => _chihiroJvsP2.Start = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Coin",
+            () => _chihiroJvsP2.Coin, value => _chihiroJvsP2.Coin = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Card in",
+            () => _chihiroJvsP2.CardIn, value => _chihiroJvsP2.CardIn = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 aim left",
+            () => _chihiroJvsP2.AimLeft, value => _chihiroJvsP2.AimLeft = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 aim right",
+            () => _chihiroJvsP2.AimRight, value => _chihiroJvsP2.AimRight = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 aim up",
+            () => _chihiroJvsP2.AimUp, value => _chihiroJvsP2.AimUp = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 aim down",
+            () => _chihiroJvsP2.AimDown, value => _chihiroJvsP2.AimDown = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 HotD3 trigger",
+            () => _chihiroJvsP2.Hotd3Trigger, value => _chihiroJvsP2.Hotd3Trigger = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 HotD3 body",
+            () => _chihiroJvsP2.Hotd3Body, value => _chihiroJvsP2.Hotd3Body = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Virtua Cop 3 trigger",
+            () => _chihiroJvsP2.Vc3Trigger, value => _chihiroJvsP2.Vc3Trigger = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Virtua Cop 3 body",
+            () => _chihiroJvsP2.Vc3Body, value => _chihiroJvsP2.Vc3Body = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Virtua Cop 3 pedal",
+            () => _chihiroJvsP2.Vc3Pedal, value => _chihiroJvsP2.Vc3Pedal = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Virtua Cop 3 reload",
+            () => _chihiroJvsP2.Vc3Reload, value => _chihiroJvsP2.Vc3Reload = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Ghost Squad trigger",
+            () => _chihiroJvsP2.GsTrigger, value => _chihiroJvsP2.GsTrigger = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Ghost Squad body",
+            () => _chihiroJvsP2.GsBody, value => _chihiroJvsP2.GsBody = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Ghost Squad change",
+            () => _chihiroJvsP2.GsChange, value => _chihiroJvsP2.GsChange = value);
+        AddChihiroBinding(ChihiroPlayer2Bindings, "P2 Ghost Squad reload",
+            () => _chihiroJvsP2.GsReload, value => _chihiroJvsP2.GsReload = value);
+
         OnPropertyChanged(nameof(CapturingChihiroBinding));
         OnPropertyChanged(nameof(IsCapturingKey));
     }
@@ -1432,7 +1482,8 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         foreach (ChihiroBindingItem binding in ChihiroSystemBindings
                      .Concat(ChihiroDrivingBindings)
-                     .Concat(ChihiroGunBindings))
+                     .Concat(ChihiroGunBindings)
+                     .Concat(ChihiroPlayer2Bindings))
         {
             binding.IsCapturing = false;
         }
@@ -1449,6 +1500,8 @@ public sealed partial class SettingsViewModel : PageViewModel
     private void ResetChihiroKeys()
     {
         _chihiroJvs = new ChihiroJvsSettings();
+        _chihiroJvsP2 = new ChihiroJvsP2Settings();
+        ChihiroP2AimSpeed = 100;
         RebuildChihiroBindings();
         Shell.ShowToast("Chihiro cabinet keys reset.");
     }
@@ -1462,7 +1515,8 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         foreach (ChihiroBindingItem binding in ChihiroSystemBindings
                      .Concat(ChihiroDrivingBindings)
-                     .Concat(ChihiroGunBindings))
+                     .Concat(ChihiroGunBindings)
+                     .Concat(ChihiroPlayer2Bindings))
         {
             binding.IsCapturing = false;
         }

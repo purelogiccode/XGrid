@@ -188,6 +188,23 @@ static int jvs_handle_command(ChihiroJVSState *s,
     case 0x22: { /* Read Analog Inputs */
         if (cmd_len < 2) return 1;
         int channels = cmd[1];
+        static int last_channels = -1;
+        if (channels != last_channels) {
+            CHIHIRO_LOGF(JVS, "analog inputs: %d channels\n", channels);
+            last_channels = channels;
+        }
+        if (chihiro_log_mask & CHIHIRO_LOG_JVS) {
+            static int64_t last_log;
+            int64_t now = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+            if (now - last_log >= 1000) {
+                last_log = now;
+                CHIHIRO_LOGF(JVS, "analog: %04X %04X %04X %04X "
+                             "%04X %04X %04X %04X\n",
+                             s->analog[0], s->analog[1], s->analog[2],
+                             s->analog[3], s->analog[4], s->analog[5],
+                             s->analog[6], s->analog[7]);
+            }
+        }
         PUT(JVS_REPORT_OK);
         for (int i = 0; i < channels && i < JVS_MAX_ANALOG; i++) {
             PUT((s->analog[i] >> 8) & 0xFF);

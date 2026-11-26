@@ -44,6 +44,11 @@ public sealed class ChihiroSettings
     public ChihiroJvsSettings Jvs { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets player 2's gun and card bindings for a two-player cabinet.
+    /// </summary>
+    public ChihiroJvsP2Settings JvsP2 { get; set; } = new();
+
+    /// <summary>
     /// Gets or sets a value indicating whether the cabinet is on free play.
     /// Start begins a game without inserting a coin.
     /// </summary>
@@ -119,6 +124,7 @@ public sealed class ChihiroSettings
             FirmwareDirectory = FirmwareDirectory,
             Link = Link.Clone(),
             Jvs = Jvs.Clone(),
+            JvsP2 = (JvsP2 ?? new ChihiroJvsP2Settings()).Clone(),
             FreePlay = FreePlay,
             Region = Region,
             DimmSize = DimmSize,
@@ -136,6 +142,8 @@ public sealed class ChihiroSettings
         Link.Normalize();
         Jvs ??= new ChihiroJvsSettings();
         Jvs.Normalize();
+        JvsP2 ??= new ChihiroJvsP2Settings();
+        JvsP2.Normalize();
         Region = Region is "auto" or "jp" or "us" or "ex" ? Region : "ex";
         DimmSize = DimmSize is "128" or "256" or "512" or "1024" or "auto" ? DimmSize : "auto";
         BoardType = BoardType is "type1" or "type3" or "auto" ? BoardType : "auto";

@@ -163,7 +163,8 @@ mahjong games and need a linked cabinet or server to go further.
 
 The cabinet's default keyboard map is below. Change it in **Settings → Input →
 Sega Chihiro cabinet keys**: click a binding, press the new key, and the shell
-writes it into `[chihiro.jvs]` at launch. The gamepad map is fixed.
+writes it into `[chihiro.jvs]` for player 1 or `[chihiro.jvs_p2]` for player 2
+at launch. The gamepad maps are fixed.
 
 Click the game picture once after launch: the embedded core takes keyboard
 focus for the cabinet (the Xbox path keeps focus in the shell for its pad
@@ -184,25 +185,48 @@ sink). Click the toolbar or a shell page to return focus to XGrid. Then press
 | Gun trigger / body | (game-specific) | RT / A |
 | Gun change / reload | (game-specific) | B |
 
+Player 2 on a two-player gun cabinet uses a second gamepad or the **Player 2**
+rows in the same Settings page:
+
+| Action | Keyboard | Second gamepad |
+| --- | --- | --- |
+| Start | keypad Enter | Start |
+| Coin | keypad 2 | Back |
+| Card in | `V` | X |
+| Aim | arrow keys | Right stick |
+| Trigger | (bindable) | RT |
+| Body | (bindable) | A |
+| Change / pedal | (bindable) | B |
+| Reload | (bindable) | LT |
+
+The arrow keys move player 2's crosshair at the **Player 2 aim speed**; 100%
+crosses the picture in about 0.75 seconds. The P2 gun trigger, body,
+change/pedal and reload keys are unbound by default because the second gamepad
+supplies them; bind them in Settings for a keyboard-only second gun. The aim
+keys only apply to the gun profiles, so the driving games still use the arrows
+for player 1.
+
 The core selects the cabinet profile from the game's `boot.id`/executable:
 The House of the Dead III, Virtua Cop 3 and Ghost Squad use the gun layout;
 Crazy Taxi High Roller, OutRun 2 and Maximum Tune use the driving layout; Ollie
 King and Gundam have their own layouts. The first detected gamepad drives the
-cabinet; a wheel that SDL exposes as a gamepad works through its stick and
-triggers.
+cabinet; a second gamepad aims player 2's gun in the gun games. A wheel that SDL
+exposes as a gamepad works through its stick and triggers.
 
-In the gun games, move the host cursor over the picture to aim; the left mouse
-button fires, the right button is the body/action or reload button, and RT/A/B
-do the same on a gamepad. Moving off the picture reports the off-screen/reload
-position. The shell cursor is still visible, so use fullscreen or a large
-picture for the best aim. In gun games the mouse buttons belong to the gun, so
-the core's pop-up menu stays on **F2** (or the Guide button) and a double-click
-does not toggle fullscreen.
+In the gun games, move the host cursor over the picture to aim player 1; the
+left mouse button fires, the right button is the body/action or reload button,
+and RT/A/B do the same on a gamepad. Moving off the picture reports the
+off-screen/reload position. Player 2 aims with the second gamepad's right stick
+or the arrow keys. The shell cursor is still visible, so use fullscreen or a
+large picture for the best aim. In gun games the mouse buttons belong to the
+gun, so the core's pop-up menu stays on **F2** (or the Guide button) and a
+double-click does not toggle fullscreen.
 
 Ghost Squad and Maximum Tune use the emulated card readers. Press **C** (or X)
-to push the card in hand into the reader; with no card it creates a blank one.
-The core keeps the card with the cabinet's card files, so a later session picks
-it up again. Ghost Squad's second reader is not exposed by the shell yet.
+to push player 1's card in hand into the reader, and **V** (or X on the second
+pad) for player 2; with no card it creates a blank one. The core keeps the card
+with the cabinet's card files, so a later session picks it up again. Ghost
+Squad's two-player card screen uses both readers, one per player.
 
 ## Limits
 
@@ -210,11 +234,12 @@ it up again. Ghost Squad's second reader is not exposed by the shell yet.
   DIMM; it does not emulate the GD-ROM drive. Convert the disc first, in XGrid,
   using the game's key.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
-  the cabinet (stick, triggers, D-pad and face buttons). The cabinet keys are
-  editable in Settings; Gundam-specific bindings and steering-wheel haptics
-  are still follow-ups.
-- **The second card reader** is present in the core but not exposed by the
-  shell. Player 1's card insert works.
+  the cabinet (stick, triggers, D-pad and face buttons); a second gamepad aims
+  player 2's gun. The cabinet keys are editable in Settings;
+  Gundam-specific bindings and steering-wheel haptics are still follow-ups.
+- **Raw light guns are not exposed.** Player 1 aims with the host pointer and
+  player 2 with the second gamepad's right stick or the arrow keys; per-device
+  light-gun aiming is not mapped yet.
 - **Chihiro audio is incomplete.** Upstream xemu's Chihiro audio emulation can
   produce silence or missing effects. The host audio backend and the Xbox path
   work; the Chihiro APU stream is a known upstream limitation, not a shell

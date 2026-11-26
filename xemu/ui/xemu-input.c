@@ -34,6 +34,7 @@
 #include "xemu-settings.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "system/blockdev.h"
 #include "hw/xbox/chihiro/chihiro.h"
@@ -594,6 +595,26 @@ static ControllerState *chihiro_gamepad(void)
     return NULL;
 }
 
+/* The second player's pad. Bound slot 1 goes first; an unbound second pad is
+ * otherwise the first available one that is not player 1's. */
+static ControllerState *chihiro_gamepad_p2(ControllerState *p1)
+{
+    for (int i = 1; i < 4; i++) {
+        ControllerState *pad = bound_controllers[i];
+        if (pad && pad != p1 && pad->type == INPUT_DEVICE_SDL_GAMEPAD) {
+            return pad;
+        }
+    }
+
+    ControllerState *iter;
+    QTAILQ_FOREACH(iter, &available_controllers, entry) {
+        if (iter != p1 && iter->type == INPUT_DEVICE_SDL_GAMEPAD) {
+            return iter;
+        }
+    }
+    return NULL;
+}
+
 static bool chihiro_pad_down(ControllerState *pad, uint16_t mask)
 {
     return pad && (pad->buttons & mask);
@@ -694,6 +715,99 @@ static void chihiro_gun_aim(ChihiroJVSState *jvs)
     }
 }
 
+/* Player 2's gun: the second pad's right stick or the aim keys move a
+ * crosshair that stays where it is released. The stick is squared after its
+ * deadzone so the middle of the picture is easier to hold. */
+#define CHIHIRO_P2_AIM_DEADZONE       0.12f
+#define CHIHIRO_P2_AIM_ACROSS_SECONDS 0.75f
+#define CHIHIRO_P2_AIM_SAFE           0.01f
+
+static float chihiro_p2_aim_axis(int16_t raw)
+{
+    float value = raw / 32767.0f;
+    float magnitude = fabsf(value);
+    if (magnitude < CHIHIRO_P2_AIM_DEADZONE) {
+        return 0.0f;
+    }
+
+    magnitude = (magnitude - CHIHIRO_P2_AIM_DEADZONE) /
+                (1.0f - CHIHIRO_P2_AIM_DEADZONE);
+    if (magnitude > 1.0f) {
+        magnitude = 1.0f;
+    }
+    return copysignf(magnitude * magnitude, value);
+}
+
+static float chihiro_p2_aim_x = 0.5f, chihiro_p2_aim_y = 0.5f;
+static int64_t chihiro_p2_aim_last_ns;
+
+static void chihiro_gun_aim_p2(ChihiroJVSState *jvs, ControllerState *pad,
+                               const __typeof__(g_config.chihiro.jvs_p2) *cfg,
+                               bool reload)
+{
+    const bool *kbd = SDL_GetKeyboardState(NULL);
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    float dt = chihiro_p2_aim_last_ns
+        ? (now - chihiro_p2_aim_last_ns) / 1e9f : 0.0f;
+    chihiro_p2_aim_last_ns = now;
+    if (dt < 0.0f) {
+        dt = 0.0f;
+    } else if (dt > 0.05f) {
+        dt = 0.05f;
+    }
+
+    float dx = 0.0f, dy = 0.0f;
+    if (pad) {
+        dx = chihiro_p2_aim_axis(pad->axis[CONTROLLER_AXIS_RSTICK_X]);
+        dy = -chihiro_p2_aim_axis(pad->axis[CONTROLLER_AXIS_RSTICK_Y]);
+    }
+    bool key_left = chihiro_key_down(kbd, cfg->aim_left);
+    bool key_right = chihiro_key_down(kbd, cfg->aim_right);
+    bool key_up = chihiro_key_down(kbd, cfg->aim_up);
+    bool key_down = chihiro_key_down(kbd, cfg->aim_down);
+    if (key_left) {
+        dx -= 1.0f;
+    }
+    if (key_right) {
+        dx += 1.0f;
+    }
+    if (key_up) {
+        dy -= 1.0f;
+    }
+    if (key_down) {
+        dy += 1.0f;
+    }
+    dx = dx < -1.0f ? -1.0f : dx > 1.0f ? 1.0f : dx;
+    dy = dy < -1.0f ? -1.0f : dy > 1.0f ? 1.0f : dy;
+
+    int speed_pct = cfg->aim_speed;
+    speed_pct = speed_pct < 0 ? 0 : speed_pct > 400 ? 400 : speed_pct;
+    float speed = speed_pct / 100.0f / CHIHIRO_P2_AIM_ACROSS_SECONDS * dt;
+    chihiro_p2_aim_x += dx * speed;
+    /* The picture is 4:3, so the same speed on screen up and down is 4/3 of
+     * the fraction. Screen down is positive; xemu's Y axis is up. */
+    chihiro_p2_aim_y += dy * speed * 4.0f / 3.0f;
+
+    if (chihiro_p2_aim_x < CHIHIRO_P2_AIM_SAFE) {
+        chihiro_p2_aim_x = CHIHIRO_P2_AIM_SAFE;
+    } else if (chihiro_p2_aim_x > 1.0f - CHIHIRO_P2_AIM_SAFE) {
+        chihiro_p2_aim_x = 1.0f - CHIHIRO_P2_AIM_SAFE;
+    }
+    if (chihiro_p2_aim_y < CHIHIRO_P2_AIM_SAFE) {
+        chihiro_p2_aim_y = CHIHIRO_P2_AIM_SAFE;
+    } else if (chihiro_p2_aim_y > 1.0f - CHIHIRO_P2_AIM_SAFE) {
+        chihiro_p2_aim_y = 1.0f - CHIHIRO_P2_AIM_SAFE;
+    }
+
+    if (reload) {
+        jvs->analog[2] = 0;
+        jvs->analog[3] = 0;
+    } else {
+        jvs->analog[2] = (uint16_t)(chihiro_p2_aim_x * 0xFFFF);
+        jvs->analog[3] = (uint16_t)(chihiro_p2_aim_y * 0xFFFF);
+    }
+}
+
 bool xemu_input_chihiro_gun_active(void)
 {
     if (!xemu_chihiro_mode()) {
@@ -741,9 +855,8 @@ static uint16_t chihiro_ffb_rumble(void)
     return value > 0xFFFF ? 0xFFFF : (uint16_t)value;
 }
 
-/* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
- * same bindings; the core's cabinet emulation itself does not care where the
- * switches come from. */
+/* The cabinet's JVS state: player 1's keyboard, mouse, first pad and wheel,
+ * and player 2's gun, card and switches on a two-player gun cabinet. */
 static void xemu_input_update_chihiro(void)
 {
     if (!chihiro_jvs_global || !xemu_chihiro_mode()) {
@@ -754,7 +867,10 @@ static void xemu_input_update_chihiro(void)
     const bool *kbd = SDL_GetKeyboardState(NULL);
     uint32_t mouse_buttons = SDL_GetMouseState(NULL, NULL);
     ControllerState *pad = chihiro_gamepad();
+    ControllerState *pad2 = chihiro_gamepad_p2(pad);
     const __typeof__(g_config.chihiro.jvs) *jvs_cfg = &g_config.chihiro.jvs;
+    const __typeof__(g_config.chihiro.jvs_p2) *p2_cfg =
+        &g_config.chihiro.jvs_p2;
     int profile = chihiro_detected_game_profile();
     if (profile < 0) {
         profile = jvs_cfg->profile;
@@ -775,6 +891,8 @@ static void xemu_input_update_chihiro(void)
 
     uint8_t sw0 = 0;
     uint8_t sw1 = 0;
+    uint8_t p2_sw0 = 0;
+    uint8_t p2_sw1 = 0;
     jvs->player_switches[1][0] = 0;
     jvs->player_switches[1][1] = 0;
     for (int i = 0; i < JVS_MAX_ANALOG; i++) {
@@ -823,6 +941,53 @@ static void xemu_input_update_chihiro(void)
             }
         }
         chihiro_gun_aim(jvs);
+
+        int p2_trigger = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
+            ? p2_cfg->hotd3_trigger
+            : profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
+                ? p2_cfg->vc3_trigger : p2_cfg->gs_trigger;
+        int p2_body = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
+            ? p2_cfg->hotd3_body_button
+            : profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
+                ? p2_cfg->vc3_body_button : p2_cfg->gs_body_button;
+        int p2_extra = profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
+            ? p2_cfg->vc3_pedal : p2_cfg->gs_change;
+        int p2_reload = profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
+            ? p2_cfg->vc3_reload
+            : profile == CONFIG_CHIHIRO_JVS_PROFILE_GS
+                ? p2_cfg->gs_reload : 0;
+
+        if (chihiro_key_down(kbd, p2_trigger) ||
+            chihiro_mouse_button(p2_trigger, mouse_buttons) ||
+            chihiro_trigger_u16(pad2, CONTROLLER_AXIS_RTRIG) > 0x4000) {
+            p2_sw0 |= 0x02;
+        }
+        if (chihiro_key_down(kbd, p2_body) ||
+            chihiro_mouse_button(p2_body, mouse_buttons) ||
+            chihiro_pad_down(pad2, CONTROLLER_BUTTON_A)) {
+            p2_sw1 |= 0x80;
+        }
+        if (chihiro_key_down(kbd, p2_extra) ||
+            chihiro_mouse_button(p2_extra, mouse_buttons) ||
+            chihiro_pad_down(pad2, CONTROLLER_BUTTON_B)) {
+            p2_sw1 |= 0x40;
+        }
+
+        bool p2_reload_down = chihiro_key_down(kbd, p2_reload) ||
+            chihiro_trigger_u16(pad2, CONTROLLER_AXIS_LTRIG) > 0x4000;
+        chihiro_gun_aim_p2(jvs, pad2, p2_cfg, p2_reload_down);
+
+        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_GS) {
+            static bool card_was_down_p2;
+            bool card = chihiro_key_down(kbd, p2_cfg->card_in) ||
+                        chihiro_pad_down(pad2, CONTROLLER_BUTTON_X);
+            if (chihiro_pressed(card, &card_was_down_p2)) {
+                chihiro_hw210_card_key(1);
+            }
+            if (chihiro_card_reader_present(1)) {
+                p2_sw1 |= 0x20;
+            }
+        }
         break;
     }
     case CONFIG_CHIHIRO_JVS_PROFILE_CTX:
@@ -869,13 +1034,26 @@ static void xemu_input_update_chihiro(void)
                 sw1 |= 0x01;
             }
         }
-        if (chihiro_key_down(kbd, jvs_cfg->gear_up) ||
-            chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_UP)) {
+        bool gear_up = chihiro_key_down(kbd, jvs_cfg->gear_up) ||
+                       chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_UP);
+        bool gear_down = chihiro_key_down(kbd, jvs_cfg->gear_down) ||
+                         chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_DOWN);
+        if (gear_up) {
             sw1 |= 0x80;
         }
-        if (chihiro_key_down(kbd, jvs_cfg->gear_down) ||
-            chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_DOWN)) {
+        if (gear_down) {
             sw1 |= 0x40;
+        }
+        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_OR2) {
+            /* The desktop fork found OutRun 2's sequential shifter on the
+             * second player's up/down pins; keep the player-1 byte too for
+             * the cabinets that wire it there. */
+            if (gear_up) {
+                p2_sw0 |= 0x20;
+            }
+            if (gear_down) {
+                p2_sw0 |= 0x10;
+            }
         }
         if (profile == CONFIG_CHIHIRO_JVS_PROFILE_WMMT2) {
             static bool card_was_down;
@@ -960,9 +1138,15 @@ static void xemu_input_update_chihiro(void)
         chihiro_pad_down(pad, CONTROLLER_BUTTON_LSTICK)) {
         sw0 |= 0x40;
     }
+    if (chihiro_key_down(kbd, p2_cfg->start) ||
+        chihiro_pad_down(pad2, CONTROLLER_BUTTON_START)) {
+        p2_sw0 |= 0x80;
+    }
 
     jvs->player_switches[0][0] = sw0;
     jvs->player_switches[0][1] = sw1;
+    jvs->player_switches[1][0] = p2_sw0;
+    jvs->player_switches[1][1] = p2_sw1;
     jvs->system_switches =
         (chihiro_key_down(kbd, jvs_cfg->test) ||
          chihiro_pad_down(pad, CONTROLLER_BUTTON_RSTICK)) ? 0x80 : 0;
@@ -974,6 +1158,14 @@ static void xemu_input_update_chihiro(void)
         jvs->coin_count[0]++;
     }
     coin_was_down = coin;
+
+    static bool coin_was_down_p2;
+    bool coin_p2 = chihiro_key_down(kbd, p2_cfg->coin) ||
+                   chihiro_pad_down(pad2, CONTROLLER_BUTTON_BACK);
+    if (coin_p2 && !coin_was_down_p2) {
+        jvs->coin_count[1]++;
+    }
+    coin_was_down_p2 = coin_p2;
 }
 
 void xemu_input_update_controllers(void)
