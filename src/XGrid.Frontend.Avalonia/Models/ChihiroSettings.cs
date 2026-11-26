@@ -67,6 +67,15 @@ public sealed class ChihiroSettings
     /// </summary>
     public string BoardType { get; set; } = "auto";
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the drive board's force
+    /// feedback is sent to the first gamepad as rumble.
+    /// </summary>
+    public bool ForceFeedback { get; set; }
+
+    /// <summary>Gets or sets the force-feedback strength, 0 to 200 percent.</summary>
+    public int FfbStrength { get; set; } = 100;
+
     /// <summary>The Chihiro flash ROM file name.</summary>
     public const string BiosFileName = "chihiro_xbox_bios.bin";
 
@@ -114,6 +123,8 @@ public sealed class ChihiroSettings
             Region = Region,
             DimmSize = DimmSize,
             BoardType = BoardType,
+            ForceFeedback = ForceFeedback,
+            FfbStrength = FfbStrength,
         };
     }
 
@@ -128,6 +139,7 @@ public sealed class ChihiroSettings
         Region = Region is "auto" or "jp" or "us" or "ex" ? Region : "ex";
         DimmSize = DimmSize is "128" or "256" or "512" or "1024" or "auto" ? DimmSize : "auto";
         BoardType = BoardType is "type1" or "type3" or "auto" ? BoardType : "auto";
+        FfbStrength = Math.Clamp(FfbStrength, 0, 200);
     }
 }
 

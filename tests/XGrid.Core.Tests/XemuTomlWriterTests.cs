@@ -46,6 +46,8 @@ public sealed class XemuTomlWriterTests
             ChihiroRegion = "jp",
             ChihiroDimmSize = "512",
             ChihiroBoardType = "type3",
+            ChihiroForceFeedback = true,
+            ChihiroFfbStrength = 150,
         };
 
         string toml = XemuTomlWriter.Build(settings);
@@ -67,6 +69,8 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("region = 'jp'", toml, StringComparison.Ordinal);
         Assert.Contains("dimm_size = '512'", toml, StringComparison.Ordinal);
         Assert.Contains("board_type = 'type3'", toml, StringComparison.Ordinal);
+        Assert.Contains("force_feedback = true", toml, StringComparison.Ordinal);
+        Assert.Contains("ffb_strength = 150", toml, StringComparison.Ordinal);
     }
 
     [Fact]

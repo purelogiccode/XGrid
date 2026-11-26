@@ -88,6 +88,8 @@ public static class XemuLaunchPlan
             ChihiroRegion = settings.Chihiro.Region,
             ChihiroDimmSize = settings.Chihiro.DimmSize,
             ChihiroBoardType = settings.Chihiro.BoardType,
+            ChihiroForceFeedback = settings.Chihiro.ForceFeedback,
+            ChihiroFfbStrength = settings.Chihiro.FfbStrength,
             ChihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone(),
             ChihiroLinkEnabled = chihiro && link.Enabled,
             ChihiroLinkCabinets = link.Cabinets,

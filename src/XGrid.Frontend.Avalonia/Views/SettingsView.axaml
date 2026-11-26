@@ -281,6 +281,29 @@
                       </ComboBox.ItemTemplate>
                     </ComboBox>
                   </Grid>
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Force feedback" Classes="label" />
+                      <TextBlock Text="Rumble the first gamepad from the drive board." Classes="hint" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroForceFeedback, Mode=TwoWay}"
+                                  OnContent="" OffContent="" VerticalAlignment="Center"
+                                  ToolTip.Tip="Send the drive board's effects to the gamepad" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10"
+                        IsEnabled="{Binding ChihiroForceFeedback}">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Feedback strength" Classes="label" />
+                      <TextBlock Text="0 to 200%; 100 follows the game's request." Classes="hint" />
+                    </StackPanel>
+                    <Slider Grid.Column="1" Width="220" Minimum="0" Maximum="200"
+                            TickFrequency="5" IsSnapToTickEnabled="True"
+                            Value="{Binding ChihiroFfbStrength, Mode=TwoWay}"
+                            ToolTip.Tip="Scale the drive board's force feedback" />
+                    <TextBlock Grid.Column="2" Width="44" Classes="mono" FontSize="11"
+                               VerticalAlignment="Center" TextAlignment="Right"
+                               Text="{Binding ChihiroFfbStrength, StringFormat={}{0}%}" />
+                  </Grid>
                 </StackPanel>
 
                 <StackPanel Spacing="7">

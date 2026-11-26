@@ -156,6 +156,8 @@ public static class XemuTomlWriter
             text.Append("region = '").Append(settings.ChihiroRegion).Append("'\n");
             text.Append("dimm_size = '").Append(settings.ChihiroDimmSize).Append("'\n");
             text.Append("board_type = '").Append(settings.ChihiroBoardType).Append("'\n");
+            text.Append("force_feedback = ").Append(Bool(settings.ChihiroForceFeedback)).Append('\n');
+            AppendInt(text, "ffb_strength", settings.ChihiroFfbStrength);
 
             if (settings.ChihiroLinkEnabled)
             {

@@ -87,6 +87,12 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the media-board type (<c>auto</c>, <c>type1</c>, <c>type3</c>).</summary>
     public string ChihiroBoardType { get; init; } = "auto";
 
+    /// <summary>Gets a value indicating whether drive-board force feedback is sent to a gamepad.</summary>
+    public bool ChihiroForceFeedback { get; init; }
+
+    /// <summary>Gets the force-feedback strength, 0 to 200 percent.</summary>
+    public int ChihiroFfbStrength { get; init; } = 100;
+
     /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
     public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
 
@@ -302,6 +308,11 @@ public sealed record XemuLaunchSettings
             if (ChihiroBoardType is not ("auto" or "type1" or "type3"))
             {
                 errors.Add($"Unknown Chihiro media-board type '{ChihiroBoardType}'.");
+            }
+
+            if (ChihiroFfbStrength is < 0 or > 200)
+            {
+                errors.Add($"Chihiro force feedback must be 0 to 200%, not {ChihiroFfbStrength}%.");
             }
         }
         else

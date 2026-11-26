@@ -163,6 +163,8 @@ public sealed class XemuLaunchPlanTests : IDisposable
         settings.Chihiro.Region = "jp";
         settings.Chihiro.DimmSize = "512";
         settings.Chihiro.BoardType = "type3";
+        settings.Chihiro.ForceFeedback = true;
+        settings.Chihiro.FfbStrength = 150;
         string image = Path.Combine(_root, "media", "game.bin");
 
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
@@ -172,6 +174,8 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.Equal("jp", launch.ChihiroRegion);
         Assert.Equal("512", launch.ChihiroDimmSize);
         Assert.Equal("type3", launch.ChihiroBoardType);
+        Assert.True(launch.ChihiroForceFeedback);
+        Assert.Equal(150, launch.ChihiroFfbStrength);
         Assert.Empty(launch.Validate());
     }
 
