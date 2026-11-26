@@ -616,6 +616,39 @@ static uint16_t chihiro_trigger_u16(ControllerState *pad, int axis)
     return (uint16_t)(value * 2);
 }
 
+/* The gun games aim with the host pointer. The SDL window is the picture, so
+ * the cursor position maps straight onto the JVS analog pair; leaving the
+ * picture reports the off-screen position the games treat as a reload. */
+static void chihiro_gun_aim(ChihiroJVSState *jvs)
+{
+    SDL_Window *window = SDL_GetMouseFocus();
+    if (!window) {
+        window = SDL_GetKeyboardFocus();
+    }
+    float mouse_x = 0.5f, mouse_y = 0.5f;
+    int width = 0, height = 0;
+    if (window) {
+        SDL_GetMouseState(&mouse_x, &mouse_y);
+        SDL_GetWindowSize(window, &width, &height);
+    }
+
+    if (width <= 0 || height <= 0) {
+        jvs->analog[0] = 0x8000;
+        jvs->analog[1] = 0x8000;
+        return;
+    }
+
+    float nx = mouse_x / (float)width;
+    float ny = mouse_y / (float)height;
+    if (nx < 0.01f || nx > 0.99f || ny < 0.01f || ny > 0.99f) {
+        jvs->analog[0] = 0;
+        jvs->analog[1] = 0;
+    } else {
+        jvs->analog[0] = (uint16_t)(nx * 0xFFFF);
+        jvs->analog[1] = (uint16_t)(ny * 0xFFFF);
+    }
+}
+
 /* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
  * same bindings; the core's cabinet emulation itself does not care where the
  * switches come from. */
@@ -669,10 +702,7 @@ static void xemu_input_update_chihiro(void)
             chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) {
             sw1 |= 0x40;
         }
-        /* Aim at the middle of the picture: the games need a position to
-         * fire, and a keyboard has none. */
-        jvs->analog[0] = 0x8000;
-        jvs->analog[1] = 0x8000;
+        chihiro_gun_aim(jvs);
         break;
     }
     case CONFIG_CHIHIRO_JVS_PROFILE_CTX:
