@@ -115,6 +115,27 @@ public static class XemuTomlWriter
             {
                 AppendPath(text, "net_firmware_path", settings.ChihiroNetFirmwarePath);
             }
+
+            if (settings.ChihiroLinkEnabled)
+            {
+                text.Append('\n');
+                text.Append("[chihiro.link]\n");
+                text.Append("enable = true\n");
+                text.Append("cabinets = ")
+                    .Append(settings.ChihiroLinkCabinets.ToString(CultureInfo.InvariantCulture))
+                    .Append('\n');
+                text.Append("cabinet = ")
+                    .Append(settings.ChihiroLinkCabinet.ToString(CultureInfo.InvariantCulture))
+                    .Append('\n');
+                if (!string.IsNullOrWhiteSpace(settings.ChihiroLinkHost))
+                {
+                    text.Append("host = ").Append(String(settings.ChihiroLinkHost)).Append('\n');
+                }
+
+                text.Append("port = ")
+                    .Append(settings.ChihiroLinkPort.ToString(CultureInfo.InvariantCulture))
+                    .Append('\n');
+            }
         }
 
         return text.ToString();

@@ -249,6 +249,51 @@
                                VerticalAlignment="Center" TextWrapping="Wrap" />
                   </StackPanel>
                 </StackPanel>
+
+                <Border Classes="divider" />
+
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Linked cabinets" Classes="label" />
+                    <TextBlock Text="Relays the Chihiro network board between XGrid instances running the same game. Cabinet 1 hosts; the others connect to its address. Each instance needs its own data folder. Ollie King, OutRun 2, OutRun 2 SP and Maximum Tune support linked play."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="Link cabinets" Classes="label" VerticalAlignment="Center" />
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroLinkEnabled, Mode=TwoWay}"
+                                  OnContent="" OffContent="" VerticalAlignment="Center"
+                                  ToolTip.Tip="Relay the network board to other XGrid instances" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10"
+                        IsEnabled="{Binding ChihiroLinkEnabled}">
+                    <TextBlock Text="Cabinets" Classes="label" VerticalAlignment="Center" />
+                    <Slider Grid.Column="1" Width="180" Minimum="2" Maximum="4"
+                            TickFrequency="1" IsSnapToTickEnabled="True"
+                            Value="{Binding ChihiroLinkCabinets, Mode=TwoWay}"
+                            ToolTip.Tip="Number of linked cabinets (2 to 4)" />
+                    <TextBlock Grid.Column="2" Width="32" Classes="mono" FontSize="11"
+                               VerticalAlignment="Center" TextAlignment="Right"
+                               Text="{Binding ChihiroLinkCabinets}" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10"
+                        IsEnabled="{Binding ChihiroLinkEnabled}">
+                    <TextBlock Text="This cabinet" Classes="label" VerticalAlignment="Center" />
+                    <Slider Grid.Column="1" Width="180" Minimum="1" Maximum="4"
+                            TickFrequency="1" IsSnapToTickEnabled="True"
+                            Value="{Binding ChihiroLinkCabinet, Mode=TwoWay}"
+                            ToolTip.Tip="This cabinet's number (1 hosts)" />
+                    <TextBlock Grid.Column="2" Width="32" Classes="mono" FontSize="11"
+                               VerticalAlignment="Center" TextAlignment="Right"
+                               Text="{Binding ChihiroLinkCabinet}" />
+                  </Grid>
+                  <StackPanel Spacing="2" IsEnabled="{Binding ChihiroLinkEnabled}">
+                    <TextBlock Text="Host address" Classes="label" />
+                    <TextBox Classes="path"
+                             Text="{Binding ChihiroLinkHost, Mode=TwoWay}"
+                             PlaceholderText="Empty on cabinet 1; the host's LAN address on the others"
+                             ToolTip.Tip="Host cabinet address for cabinets 2 to 4" />
+                  </StackPanel>
+                </StackPanel>
               </StackPanel>
             </Border>
 

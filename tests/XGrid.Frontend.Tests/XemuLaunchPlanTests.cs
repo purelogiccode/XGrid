@@ -114,6 +114,32 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_CopiesTheCabinetLinkSettings()
+    {
+        EmulatorSettings settings = Settings();
+        settings.Chihiro.Link = new ChihiroLinkSettings
+        {
+            Enabled = true,
+            Cabinets = 3,
+            Cabinet = 2,
+            Host = "10.0.0.1",
+            Port = 9200,
+        };
+        string image = Path.Combine(_root, "media", "game.bin");
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, image, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.True(launch.IsChihiro);
+        Assert.True(launch.ChihiroLinkEnabled);
+        Assert.Equal(3, launch.ChihiroLinkCabinets);
+        Assert.Equal(2, launch.ChihiroLinkCabinet);
+        Assert.Equal("10.0.0.1", launch.ChihiroLinkHost);
+        Assert.Equal(9200, launch.ChihiroLinkPort);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
     public void DescribeProblem_ReportsMissingChihiroFirmware()
     {
         string directory = Path.Combine(_root, "empty-chihiro");

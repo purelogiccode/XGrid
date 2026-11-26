@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 
 namespace XGrid.Frontend.Avalonia.Models;
@@ -28,6 +29,12 @@ public sealed class ChihiroSettings
     /// MJ2 and MJ3, which check its version.
     /// </remarks>
     public string FirmwareDirectory { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the linked-cabinet setup. The core relays the network
+    /// board's Ethernet between XGrid instances running the same game.
+    /// </summary>
+    public ChihiroLinkSettings Link { get; set; } = new();
 
     /// <summary>The Chihiro flash ROM file name.</summary>
     public const string BiosFileName = "chihiro_xbox_bios.bin";
@@ -70,6 +77,7 @@ public sealed class ChihiroSettings
         {
             Enabled = Enabled,
             FirmwareDirectory = FirmwareDirectory,
+            Link = Link.Clone(),
         };
     }
 
@@ -77,5 +85,58 @@ public sealed class ChihiroSettings
     public void Normalize()
     {
         FirmwareDirectory = (FirmwareDirectory ?? string.Empty).Trim();
+        Link ??= new ChihiroLinkSettings();
+        Link.Normalize();
+    }
+}
+
+/// <summary>
+/// Linked-cabinet settings for titles that support two to four connected
+/// cabinets. Cabinet 1 is the host; the others connect to its address.
+/// </summary>
+public sealed class ChihiroLinkSettings
+{
+    /// <summary>Gets or sets a value indicating whether the cabinet link runs.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>Gets or sets the number of linked cabinets (2 to 4).</summary>
+    public int Cabinets { get; set; } = 2;
+
+    /// <summary>Gets or sets this cabinet's number (1 to <see cref="Cabinets"/>).</summary>
+    public int Cabinet { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets the host cabinet's address. Empty on cabinet 1; the other
+    /// cabinets use the host's LAN address.
+    /// </summary>
+    public string Host { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the relay's base TCP port.</summary>
+    public int Port { get; set; } = 9100;
+
+    /// <summary>Creates an independent copy of these settings.</summary>
+    /// <returns>The copy.</returns>
+    public ChihiroLinkSettings Clone()
+    {
+        return new ChihiroLinkSettings
+        {
+            Enabled = Enabled,
+            Cabinets = Cabinets,
+            Cabinet = Cabinet,
+            Host = Host,
+            Port = Port,
+        };
+    }
+
+    /// <summary>Clamps and repairs values loaded from disk.</summary>
+    public void Normalize()
+    {
+        Cabinets = Math.Clamp(Cabinets, 2, 4);
+        Cabinet = Math.Clamp(Cabinet, 1, Cabinets);
+        Host = (Host ?? string.Empty).Trim();
+        if (Port is < 1 or > 65535)
+        {
+            Port = 9100;
+        }
     }
 }

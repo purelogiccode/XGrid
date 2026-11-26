@@ -397,6 +397,21 @@ public sealed partial class SettingsViewModel : PageViewModel
     private string _chihiroFirmwareDirectory = string.Empty;
 
     [ObservableProperty]
+    private bool _chihiroLinkEnabled;
+
+    [ObservableProperty]
+    private int _chihiroLinkCabinets = 2;
+
+    [ObservableProperty]
+    private int _chihiroLinkCabinet = 1;
+
+    [ObservableProperty]
+    private string _chihiroLinkHost = string.Empty;
+
+    [ObservableProperty]
+    private int _chihiroLinkPort = 9100;
+
+    [ObservableProperty]
     private bool _chihiroConverting;
 
     [ObservableProperty]
@@ -769,6 +784,12 @@ public sealed partial class SettingsViewModel : PageViewModel
         DvdPath = settings.DvdPath;
         ChihiroEnabled = settings.Chihiro.Enabled;
         ChihiroFirmwareDirectory = settings.Chihiro.FirmwareDirectory;
+        ChihiroLinkSettings link = settings.Chihiro.Link ?? new ChihiroLinkSettings();
+        ChihiroLinkEnabled = link.Enabled;
+        ChihiroLinkCabinets = link.Cabinets;
+        ChihiroLinkCabinet = link.Cabinet;
+        ChihiroLinkHost = link.Host;
+        ChihiroLinkPort = link.Port;
         RamMb = settings.RamMb;
         LoadInput(settings.Input);
 
@@ -881,6 +902,14 @@ public sealed partial class SettingsViewModel : PageViewModel
             {
                 Enabled = ChihiroEnabled,
                 FirmwareDirectory = ChihiroFirmwareDirectory.Trim(),
+                Link = new ChihiroLinkSettings
+                {
+                    Enabled = ChihiroLinkEnabled,
+                    Cabinets = ChihiroLinkCabinets,
+                    Cabinet = ChihiroLinkCabinet,
+                    Host = ChihiroLinkHost.Trim(),
+                    Port = ChihiroLinkPort,
+                },
             },
             RamMb = RamMb,
             Input = BuildInputSettings(),

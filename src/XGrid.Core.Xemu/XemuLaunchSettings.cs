@@ -72,6 +72,21 @@ public sealed record XemuLaunchSettings
     /// </summary>
     public string ChihiroNetFirmwarePath { get; init; } = string.Empty;
 
+    /// <summary>Gets a value indicating whether the linked-cabinet relay runs.</summary>
+    public bool ChihiroLinkEnabled { get; init; }
+
+    /// <summary>Gets the number of linked cabinets (2 to 4).</summary>
+    public int ChihiroLinkCabinets { get; init; } = 2;
+
+    /// <summary>Gets this cabinet's number (1 to <see cref="ChihiroLinkCabinets"/>).</summary>
+    public int ChihiroLinkCabinet { get; init; } = 1;
+
+    /// <summary>Gets the host cabinet's address; empty on cabinet 1.</summary>
+    public string ChihiroLinkHost { get; init; } = string.Empty;
+
+    /// <summary>Gets the relay's base TCP port.</summary>
+    public int ChihiroLinkPort { get; init; } = 9100;
+
     /// <summary>Gets the guest RAM size in megabytes (64 retail, 128 debug kit).</summary>
     public int RamMb { get; init; } = 64;
 
@@ -231,6 +246,29 @@ public sealed record XemuLaunchSettings
             else if (!System.IO.File.Exists(DvdPath))
             {
                 errors.Add($"The Chihiro netboot image does not exist: {DvdPath}");
+            }
+
+            if (ChihiroLinkEnabled)
+            {
+                if (ChihiroLinkCabinets is < 2 or > 4)
+                {
+                    errors.Add($"The cabinet link needs 2 to 4 cabinets, not {ChihiroLinkCabinets}.");
+                }
+
+                if (ChihiroLinkCabinet < 1 || ChihiroLinkCabinet > ChihiroLinkCabinets)
+                {
+                    errors.Add($"Cabinet {ChihiroLinkCabinet} is outside 1..{ChihiroLinkCabinets}.");
+                }
+
+                if (ChihiroLinkPort is < 1 or > 65531)
+                {
+                    errors.Add($"The cabinet link port must be 1 to 65531, not {ChihiroLinkPort}.");
+                }
+
+                if (ChihiroLinkCabinet > 1 && string.IsNullOrWhiteSpace(ChihiroLinkHost))
+                {
+                    errors.Add("The cabinet link needs the host cabinet's address.");
+                }
             }
         }
         else

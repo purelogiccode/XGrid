@@ -94,7 +94,46 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
                 break;
         }
 
+        AddChihiroLinkArguments(arguments, settings);
         return arguments;
+    }
+
+    /// <summary>
+    /// Bridges the Chihiro network board's hub 0 to the linked cabinets over
+    /// TCP. The host listens on port + each other cabinet's number; a client
+    /// connects to the host on port + its own number. QEMU's socket netdev
+    /// frames the Ethernet, and hubport puts each endpoint on the netboard's
+    /// hub.
+    /// </summary>
+    private static void AddChihiroLinkArguments(
+        System.Collections.Generic.List<string> arguments,
+        XemuLaunchSettings settings)
+    {
+        if (!settings.ChihiroLinkEnabled)
+        {
+            return;
+        }
+
+        if (settings.ChihiroLinkCabinet == 1)
+        {
+            for (int cabinet = 2; cabinet <= settings.ChihiroLinkCabinets; cabinet++)
+            {
+                int port = settings.ChihiroLinkPort + cabinet;
+                arguments.Add("-netdev");
+                arguments.Add($"socket,id=chihiro-link{cabinet},listen=:{port}");
+                arguments.Add("-netdev");
+                arguments.Add($"hubport,id=chihiro-hub{cabinet},hubid=0,netdev=chihiro-link{cabinet}");
+            }
+
+            return;
+        }
+
+        int ownPort = settings.ChihiroLinkPort + settings.ChihiroLinkCabinet;
+        arguments.Add("-netdev");
+        arguments.Add(
+            $"socket,id=chihiro-link,connect={settings.ChihiroLinkHost}:{ownPort}");
+        arguments.Add("-netdev");
+        arguments.Add("hubport,id=chihiro-hub,hubid=0,netdev=chihiro-link");
     }
 
     /// <summary>Asks the core to power off through its own shutdown path.</summary>

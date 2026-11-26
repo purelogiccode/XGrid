@@ -48,6 +48,28 @@ A Chihiro launch uses the Chihiro BIOS, 128 MB of guest RAM and no Xbox hard
 disk. The shell writes `default_machine = 'chihiro'` and the
 `[chihiro.roms]` paths into the generated `xemu.toml`.
 
+## Linked cabinets
+
+Ollie King, OutRun 2, OutRun 2 SP and Maximum Tune support two to four linked
+cabinets. XGrid bridges the Chihiro network board's Ethernet between instances
+over TCP; each instance runs its own game.
+
+1. Give every instance its own data folder (the `--data-dir` argument or a
+   separate portable copy).
+2. Start cabinet 1 first. In **Settings → System → Sega Chihiro**, turn
+   **Link cabinets** on and choose the same **Cabinets** count everywhere.
+3. Cabinet 1 leaves **Host address** empty and listens. Cabinets 2 to 4 enter
+   cabinet 1's LAN address (`127.0.0.1` when both run on one PC) and their own
+   **This cabinet** number.
+4. Put `ver1305.bin` in the firmware folder.
+5. Launch the same game in each instance.
+
+The host listens on TCP 9100 plus each other cabinet's number (9102, 9103 and
+9104). The games show **CONNECTION WAS ESTABLISHED** when the link is up. Save
+states are disabled while the link runs, because the other cabinets would not
+come back with a snapshot. MJ2/MJ3 are network mahjong games with their own
+server; the cabinet link is not a substitute for it.
+
 ## Converting an Xbox-format Chihiro ISO
 
 Some homebrew Chihiro conversions (the `XBOXOG - Chihiro` style ISOs) are Xbox
@@ -165,8 +187,7 @@ does not toggle fullscreen.
 Ghost Squad and Maximum Tune use the emulated card readers. Press **C** (or X)
 to push the card in hand into the reader; with no card it creates a blank one.
 The core keeps the card with the cabinet's card files, so a later session picks
-it up again. Ghost Squad's second reader and the linked-cabinet UI are not
-exposed by the shell yet.
+it up again. Ghost Squad's second reader is not exposed by the shell yet.
 
 ## Limits
 
@@ -176,11 +197,13 @@ exposed by the shell yet.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
   the cabinet (stick, triggers, D-pad and face buttons). Per-game bindings and
   force feedback are still follow-ups.
-- **Linked cabinets, the network board and the second card reader** are present
-  in the core but not exposed by the shell. Player 1's card insert works.
+- **The second card reader** is present in the core but not exposed by the
+  shell. Player 1's card insert works.
+- **Cabinet-link save states are disabled.** The core refuses snapshots while
+  the link runs; stop the link first.
 - **Network titles stop at their network startup.** MJ2/MJ3/MJ3 Evolution boot
-  past the firmware-version check with `ver1305.bin`, but they need a linked
-  cabinet or server and do not reach a solo game.
+  past the firmware-version check with `ver1305.bin`, but they need their own
+  server and do not reach a solo game.
 - **Shell save-state slots are Xbox-oriented.** The Chihiro core keeps its own
   cabinet saves in the baseboard EEPROM; the shell's HDD-backed snapshot slots
   are not a Chihiro feature yet.
@@ -197,7 +220,8 @@ exposed by the shell yet.
 | `is not a FATX image` | The `.bin` is still a GD-ROM or encrypted image; convert it to netboot format. |
 | Stuck on SEGABOOT or a black screen | Check the core log for the media-board flash and the game's `boot.id`; a bad or missing image leaves SEGABOOT waiting. |
 | "Error 14" / "Network firmware version" | Put `ver1305.bin` in the firmware folder. MJ2 needs 12.06, MJ3 13.05. |
-| "DNS failed" or a network wait screen | The game needs a linked cabinet or server; the shell does not expose cabinet link yet. |
+| "DNS failed" or a network wait screen | MJ2/MJ3 need their own network server; the cabinet link is not a substitute. |
+| Linked cabinets do not connect | Start cabinet 1 first, use its LAN address on the others, allow TCP 9102-9104 through the firewall, and use the same game and firmware on every instance. |
 | No input | The core window must have keyboard focus. See [Controls](#controls). |
 
 The core log is in **Activity** and, in separate-process mode,

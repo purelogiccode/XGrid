@@ -85,6 +85,43 @@ public sealed class XemuCoreHostingTests : IDisposable
     }
 
     [Fact]
+    public void BuildExtraArguments_BridgesTheHostCabinetLink()
+    {
+        Assert.Equal(
+            [
+                "-netdev", "socket,id=chihiro-link2,listen=:9102",
+                "-netdev", "hubport,id=chihiro-hub2,hubid=0,netdev=chihiro-link2",
+                "-netdev", "socket,id=chihiro-link3,listen=:9103",
+                "-netdev", "hubport,id=chihiro-hub3,hubid=0,netdev=chihiro-link3",
+            ],
+            XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings
+            {
+                ChihiroLinkEnabled = true,
+                ChihiroLinkCabinets = 3,
+                ChihiroLinkCabinet = 1,
+                ChihiroLinkPort = 9100,
+            }));
+    }
+
+    [Fact]
+    public void BuildExtraArguments_ConnectsALinkedCabinet()
+    {
+        Assert.Equal(
+            [
+                "-netdev", "socket,id=chihiro-link,connect=10.0.0.1:9102",
+                "-netdev", "hubport,id=chihiro-hub,hubid=0,netdev=chihiro-link",
+            ],
+            XemuCoreProcess.BuildExtraArguments(new XemuLaunchSettings
+            {
+                ChihiroLinkEnabled = true,
+                ChihiroLinkCabinets = 2,
+                ChihiroLinkCabinet = 2,
+                ChihiroLinkHost = "10.0.0.1",
+                ChihiroLinkPort = 9100,
+            }));
+    }
+
+    [Fact]
     public void HostSharedSections_AreWindowsOnly()
     {
         // The core's display and input sinks use Windows named sections. Other
