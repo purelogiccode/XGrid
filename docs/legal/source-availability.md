@@ -42,7 +42,8 @@ needed to rebuild the binaries.
 
 Third-party components keep their own upstream sources and licenses. The notices
 record where each one comes from. libchdr is vendored; its license text ships in
-`xemu/xgrid-core/thirdparty/libchdr/LICENSE.txt`.
+`xemu/xgrid-core/thirdparty/libchdr/LICENSE.txt`. libCCI is vendored under
+`xemu/xgrid-core/thirdparty/libcci/` with its GPL-2.0 license text.
 
 ## No firmware or games
 

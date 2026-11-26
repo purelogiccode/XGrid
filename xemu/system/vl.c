@@ -3102,6 +3102,8 @@ void qemu_init(int argc, char **argv)
         } else if (g_ascii_strcasecmp(dvd_extension, ".iso") == 0 ||
                    g_ascii_strcasecmp(dvd_extension, ".xiso") == 0) {
             dvd_format = ",format=xgridiso";
+        } else if (g_ascii_strcasecmp(dvd_extension, ".cci") == 0) {
+            dvd_format = ",format=xgridcci";
         }
     }
     fake_argv[fake_argc++] = g_strdup_printf("index=1,media=cdrom,file=%s%s",

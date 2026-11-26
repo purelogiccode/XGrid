@@ -18,7 +18,7 @@ touches.
 ┌───────────────────────────▼──────────────────────────────────┐
 │ xemu core (xemu 0.8.139 + XGrid additions)                   │
 │ QEMU TCG i386 · NV2A · MCPX · APU/ACI · IDE · USB · SMBus    │
-│ xgridiso · xgridchd · xgridzar · display/input/ABI          │
+│ xgridiso · xgridcci · xgridchd/xgridzar · display/input/ABI │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -40,6 +40,7 @@ XGrid's additions live in `xemu/xgrid-core/`:
 | --- | --- |
 | `block/xgrid-iso.c` | Shared XDVDFS game-partition detection for the disc drivers. |
 | `block/xgridiso.c` | ISO/XISO block driver; maps optimized and full Redump game partitions to LBA 0. |
+| `block/xgridcci.c` | CCI block driver; LZ4 sectors through vendored libCCI, split sets and partition-offset detection. |
 | `block/xgridchd.c` | Real-time CHD block driver (vendored libchdr) with partition-offset detection. |
 | `block/xgridzar.c` | Real-time ZArchive block driver (zstd); entry form and synthesized file tree. |
 | `display/xgrid-display.c` | Publishes presented frames to a named shared section. |
@@ -226,8 +227,8 @@ xgrid_core_disc_status()     xgrid_core_disc_error()
 
 The request runs as a bottom half on the core's main loop, where the block
 layer expects it. The medium format follows the file extension (`.iso`/`.xiso`
-through `xgridiso`, `.chd` through `xgridchd`, `.zar` through `xgridzar`), and
-the tray is cycled so the guest notices. The shell polls the status, then updates the
+through `xgridiso`, `.cci` through `xgridcci`, `.chd` through `xgridchd`, `.zar`
+through `xgridzar`), and the tray is cycled so the guest notices. The shell polls the status, then updates the
 current title. This needs in-process hosting, like save states.
 
 ## Core capabilities

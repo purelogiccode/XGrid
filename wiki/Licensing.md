@@ -9,13 +9,15 @@ original per-file GPL-2.0, LGPL and MIT notices. XGrid's additions in
 
 ## Third-party components
 
-- libchdr — BSD-3-Clause
+- libchdr - BSD-3-Clause
+- libCCI - GPL-2.0-or-later
+- LZ4 - BSD-2-Clause
 - Avalonia — MIT
 - CommunityToolkit.Mvvm — MIT
 - Silk.NET.OpenGL — MIT
 - XISOSharp — MIT
 - CHDSharp — MIT
-- SDL3, GLib, OpenSSL, libcurl, zstd and other runtime DLLs — see
+- SDL3, GLib, OpenSSL, libcurl, zstd, LZ4 and other runtime DLLs - see
   `THIRD_PARTY_NOTICES.md`
 
 The Windows core package redistributes runtime DLLs, including LGPL-3.0-or-later

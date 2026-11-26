@@ -41,9 +41,9 @@ and packaging.
   window.
 - **The core is the proven one.** xemu 0.8.139 with a small, documented patch
   set — not a re-implementation.
-- **No extraction for compressed media.** CHD and ZArchive discs are decoded on
-  demand by `xgridchd` and `xgridzar`; file-tree ZArchives are synthesized as
-  XDVDFS volumes.
+- **No extraction for compressed media.** CHD, CCI and ZArchive discs are
+  decoded on demand by `xgridchd`, `xgridcci` and `xgridzar`; file-tree
+  ZArchives are synthesized as XDVDFS volumes.
 - **No conversion for retail ISOs.** Optimized XISOs and full Redump images both
   boot directly; `xgridiso` finds the XGD game partition and maps it to LBA 0.
 - **Save states that belong to the machine.** Four QEMU/xemu snapshot slots,
@@ -60,7 +60,7 @@ and packaging.
 | Area | Support |
 | --- | --- |
 | **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
-| **Media** | ISO/XISO (optimized or full Redump), CHD, ZAR (entry form or file tree); raw/qcow2 HDD |
+| **Media** | ISO/XISO (optimized or full Redump), CHD, CCI, ZAR (entry form or file tree); raw/qcow2 HDD |
 | **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
 | **Display** | Shell frame sink or embedded core window (in-process or separate); filters, resolution scale, aspect/fit, fullscreen, optional FPS overlay |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |

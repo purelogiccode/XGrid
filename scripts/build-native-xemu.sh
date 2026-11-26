@@ -11,7 +11,7 @@
 #
 # Prerequisites are listed in docs/development/building.md. In short: a C/C++
 # toolchain, make, ninja, pkg-config, meson >= 1.5, Python 3 with PyYAML, and
-# the development headers for GLib, zlib, zstd, libepoxy, libusb, libpcap,
+# the development headers for GLib, zlib, zstd, lz4, libepoxy, libusb, libpcap,
 # libsamplerate, GMP and SDL3 (3.4.x).
 set -euo pipefail
 
@@ -94,7 +94,7 @@ for module in yaml tomli; do
     fi
 done
 
-for package in sdl3 glib-2.0 zlib libzstd epoxy libusb-1.0 libpcap samplerate gmp; do
+for package in sdl3 glib-2.0 zlib libzstd liblz4 epoxy libusb-1.0 libpcap samplerate gmp; do
     if ! pkg-config --exists "$package"; then
         echo "missing pkg-config dependency: $package" >&2
         exit 1

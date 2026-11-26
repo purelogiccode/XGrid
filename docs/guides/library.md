@@ -62,11 +62,15 @@ folder**.
 | --- | --- | --- | --- |
 | `.iso` | Yes | Yes | Optimized XISO or full Redump; the game partition is mapped automatically. |
 | `.chd` | Yes | Yes | Compressed disc image, with the same partition-offset detection. |
+| `.cci` | Yes | Yes | Single part or split set; listed once under the base name. |
 | `.zar` | Yes | Yes | Entry form or synthesized file tree. |
 | `.xbe` | Yes | No | Shown for inspection; wrap it in an image to boot. |
 
 The library is capped at 4,096 entries per scan. Split a very large collection
 across multiple roots if you need more.
+
+A split CCI set (`game.1.cci`, `game.2.cci`, …) is listed once under `game`;
+open the first part and the core discovers the rest.
 
 ## Titles and title IDs
 

@@ -33,10 +33,10 @@ The `linux-x64` frontend archive also redistributes:
 - `xgrid-core.json` — the renderer capability manifest;
 - `LICENSE.txt` — the core's generated component license summary.
 
-The core links the host's system libraries (SDL3, GLib, libepoxy, zstd and the
-rest) rather than bundling them, so those libraries are not redistributed with
-the archive and keep their own upstream licenses on the host. The core source
-is the same tracked `xemu/` tree.
+The core links the host's system libraries (SDL3, GLib, libepoxy, zstd, LZ4 and
+the rest) rather than bundling them, so those libraries are not redistributed
+with the archive and keep their own upstream licenses on the host. The core
+source is the same tracked `xemu/` tree.
 
 ## Source
 

@@ -15,6 +15,7 @@ is a patch rebase, not a re-port.
 |---|---|
 | `block/xgrid-iso.c` | Shared XDVDFS game-partition detection (optimized XISO and the XGD retail offsets) used by the disc drivers. |
 | `block/xgridiso.c` | QEMU block driver for ISO/XISO images: maps the detected game partition to LBA 0, so a full Redump image boots without conversion. |
+| `block/xgridcci.c` | QEMU block driver for CCI images: LZ4 sectors through vendored libCCI, split-part discovery and game-partition mapping. |
 | `block/xgridchd.c` | QEMU block driver that decodes CHD hunks on demand and maps the detected game partition. |
 | `block/xgridzar.c` | QEMU block driver for ZArchive discs: serves an entry-form archive's `.iso` entry directly and synthesizes an XDVDFS volume for a file-tree archive, decoding zstd blocks on demand. |
 | `display/xgrid-display.c` | Presentation filter/overlay selection and the headless display sink. The core always owns the picture; the shell never presents frames. |
@@ -22,6 +23,7 @@ is a patch rebase, not a re-port.
 | `abi/xgrid-core.c` | In-process ABI: starts one machine on its own thread, exposes stop/join/version, playback, disc and save-state requests. |
 | `abi-baseline.json` | Version, upstream commit and ABI export list checked by `scripts/core-baseline.ps1`. |
 | `thirdparty/libchdr/` | libchdr 0.3.0 (BSD-3-Clause, Copyright Romain Tisserand) and its small LZMA decoder, vendored so the build never fetches the network. |
+| `thirdparty/libcci/` | libCCI 0.1 (GPL-2.0-or-later, Copyright Team-Resurgent), vendored and built against the host LZ4. |
 
 ## In-process core
 
@@ -59,10 +61,10 @@ because then no frame is published.
 `xgrid_core_disc_load(path)` and `xgrid_core_disc_eject` queue a block-layer
 medium change; `xgrid_core_disc_status` and `xgrid_core_disc_error` report it.
 The load picks the driver from the extension (`xgridiso` for `.iso`/`.xiso`,
-`xgridchd` for `.chd`, `xgridzar` for `.zar`) and cycles the tray so the guest
-notices. No power cycle is involved. The ISO/XISO, CHD and entry-form ZArchive
-drivers detect the XDVDFS game-partition offset, so optimized and full Redump
-images both appear at LBA 0.
+`xgridcci` for `.cci`, `xgridchd` for `.chd`, `xgridzar` for `.zar`) and cycles
+the tray so the guest notices. No power cycle is involved. The ISO/XISO, CCI,
+CHD and entry-form ZArchive drivers detect the XDVDFS game-partition offset, so
+optimized and full Redump images both appear at LBA 0.
 
 ### Input
 

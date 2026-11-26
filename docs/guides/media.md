@@ -32,6 +32,19 @@ Redump image both work.
 - Supported by the library, **Open Disc**, and the default disc setting.
 - The core reports the true virtual size and the guest sees a normal DVD.
 
+### CCI (`.cci`)
+
+Cerbios/Repackinator's compressed Xbox disc container. Each 2,048-byte sector is
+stored raw or as one LZ4 block, with an index for random access. The `xgridcci`
+driver decodes sectors on demand through the vendored libCCI, so nothing is
+extracted. The same game-partition detection applies, so a CCI built from a full
+Redump image boots the game rather than its video partition.
+
+- Single-part (`.cci`) and split (`.1.cci`, `.2.cci`, …) images are supported;
+  open the first part and the core discovers the rest.
+- The library lists a split set once under its base name.
+- Like CHD, CCI is read-only.
+
 ### ZArchive (`.zar`)
 
 A ZArchive container. The `xgridzar` driver decodes zstd blocks on demand and
@@ -83,8 +96,8 @@ Both actions need in-process core hosting, like save states. With a separate
 core process, power off before changing the disc.
 
 A multi-disc game that asks for the next disc accepts the swap directly. The new
-image can be ISO/XISO (optimized or Redump), CHD or ZArchive, and the tray cycle
-makes the guest notice the change.
+image can be ISO/XISO (optimized or Redump), CHD, CCI or ZArchive, and the tray
+cycle makes the guest notice the change.
 
 ## Hard-disk images
 
@@ -111,6 +124,7 @@ XGrid ships none of these. See [Requirements](../getting-started/requirements.md
 | `.iso` optimized XISO | Yes | Yes | Game partition at sector 0. |
 | `.iso` full Redump | Yes | Yes | XGD partition offset detected automatically. |
 | `.chd` | Yes | Yes | Real-time decode and partition-offset detection. |
+| `.cci` | Yes | Yes | Single part or split set; LZ4 sectors decoded on demand. |
 | `.zar` | Yes | Yes | Entry form or synthesized file tree. |
 | `.xbe` | Yes | No | Inspection only. |
 | HDD raw/qcow2 | Settings | Boot | Dashboard and save states. |
@@ -120,6 +134,8 @@ XGrid ships none of these. See [Requirements](../getting-started/requirements.md
 - Use **ISO** when you want the simplest file; optimized XISO and full Redump
   images are both accepted.
 - Use **CHD** to save disk space with no runtime extraction.
+- Use **CCI** for a Repackinator/Cerbios collection; single and split images are
+  read directly.
 - Use **ZAR** for either an entry-form archive or a file-tree archive; the
   driver serves the entry directly or synthesizes the volume.
 - Keep the **HDD image** on fast local storage; save states write to it.

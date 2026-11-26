@@ -94,6 +94,7 @@ public sealed class GameEntryTests : IDisposable
     [InlineData(".iso", GameFormat.Iso, true)]
     [InlineData(".xiso", GameFormat.Iso, true)]
     [InlineData(".chd", GameFormat.Chd, true)]
+    [InlineData(".cci", GameFormat.Cci, true)]
     [InlineData(".zar", GameFormat.Zar, true)]
     [InlineData(".xbe", GameFormat.Xbe, false)]
     public void FromFile_MapsContainersAndLaunchability(
@@ -129,6 +130,19 @@ public sealed class GameEntryTests : IDisposable
 
         Assert.NotNull(entry);
         Assert.Equal("halo 2 combat evolved", entry.Title);
+    }
+
+    [Fact]
+    public void FromFile_DropsTheNumericSuffixOfASplitCciPart()
+    {
+        string path = Path.Combine(_root, "halo_2.2.cci");
+        File.WriteAllBytes(path, [0]);
+
+        GameEntry? entry = GameEntry.FromFile(path);
+
+        Assert.NotNull(entry);
+        Assert.Equal(GameFormat.Cci, entry.Format);
+        Assert.Equal("halo 2", entry.Title);
     }
 
     [Theory]

@@ -46,7 +46,10 @@ The old recent strip is gone; use the **Recently played** sort.
 | --- | --- | --- |
 | `.iso` | Yes | Yes |
 | `.chd` | Yes | Yes |
+| `.cci` | Yes | Yes (single part or split set) |
 | `.zar` | Yes | Yes (entry form or file tree) |
+
+Split CCI sets are listed once under the base name.
 | `.xbe` | Yes | No (inspection only) |
 
 `.iso` covers both optimized XISOs and full Redump images; the core finds the
