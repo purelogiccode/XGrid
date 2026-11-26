@@ -734,6 +734,12 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
     }
 
+    private string? ChihiroNetworkFirmwareVersion =>
+        ChihiroNetworkFirmwarePresent
+            ? ChihiroNetworkFirmware.ReadVersion(
+                Path.Combine(ChihiroFirmwareFolder, ChihiroSettings.NetFirmwareFileName))
+            : null;
+
     /// <summary>Gets the Chihiro firmware status label.</summary>
     public string ChihiroStatusText =>
         !ChihiroEnabled
@@ -741,7 +747,9 @@ public sealed partial class SettingsViewModel : PageViewModel
             : !ChihiroReady
                 ? "Chihiro firmware is incomplete; choose the folder with chihiro_xbox_bios.bin and the media-board files."
                 : ChihiroNetworkFirmwarePresent
-                    ? "Chihiro firmware and network firmware found."
+                    ? ChihiroNetworkFirmwareVersion is { } version
+                        ? $"Chihiro firmware and network firmware {version} found."
+                        : "Chihiro firmware and an unversioned network firmware found."
                     : "Chihiro firmware found. Add ver1305.bin for MJ2, MJ3 and other network titles.";
 
     /// <summary>Gets the settings storage folder.</summary>
