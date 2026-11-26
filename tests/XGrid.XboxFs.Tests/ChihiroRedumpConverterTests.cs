@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using CHDSharp.Encoder;
 using Xunit;
 
 namespace XGrid.XboxFs.Tests;
@@ -13,9 +14,6 @@ public sealed class ChihiroRedumpConverterTests : IDisposable
     private const int IsoSector = 2048;
     private const int RawSector = 2352;
     private const uint GdOffset = 45000;
-    private const uint RootLba = GdOffset + 17;
-    private const uint LoaderLba = GdOffset + 18;
-    private const uint FatxLba = GdOffset + 19;
     private const int LoaderSize = 0xE0;
     private const int FatxSize = 4096;
 
@@ -69,6 +67,21 @@ public sealed class ChihiroRedumpConverterTests : IDisposable
     }
 
     [Fact]
+    public void Convert_ReadsAMameChdAndDecryptsTheFatx()
+    {
+        string cue = WriteFixture(0);
+        string chd = Path.Combine(_root, "game.chd");
+        ChdEncoder.EncodeCd(cue, chd);
+        string keyZip = WriteKeyZip();
+        string output = Path.Combine(_root, "chd.bin");
+
+        ChihiroRedumpConverter.Result result = ChihiroRedumpConverter.Convert(chd, keyZip, output);
+
+        Assert.Equal(FatxSize, result.ImageBytes);
+        Assert.Equal(_plaintext, File.ReadAllBytes(output));
+    }
+
+    [Fact]
     public void Convert_RejectsAKeyThatDoesNotDecryptToFatx()
     {
         string cue = WriteFixture();
@@ -89,11 +102,11 @@ public sealed class ChihiroRedumpConverterTests : IDisposable
         Directory.Delete(_root, recursive: true);
     }
 
-    private string WriteFixture()
+    private string WriteFixture(uint baseLba = GdOffset)
     {
         byte[] track = new byte[32 * RawSector];
-        WriteIsoSector(track, 16, BuildPvd());
-        WriteIsoSector(track, 17, BuildRootDirectory());
+        WriteIsoSector(track, 16, BuildPvd(baseLba));
+        WriteIsoSector(track, 17, BuildRootDirectory(baseLba));
         WriteIsoSector(track, 18, BuildLoader());
         WriteIsoFile(track, 19, ByteSwap(Encrypt(ByteSwap(_plaintext))));
         string trackPath = Path.Combine(_root, "track03.bin");
@@ -152,27 +165,27 @@ public sealed class ChihiroRedumpConverterTests : IDisposable
         return path;
     }
 
-    private static byte[] BuildPvd()
+    private static byte[] BuildPvd(uint baseLba)
     {
         byte[] sector = new byte[IsoSector];
         sector[0] = 0x01;
         Encoding.ASCII.GetBytes("CD001").CopyTo(sector, 1);
         sector[6] = 0x01;
-        WriteDirectoryRecord(sector, 156, RootLba, IsoSector, 0x02, [0]);
+        WriteDirectoryRecord(sector, 156, baseLba + 17, IsoSector, 0x02, [0]);
         return sector;
     }
 
-    private static byte[] BuildRootDirectory()
+    private static byte[] BuildRootDirectory(uint baseLba)
     {
         byte[] sector = new byte[IsoSector];
         int offset = 0;
-        offset += WriteDirectoryRecord(sector, offset, RootLba, IsoSector, 0x02, [0]);
-        offset += WriteDirectoryRecord(sector, offset, RootLba, IsoSector, 0x02, [1]);
-        offset += WriteDirectoryRecord(sector, offset, LoaderLba, LoaderSize, 0, "L.BIN"u8.ToArray());
+        offset += WriteDirectoryRecord(sector, offset, baseLba + 17, IsoSector, 0x02, [0]);
+        offset += WriteDirectoryRecord(sector, offset, baseLba + 17, IsoSector, 0x02, [1]);
+        offset += WriteDirectoryRecord(sector, offset, baseLba + 18, LoaderSize, 0, "L.BIN"u8.ToArray());
         _ = WriteDirectoryRecord(
             sector,
             offset,
-            FatxLba,
+            baseLba + 19,
             FatxSize,
             0,
             "GAME.BIN"u8.ToArray());

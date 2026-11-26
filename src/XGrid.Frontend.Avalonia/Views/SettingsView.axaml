@@ -231,7 +231,7 @@
                 <StackPanel Spacing="7">
                   <StackPanel Spacing="2">
                     <TextBlock Text="Netboot image from a Chihiro game" Classes="label" />
-                    <TextBlock Text="An Xbox-format Chihiro ISO has its files already decrypted. A raw Redump GD-ROM converts with its .cue and the game's small MAME key ZIP; XGrid bundles no keys or game data."
+                    <TextBlock Text="An Xbox-format Chihiro ISO has its files already decrypted. A Redump cue/bin set or a MAME .chd converts with the game's small MAME key ZIP; XGrid bundles no keys or game data."
                                Classes="hint" TextWrapping="Wrap" />
                   </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="8">

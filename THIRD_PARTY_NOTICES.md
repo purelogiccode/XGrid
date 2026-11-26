@@ -145,7 +145,7 @@ offer is the one described in "The emulation core" above.
 | Package | License | Use |
 |---|---|---|
 | XISOSharp | MIT | XDVDFS reader (`XGrid.XboxFs`). |
-| CHDSharp | MIT | CHD image support (`XGrid.Storage`). |
+| CHDSharp | MIT | CHD image support (`XGrid.Storage`) and the Chihiro GD-ROM converter (`XGrid.XboxFs`). |
 | Silk.NET.OpenGL | MIT | OpenGL backend (`XGrid.GpuGl`). |
 | NAudio | MIT | Live WASAPI audio sink (`XGrid.Audio`, Windows). |
 | Avalonia (Desktop/Fluent/Inter) | MIT | Desktop frontend. |

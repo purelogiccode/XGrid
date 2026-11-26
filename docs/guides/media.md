@@ -86,9 +86,9 @@ A `.bin` in the library is a Sega Chihiro netboot image: a raw FATX image
 loaded into the Chihiro DIMM, not an Xbox disc and not a raw GD-ROM track.
 Launching one selects the Chihiro machine and uses the firmware folder from
 **Settings → System → Sega Chihiro**. An Xbox-format Chihiro ISO converts in
-Settings or with `XGrid.Cli chihiro-netboot`; a Redump cue/bin GD-ROM converts
-in Settings or with `XGrid.Cli chihiro-redump` and the game's MAME key ZIP. See
-[Sega Chihiro](chihiro.md).
+Settings or with `XGrid.Cli chihiro-netboot`; a Redump cue/bin set or MAME
+`.chd` converts in Settings or with `XGrid.Cli chihiro-redump` and the game's
+MAME key ZIP. See [Sega Chihiro](chihiro.md).
 
 ### XBE
 

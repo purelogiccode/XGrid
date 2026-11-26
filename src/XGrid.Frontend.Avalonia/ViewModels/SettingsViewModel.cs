@@ -1346,10 +1346,10 @@ public sealed partial class SettingsViewModel : PageViewModel
     [RelayCommand]
     private async Task ConvertChihiroGdRomAsync()
     {
-        string? cue = await Shell.Dialogs.PickFileAsync(
-            "Choose the game's cue sheet",
-            FileDialogService.CueTypes);
-        if (cue is null)
+        string? disc = await Shell.Dialogs.PickFileAsync(
+            "Choose the game's cue sheet or CHD",
+            FileDialogService.ChihiroDiscTypes);
+        if (disc is null)
         {
             return;
         }
@@ -1362,7 +1362,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             return;
         }
 
-        string suggested = Path.GetFileNameWithoutExtension(cue) + ".bin";
+        string suggested = Path.GetFileNameWithoutExtension(disc) + ".bin";
         string? output = await Shell.Dialogs.PickSaveFileAsync(
             "Save the Chihiro netboot image",
             suggested,
@@ -1379,7 +1379,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             var progress = new Progress<double>(
                 value => ChihiroConvertStatus = $"Converting... {value * 100:0}%");
             ChihiroRedumpConverter.Result result = await Task.Run(
-                () => ChihiroRedumpConverter.Convert(cue, key, output, progress));
+                () => ChihiroRedumpConverter.Convert(disc, key, output, progress));
             ChihiroConvertStatus =
                 $"Wrote {Path.GetFileName(result.OutputPath)} " +
                 $"({result.ImageBytes / (1024 * 1024)} MiB, {result.Loader} -> {result.FatxName}).";

@@ -2680,15 +2680,16 @@ internal static class Program
 
     private static int ChihiroRedump(string[] args)
     {
-        string? cue = null;
+        string? disc = null;
         string? key = null;
         string? output = null;
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
             {
+                case "--disc":
                 case "--cue":
-                    cue = NextValue(args, ref i);
+                    disc = NextValue(args, ref i);
                     break;
                 case "--key":
                     key = NextValue(args, ref i);
@@ -2702,10 +2703,10 @@ internal static class Program
             }
         }
 
-        if (cue is null || key is null || output is null)
+        if (disc is null || key is null || output is null)
         {
             Console.Error.WriteLine(
-                "Usage: xgrid chihiro-redump --cue <disc.cue> --key <key.zip> --out <netboot.bin>");
+                "Usage: xgrid chihiro-redump --disc <disc.cue|disc.chd> --key <key.zip> --out <netboot.bin>");
             return 1;
         }
 
@@ -2714,7 +2715,7 @@ internal static class Program
             var progress = new InlineProgress(value =>
                 Console.Error.Write($"\rConverting: {value * 100,5:0.0}%"));
             ChihiroRedumpConverter.Result result = ChihiroRedumpConverter.Convert(
-                cue, key, output, progress);
+                disc, key, output, progress);
             Console.Error.WriteLine();
             Console.WriteLine(
                 $"Wrote {result.OutputPath} ({result.ImageBytes / (1024 * 1024)} MiB, " +
@@ -3138,8 +3139,8 @@ internal static class Program
         Console.WriteLine("                   List or extract files from an XDVDFS (Xbox DVD) image");
         Console.WriteLine("  chihiro-netboot --image <xiso> --out <netboot.bin>");
         Console.WriteLine("                   Convert an Xbox-format Chihiro game to a FATX netboot image");
-        Console.WriteLine("  chihiro-redump --cue <disc.cue> --key <key.zip> --out <netboot.bin>");
-        Console.WriteLine("                   Convert a Redump GD-ROM cue/bin set with its MAME key ZIP");
+        Console.WriteLine("  chihiro-redump --disc <disc.cue|disc.chd> --key <key.zip> --out <netboot.bin>");
+        Console.WriteLine("                   Convert a Chihiro GD-ROM image with its MAME key ZIP");
         Console.WriteLine("  sector --image <path> --lba <hex> [--count N] [--out <file>]");
         Console.WriteLine("                   Dump raw disk sectors as hex");
         Console.WriteLine(

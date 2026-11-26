@@ -9,7 +9,8 @@ drive.
 > **Netboot images only.** XGrid boots Chihiro **`.bin` netboot images** (raw
 > FATX images), not Redump `.cue`/`.bin` GD-ROM sets or MAME `.chd` files
 > directly. Build one in **Settings → System → Sega Chihiro** from an
-> `XBOXOG - Chihiro` ISO or from a Redump cue/bin set with its MAME key ZIP. See
+> `XBOXOG - Chihiro` ISO, a Redump cue/bin set, or a MAME `.chd` with the game's
+> key. See
 > [Converting an Xbox-format Chihiro ISO](#converting-an-xbox-format-chihiro-iso)
 > and [Converting a GD-ROM](#converting-a-gd-rom).
 
@@ -63,27 +64,29 @@ ISO renamed the executable. The output `.bin` is ready for the Library.
 
 ## Converting a GD-ROM
 
-The Redump Chihiro sets are raw GD-ROM dumps. XGrid converts a cue/bin set
-itself:
+The Redump cue/bin sets and MAME CHD sets are raw GD-ROM dumps. XGrid converts
+either form itself:
 
-1. Extract the `.cue` and its `.bin` tracks into one folder.
+1. For a Redump set, extract the `.cue` and its `.bin` tracks into one folder.
+   A MAME `.chd` is read directly.
 2. Get the game's small MAME `.zip` (the security key).
 3. Choose **Settings → System → Sega Chihiro → Convert GD-ROM...** and pick the
-   `.cue`, the key `.zip`, and then the output `.bin`.
+   `.cue` or `.chd`, the key `.zip`, and then the output `.bin`.
 4. Put the `.bin` in an XGrid library folder and launch it.
 
 The CLI does the same:
 
 ```text
-XGrid.Cli.exe chihiro-redump --cue "House of the Dead 3, The (World).cue" --key hotd3.zip --out hotd3.bin
+XGrid.Cli.exe chihiro-redump --disc "House of the Dead 3, The (World).cue" --key hotd3.zip --out hotd3.bin
+XGrid.Cli.exe chihiro-redump --disc "G:\MAME\MAME CHDs\hotd3\gdx-0001.chd" --key hotd3.zip --out hotd3.bin
 ```
 
-The converter reads the high-density track directly and accepts both `80`-byte
-`.data` keys and 16 KB `.pic` keys. It reads the loader named by the key, then
-decrypts the FATX image that loader names. A MAME `.chd` set must be extracted
-to cue/bin first (for example with `chdman extractcd`). The output image keeps
-the game's FATX name (such as `VSG.BIN`); rename the catalogued `.bin` only for
-your own library organization.
+`--cue` is accepted as an alias for `--disc`. The converter reads the
+high-density track directly from the cue/bin track or the CHD and accepts both
+`80`-byte `.data` keys and 16 KB `.pic` keys. It reads the loader named by the
+key, then decrypts the FATX image that loader names. The output image keeps the
+game's FATX name (such as `VSG.BIN`); rename the catalogued `.bin` only for your
+own library organization.
 
 The small key sets used by this collection are `hotd3.zip`, `outr2.zip`,
 `vcop3.zip`, `ghostsqu.zip`, `crtaxihr.zip`, `wangmid.zip`, `wangmid2.zip`,

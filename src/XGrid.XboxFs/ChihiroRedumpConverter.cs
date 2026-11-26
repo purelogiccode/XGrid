@@ -41,14 +41,16 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using CHDSharp;
+using CHDSharp.Models;
 
 namespace XGrid.XboxFs;
 
 /// <summary>
-/// Converts a Sega Chihiro Redump GD-ROM cue/bin set into the FATX netboot
-/// image the emulated DIMM boots. The game's small MAME key ZIP supplies the
-/// DES key and the loader name; the high-density track is read directly, so
-/// no extraction or external tool is involved.
+/// Converts a Sega Chihiro GD-ROM image (a Redump cue/bin set or a MAME CHD)
+/// into the FATX netboot image the emulated DIMM boots. The game's small MAME
+/// key ZIP supplies the DES key and the loader name; the high-density track is
+/// read directly, so no extraction or external tool is involved.
 /// </summary>
 public static class ChihiroRedumpConverter
 {
@@ -69,26 +71,26 @@ public static class ChihiroRedumpConverter
         string FatxName,
         long ImageBytes);
 
-    /// <summary>Converts one Redump cue/bin set.</summary>
-    /// <param name="cuePath">The Redump .cue file.</param>
+    /// <summary>Converts one Chihiro GD-ROM image.</summary>
+    /// <param name="discPath">The Redump .cue file or the MAME .chd.</param>
     /// <param name="keyZipPath">The game's small MAME key .zip.</param>
     /// <param name="outputPath">Destination .bin; an existing file is replaced.</param>
     /// <param name="progress">Optional 0..1 progress over the FATX bytes.</param>
     /// <param name="cancellationToken">Cancels between chunks.</param>
     /// <returns>The converted image metadata.</returns>
     public static Result Convert(
-        string cuePath,
+        string discPath,
         string keyZipPath,
         string outputPath,
         IProgress<double>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(cuePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(discPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(keyZipPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        if (!File.Exists(cuePath))
+        if (!File.Exists(discPath))
         {
-            throw new FileNotFoundException($"The cue sheet was not found: {cuePath}", cuePath);
+            throw new FileNotFoundException($"The disc image was not found: {discPath}", discPath);
         }
 
         if (!File.Exists(keyZipPath))
@@ -96,7 +98,7 @@ public static class ChihiroRedumpConverter
             throw new FileNotFoundException($"The key ZIP was not found: {keyZipPath}", keyZipPath);
         }
 
-        using GdTrackReader track = GdTrackReader.Open(cuePath);
+        using TrackReader track = TrackReader.Open(discPath);
         IsoVolume volume = IsoVolume.Open(track);
         List<KeyCandidate> keys = LoadKeys(keyZipPath);
         if (keys.Count == 0)
@@ -136,7 +138,7 @@ public static class ChihiroRedumpConverter
 
     private static (KeyCandidate Key, IsoFile Fatx, string Loader) SelectImage(
         IsoVolume volume,
-        GdTrackReader track,
+        TrackReader track,
         List<KeyCandidate> keys)
     {
         foreach (KeyCandidate key in keys)
@@ -179,7 +181,7 @@ public static class ChihiroRedumpConverter
     }
 
     private static void DecryptImage(
-        GdTrackReader track,
+        TrackReader track,
         IsoFile fatx,
         byte[] key,
         string temporary,
@@ -408,7 +410,66 @@ public static class ChihiroRedumpConverter
 
     private sealed record IsoFile(string Name, uint Lba, uint Size);
 
-    private sealed class GdTrackReader : IDisposable
+    /// <summary>Reads 2048-byte ISO sectors from the game's high-density track.</summary>
+    private abstract class TrackReader : IDisposable
+    {
+        public abstract uint SectorCount { get; }
+
+        public abstract uint PvdLba { get; }
+
+        public static TrackReader Open(string discPath)
+        {
+            return string.Equals(Path.GetExtension(discPath), ".chd", StringComparison.OrdinalIgnoreCase)
+                ? ChdTrackReader.Open(discPath)
+                : GdTrackReader.Open(discPath);
+        }
+
+        public abstract void ReadSector(uint lba, Span<byte> destination);
+
+        public byte[] ReadFile(IsoFile file)
+        {
+            if (file.Size > int.MaxValue)
+            {
+                throw new InvalidDataException($"File '{file.Name}' is too large to read in one piece.");
+            }
+
+            byte[] data = new byte[(int)file.Size];
+            ReadFileRange(file.Lba, file.Size, 0, data);
+            return data;
+        }
+
+        public void ReadFileRange(uint lba, uint fileSize, long offset, Span<byte> destination)
+        {
+            if (offset < 0 || offset + destination.Length > fileSize)
+            {
+                throw new InvalidDataException("The file range is outside the ISO file.");
+            }
+
+            Span<byte> sector = stackalloc byte[IsoSector];
+            int done = 0;
+            while (done < destination.Length)
+            {
+                long position = offset + done;
+                uint sectorLba = lba + (uint)(position / IsoSector);
+                int inSector = (int)(position % IsoSector);
+                if (inSector == 0 && destination.Length - done >= IsoSector)
+                {
+                    ReadSector(sectorLba, destination.Slice(done, IsoSector));
+                    done += IsoSector;
+                    continue;
+                }
+
+                ReadSector(sectorLba, sector);
+                int count = Math.Min(IsoSector - inSector, destination.Length - done);
+                sector.Slice(inSector, count).CopyTo(destination[done..]);
+                done += count;
+            }
+        }
+
+        public abstract void Dispose();
+    }
+
+    private sealed class GdTrackReader : TrackReader
     {
         private readonly FileStream _stream;
         private readonly int _sectorSize;
@@ -422,11 +483,11 @@ public static class ChihiroRedumpConverter
             SectorCount = sectorCount;
         }
 
-        public uint SectorCount { get; }
+        public override uint SectorCount { get; }
 
-        public uint PvdLba => (uint)_lbaOffset + 16;
+        public override uint PvdLba => (uint)_lbaOffset + 16;
 
-        public static GdTrackReader Open(string cuePath)
+        public static new GdTrackReader Open(string cuePath)
         {
             string fullCue = Path.GetFullPath(cuePath);
             string directory = Path.GetDirectoryName(fullCue) ?? ".";
@@ -495,7 +556,7 @@ public static class ChihiroRedumpConverter
             return new GdTrackReader(stream, chosen.SectorSize, offset, sectors);
         }
 
-        public void ReadSector(uint lba, Span<byte> destination)
+        public override void ReadSector(uint lba, Span<byte> destination)
         {
             long index = (long)lba - _lbaOffset;
             if (index < 0 || index >= SectorCount)
@@ -507,67 +568,122 @@ public static class ChihiroRedumpConverter
             _stream.ReadExactly(destination[..IsoSector]);
         }
 
-        public byte[] ReadFile(IsoFile file)
-        {
-            if (file.Size > int.MaxValue)
-            {
-                throw new InvalidDataException($"File '{file.Name}' is too large to read in one piece.");
-            }
-
-            byte[] data = new byte[(int)file.Size];
-            ReadFileRange(file.Lba, file.Size, 0, data);
-            return data;
-        }
-
-        public void ReadFileRange(uint lba, uint fileSize, long offset, Span<byte> destination)
-        {
-            if (offset < 0 || offset + destination.Length > fileSize)
-            {
-                throw new InvalidDataException("The file range is outside the ISO file.");
-            }
-
-            Span<byte> sector = stackalloc byte[IsoSector];
-            int done = 0;
-            while (done < destination.Length)
-            {
-                long position = offset + done;
-                uint sectorLba = lba + (uint)(position / IsoSector);
-                int inSector = (int)(position % IsoSector);
-                if (inSector == 0 && destination.Length - done >= IsoSector)
-                {
-                    ReadSector(sectorLba, destination.Slice(done, IsoSector));
-                    done += IsoSector;
-                    continue;
-                }
-
-                ReadSector(sectorLba, sector);
-                int count = Math.Min(IsoSector - inSector, destination.Length - done);
-                sector.Slice(inSector, count).CopyTo(destination[done..]);
-                done += count;
-            }
-        }
-
-        public void Dispose()
+        public override void Dispose()
         {
             _stream.Dispose();
         }
     }
 
+    /// <summary>Reads the high-density track of a MAME Chihiro CHD through CHDSharp.</summary>
+    private sealed class ChdTrackReader : TrackReader
+    {
+        private readonly ChdFile _chd;
+        private readonly ChdTrackInfo _track;
+        private readonly int _dataOffset;
+        private readonly byte[] _frame;
+
+        private ChdTrackReader(ChdFile chd, ChdTrackInfo track, int dataOffset)
+        {
+            _chd = chd;
+            _track = track;
+            _dataOffset = dataOffset;
+            _frame = new byte[chd.UnitBytes];
+        }
+
+        public override uint SectorCount => (uint)_track.Frames;
+
+        public override uint PvdLba => (uint)_track.StartFrame + 16;
+
+        public static new ChdTrackReader Open(string chdPath)
+        {
+            ChdError error = ChdFile.Open(chdPath, out ChdFile? chd);
+            if (error != ChdError.Chderrnone || chd is null)
+            {
+                throw new InvalidDataException(
+                    $"Not a usable CHD image ({error.GetMessage()}): '{chdPath}'.");
+            }
+
+            try
+            {
+                ChdTrackInfo? best = null;
+                foreach (ChdTrackInfo track in chd.GetTracksForCue())
+                {
+                    if (track.TrackType == ChdTrackType.Audio || track.Frames <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (best is null || track.Frames > best.Frames)
+                    {
+                        best = track;
+                    }
+                }
+
+                if (best is null)
+                {
+                    throw new InvalidDataException($"The CHD has no data track: '{chdPath}'.");
+                }
+
+                int dataOffset = best.DataSize switch
+                {
+                    RawSector => 16,
+                    IsoSector => 0,
+                    _ => throw new InvalidDataException(
+                        $"Track {best.TrackNumber} has an unsupported sector size ({best.DataSize})."),
+                };
+                if (chd.UnitBytes < dataOffset + IsoSector)
+                {
+                    throw new InvalidDataException(
+                        $"The CHD frame size ({chd.UnitBytes}) is too small for track {best.TrackNumber}.");
+                }
+
+                return new ChdTrackReader(chd, best, dataOffset);
+            }
+            catch
+            {
+                chd.Dispose();
+                throw;
+            }
+        }
+
+        public override void ReadSector(uint lba, Span<byte> destination)
+        {
+            long index = (long)lba - (long)_track.StartFrame;
+            if (index < 0 || index >= SectorCount)
+            {
+                throw new InvalidDataException($"ISO sector {lba} is outside the data track.");
+            }
+
+            ChdError error = _chd.ReadFrame(lba, _frame);
+            if (error != ChdError.Chderrnone)
+            {
+                throw new IOException($"CHD read failed ({error.GetMessage()}) at LBA {lba}.");
+            }
+
+            _frame.AsSpan(_dataOffset, IsoSector).CopyTo(destination);
+        }
+
+        public override void Dispose()
+        {
+            _chd.Dispose();
+        }
+    }
+
     private sealed class IsoVolume
     {
-        private readonly GdTrackReader _track;
+        private readonly TrackReader _track;
         private readonly uint _rootLba;
         private readonly uint _rootSize;
         private List<IsoFile>? _files;
 
-        private IsoVolume(GdTrackReader track, uint rootLba, uint rootSize)
+        private IsoVolume(TrackReader track, uint rootLba, uint rootSize)
         {
             _track = track;
             _rootLba = rootLba;
             _rootSize = rootSize;
         }
 
-        public static IsoVolume Open(GdTrackReader track)
+        public static IsoVolume Open(TrackReader track)
         {
             byte[] pvd = new byte[IsoSector];
             track.ReadSector(track.PvdLba, pvd);

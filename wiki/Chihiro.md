@@ -33,23 +33,26 @@ The converter writes a FATX netboot image and aliases a renamed executable
 
 ## Converting a GD-ROM
 
-XGrid converts a Redump cue/bin set with the game's small MAME key `.zip`:
+XGrid converts a Redump cue/bin set or a MAME `.chd` with the game's small MAME
+key `.zip`:
 
-1. Extract the `.cue` and its `.bin` tracks into one folder.
+1. For a Redump set, extract the `.cue` and its `.bin` tracks into one folder.
+   A MAME `.chd` is read directly.
 2. Open **Settings -> System -> Sega Chihiro -> Convert GD-ROM...**.
-3. Pick the `.cue`, the key `.zip`, and the output `.bin`.
+3. Pick the `.cue` or `.chd`, the key `.zip`, and the output `.bin`.
 
 Or use the CLI:
 
 ```text
-XGrid.Cli.exe chihiro-redump --cue "House of the Dead 3, The (World).cue" --key hotd3.zip --out hotd3.bin
+XGrid.Cli.exe chihiro-redump --disc "House of the Dead 3, The (World).cue" --key hotd3.zip --out hotd3.bin
+XGrid.Cli.exe chihiro-redump --disc "G:\MAME\MAME CHDs\hotd3\gdx-0001.chd" --key hotd3.zip --out hotd3.bin
 ```
 
-Both `80`-byte `.data` and 16 KB `.pic` keys are read. MAME `.chd` sets must be
-extracted to cue/bin first. Key sets: `hotd3.zip`, `outr2.zip`, `vcop3.zip`,
-`ghostsqu.zip`, `crtaxihr.zip`, `wangmid.zip`, `wangmid2.zip`, `ollie.zip`,
-`mj2.zip`, `mj3.zip`, `mj3evo.zip`. Put the resulting `.bin` in a library
-folder and launch it. XGrid bundles no keys, firmware or game data.
+Both `80`-byte `.data` and 16 KB `.pic` keys are read. Key sets: `hotd3.zip`,
+`outr2.zip`, `vcop3.zip`, `ghostsqu.zip`, `crtaxihr.zip`, `wangmid.zip`,
+`wangmid2.zip`, `ollie.zip`, `mj2.zip`, `mj3.zip`, `mj3evo.zip`. Put the
+resulting `.bin` in a library folder and launch it. XGrid bundles no keys,
+firmware or game data.
 
 ## Controls
 
