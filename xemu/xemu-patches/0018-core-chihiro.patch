@@ -12,7 +12,8 @@ New files (whole files, not shown as hunks):
   hw/xbox/chihiro/*.c, *.h and meson.build
 
 The diff below covers the edits to the existing xemu tree, including the OHCI
-enumeration hooks, the keyboard/gamepad/mouse JVS mapping, the gun aim and the
+enumeration hooks, the keyboard/gamepad/mouse JVS mapping, the pointer aim
+mapped onto the rendered picture, the gun-profile menu suppression and the
 player-1 card insert. It applies on top of the XGrid 0.8.139 tree with patches
 0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
@@ -1225,7 +1226,7 @@ index 7900f869..8d5a18d0 100644
      for (int i = 1; i < argc; i++) {
          if (argv[i] != NULL) {
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 54595e1b..5aaeb73d 100644
+index 54595e1b..d98269d3 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
 @@ -36,6 +36,8 @@
@@ -1237,7 +1238,7 @@ index 54595e1b..5aaeb73d 100644
  
  // #define DEBUG_INPUT
  
-@@ -564,6 +566,326 @@ void xemu_input_update_controller(ControllerState *state)
+@@ -564,6 +566,365 @@ void xemu_input_update_controller(ControllerState *state)
      state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
  }
  
@@ -1298,11 +1299,34 @@ index 54595e1b..5aaeb73d 100644
 +    return (uint16_t)(value * 2);
 +}
 +
-+/* A Chihiro binding in the 1000 range is a mouse button (1001 = left,
-+ * 1003 = right), the convention the Chihiro configuration uses. */
++/* The renderer publishes where the guest picture sits inside the window. */
++static float display_viewport_x;
++static float display_viewport_y;
++static float display_viewport_w;
++static float display_viewport_h;
++
++void xemu_input_set_display_viewport(float x, float y, float w, float h)
++{
++    display_viewport_x = x;
++    display_viewport_y = y;
++    display_viewport_w = w;
++    display_viewport_h = h;
++}
++
++bool xemu_input_get_display_viewport(float *x, float *y, float *w, float *h)
++{
++    *x = display_viewport_x;
++    *y = display_viewport_y;
++    *w = display_viewport_w;
++    *h = display_viewport_h;
++    return display_viewport_w > 0 && display_viewport_h > 0;
++}
++
++/* A Chihiro binding in the 1000 range is 1000 plus SDL's button number:
++ * 1001 = left, 1003 = right. SDL's button mask uses bit (button - 1). */
 +static bool chihiro_mouse_button(int binding, uint32_t buttons)
 +{
-+    int index = binding - 1000;
++    int index = binding - 1001;
 +    return index >= 0 && index < 8 && (buttons & (1u << index)) != 0;
 +}
 +
@@ -1313,30 +1337,46 @@ index 54595e1b..5aaeb73d 100644
 +{
 +    SDL_Window *window = SDL_GetMouseFocus();
 +    if (!window) {
-+        window = SDL_GetKeyboardFocus();
-+    }
-+    float mouse_x = 0.5f, mouse_y = 0.5f;
-+    int width = 0, height = 0;
-+    if (window) {
-+        SDL_GetMouseState(&mouse_x, &mouse_y);
-+        SDL_GetWindowSize(window, &width, &height);
++        /* Outside the picture: the games read (0,0) as off-screen/reload. */
++        jvs->analog[0] = 0;
++        jvs->analog[1] = 0;
++        return;
 +    }
 +
-+    if (width <= 0 || height <= 0) {
++    float mouse_x = 0.5f, mouse_y = 0.5f;
++    int width = 0, height = 0;
++    SDL_GetMouseState(&mouse_x, &mouse_y);
++    SDL_GetWindowSize(window, &width, &height);
++
++    float vx, vy, vw, vh;
++    if (width <= 0 || height <= 0 ||
++        !xemu_input_get_display_viewport(&vx, &vy, &vw, &vh)) {
 +        jvs->analog[0] = 0x8000;
 +        jvs->analog[1] = 0x8000;
 +        return;
 +    }
 +
-+    float nx = mouse_x / (float)width;
-+    float ny = mouse_y / (float)height;
-+    if (nx < 0.01f || nx > 0.99f || ny < 0.01f || ny > 0.99f) {
++    float nx = (mouse_x / (float)width - vx) / vw;
++    float ny = (mouse_y / (float)height - vy) / vh;
++    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
 +        jvs->analog[0] = 0;
 +        jvs->analog[1] = 0;
 +    } else {
 +        jvs->analog[0] = (uint16_t)(nx * 0xFFFF);
 +        jvs->analog[1] = (uint16_t)(ny * 0xFFFF);
 +    }
++}
++
++bool xemu_input_chihiro_gun_active(void)
++{
++    if (!xemu_chihiro_mode()) {
++        return false;
++    }
++
++    int profile = chihiro_detected_game_profile();
++    return profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3 ||
++           profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3 ||
++           profile == CONFIG_CHIHIRO_JVS_PROFILE_GS;
 +}
 +
 +/* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
@@ -1564,7 +1604,7 @@ index 54595e1b..5aaeb73d 100644
  void xemu_input_update_controllers(void)
  {
      ControllerState *iter;
-@@ -573,6 +895,7 @@ void xemu_input_update_controllers(void)
+@@ -573,6 +934,7 @@ void xemu_input_update_controllers(void)
      QTAILQ_FOREACH(iter, &available_controllers, entry) {
          xemu_input_update_rumble(iter);
      }
@@ -1572,6 +1612,24 @@ index 54595e1b..5aaeb73d 100644
  }
  
  void xemu_input_update_sdl_kbd_controller_state(ControllerState *state)
+diff --git a/xemu/ui/xemu-input.h b/xemu/ui/xemu-input.h
+index 168a0ae4..03be91ec 100644
+--- a/xemu/ui/xemu-input.h
++++ b/xemu/ui/xemu-input.h
+@@ -147,6 +147,13 @@ void xemu_input_set_test_mode(int enabled);
+ int xemu_input_get_test_mode(void);
+ void xemu_input_reset_input_mapping(ControllerState *state);
+ 
++/* True while a Chihiro gun game owns the pointer and mouse buttons. */
++bool xemu_input_chihiro_gun_active(void);
++
++/* The picture's displayed rectangle in normalized window coordinates. */
++void xemu_input_set_display_viewport(float x, float y, float w, float h);
++bool xemu_input_get_display_viewport(float *x, float *y, float *w, float *h);
++
+ #ifdef __cplusplus
+ }
+ #endif
 diff --git a/xemu/ui/xemu-notifications.h b/xemu/ui/xemu-notifications.h
 index f023eb35..c3617b21 100644
 --- a/xemu/ui/xemu-notifications.h
@@ -1699,6 +1757,52 @@ index 880b62f2..43a0b47a 100644
 +
  void add_net_nat_forward_ports(int host, int guest, CONFIG_NET_NAT_FORWARD_PORTS_PROTOCOL protocol);
  void remove_net_nat_forward_ports(unsigned int index);
+ 
+diff --git a/xemu/ui/xui/gl-helpers.cc b/xemu/ui/xui/gl-helpers.cc
+index 0a1497a8..83f86be0 100644
+--- a/xemu/ui/xui/gl-helpers.cc
++++ b/xemu/ui/xui/gl-helpers.cc
+@@ -918,6 +918,14 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
+ {
+     glActiveTexture(GL_TEXTURE0);
+     glBindTexture(GL_TEXTURE_2D, tex);
++
++    if (width > 0 && height > 0) {
++        float vp_w = width * scale[0];
++        float vp_h = height * scale[1];
++        xemu_input_set_display_viewport((width - vp_w) / (2.0f * width),
++                                        (height - vp_h) / (2.0f * height),
++                                        vp_w / width, vp_h / height);
++    }
+     
+     /*
+      * The shell selects the presentation filter. A standalone launch has no
+diff --git a/xemu/ui/xui/main.cc b/xemu/ui/xui/main.cc
+index 81305e1e..805f9b0d 100644
+--- a/xemu/ui/xui/main.cc
++++ b/xemu/ui/xui/main.cc
+@@ -43,6 +43,7 @@
+ #include "font-manager.hh"
+ #include "scene.hh"
+ #include "scene-manager.hh"
++#include "../xemu-input.h"
+ #include "main-menu.hh"
+ #include "../../xgrid-core/display/xgrid-display.h"
+ #include "popup-menu.hh"
+@@ -339,10 +340,12 @@ void xemu_hud_update(void)
+         } else if (ImGui::IsKeyPressed(ImGuiKey_F2)) {
+             g_scene_mgr.PushScene(g_popup_menu);
+         } else if (menu_button ||
+-                   (ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
++                   (!xemu_input_chihiro_gun_active() &&
++                    ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
+                     !ImGui::IsAnyItemFocused() && !ImGui::IsAnyItemHovered())) {
+             g_scene_mgr.PushScene(g_popup_menu);
+-        } else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
++        } else if (!xemu_input_chihiro_gun_active() &&
++                   ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+             xemu_toggle_fullscreen();
+         }
  
 diff --git a/xemu/ui/xui/notifications.cc b/xemu/ui/xui/notifications.cc
 index f4c5179e..21a13b5e 100644

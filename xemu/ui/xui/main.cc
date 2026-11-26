@@ -43,6 +43,7 @@
 #include "font-manager.hh"
 #include "scene.hh"
 #include "scene-manager.hh"
+#include "../xemu-input.h"
 #include "main-menu.hh"
 #include "../../xgrid-core/display/xgrid-display.h"
 #include "popup-menu.hh"
@@ -339,10 +340,12 @@ void xemu_hud_update(void)
         } else if (ImGui::IsKeyPressed(ImGuiKey_F2)) {
             g_scene_mgr.PushScene(g_popup_menu);
         } else if (menu_button ||
-                   (ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
+                   (!xemu_input_chihiro_gun_active() &&
+                    ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
                     !ImGui::IsAnyItemFocused() && !ImGui::IsAnyItemHovered())) {
             g_scene_mgr.PushScene(g_popup_menu);
-        } else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        } else if (!xemu_input_chihiro_gun_active() &&
+                   ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             xemu_toggle_fullscreen();
         }
 

@@ -918,6 +918,14 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
 {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
+
+    if (width > 0 && height > 0) {
+        float vp_w = width * scale[0];
+        float vp_h = height * scale[1];
+        xemu_input_set_display_viewport((width - vp_w) / (2.0f * width),
+                                        (height - vp_h) / (2.0f * height),
+                                        vp_w / width, vp_h / height);
+    }
     
     /*
      * The shell selects the presentation filter. A standalone launch has no

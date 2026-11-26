@@ -147,6 +147,13 @@ void xemu_input_set_test_mode(int enabled);
 int xemu_input_get_test_mode(void);
 void xemu_input_reset_input_mapping(ControllerState *state);
 
+/* True while a Chihiro gun game owns the pointer and mouse buttons. */
+bool xemu_input_chihiro_gun_active(void);
+
+/* The picture's displayed rectangle in normalized window coordinates. */
+void xemu_input_set_display_viewport(float x, float y, float w, float h);
+bool xemu_input_get_display_viewport(float *x, float *y, float *w, float *h);
+
 #ifdef __cplusplus
 }
 #endif
