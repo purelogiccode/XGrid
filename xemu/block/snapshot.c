@@ -545,12 +545,11 @@ bool bdrv_all_can_snapshot(bool has_devices, strList *devices,
     iterbdrvs = bdrvs;
     while (iterbdrvs) {
         BlockDriverState *bs = iterbdrvs->data;
-        bool ok = true;
 
-        if (devices || bdrv_all_snapshots_includes_bs(bs)) {
-            ok = bdrv_can_snapshot(bs);
-        }
-        if (!ok) {
+        /* Without an explicit device list, snapshot-capable devices take
+         * part and the rest are skipped. A caller that named a device still
+         * gets an error when that device cannot snapshot. */
+        if (devices && !bdrv_can_snapshot(bs)) {
             error_setg(errp, "Device '%s' is writable but does not support "
                        "snapshots", bdrv_get_device_or_node_name(bs));
             return false;
@@ -631,12 +630,14 @@ int bdrv_all_goto_snapshot(const char *name,
     while (iterbdrvs) {
         BlockDriverState *bs = iterbdrvs->data;
         bool all_snapshots_includes_bs;
+        bool can_snapshot;
 
         bdrv_graph_rdlock_main_loop();
         all_snapshots_includes_bs = bdrv_all_snapshots_includes_bs(bs);
+        can_snapshot = bdrv_can_snapshot(bs);
         bdrv_graph_rdunlock_main_loop();
 
-        ret = (devices || all_snapshots_includes_bs) ?
+        ret = (devices || (all_snapshots_includes_bs && can_snapshot)) ?
               bdrv_snapshot_goto(bs, name, errp) : 0;
         if (ret < 0) {
             bdrv_graph_rdlock_main_loop();
@@ -672,7 +673,8 @@ int bdrv_all_has_snapshot(const char *name,
         QEMUSnapshotInfo sn;
         int ret = 0;
 
-        if (devices || bdrv_all_snapshots_includes_bs(bs)) {
+        if (devices ||
+            (bdrv_all_snapshots_includes_bs(bs) && bdrv_can_snapshot(bs))) {
             ret = bdrv_snapshot_find(bs, &sn, name);
         }
         if (ret < 0) {
@@ -716,7 +718,8 @@ int bdrv_all_create_snapshot(QEMUSnapshotInfo *sn,
         if (bs == vm_state_bs) {
             sn->vm_state_size = vm_state_size;
             ret = bdrv_snapshot_create(bs, sn);
-        } else if (devices || bdrv_all_snapshots_includes_bs(bs)) {
+        } else if ((devices || bdrv_all_snapshots_includes_bs(bs)) &&
+                   bdrv_can_snapshot(bs)) {
             sn->vm_state_size = 0;
             ret = bdrv_snapshot_create(bs, sn);
         }

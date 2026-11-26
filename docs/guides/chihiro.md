@@ -200,14 +200,12 @@ it up again. Ghost Squad's second reader is not exposed by the shell yet.
   follow-ups.
 - **The second card reader** is present in the core but not exposed by the
   shell. Player 1's card insert works.
-- **Cabinet-link save states are disabled.** The core refuses snapshots while
-  the link runs; stop the link first.
 - **Network titles stop at their network startup.** MJ2/MJ3/MJ3 Evolution boot
   past the firmware-version check with `ver1305.bin`, but they need their own
   server and do not reach a solo game.
-- **Shell save-state slots are Xbox-oriented.** The Chihiro core keeps its own
-  cabinet saves in the baseboard EEPROM; the shell's HDD-backed snapshot slots
-  are not a Chihiro feature yet.
+- **Shell save states** write to `chihiro_snapshots.qcow2` in the data folder;
+  they are disabled while a cabinet link runs. Load a slot with the same
+  netboot image that wrote it.
 - The Chihiro BIOS must match MAME's `chihiro_xbox_bios.bin` (SHA-1
   `b700b0041af8f84835e45d1d1250247bf7077188`). A retail Xbox BIOS will not boot
   the Chihiro machine.

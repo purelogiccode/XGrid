@@ -122,7 +122,8 @@ network-firmware check with `ver1305.bin` and then wait for their own server.
   network server to play.
 - The Chihiro BIOS must be MAME's `chihiro_xbox_bios.bin`; a retail Xbox BIOS
   will not boot it.
-- Shell save-state slots are Xbox-oriented; Chihiro cabinet saves live in the
-  core's baseboard EEPROM.
+- Shell save slots write to `chihiro_snapshots.qcow2` in the data folder; load a
+  slot with the same netboot image that wrote it. Save states are disabled
+  while a cabinet link runs.
 
 See [Chihiro](../docs/guides/chihiro.md) for the full guide and troubleshooting.

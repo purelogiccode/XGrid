@@ -48,7 +48,7 @@
                   ToolTip.Tip="Advance a paused machine by one frame." />
         <Separator />
         <MenuItem Header="Save State" IsEnabled="{Binding HasSaveStates}"
-                  ToolTip.Tip="Write the running machine to a slot on the hard disk image.">
+                  ToolTip.Tip="Write the running machine to a snapshot slot.">
           <MenuItem Header="{Binding QuickSaveHeader}" InputGesture="F6"
                     Command="{Binding QuickSaveCommand}"
                     ToolTip.Tip="Save the running machine to the quick-save slot (F6)" />
@@ -78,7 +78,7 @@
                     ToolTip.Tip="Load state from slot 4" />
         </MenuItem>
         <MenuItem Header="Delete State" IsEnabled="{Binding HasSaveStates}"
-                  ToolTip.Tip="Remove a slot from the hard disk image.">
+                  ToolTip.Tip="Remove a snapshot slot.">
           <MenuItem Header="Slot 1" Tag="1" Click="OnMenuDeleteState"
                     ToolTip.Tip="Delete saved state in slot 1" />
           <MenuItem Header="Slot 2" Tag="2" Click="OnMenuDeleteState"

@@ -81,6 +81,9 @@ public static class XemuLaunchPlan
             ChihiroNetFirmwarePath = chihiro
                 ? ResolveChihiroOptional(chihiroDirectory, ChihiroSettings.NetFirmwareFileName, firmwareDirectory)
                 : string.Empty,
+            ChihiroSnapshotStorePath = chihiro
+                ? Path.Combine(workingDirectory, "chihiro_snapshots.qcow2")
+                : string.Empty,
             ChihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone(),
             ChihiroLinkEnabled = chihiro && link.Enabled,
             ChihiroLinkCabinets = link.Cabinets,

@@ -69,7 +69,8 @@ point, but XGrid's patches and media drivers can change the result.
 
 - A loose `.xbe` is not bootable. Wrap it in an ISO or CHD.
 - CHD and ZAR are read on demand; no extraction step is required.
-- Keep the HDD image writable if you use save states.
+- Keep the HDD image writable if you use save states. Chihiro launches create
+  `chihiro_snapshots.qcow2` for their snapshots instead.
 
 ## Compatibility expectations
 
