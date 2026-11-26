@@ -85,9 +85,9 @@ yet.
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
 | Start | Enter | Start |
-| Service | `L` | D-pad down |
+| Service | `L` | L3 (left stick click) |
 | Coin | `5` | Back |
-| Test | `K` | D-pad up |
+| Test | `K` | R3 (right stick click) |
 | Steer left / right | `Left` / `Right` | Left stick X |
 | Gas / brake | `Up` / `Down` | RT / LT |
 | Gear up / down | `]` / `[` | D-pad up / down |

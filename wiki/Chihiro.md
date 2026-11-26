@@ -44,9 +44,9 @@ game data.
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
 | Start | Enter | Start |
-| Service | L | D-pad down |
+| Service | L | L3 |
 | Coin | 5 | Back |
-| Test | K | D-pad up |
+| Test | K | R3 |
 | Steer | Left / Right | Left stick X |
 | Gas / brake | Up / Down | RT / LT |
 | Gear up / down | ] / [ | D-pad up / down |

@@ -788,7 +788,7 @@ static void xemu_input_update_chihiro(void)
         sw0 |= 0x80;
     }
     if (chihiro_key_down(kbd, jvs_cfg->service) ||
-        chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_DOWN)) {
+        chihiro_pad_down(pad, CONTROLLER_BUTTON_LSTICK)) {
         sw0 |= 0x40;
     }
 
@@ -796,7 +796,7 @@ static void xemu_input_update_chihiro(void)
     jvs->player_switches[0][1] = sw1;
     jvs->system_switches =
         (chihiro_key_down(kbd, jvs_cfg->test) ||
-         chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_UP)) ? 0x80 : 0;
+         chihiro_pad_down(pad, CONTROLLER_BUTTON_RSTICK)) ? 0x80 : 0;
 
     static bool coin_was_down;
     bool coin = chihiro_key_down(kbd, jvs_cfg->coin) ||
