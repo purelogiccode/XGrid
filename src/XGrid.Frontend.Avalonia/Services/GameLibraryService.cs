@@ -106,6 +106,7 @@ public static class GameLibraryService
                || extension.Equals(".xiso", StringComparison.OrdinalIgnoreCase)
                || extension.Equals(".chd", StringComparison.OrdinalIgnoreCase)
                || extension.Equals(".zar", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".bin", StringComparison.OrdinalIgnoreCase)
                || extension.Equals(".xbe", StringComparison.OrdinalIgnoreCase);
     }
 

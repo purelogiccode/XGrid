@@ -46,6 +46,8 @@ XGrid's additions live in `xemu/xgrid-core/`:
 | `display/xgrid-display.c` | Publishes presented frames to a named shared section. |
 | `input/xgrid-input.c` | Reads player 1 from a named shared section. |
 | `abi/xgrid-core.c` | In-process start/stop/join/version and save-state bridge. |
+| `hw/xbox/chihiro/` | Sega Chihiro machine, media/base boards and cabinet devices. |
+| `block/blkmemory.c` | Memory-backed block driver used by the Chihiro DIMM. |
 | `thirdparty/libchdr/` | Vendored libchdr 0.3.0 (BSD-3-Clause). |
 
 Edits to upstream files are recorded in `xemu/xemu-patches/`. A new xemu release

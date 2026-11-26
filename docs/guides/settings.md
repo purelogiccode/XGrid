@@ -20,6 +20,16 @@ toggle or tab header to read what it does before changing it.
 
 XGrid ships no firmware. Configure these from files you own.
 
+### Sega Chihiro
+
+| Setting | Meaning |
+| --- | --- |
+| **Enable Chihiro** | Boots the Chihiro machine instead of the Xbox. A `.bin` netboot image also selects it for that launch. |
+| **Chihiro firmware folder** | Folder with `chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`, `ic10_g24lc64.bin`, `ic11_24lc024.bin` and `pc20_g24lc64.bin`. Empty uses the folder beside the Xbox BIOS. |
+
+Chihiro launches use 128 MB and no Xbox hard disk. They boot netboot `.bin`
+images, not Xbox discs or raw GD-ROMs. See [Sega Chihiro](chihiro.md).
+
 ### Storage
 
 | Setting | Meaning |

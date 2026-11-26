@@ -23,6 +23,9 @@ public enum GameFormat
     /// <summary>A ZArchive (.zar) container holding a disc image.</summary>
     Zar,
 
+    /// <summary>A Sega Chihiro netboot (FATX) image.</summary>
+    Bin,
+
     /// <summary>A loose Xbox executable (inspectable, not bootable on its own).</summary>
     Xbe,
 }
@@ -55,7 +58,11 @@ public sealed class GameEntry
     private long SizeBytes { get; }
 
     /// <summary>Gets a value indicating whether the entry can be inserted as a disc.</summary>
-    public bool IsLaunchable => Format is GameFormat.Iso or GameFormat.Chd or GameFormat.Cci or GameFormat.Zar;
+    public bool IsLaunchable => Format is GameFormat.Iso or GameFormat.Chd or GameFormat.Cci
+        or GameFormat.Zar or GameFormat.Bin;
+
+    /// <summary>Gets a value indicating whether this entry is a Chihiro netboot image.</summary>
+    public bool IsChihiro => Format == GameFormat.Bin;
 
     /// <summary>Gets the short format label.</summary>
     public string FormatText => Format switch
@@ -64,6 +71,7 @@ public sealed class GameEntry
         GameFormat.Chd => "CHD",
         GameFormat.Cci => "CCI",
         GameFormat.Zar => "ZAR",
+        GameFormat.Bin => "BIN",
         _ => "XBE",
     };
 
@@ -139,6 +147,7 @@ public sealed class GameEntry
                 ".chd" => GameFormat.Chd,
                 ".cci" => GameFormat.Cci,
                 ".zar" => GameFormat.Zar,
+                ".bin" => GameFormat.Bin,
                 ".xbe" => GameFormat.Xbe,
                 _ => GameFormat.Iso,
             };
@@ -154,6 +163,7 @@ public sealed class GameEntry
             // resolver cannot read (or a homebrew title with no certificate)
             // leaves the id at 0 / the shared placeholder.
             uint resolvedTitleId = resolveTitleId
+                && format != GameFormat.Bin
                 && DiscTitleId.TryRead(path, out uint titleId, out _)
                     ? titleId
                     : 0u;

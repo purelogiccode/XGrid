@@ -30,7 +30,8 @@ obtained files.
 | **MCPX boot ROM** | `mcpx_1.0.bin` | 512 bytes | The first-stage boot ROM. Required for the retail boot chain. |
 | **EEPROM** | `eeprom.bin` | 256 bytes | Console settings and EEPROM state. |
 | **Hard-disk image** | `xbox_hdd.qcow2` | varies | The Xbox HDD. Boots the dashboard when no disc is inserted. Raw and qcow2 images are supported. |
-| **Disc image** | `.iso`, `.chd`, `.zar` | varies | The game disc. Optional if you only want the dashboard. |
+| **Disc image** | `.iso`, `.chd`, `.cci`, `.zar` | varies | The game disc. Optional if you only want the dashboard. |
+| **Chihiro firmware** | `chihiro_xbox_bios.bin`, media-board and EEPROM files | varies | Optional, for Sega Chihiro netboot `.bin` images. See [Sega Chihiro](../guides/chihiro.md). |
 
 > **Firmware compatibility matters.** Use images from a known-good Xbox setup.
 > A mismatched BIOS, EEPROM or HDD image can prevent the console from booting.

@@ -80,6 +80,13 @@ characters, without path separators.
 The shell's directory reader is covered by synthetic entry-form and file-tree
 archives in `ZarArchiveTests`, so the shape check also runs on a clean checkout.
 
+### Chihiro netboot (`.bin`)
+
+A `.bin` in the library is a Sega Chihiro netboot image: a raw FATX image
+loaded into the Chihiro DIMM, not an Xbox disc and not a raw GD-ROM track.
+Launching one selects the Chihiro machine and uses the firmware folder from
+**Settings → System → Sega Chihiro**. See [Sega Chihiro](chihiro.md).
+
 ### XBE
 
 A loose Xbox executable. XGrid can list it and read its certificate title, but it
@@ -126,6 +133,7 @@ XGrid ships none of these. See [Requirements](../getting-started/requirements.md
 | `.chd` | Yes | Yes | Real-time decode and partition-offset detection. |
 | `.cci` | Yes | Yes | Single part or split set; LZ4 sectors decoded on demand. |
 | `.zar` | Yes | Yes | Entry form or synthesized file tree. |
+| `.bin` | Yes | Chihiro | Netboot FATX image for the Sega Chihiro; not an Xbox disc. |
 | `.xbe` | Yes | No | Inspection only. |
 | HDD raw/qcow2 | Settings | Boot | Dashboard and save states. |
 

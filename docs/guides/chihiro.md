@@ -1,0 +1,108 @@
+# Sega Chihiro
+
+XGrid includes the Sega Chihiro machine from the xemu Chihiro lineage. A
+Chihiro is an Xbox with a media board, a DIMM and an arcade baseboard: the same
+CPU and NV2A, but it boots SEGABOOT from its own flash, loads a game image into
+DIMM RAM, and talks to JVS, card readers and drive boards instead of a DVD
+drive.
+
+> **Netboot images only.** XGrid boots Chihiro **`.bin` netboot images** (raw
+> FATX images), not Redump `.cue`/`.bin` GD-ROM sets or MAME `.chd` files
+> directly. Convert a GD-ROM dump to a netboot image first; see
+> [Converting a GD-ROM](#converting-a-gd-rom).
+
+## Firmware
+
+The Chihiro needs the machine's own firmware. XGrid ships none of it. Put these
+files in one folder:
+
+| File | Size | What it is |
+| --- | --- | --- |
+| `chihiro_xbox_bios.bin` | 512 KB | The Chihiro Xbox BIOS (MAME's `chihiro` set). |
+| `fpr21042_m29w160et.bin` | 2 MB | The media-board flash with SEGABOOT. |
+| `ic10_g24lc64.bin` | 8 KB | The QC board's EEPROM. |
+| `ic11_24lc024.bin` | 128 bytes | The baseboard's EEPROM (cabinet settings and saves). |
+| `pc20_g24lc64.bin` | 8 KB | The SC board's EEPROM. |
+
+The same folder may also hold `ver1305.bin`, the network-board firmware. It is
+optional for single cabinets.
+
+## Setup
+
+1. Open **Settings → System → Sega Chihiro**.
+2. Choose the folder with the five firmware files.
+3. Turn **Enable Chihiro** on if you want every launch to use the Chihiro.
+   Launching a `.bin` image selects it for that launch even when this is off.
+4. Add the folder with your netboot images in **Settings → Library**.
+5. Pick the `.bin` in **Library** and press **Power on**.
+
+A Chihiro launch uses the Chihiro BIOS, 128 MB of guest RAM and no Xbox hard
+disk. The shell writes `default_machine = 'chihiro'` and the
+`[chihiro.roms]` paths into the generated `xemu.toml`.
+
+## Converting a GD-ROM
+
+The Redump and MAME Chihiro sets are GD-ROM dumps. Convert one to the netboot
+format with [chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot),
+an external MIT-licensed tool based on JayFoxRox's Chihiro-Tools:
+
+1. Put the game's small MAME `.zip` (the security key) beside the disc dump.
+2. Run `chihiro-netboot` on the `.cue`/`.bin` set or the MAME `.chd`.
+3. Put the `output/<game>.bin` file in an XGrid library folder.
+4. Launch the `.bin` from **Library**.
+
+XGrid does not bundle the converter, game keys, firmware, GD-ROM data or game
+images. The converter produces a decrypted FATX image; without the matching
+key it cannot make a bootable image.
+
+## Controls
+
+The core's default Chihiro keyboard map is below. The keys can be changed in
+`xemu.toml` under `[chihiro.jvs]`; the shell does not expose a Chihiro key editor
+yet.
+
+| Action | Default key |
+| --- | --- |
+| Start | Enter |
+| Service | `L` |
+| Coin | `5` |
+| Test | `K` |
+| Steer left / right | `Left` / `Right` |
+| Gas / brake | `Up` / `Down` |
+| Gear up / down | `]` / `[` |
+| Card in | `C` |
+
+The core selects the cabinet profile from the game's `boot.id`/executable:
+The House of the Dead III, Virtua Cop 3 and Ghost Squad use the gun layout;
+Crazy Taxi High Roller, OutRun 2 and Maximum Tune use the driving layout; Ollie
+King and Gundam have their own layouts. The light gun aims at the centre of the
+picture with keyboard-only input.
+
+## Limits
+
+- **No direct GD-ROM boot.** The ported machine loads a FATX netboot image into
+  DIMM; it does not emulate the GD-ROM drive. Convert the disc first.
+- **Keyboard-only controls in this build.** The full Chihiro fork also maps
+  gamepads, wheels, light guns and force feedback; XGrid currently exposes the
+  keyboard defaults. Gamepad and wheel mapping is a follow-up.
+- **Linked cabinets and card-reader UI** are present in the core but not exposed
+  by the shell. They are for later work.
+- **Shell save-state slots are Xbox-oriented.** The Chihiro core keeps its own
+  cabinet saves in the baseboard EEPROM; the shell's HDD-backed snapshot slots
+  are not a Chihiro feature yet.
+- The Chihiro BIOS must match MAME's `chihiro_xbox_bios.bin` (SHA-1
+  `b700b0041af8f84835e45d1d1250247bf7077188`). A retail Xbox BIOS will not boot
+  the Chihiro machine.
+
+## Troubleshooting
+
+| Problem | Check |
+| --- | --- |
+| "Chihiro files not found" | All five files are in the chosen folder and the names match the table above. |
+| "is not a Chihiro BIOS" | Use `chihiro_xbox_bios.bin`, not `Complex_4627.bin` or another Xbox BIOS. |
+| `is not a FATX image` | The `.bin` is still a GD-ROM or encrypted image; convert it to netboot format. |
+| Stuck on SEGABOOT or a black screen | Check the core log for the media-board flash and the game's `boot.id`; a bad or missing image leaves SEGABOOT waiting. |
+| No input | The core window must have keyboard focus. See [Controls](#controls). |
+
+The core log is in **Activity** and, in separate-process mode,
+`<data>/xemu/xemu.log`.

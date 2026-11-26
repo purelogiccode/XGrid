@@ -16,7 +16,8 @@ XGrid build and is not redistributed with XGrid.
 |---|---|---|---|---|
 | xemu | **0.8.139 (vendored at `xemu/`)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | The maintained emulation core, tracked in `xemu/`. XGrid additions are in `xemu/xgrid-core/`; upstream edits are recorded in `xemu/xemu-patches/`. The APU DSP port is derived from `hw/xbox/mcpx/apu/dsp/` (GPL-2+). |
 | QEMU (xemu base) | 10.2.0 (via xemu 0.8.139) | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | The xemu codebase, including its QEMU 10.2.0 base, is the maintained emulation core and is built from `xemu/`. QEMU is not linked as a separate library. |
-| xemu-Playtest-v2 | local snapshot, QEMU 10.2.0 base | no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks only. |
+| xemu-Playtest-v2 | local snapshot, QEMU 10.2.0 base | no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | The Sega Chihiro machine under `xemu/hw/xbox/chihiro/`, the memory-backed block driver (`xemu/block/blkmemory.c`) and their integration are ported from this snapshot. Original copyright and license notices are kept per file; the edits to upstream xemu files are recorded in `xemu/xemu-patches/0018-core-chihiro.patch`. |
+| XPSemu-Chihiro | alpha 2 | https://github.com/ZiZc3/XPSemu (unofficial fork) | GPL-2.0 overall; per-file LGPL-2+, BSD-3-Clause (MAME DES routines) | Cross-check and later Chihiro fixes; the ported files carry the notices of their original authors, including Réda Chérif-Touil and the MAME `naomigd.cpp` DES routines. |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | Facts and, where useful, ported source. |
 | xqemu | master | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | Facts and, where useful, ported source. |
 | xbased | 1.2.3 | https://github.com/crazyriddler/xbased | **GPL-3.0** | Facts and UI/architecture cross-check. Code may be ported only when the combined build is GPL-3.0-compatible; the build-scoped audit is pending, so no code is ported yet. |
@@ -35,6 +36,23 @@ pristine, read-only oracle and is never modified. The tree builds through
 `xemu/build.sh` (MSYS2/meson), driven by `scripts/build-native-xemu.ps1`; the
 solution carries `xemu/XGrid.Xemu.Tree.csproj` as the build anchor. The
 release ships the core source and the patches.
+
+### Sega Chihiro machine
+
+The Sega Chihiro emulation in `xemu/hw/xbox/chihiro/` is ported from the
+xemu-Playtest-v2 / XPSemu-Chihiro snapshots. It is GPL-2.0-compatible:
+most files are LGPL-2.0-or-later, `chihiro-pic.*` is LGPL-2.1-or-later
+(MAME's `naomi.cpp` tables), and `chihiro-des.*` is BSD-3-Clause
+(Olivier Galibert's MAME `naomigd.cpp` DES routines, ported by Réda
+Chérif-Touil). Each file keeps its original copyright and SPDX header. The
+memory-backed block driver `xemu/block/blkmemory.c` is GPL-2.0-or-later and
+comes from the same lineage (originally espes / IBM). `xemu/xemu-patches/0018-core-chihiro.patch`
+records the changes to the vendored xemu tree.
+
+The Chihiro netboot converter is **not** bundled. Users who have Redump or
+MAME GD-ROM dumps can convert them with the external, MIT-licensed
+`chihiro-netboot` tool (Tovarichtch/chihiro-netboot, based on JayFoxRox's
+Chihiro-Tools). XGrid ships no game keys, GD-ROM data or firmware.
 
 Vendored inside the core additions:
 

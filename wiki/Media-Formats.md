@@ -8,6 +8,7 @@
 | CHD | Yes | Compressed; decoded on demand by `xgridchd`, with the same partition-offset detection. |
 | CCI (`.cci`) | Yes | Cerbios/Repackinator LZ4 image; single or split, decoded on demand by `xgridcci`. |
 | ZArchive (`.zar`) | Entry form or file tree | An `.iso` entry is served directly; a file tree is synthesized into XDVDFS. |
+| Chihiro netboot (`.bin`) | Yes | Raw FATX DIMM image for the Sega Chihiro; not an Xbox disc. |
 | XBE | Inspect only | Not bootable on its own. |
 
 A full Redump image keeps a video partition in front of the game area. It is

@@ -39,6 +39,33 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the disc image inserted at power-on (ISO/XISO or CHD).</summary>
     public string DvdPath { get; init; } = string.Empty;
 
+    /// <summary>Gets the machine: <c>xbox</c> or <c>chihiro</c>.</summary>
+    public string Machine { get; init; } = MachineXbox;
+
+    /// <summary>The Xbox machine key.</summary>
+    public const string MachineXbox = "xbox";
+
+    /// <summary>The Sega Chihiro machine key.</summary>
+    public const string MachineChihiro = "chihiro";
+
+    /// <summary>Gets a value indicating whether this launch boots a Chihiro.</summary>
+    public bool IsChihiro => string.Equals(Machine, MachineChihiro, StringComparison.Ordinal);
+
+    /// <summary>Gets the Chihiro flash ROM image (<c>chihiro_xbox_bios.bin</c>).</summary>
+    public string ChihiroBiosPath { get; init; } = string.Empty;
+
+    /// <summary>Gets the Chihiro media-board flash image.</summary>
+    public string ChihiroMediaboardPath { get; init; } = string.Empty;
+
+    /// <summary>Gets the Chihiro QC EEPROM (<c>ic10_g24lc64.bin</c>).</summary>
+    public string ChihiroIc10Path { get; init; } = string.Empty;
+
+    /// <summary>Gets the Chihiro baseboard EEPROM (<c>ic11_24lc024.bin</c>).</summary>
+    public string ChihiroIc11Path { get; init; } = string.Empty;
+
+    /// <summary>Gets the Chihiro SC EEPROM (<c>pc20_g24lc64.bin</c>).</summary>
+    public string ChihiroPc20Path { get; init; } = string.Empty;
+
     /// <summary>Gets the guest RAM size in megabytes (64 retail, 128 debug kit).</summary>
     public int RamMb { get; init; } = 64;
 
@@ -184,14 +211,33 @@ public sealed record XemuLaunchSettings
     {
         var errors = new List<string>();
         RequireFile(errors, "core executable", CorePath);
-        RequireFile(errors, "MCPX boot ROM", BootRomPath);
-        RequireFile(errors, "flash ROM", FlashRomPath);
-        RequireFile(errors, "EEPROM image", EepromPath);
-        RequireFile(errors, "hard-disk image", HddPath);
-
-        if (!string.IsNullOrWhiteSpace(DvdPath) && !System.IO.File.Exists(DvdPath))
+        if (IsChihiro)
         {
-            errors.Add($"The disc image does not exist: {DvdPath}");
+            RequireFile(errors, "Chihiro BIOS", ChihiroBiosPath);
+            RequireFile(errors, "media-board flash", ChihiroMediaboardPath);
+            RequireFile(errors, "QC EEPROM (ic10)", ChihiroIc10Path);
+            RequireFile(errors, "baseboard EEPROM (ic11)", ChihiroIc11Path);
+            RequireFile(errors, "SC EEPROM (pc20)", ChihiroPc20Path);
+            if (string.IsNullOrWhiteSpace(DvdPath))
+            {
+                errors.Add("The Chihiro netboot image (.bin) is not set.");
+            }
+            else if (!System.IO.File.Exists(DvdPath))
+            {
+                errors.Add($"The Chihiro netboot image does not exist: {DvdPath}");
+            }
+        }
+        else
+        {
+            RequireFile(errors, "MCPX boot ROM", BootRomPath);
+            RequireFile(errors, "flash ROM", FlashRomPath);
+            RequireFile(errors, "EEPROM image", EepromPath);
+            RequireFile(errors, "hard-disk image", HddPath);
+
+            if (!string.IsNullOrWhiteSpace(DvdPath) && !System.IO.File.Exists(DvdPath))
+            {
+                errors.Add($"The disc image does not exist: {DvdPath}");
+            }
         }
 
         if (RamMb is not (64 or 128))

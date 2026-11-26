@@ -6,6 +6,7 @@
   * [Display and filters](Display-and-Filters)
   * [Input](Input)
   * [Audio](Audio)
+  * [Sega Chihiro](Chihiro)
   * [Headless and CLI](Headless)
   * [Logging and diagnostics](Diagnostics)
   * [Donations](Donations)

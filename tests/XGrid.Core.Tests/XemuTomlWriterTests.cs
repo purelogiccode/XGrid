@@ -30,6 +30,30 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Build_WritesTheChihiroMachineAndFirmware()
+    {
+        XemuLaunchSettings settings = CreateSettings(128) with
+        {
+            Machine = XemuLaunchSettings.MachineChihiro,
+            ChihiroBiosPath = "C:\\firmware\\chihiro_xbox_bios.bin",
+            ChihiroMediaboardPath = "C:\\firmware\\fpr21042_m29w160et.bin",
+            ChihiroIc10Path = "C:\\firmware\\ic10_g24lc64.bin",
+            ChihiroIc11Path = "C:\\firmware\\ic11_24lc024.bin",
+            ChihiroPc20Path = "C:\\firmware\\pc20_g24lc64.bin",
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains("default_machine = 'chihiro'", toml, StringComparison.Ordinal);
+        Assert.Contains("[chihiro.roms]", toml, StringComparison.Ordinal);
+        Assert.Contains("bios_path = 'C:\\firmware\\chihiro_xbox_bios.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("mediaboard_path = 'C:\\firmware\\fpr21042_m29w160et.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("ic10_path = 'C:\\firmware\\ic10_g24lc64.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("ic11_path = 'C:\\firmware\\ic11_24lc024.bin'", toml, StringComparison.Ordinal);
+        Assert.Contains("pc20_path = 'C:\\firmware\\pc20_g24lc64.bin'", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_WritesTheScreenshotDirectoryWhenSet()
     {
         XemuLaunchSettings settings = CreateSettings() with

@@ -12,6 +12,7 @@
   - [Display and filters](guides/display.md)
   - [Input](guides/input.md)
   - [Audio](guides/audio.md)
+  - [Sega Chihiro](guides/chihiro.md)
   - [Headless and CLI](guides/headless.md)
   - [Logging and diagnostics](guides/diagnostics.md)
   - [Supporting XGrid](guides/donations.md)

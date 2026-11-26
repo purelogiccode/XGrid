@@ -99,6 +99,9 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets the audio configuration.</summary>
     public AudioSettings Audio { get; set; } = new();
 
+    /// <summary>Gets or sets the Sega Chihiro configuration.</summary>
+    public ChihiroSettings Chihiro { get; set; } = new();
+
     /// <summary>Gets or sets the accent palette key.</summary>
     public string Accent { get; set; } = "Blue";
 
@@ -317,6 +320,7 @@ public sealed class EmulatorSettings
             Input = NullSafe.Value(Input, new InputSettings()).Clone(),
             Graphics = NullSafe.Value(Graphics, new GraphicsSettings()).Clone(),
             Audio = NullSafe.Value(Audio, new AudioSettings()).Clone(),
+            Chihiro = NullSafe.Value(Chihiro, new ChihiroSettings()).Clone(),
             LibraryFolders = [.. NullSafe.Value(LibraryFolders, new List<string>())],
             LibraryGridView = LibraryGridView,
             LibraryIconSize = LibraryIconSize,
@@ -388,6 +392,8 @@ public sealed class EmulatorSettings
         Input.Normalize();
         Graphics.Normalize();
         Audio.Normalize();
+        Chihiro = NullSafe.Value(Chihiro, new ChihiroSettings());
+        Chihiro.Normalize();
         if (string.IsNullOrWhiteSpace(Accent))
         {
             Accent = "Blue";

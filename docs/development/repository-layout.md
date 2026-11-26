@@ -22,6 +22,8 @@ src/
   XGrid.Audio/                managed audio oracle
 xemu/
   xgrid-core/                 XGrid's native additions
+  hw/xbox/chihiro/            Ported Sega Chihiro machine
+  block/blkmemory.c           Chihiro DIMM memory-backed block driver
   xemu-patches/               patch record for upstream edits
   XGrid.Xemu.Tree.csproj      solution anchor for the native build
   dist/                       native build output (git-ignored)

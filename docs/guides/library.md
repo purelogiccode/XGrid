@@ -64,6 +64,7 @@ folder**.
 | `.chd` | Yes | Yes | Compressed disc image, with the same partition-offset detection. |
 | `.cci` | Yes | Yes | Single part or split set; listed once under the base name. |
 | `.zar` | Yes | Yes | Entry form or synthesized file tree. |
+| `.bin` | Yes | Chihiro | Sega Chihiro netboot image; see [Sega Chihiro](chihiro.md). |
 | `.xbe` | Yes | No | Shown for inspection; wrap it in an image to boot. |
 
 The library is capped at 4,096 entries per scan. Split a very large collection

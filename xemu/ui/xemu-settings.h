@@ -70,6 +70,23 @@ static inline void xemu_settings_set_string(const char **str, const char *new_st
     *str = strdup(new_str);
 }
 
+/* Sega Chihiro: the machine asked for on the command line
+ * (-machine ...,chihiro=on|off, see xemu_chihiro_mode_ask), else the loaded
+ * image's. An Xbox disc (XISO) boots an Xbox, any other image boots a
+ * Chihiro; with no image the sys.default_machine setting decides, "auto"
+ * being the machine last booted (sys.last_machine). Decided once, at the
+ * first call. */
+bool xemu_media_is_xbox_disc(const char *path);
+bool xemu_chihiro_mode(void);
+void xemu_chihiro_mode_ask(bool chihiro);
+/* The image the machine booted, kept at the first xemu_chihiro_mode() call.
+ * Load Disc on a Chihiro only sets dvd_path for the next launch. */
+const char *xemu_chihiro_image(void);
+
+/* Debug mode: XEMU_DEBUG_MODE=1 enables the Chihiro log categories and
+ * tracing that are too noisy for normal runs. Read once. */
+bool xemu_debug_mode(void);
+
 void add_net_nat_forward_ports(int host, int guest, CONFIG_NET_NAT_FORWARD_PORTS_PROTOCOL protocol);
 void remove_net_nat_forward_ports(unsigned int index);
 

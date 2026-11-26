@@ -17,5 +17,6 @@ specific_ss.add(files(
 	'xblc.c',
 	'xid-gamepad.c',
 	))
+subdir('chihiro')
 subdir('nv2a')
 subdir('mcpx')

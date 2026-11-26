@@ -10,7 +10,13 @@ the next power-on; the session stop/close choices apply immediately.
 
 - **BIOS image** — required. Retail Xbox BIOS/flash ROM (256 KB or 512 KB).
 - **MCPX boot ROM** — 512-byte `mcpx_1.0.bin`.
-- **EEPROM image** — 256-byte `eeprom.bin`.
+- **EEPROM image** - 256-byte `eeprom.bin`.
+
+**Sega Chihiro**
+
+- **Enable Chihiro** - boot the arcade machine. A `.bin` netboot image also selects it for that launch.
+- **Chihiro firmware folder** - `chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`, `ic10_g24lc64.bin`, `ic11_24lc024.bin`, `pc20_g24lc64.bin`. Empty uses the folder beside the Xbox BIOS.
+- Chihiro runs use 128 MB and no Xbox HDD. See [Sega Chihiro](Chihiro).
 
 **Storage**
 
