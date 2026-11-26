@@ -66,6 +66,12 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the Chihiro SC EEPROM (<c>pc20_g24lc64.bin</c>).</summary>
     public string ChihiroPc20Path { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Gets the optional Chihiro network-board firmware (<c>ver1305.bin</c>).
+    /// Network titles such as MJ2 and MJ3 check its version.
+    /// </summary>
+    public string ChihiroNetFirmwarePath { get; init; } = string.Empty;
+
     /// <summary>Gets the guest RAM size in megabytes (64 retail, 128 debug kit).</summary>
     public int RamMb { get; init; } = 64;
 

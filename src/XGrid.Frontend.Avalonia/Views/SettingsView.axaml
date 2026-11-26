@@ -192,7 +192,7 @@
               <StackPanel Spacing="16">
                 <StackPanel Spacing="3">
                   <TextBlock Text="Sega Chihiro" Classes="h3" />
-                  <TextBlock Text="A Chihiro is an Xbox with a media board and a DIMM. It boots netboot (.bin) images, not Xbox discs. Put chihiro_xbox_bios.bin, fpr21042_m29w160et.bin, ic10_g24lc64.bin, ic11_24lc024.bin and pc20_g24lc64.bin in the folder below."
+                  <TextBlock Text="A Chihiro is an Xbox with a media board and a DIMM. It boots netboot (.bin) images, not Xbox discs. Put chihiro_xbox_bios.bin, fpr21042_m29w160et.bin, ic10_g24lc64.bin, ic11_24lc024.bin and pc20_g24lc64.bin in the folder below; ver1305.bin is optional for network titles."
                              Classes="hint" TextWrapping="Wrap" />
                 </StackPanel>
                 <Border Classes="divider" />

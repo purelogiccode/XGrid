@@ -13,7 +13,9 @@ Put your own dumps in one folder:
 - `ic11_24lc024.bin` (128 bytes)
 - `pc20_g24lc64.bin` (8 KB)
 
-`ver1305.bin` (network firmware) is optional for a single cabinet.
+`ver1305.bin` (1 MiB, network-board firmware) is optional for the gun and
+driving games, but MJ2/MJ3 and OutRun 2 SP check its version. It comes from a
+Chihiro firmware update disc, not the MAME ROM set.
 
 Open **Settings -> System -> Sega Chihiro**, choose the folder, and turn on
 **Enable Chihiro**. A `.bin` launch selects the Chihiro even when the switch is
@@ -86,13 +88,16 @@ shell page to return focus to XGrid.
 
 Boot-tested: Ghost Squad, OutRun 2, The House of the Dead III, Virtua Cop 3,
 Crazy Taxi High Roller, Ollie King and Wangan Midnight Maximum Tune 1/2. The
-MJ2/MJ3 conversions also select their cabinet profiles.
+MJ2/MJ3/MJ3 Evolution conversions boot past the network-firmware check with
+`ver1305.bin` and then wait for their cabinet network.
 
 ## Limits
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
-- Per-game bindings, force feedback, linked cabinets and the second card reader
-  are not exposed by the shell yet.
+- Per-game bindings, force feedback, linked cabinets, the network board and the
+  second card reader are not exposed by the shell yet.
+- MJ2/MJ3/MJ3 Evolution boot to their network startup but need a linked cabinet
+  or server to play.
 - The Chihiro BIOS must be MAME's `chihiro_xbox_bios.bin`; a retail Xbox BIOS
   will not boot it.
 - Shell save-state slots are Xbox-oriented; Chihiro cabinet saves live in the

@@ -34,6 +34,7 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Touch(Path.Combine(_root, "firmware", ChihiroSettings.Ic10FileName));
         Touch(Path.Combine(_root, "firmware", ChihiroSettings.Ic11FileName));
         Touch(Path.Combine(_root, "firmware", ChihiroSettings.Pc20FileName));
+        Touch(Path.Combine(_root, "firmware", ChihiroSettings.NetFirmwareFileName));
         Touch(Path.Combine(_root, "media", "game.iso"));
         Touch(Path.Combine(_root, "media", "other.iso"));
         Touch(Path.Combine(_root, "media", "game.bin"));
@@ -91,6 +92,24 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.Equal(
             Path.Combine(_root, "firmware", ChihiroSettings.MediaboardFileName),
             launch.ChihiroMediaboardPath);
+        Assert.Equal(
+            Path.Combine(_root, "firmware", ChihiroSettings.NetFirmwareFileName),
+            launch.ChihiroNetFirmwarePath);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
+    public void Create_LeavesTheNetworkFirmwareEmptyWhenItIsNotPresent()
+    {
+        EmulatorSettings settings = Settings();
+        string image = Path.Combine(_root, "media", "game.bin");
+        File.Delete(Path.Combine(_root, "firmware", ChihiroSettings.NetFirmwareFileName));
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, image, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.True(launch.IsChihiro);
+        Assert.Equal(string.Empty, launch.ChihiroNetFirmwarePath);
         Assert.Empty(launch.Validate());
     }
 

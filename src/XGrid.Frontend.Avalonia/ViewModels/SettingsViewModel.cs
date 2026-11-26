@@ -700,12 +700,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     {
         get
         {
-            string directory = ChihiroFirmwareDirectory.Trim();
-            if (directory.Length == 0 && BiosPath.Length > 0)
-            {
-                directory = Path.GetDirectoryName(BiosPath) ?? string.Empty;
-            }
-
+            string directory = ChihiroFirmwareFolder;
             return directory.Length > 0
                    && File.Exists(Path.Combine(directory, ChihiroSettings.BiosFileName))
                    && File.Exists(Path.Combine(directory, ChihiroSettings.MediaboardFileName))
@@ -715,13 +710,39 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
     }
 
+    private string ChihiroFirmwareFolder
+    {
+        get
+        {
+            string directory = ChihiroFirmwareDirectory.Trim();
+            if (directory.Length == 0 && BiosPath.Length > 0)
+            {
+                directory = Path.GetDirectoryName(BiosPath) ?? string.Empty;
+            }
+
+            return directory;
+        }
+    }
+
+    private bool ChihiroNetworkFirmwarePresent
+    {
+        get
+        {
+            string directory = ChihiroFirmwareFolder;
+            return directory.Length > 0
+                   && File.Exists(Path.Combine(directory, ChihiroSettings.NetFirmwareFileName));
+        }
+    }
+
     /// <summary>Gets the Chihiro firmware status label.</summary>
     public string ChihiroStatusText =>
         !ChihiroEnabled
             ? "Off. A .bin netboot image enables the Chihiro for that launch."
-            : ChihiroReady
-                ? "Chihiro firmware found."
-                : "Chihiro firmware is incomplete; choose the folder with chihiro_xbox_bios.bin and the media-board files.";
+            : !ChihiroReady
+                ? "Chihiro firmware is incomplete; choose the folder with chihiro_xbox_bios.bin and the media-board files."
+                : ChihiroNetworkFirmwarePresent
+                    ? "Chihiro firmware and network firmware found."
+                    : "Chihiro firmware found. Add ver1305.bin for MJ2, MJ3 and other network titles.";
 
     /// <summary>Gets the settings storage folder.</summary>
     public string SettingsFolder => Path.GetDirectoryName(Shell.SettingsPath) ?? string.Empty;

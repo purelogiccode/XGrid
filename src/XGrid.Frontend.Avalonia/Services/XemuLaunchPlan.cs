@@ -76,6 +76,9 @@ public static class XemuLaunchPlan
             ChihiroPc20Path = chihiro
                 ? ResolveChihiro(chihiroDirectory, ChihiroSettings.Pc20FileName, firmwareDirectory)
                 : string.Empty,
+            ChihiroNetFirmwarePath = chihiro
+                ? ResolveChihiroOptional(chihiroDirectory, ChihiroSettings.NetFirmwareFileName, firmwareDirectory)
+                : string.Empty,
             RamMb = chihiro ? 128 : settings.RamMb,
             // The display control publishes 1x1 before its first layout pass.
             WindowWidth = Math.Max(64, width),
@@ -188,6 +191,12 @@ public static class XemuLaunchPlan
     {
         string resolved = string.IsNullOrWhiteSpace(directory) ? firmwareDirectory ?? string.Empty : directory;
         return string.IsNullOrWhiteSpace(resolved) ? string.Empty : Path.Combine(resolved, fileName);
+    }
+
+    private static string ResolveChihiroOptional(string directory, string fileName, string? firmwareDirectory)
+    {
+        string path = ResolveChihiro(directory, fileName, firmwareDirectory);
+        return File.Exists(path) ? path : string.Empty;
     }
 
     private static string Resolve(string configured, string? firmwareDirectory, string fileName)
