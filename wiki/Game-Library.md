@@ -81,9 +81,9 @@ The optional R2 catalog uses the same content-addressed layout as 5DO:
 https://assets.purelogiccode.com/xgrid/v1/catalog.json
 ```
 
-This is the planned default endpoint. Until the Xbox catalog is published there,
-the request fails gracefully and local covers keep working; a self-hosted or
-`file://` catalog works in the meantime.
+This is the live default endpoint. The 2026-11-26 pack contains 1,632
+deduplicated covers. If the catalog is unavailable, local covers keep working;
+a self-hosted or `file://` catalog works instead.
 
 XGrid caches the catalog and images under `<data>/covers-cache/`, revalidates
 with `If-None-Match`, verifies every image by SHA-256, and downloads only covers
