@@ -48,6 +48,11 @@ public sealed class SettingsStoreTests : IDisposable
             DonationEmail = " donor@example.com ",
             HasDonated = true,
             DonationLastCheckedUtc = new DateTime(2026, 11, 24, 12, 0, 0, DateTimeKind.Utc),
+            PowerOnAtStartup = true,
+            StayOpenAfterPowerOff = false,
+            SaveStateOnExit = true,
+            ResumeStateOnStart = true,
+            ShowPoweredOffScreen = false,
         };
 
         store.Save(settings);
@@ -60,6 +65,11 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal("donor@example.com", loaded.DonationEmail);
         Assert.True(loaded.HasDonated);
         Assert.Equal(settings.DonationLastCheckedUtc, loaded.DonationLastCheckedUtc);
+        Assert.True(loaded.PowerOnAtStartup);
+        Assert.False(loaded.StayOpenAfterPowerOff);
+        Assert.True(loaded.SaveStateOnExit);
+        Assert.True(loaded.ResumeStateOnStart);
+        Assert.False(loaded.ShowPoweredOffScreen);
     }
 
     [Fact]

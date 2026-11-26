@@ -58,6 +58,20 @@ The archive may be corrupt or contain a name XDVDFS cannot store (Latin-1, up to
 42 characters, no separators). Both entry-form and file-tree archives are
 supported; read the core message in **Activity**.
 
+### Does XGrid stay open when the console powers off?
+
+Yes, by default. **Settings → System → Session → Keep XGrid open after power
+off** leaves the shell on the powered-off screen. Turn it off to close XGrid
+after a normal shutdown; a core fault stays open so the error is visible.
+
+### Can XGrid resume where I left off?
+
+Yes, with in-process hosting. Enable **Save state before power off** and
+**Resume the saved session** under **Settings → System → Session**. XGrid writes
+`xgrid-session` and restores it when the Power button starts the dashboard.
+Launching a game from the Library starts it fresh. The console boots for about
+12 seconds before the saved state is restored.
+
 ### Do save states work in separate process?
 
 No. Use in-process hosting.

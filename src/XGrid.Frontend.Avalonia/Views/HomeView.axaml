@@ -39,6 +39,47 @@
             MinHeight="320"
             ToolTip.Tip="The emulated console's picture">
       <Grid>
+        <!-- Powered-off state. The core owns the picture while running, so this
+             panel is only shown when no core window covers it. -->
+        <Grid IsVisible="{Binding Shell.ShowPoweredOffPanel}">
+          <StackPanel HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Spacing="12"
+                      MaxWidth="420">
+            <Image Source="/Assets/xgrid-icon.png"
+                   Width="176"
+                   Height="176"
+                   Stretch="Uniform"
+                   Opacity="0.18"
+                   HorizontalAlignment="Center"
+                   ToolTip.Tip="XGrid" />
+            <TextBlock Text="Console powered off"
+                       Classes="sectionTitle"
+                       FontSize="20"
+                       TextAlignment="Center"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="Press Power or F5 to start the Xbox dashboard."
+                       Classes="muted"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       HorizontalAlignment="Center" />
+            <Button Classes="accent"
+                    Command="{Binding TogglePowerCommand}"
+                    HorizontalAlignment="Center"
+                    ToolTip.Tip="Power on the console (F5)">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Power}"
+                          Width="14"
+                          Height="14"
+                          Foreground="{DynamicResource XgAccentTextBrush}" />
+                <TextBlock Text="Power on"
+                           Foreground="{DynamicResource XgAccentTextBrush}"
+                           FontWeight="SemiBold" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+
         <!-- The core's own swapchain paints into this native child. Avalonia
              never copies, filters, overlays or redraws a frame. -->
         <Grid x:Name="CoreDisplayContainer"
@@ -47,7 +88,7 @@
         <StackPanel HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Spacing="8"
-                    IsVisible="{Binding !Shell.IsEmbeddedDisplaySupported}">
+                    IsVisible="{Binding Shell.ShowExternalDisplayHint}">
           <TextBlock Text="The emulator window is open outside XGrid on this platform."
                      Classes="muted"
                      TextAlignment="Center"

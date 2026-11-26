@@ -48,6 +48,36 @@ public sealed class EmulatorSettings
     public bool ShowFpsOverlay { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the console powers on when the
+    /// shell opens. A command-line autostart still wins.
+    /// </summary>
+    public bool PowerOnAtStartup { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the shell stays open after the
+    /// console powers off. False closes the window after a normal shutdown.
+    /// </summary>
+    public bool StayOpenAfterPowerOff { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether powering off or closing the shell
+    /// saves a session snapshot before the core stops.
+    /// </summary>
+    public bool SaveStateOnExit { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether powering on from the Power button
+    /// restores the session snapshot written by <see cref="SaveStateOnExit"/>.
+    /// </summary>
+    public bool ResumeStateOnStart { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the console page shows the
+    /// powered-off screen. False leaves a plain black picture area.
+    /// </summary>
+    public bool ShowPoweredOffScreen { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the core hosting mode: <c>in-process</c> (experimental;
     /// the shell loads the core library) or <c>process</c> (the core runs
     /// beside the shell, the stable default).
@@ -277,6 +307,11 @@ public sealed class EmulatorSettings
             Accent = Accent,
             XemuCorePath = XemuCorePath,
             ShowFpsOverlay = ShowFpsOverlay,
+            PowerOnAtStartup = PowerOnAtStartup,
+            StayOpenAfterPowerOff = StayOpenAfterPowerOff,
+            SaveStateOnExit = SaveStateOnExit,
+            ResumeStateOnStart = ResumeStateOnStart,
+            ShowPoweredOffScreen = ShowPoweredOffScreen,
             CoreHosting = CoreHosting,
             Filter = Filter,
             Input = NullSafe.Value(Input, new InputSettings()).Clone(),

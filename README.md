@@ -47,7 +47,11 @@ and packaging.
 - **No conversion for retail ISOs.** Optimized XISOs and full Redump images both
   boot directly; `xgridiso` finds the XGD game partition and maps it to LBA 0.
 - **Save states that belong to the machine.** Four QEMU/xemu snapshot slots,
-  saved through the in-process core ABI.
+  saved through the in-process core ABI, plus an optional automatic session
+  snapshot that resumes from the Power button.
+- **A powered-off shell.** Keep XGrid open after shutdown, show a console-off
+  screen, power on automatically at launch and optionally resume the last
+  session.
 - **Display your way.** Shell frame sink with nearest, bilinear, scanline and CRT
   filters, an optional FPS overlay, or the core's own embedded window.
 - **Input your way.** Keyboard and XInput mapping, dead zones, trigger threshold,
@@ -65,7 +69,7 @@ and packaging.
 | **Display** | Shell frame sink or embedded core window (in-process or separate); filters, resolution scale, aspect/fit, fullscreen, optional FPS overlay |
 | **Audio** | Core APU/DSP, Auto/DirectSound/None/WAV capture, HRTF, volume limit |
 | **Input** | Player-1 keyboard and XInput, remapping, dead zones, trigger threshold |
-| **Quality of life** | Four save-state slots, multiple library roots, recently played list, per-title overrides, screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
+| **Quality of life** | Four save-state slots, automatic session save/resume, powered-off screen, multiple library roots, recently played list, per-title overrides, screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Platform** | Windows 10/11 x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell (bring your own core) |
 

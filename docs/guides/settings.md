@@ -1,8 +1,9 @@
 # Settings
 
 The Settings page is a draft editor: change values, then click **Save settings**
-(or press **Ctrl+S** while the page is open). Most changes take effect on the
-next power-on because the core is launched with a generated configuration.
+(or press **Ctrl+S** while the page is open). The startup and emulator settings
+take effect on the next power-on; the session stop/close choices apply
+immediately.
 
 Every control on every page has a tooltip. Hover a button, path box, slider,
 toggle or tab header to read what it does before changing it.
@@ -24,7 +25,21 @@ XGrid ships no firmware. Configure these from files you own.
 | Setting | Meaning |
 | --- | --- |
 | **Hard-disk image** | Xbox HDD image, raw or qcow2. Boots the dashboard when no disc is inserted. |
-| **Default disc image** | Inserted when the console powers on without a selected game. ISO, CHD or ZAR. |
+| **Default disc image** | Inserted when the console powers on without a selected game. ISO, CHD, CCI or ZAR. |
+
+### Session
+
+| Setting | Meaning |
+| --- | --- |
+| **Power on when XGrid starts** | Boots the configured disc or the dashboard as soon as the window opens. A first run still asks for firmware first; a command-line autostart wins. |
+| **Keep XGrid open after power off** | Leaves the shell on the powered-off screen after a normal console shutdown. Turn off to close XGrid after power off. A faulted core stays open so the error is visible. |
+| **Show the powered-off screen** | Shows the XGrid logo and a power hint while the console is off. Turn off for a plain black picture area. |
+| **Save state before power off** | Writes the automatic `xgrid-session` snapshot before a Power off, Stop or window close. Needs in-process core hosting. |
+| **Resume the saved session** | Restores that snapshot when the Power button starts the dashboard. Launching a game from the Library starts it fresh. |
+
+The stop/close choices apply immediately. The startup choice applies on the next
+XGrid launch. See [Save states](save-states.md#automatic-session-state) for the
+snapshot rules.
 
 ### Emulator
 

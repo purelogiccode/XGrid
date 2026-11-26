@@ -371,7 +371,7 @@ public sealed class LibraryFolderItem
     public IRelayCommand RemoveCommand { get; }
 }
 
-/// <summary>Settings page: firmware, storage, xemu core options, appearance, and library.</summary>
+/// <summary>Settings page: firmware, storage, session, xemu core options, appearance, and library.</summary>
 public sealed partial class SettingsViewModel : PageViewModel
 {
     [ObservableProperty]
@@ -394,6 +394,21 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     [ObservableProperty]
     private KeyedOption? _selectedCoreHosting;
+
+    [ObservableProperty]
+    private bool _powerOnAtStartup;
+
+    [ObservableProperty]
+    private bool _stayOpenAfterPowerOff = true;
+
+    [ObservableProperty]
+    private bool _saveStateOnExit;
+
+    [ObservableProperty]
+    private bool _resumeStateOnStart;
+
+    [ObservableProperty]
+    private bool _showPoweredOffScreen = true;
 
     [ObservableProperty]
     private KeyedOption? _selectedFilter;
@@ -702,6 +717,11 @@ public sealed partial class SettingsViewModel : PageViewModel
         SelectedCoreHosting = CoreHostingOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.CoreHosting, StringComparison.Ordinal))
             ?? CoreHostingOptions[0];
+        PowerOnAtStartup = settings.PowerOnAtStartup;
+        StayOpenAfterPowerOff = settings.StayOpenAfterPowerOff;
+        SaveStateOnExit = settings.SaveStateOnExit;
+        ResumeStateOnStart = settings.ResumeStateOnStart;
+        ShowPoweredOffScreen = settings.ShowPoweredOffScreen;
         SelectedFilter = FilterOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Filter, StringComparison.Ordinal))
             ?? FilterOptions[0];
@@ -763,6 +783,11 @@ public sealed partial class SettingsViewModel : PageViewModel
             Audio = BuildAudioSettings(),
             XemuCorePath = XemuCorePath.Trim(),
             CoreHosting = SelectedCoreHosting?.Key ?? EmulatorSettings.CoreHostingInProcess,
+            PowerOnAtStartup = PowerOnAtStartup,
+            StayOpenAfterPowerOff = StayOpenAfterPowerOff,
+            SaveStateOnExit = SaveStateOnExit,
+            ResumeStateOnStart = ResumeStateOnStart,
+            ShowPoweredOffScreen = ShowPoweredOffScreen,
             Filter = SelectedFilter?.Key ?? XemuPresentationFilter.Nearest,
             Accent = SelectedAccent?.Key ?? "Emerald",
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],

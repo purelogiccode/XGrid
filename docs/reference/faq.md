@@ -94,6 +94,23 @@ Yes. Open the first part (`game.1.cci`); the core discovers `game.2.cci` and
 the later parts and stitches them at sector granularity. The library lists the
 set once under `game`.
 
+## Does XGrid stay open when the console powers off?
+
+Yes, by default. **Settings → System → Session → Keep XGrid open after power
+off** leaves the shell on the powered-off screen. Turn it off to close XGrid
+after a normal shutdown; a core fault always stays open so the error is visible.
+
+## Can XGrid resume where I left off?
+
+Yes, with in-process core hosting. Enable **Save state before power off** and
+**Resume the saved session** under **Settings → System → Session**. XGrid writes
+an automatic `xgrid-session` snapshot and restores it when the Power button
+starts the dashboard. Launching a game from the Library starts it fresh.
+
+The console finishes its early boot first, so the dashboard or game may appear
+for about 12 seconds before the saved state is restored. See
+[Save states](../guides/save-states.md#automatic-session-state).
+
 ## Do save states work in the separate process?
 
 No. They require the in-process core ABI. Switch **Core hosting** to **In-process
