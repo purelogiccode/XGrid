@@ -34,8 +34,10 @@ QEMU thread stack size and the xemu run entry point), the shell-pad binding in
 `ui/xemu-input.c` that gives players 2-4 a controller to feed, the core-side
 presentation filter/overlay in `ui/xui/gl-helpers.cc` and `ui/xui/main.cc`
 (`0010-ui-presentation-filter-overlay.patch`), the exit-time GL guard in the
-Windows DXGI presenter (`0011-ui-dxgi-exit-cleanup.patch`), and the guest-clock
-part of fast-forward (`0012-ui-fast-forward-clock.patch`).
+Windows DXGI presenter (`0011-ui-dxgi-exit-cleanup.patch`), the WGL interop
+attachment fix that keeps native flip presentation active on NVIDIA drivers
+(`0015-ui-dxgi-interop-presentation.patch`), and the guest-clock part of
+fast-forward (`0012-ui-fast-forward-clock.patch`).
 
 A new xemu release is handled by rebasing the patch set and the `xgrid-core/`
 additions, not by re-porting the emulator.

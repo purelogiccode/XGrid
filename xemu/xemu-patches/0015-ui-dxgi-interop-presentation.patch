@@ -1,0 +1,124 @@
+diff --git a/xemu/ui/xui/win32-dxgi-present.cc b/xemu/ui/xui/win32-dxgi-present.cc
+index d7f99109..df6139be 100644
+--- a/xemu/ui/xui/win32-dxgi-present.cc
++++ b/xemu/ui/xui/win32-dxgi-present.cc
+@@ -138,7 +138,7 @@ private:
+     GLuint m_render_tex = 0;
+     GLuint m_render_fbo = 0;
+ 
+-    GLuint m_interop_tex = 0;
++    GLuint m_interop_rbo = 0;
+     GLuint m_interop_fbo = 0;
+ 
+     pfn_wgl_dx_open_device_nv m_wgl_dx_open_device_nv = nullptr;
+@@ -185,7 +185,7 @@ void Win32DxgiPresenter::ReleaseSharedResources()
+         m_render_fbo = 0;
+         m_render_tex = 0;
+         m_interop_fbo = 0;
+-        m_interop_tex = 0;
++        m_interop_rbo = 0;
+         m_wgl_object = nullptr;
+         m_shared_texture.Reset();
+         return;
+@@ -212,9 +212,9 @@ void Win32DxgiPresenter::ReleaseSharedResources()
+         m_wgl_object = nullptr;
+     }
+ 
+-    if (m_interop_tex) {
+-        glDeleteTextures(1, &m_interop_tex);
+-        m_interop_tex = 0;
++    if (m_interop_rbo) {
++        glDeleteRenderbuffers(1, &m_interop_rbo);
++        m_interop_rbo = 0;
+     }
+ 
+     m_shared_texture.Reset();
+@@ -237,19 +237,24 @@ bool Win32DxgiPresenter::CreateSharedResources(int width, int height)
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+     };
+ 
+-    auto create_fbo = [this, width, height](GLuint &fbo,
+-                                            GLuint framebuffer_tex) {
++    auto create_fbo = [width, height](GLuint &fbo, GLuint attachment,
++                                      GLenum attachment_target,
++                                      const char *tag) {
+         glGenFramebuffers(1, &fbo);
+         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+-                               GL_TEXTURE_2D, framebuffer_tex, 0);
++        if (attachment_target == GL_RENDERBUFFER) {
++            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                                      attachment_target, attachment);
++        } else {
++            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                                   attachment_target, attachment, 0);
++        }
+         GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+         if (status != GL_FRAMEBUFFER_COMPLETE) {
+             fprintf(stderr,
+-                    "win32_dxgi_present: FBO incomplete (status=0x%X, "
++                    "win32_dxgi_present: %s FBO incomplete (status=0x%X, "
+                     "GLError=%u, w=%d, h=%d)\n",
+-                    status, glGetError(), width, height);
+-            ReleaseSharedResources();
++                    tag, status, glGetError(), width, height);
+             return false;
+         }
+ 
+@@ -261,7 +266,8 @@ bool Win32DxgiPresenter::CreateSharedResources(int width, int height)
+                  GL_UNSIGNED_BYTE, nullptr);
+     glBindTexture(GL_TEXTURE_2D, 0);
+ 
+-    if (!create_fbo(m_render_fbo, m_render_tex)) {
++    if (!create_fbo(m_render_fbo, m_render_tex, GL_TEXTURE_2D, "render")) {
++        ReleaseSharedResources();
+         return false;
+     }
+ 
+@@ -287,11 +293,14 @@ bool Win32DxgiPresenter::CreateSharedResources(int width, int height)
+         return false;
+     }
+ 
+-    create_texture(m_interop_tex);
+-    glBindTexture(GL_TEXTURE_2D, 0);
++    /* NVIDIA's interop2 sample registers the D3D11 render target as a
++     * renderbuffer: newer drivers reject an interop texture as an FBO
++     * attachment with GL_FRAMEBUFFER_UNSUPPORTED. The object must also be
++     * locked while the attachment is validated. */
++    glGenRenderbuffers(1, &m_interop_rbo);
+ 
+     m_wgl_object = m_wgl_dx_register_object_nv(
+-        m_wgl_device, m_shared_texture.Get(), m_interop_tex, GL_TEXTURE_2D,
++        m_wgl_device, m_shared_texture.Get(), m_interop_rbo, GL_RENDERBUFFER,
+         WGL_ACCESS_READ_WRITE_NV);
+     if (!m_wgl_object) {
+         fprintf(stderr,
+@@ -302,7 +311,19 @@ bool Win32DxgiPresenter::CreateSharedResources(int width, int height)
+         return false;
+     }
+ 
+-    if (!create_fbo(m_interop_fbo, m_interop_tex)) {
++    if (!m_wgl_dx_lock_objects_nv(m_wgl_device, 1, &m_wgl_object)) {
++        fprintf(
++            stderr,
++            "win32_dxgi_present: wglDXLockObjectsNV failed (WinError=0x%X)\n",
++            static_cast<unsigned int>(GetLastError()));
++        ReleaseSharedResources();
++        return false;
++    }
++    bool fbo_ok =
++        create_fbo(m_interop_fbo, m_interop_rbo, GL_RENDERBUFFER, "interop");
++    m_wgl_dx_unlock_objects_nv(m_wgl_device, 1, &m_wgl_object);
++    if (!fbo_ok) {
++        ReleaseSharedResources();
+         return false;
+     }
+     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+@@ -599,7 +620,6 @@ void Win32DxgiPresenter::EndFrame(bool vsync)
+         Cleanup();
+         return;
+     }
+-    m_wgl_dx_lock_objects_nv(m_wgl_device, 1, &m_wgl_object);
+ 
+     // Blit from render FBO to interop FBO with vertical flip to convert OpenGL
+     // (Y-up) to D3D11 (Y-down)
