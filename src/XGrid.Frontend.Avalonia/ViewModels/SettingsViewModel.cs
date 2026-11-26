@@ -687,6 +687,45 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the selectable AV packs.</summary>
     public IReadOnlyList<KeyedOption> AvPackOptions { get; }
 
+    /// <summary>Gets the selectable Chihiro regions.</summary>
+    public IReadOnlyList<KeyedOption> ChihiroRegionOptions { get; } =
+    [
+        new KeyedOption("auto", "Auto"),
+        new KeyedOption("jp", "Japan"),
+        new KeyedOption("us", "USA"),
+        new KeyedOption("ex", "Export"),
+    ];
+
+    /// <summary>Gets the selectable Chihiro DIMM sizes.</summary>
+    public IReadOnlyList<KeyedOption> ChihiroDimmOptions { get; } =
+    [
+        new KeyedOption("auto", "Auto"),
+        new KeyedOption("128", "128 MB"),
+        new KeyedOption("256", "256 MB"),
+        new KeyedOption("512", "512 MB"),
+        new KeyedOption("1024", "1024 MB"),
+    ];
+
+    /// <summary>Gets the selectable Chihiro media-board types.</summary>
+    public IReadOnlyList<KeyedOption> ChihiroBoardTypeOptions { get; } =
+    [
+        new KeyedOption("auto", "Auto"),
+        new KeyedOption("type1", "Type 1"),
+        new KeyedOption("type3", "Type 3"),
+    ];
+
+    [ObservableProperty]
+    private bool _chihiroFreePlay;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedChihiroRegion;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedChihiroDimm;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedChihiroBoardType;
+
     /// <summary>Gets the selectable audio backends reported by the core.</summary>
     public IReadOnlyList<KeyedOption> AudioBackendOptions
     {
@@ -887,6 +926,16 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroLinkPort = link.Port;
         _chihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone();
         RebuildChihiroBindings();
+        ChihiroFreePlay = settings.Chihiro.FreePlay;
+        SelectedChihiroRegion = ChihiroRegionOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Chihiro.Region, StringComparison.Ordinal))
+            ?? ChihiroRegionOptions.First(option => string.Equals(option.Key, "ex", StringComparison.Ordinal));
+        SelectedChihiroDimm = ChihiroDimmOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Chihiro.DimmSize, StringComparison.Ordinal))
+            ?? ChihiroDimmOptions[0];
+        SelectedChihiroBoardType = ChihiroBoardTypeOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Chihiro.BoardType, StringComparison.Ordinal))
+            ?? ChihiroBoardTypeOptions[0];
         RamMb = settings.RamMb;
         LoadInput(settings.Input);
 
@@ -1008,6 +1057,10 @@ public sealed partial class SettingsViewModel : PageViewModel
                     Port = ChihiroLinkPort,
                 },
                 Jvs = _chihiroJvs.Clone(),
+                FreePlay = ChihiroFreePlay,
+                Region = SelectedChihiroRegion?.Key ?? "ex",
+                DimmSize = SelectedChihiroDimm?.Key ?? "auto",
+                BoardType = SelectedChihiroBoardType?.Key ?? "auto",
             },
             RamMb = RamMb,
             Input = BuildInputSettings(),

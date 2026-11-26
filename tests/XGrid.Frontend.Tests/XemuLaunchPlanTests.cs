@@ -156,6 +156,26 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_CopiesTheCabinetSettings()
+    {
+        EmulatorSettings settings = Settings();
+        settings.Chihiro.FreePlay = true;
+        settings.Chihiro.Region = "jp";
+        settings.Chihiro.DimmSize = "512";
+        settings.Chihiro.BoardType = "type3";
+        string image = Path.Combine(_root, "media", "game.bin");
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, image, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.True(launch.ChihiroFreePlay);
+        Assert.Equal("jp", launch.ChihiroRegion);
+        Assert.Equal("512", launch.ChihiroDimmSize);
+        Assert.Equal("type3", launch.ChihiroBoardType);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
     public void DescribeProblem_ReportsMissingChihiroFirmware()
     {
         string directory = Path.Combine(_root, "empty-chihiro");

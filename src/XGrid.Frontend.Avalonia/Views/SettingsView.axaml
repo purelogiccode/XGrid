@@ -228,6 +228,61 @@
                   </Grid>
                   <TextBlock Text="{Binding ChihiroStatusText}" Classes="hint" TextWrapping="Wrap" />
                 </StackPanel>
+
+                <Border Classes="divider" />
+
+                <StackPanel Spacing="10">
+                  <TextBlock Text="Cabinet" Classes="label" />
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Free play" Classes="label" />
+                      <TextBlock Text="Start begins a game without inserting a coin." Classes="hint" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroFreePlay, Mode=TwoWay}"
+                                  OnContent="" OffContent="" VerticalAlignment="Center"
+                                  ToolTip.Tip="Run the cabinet on free play" />
+                  </Grid>
+                  <Grid ColumnDefinitions="170,*" ColumnSpacing="10">
+                    <TextBlock Text="Region" Classes="label" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding ChihiroRegionOptions}"
+                              SelectedItem="{Binding SelectedChihiroRegion, Mode=TwoWay}"
+                              ToolTip.Tip="A game that stops with Error 05 may need another region">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="vm:KeyedOption">
+                          <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </Grid>
+                  <Grid ColumnDefinitions="170,*" ColumnSpacing="10">
+                    <TextBlock Text="DIMM size" Classes="label" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding ChihiroDimmOptions}"
+                              SelectedItem="{Binding SelectedChihiroDimm, Mode=TwoWay}"
+                              ToolTip.Tip="Auto follows the cabinet; Gundam needs 1024 MB">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="vm:KeyedOption">
+                          <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </Grid>
+                  <Grid ColumnDefinitions="170,*" ColumnSpacing="10">
+                    <TextBlock Text="Media board" Classes="label" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding ChihiroBoardTypeOptions}"
+                              SelectedItem="{Binding SelectedChihiroBoardType, Mode=TwoWay}"
+                              ToolTip.Tip="Auto follows the cabinet table; early titles may prefer Type 1">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="vm:KeyedOption">
+                          <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </Grid>
+                </StackPanel>
+
                 <StackPanel Spacing="7">
                   <StackPanel Spacing="2">
                     <TextBlock Text="Netboot image from a Chihiro game" Classes="label" />

@@ -84,6 +84,10 @@ public static class XemuLaunchPlan
             ChihiroSnapshotStorePath = chihiro
                 ? Path.Combine(workingDirectory, "chihiro_snapshots.qcow2")
                 : string.Empty,
+            ChihiroFreePlay = settings.Chihiro.FreePlay,
+            ChihiroRegion = settings.Chihiro.Region,
+            ChihiroDimmSize = settings.Chihiro.DimmSize,
+            ChihiroBoardType = settings.Chihiro.BoardType,
             ChihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone(),
             ChihiroLinkEnabled = chihiro && link.Enabled,
             ChihiroLinkCabinets = link.Cabinets,

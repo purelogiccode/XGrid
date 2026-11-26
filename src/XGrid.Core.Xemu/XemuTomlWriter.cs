@@ -150,6 +150,13 @@ public static class XemuTomlWriter
             AppendInt(text, "body_button", jvs.GsBody);
             AppendInt(text, "change", jvs.GsChange);
 
+            text.Append('\n');
+            text.Append("[chihiro.settings]\n");
+            text.Append("freeplay = ").Append(Bool(settings.ChihiroFreePlay)).Append('\n');
+            text.Append("region = '").Append(settings.ChihiroRegion).Append("'\n");
+            text.Append("dimm_size = '").Append(settings.ChihiroDimmSize).Append("'\n");
+            text.Append("board_type = '").Append(settings.ChihiroBoardType).Append("'\n");
+
             if (settings.ChihiroLinkEnabled)
             {
                 text.Append('\n');
