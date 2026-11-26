@@ -72,9 +72,40 @@ an external MIT-licensed tool based on JayFoxRox's Chihiro-Tools:
 3. Put the `output/<game>.bin` file in an XGrid library folder.
 4. Launch the `.bin` from **Library**.
 
+For example, with the Redump cue/bin set extracted beside the key:
+
+```text
+python chihiro-netboot.py "House of the Dead 3, The (World).cue" hotd3.zip -o output
+```
+
+The small key sets used by this collection are `hotd3.zip`, `outr2.zip`,
+`vcop3.zip`, `ghostsqu.zip`, `crtaxihr.zip`, `wangmid.zip`, `wangmid2.zip`,
+`ollie.zip`, `mj2.zip`, `mj3.zip` and `mj3evo.zip`. The output is named after
+the key set (`hotd3.bin`, `outr2.bin`, ...); rename it for the Library if you
+like.
+
 XGrid does not bundle the converter, game keys, firmware, GD-ROM data or game
 images. The converter produces a decrypted FATX image; without the matching
 key it cannot make a bootable image.
+
+## Titles
+
+The cabinet table covers the main Chihiro releases:
+
+| Title | Boot-tested |
+| --- | --- |
+| Ghost Squad | Yes |
+| OutRun 2 | Yes |
+| The House of the Dead III | Yes |
+| Virtua Cop 3 | Yes |
+| Crazy Taxi High Roller | Yes |
+| Ollie King | Yes |
+| Wangan Midnight Maximum Tune | Yes |
+| Wangan Midnight Maximum Tune 2 | Yes |
+| Sega Network Taisen Mahjong MJ2 / MJ3 / MJ3 Evolution | Converted; the static cabinet profile is selected |
+
+The test means SEGABOOT reached the game and the cabinet profile was selected;
+it is not a promise for every scene or network mode.
 
 ## Controls
 
