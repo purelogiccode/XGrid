@@ -271,7 +271,8 @@ Card files**:
 An empty slot creates a blank card in the core's `cards` folder the first time
 a game asks for one. Choose a `.bin` card to keep a specific card; the game
 writes its progress back to that file. **Card readers** turns both readers off
-for games that should not see them.
+for games that should not see them. **Open cards folder** opens the folder
+where the core creates blank cards.
 
 ## Force feedback
 
