@@ -390,6 +390,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private string _dvdPath = string.Empty;
 
     [ObservableProperty]
+    private bool _chihiroEnabled;
+
+    [ObservableProperty]
+    private string _chihiroFirmwareDirectory = string.Empty;
+
+    [ObservableProperty]
     private int _ramMb = 64;
 
     [ObservableProperty]
@@ -682,6 +688,34 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets a value indicating whether the BIOS warning should be shown.</summary>
     public bool ShowBiosWarning => !BiosPathValid;
 
+    /// <summary>Gets a value indicating whether the Chihiro firmware set is complete.</summary>
+    public bool ChihiroReady
+    {
+        get
+        {
+            string directory = ChihiroFirmwareDirectory.Trim();
+            if (directory.Length == 0 && BiosPath.Length > 0)
+            {
+                directory = Path.GetDirectoryName(BiosPath) ?? string.Empty;
+            }
+
+            return directory.Length > 0
+                   && File.Exists(Path.Combine(directory, ChihiroSettings.BiosFileName))
+                   && File.Exists(Path.Combine(directory, ChihiroSettings.MediaboardFileName))
+                   && File.Exists(Path.Combine(directory, ChihiroSettings.Ic10FileName))
+                   && File.Exists(Path.Combine(directory, ChihiroSettings.Ic11FileName))
+                   && File.Exists(Path.Combine(directory, ChihiroSettings.Pc20FileName));
+        }
+    }
+
+    /// <summary>Gets the Chihiro firmware status label.</summary>
+    public string ChihiroStatusText =>
+        !ChihiroEnabled
+            ? "Off. A .bin netboot image enables the Chihiro for that launch."
+            : ChihiroReady
+                ? "Chihiro firmware found."
+                : "Chihiro firmware is incomplete; choose the folder with chihiro_xbox_bios.bin and the media-board files.";
+
     /// <summary>Gets the settings storage folder.</summary>
     public string SettingsFolder => Path.GetDirectoryName(Shell.SettingsPath) ?? string.Empty;
 
@@ -697,6 +731,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         EepromPath = settings.EepromPath;
         HddPath = settings.HddPath;
         DvdPath = settings.DvdPath;
+        ChihiroEnabled = settings.Chihiro.Enabled;
+        ChihiroFirmwareDirectory = settings.Chihiro.FirmwareDirectory;
         RamMb = settings.RamMb;
         LoadInput(settings.Input);
 
@@ -790,6 +826,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         OnPropertyChanged(nameof(BiosStatusText));
         OnPropertyChanged(nameof(BiosPathValid));
         OnPropertyChanged(nameof(ShowBiosWarning));
+        OnPropertyChanged(nameof(ChihiroReady));
+        OnPropertyChanged(nameof(ChihiroStatusText));
     }
 
     /// <summary>Public command: saves the draft to disk and applies it.</summary>
@@ -803,6 +841,11 @@ public sealed partial class SettingsViewModel : PageViewModel
             EepromPath = EepromPath.Trim(),
             HddPath = HddPath.Trim(),
             DvdPath = DvdPath.Trim(),
+            Chihiro = new ChihiroSettings
+            {
+                Enabled = ChihiroEnabled,
+                FirmwareDirectory = ChihiroFirmwareDirectory.Trim(),
+            },
             RamMb = RamMb,
             Input = BuildInputSettings(),
             Graphics = BuildGraphicsSettings(),
@@ -1235,6 +1278,17 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
     }
 
+    /// <summary>Public command: browses for the Chihiro firmware folder.</summary>
+    [RelayCommand]
+    private async Task BrowseChihiroFolderAsync()
+    {
+        string? folder = await Shell.Dialogs.PickFolderAsync("Choose the folder with the Chihiro firmware");
+        if (folder is not null)
+        {
+            ChihiroFirmwareDirectory = folder;
+        }
+    }
+
     /// <summary>Public command: browses for a disc image.</summary>
     [RelayCommand]
     private async Task BrowseDvdAsync()
@@ -1313,6 +1367,9 @@ public sealed partial class SettingsViewModel : PageViewModel
             case "dvd":
                 DvdPath = string.Empty;
                 break;
+            case "chihiro-firmware":
+                ChihiroFirmwareDirectory = string.Empty;
+                break;
         }
     }
 
@@ -1322,6 +1379,22 @@ public sealed partial class SettingsViewModel : PageViewModel
         OnPropertyChanged(nameof(BiosStatusText));
         OnPropertyChanged(nameof(BiosPathValid));
         OnPropertyChanged(nameof(ShowBiosWarning));
+        OnPropertyChanged(nameof(ChihiroReady));
+        OnPropertyChanged(nameof(ChihiroStatusText));
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnChihiroEnabledChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ChihiroReady));
+        OnPropertyChanged(nameof(ChihiroStatusText));
+    }
+
+    // ReSharper disable once UnusedParameterInPartialMethod
+    partial void OnChihiroFirmwareDirectoryChanged(string value)
+    {
+        OnPropertyChanged(nameof(ChihiroReady));
+        OnPropertyChanged(nameof(ChihiroStatusText));
     }
 
     // ReSharper disable once UnusedParameterInPartialMethod

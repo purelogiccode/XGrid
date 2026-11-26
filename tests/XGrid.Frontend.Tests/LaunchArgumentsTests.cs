@@ -283,15 +283,26 @@ public sealed class LaunchArgumentsTests
     [Fact]
     public void Parse_RejectsAnUnsupportedDiscExtension()
     {
-        LaunchArguments options = LaunchArguments.Parse(["game.bin"]);
+        LaunchArguments options = LaunchArguments.Parse(["game.txt"]);
 
         Assert.False(options.HasErrors);
         Assert.Null(options.DiscPath);
-        Assert.Equal(["game.bin"], options.Remaining);
+        Assert.Equal(["game.txt"], options.Remaining);
 
-        LaunchArguments switched = LaunchArguments.Parse(["--disc", "game.bin"]);
+        LaunchArguments switched = LaunchArguments.Parse(["--disc", "game.txt"]);
 
         Assert.True(switched.HasErrors);
+    }
+
+    [Fact]
+    public void Parse_AcceptsAChihiroNetbootImage()
+    {
+        LaunchArguments options = LaunchArguments.Parse(["game.bin"]);
+
+        Assert.False(options.HasErrors);
+        Assert.NotNull(options.DiscPath);
+        Assert.EndsWith("game.bin", options.DiscPath, StringComparison.OrdinalIgnoreCase);
+        Assert.True(options.Autostart);
     }
 
     [Fact]

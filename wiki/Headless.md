@@ -39,7 +39,9 @@ XGrid.Frontend.Avalonia.exe --headless --seconds 20 ^
 ```
 
 The normal shell accepts the same overrides without `--headless`. A positional
-`.iso`, `.xiso`, `.chd`, `.cci` or `.zar` path is a `--disc` shortcut and powers on.
+`.iso`, `.xiso`, `.chd`, `.cci`, `.zar` or Chihiro `.bin` path is a `--disc`
+shortcut and powers on. A `.bin` uses the Chihiro firmware configured in
+**Settings → System → Sega Chihiro**.
 
 ## Common switches
 

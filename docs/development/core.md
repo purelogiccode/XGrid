@@ -9,6 +9,8 @@ separate fork repository; the tree and its patch record travel with the shell.
 xemu/
   <upstream xemu 0.8.139 and its QEMU base>
   xgrid-core/          XGrid-owned native code
+  hw/xbox/chihiro/     Ported Sega Chihiro machine and cabinet devices
+  block/blkmemory.c    Memory-backed block driver for the Chihiro DIMM
   xemu-patches/        patch record for upstream edits
   XGrid.Xemu.Tree.csproj
   dist/                build output (git-ignored)
@@ -42,8 +44,9 @@ Windows DXGI presenter (`0011-ui-dxgi-exit-cleanup.patch`), the WGL interop
 attachment fix that keeps native flip presentation active on NVIDIA drivers
 (`0015-ui-dxgi-interop-presentation.patch`), the guest-clock part of
 fast-forward (`0012-ui-fast-forward-clock.patch`), the disc-driver selection in
-`system/vl.c` (`0016-core-disc-formats.patch`), and the DirectSound device
-option plus the `-audio-drivers` probe (`0017-core-audio-device.patch`).
+`system/vl.c` (`0016-core-disc-formats.patch`), the DirectSound device option
+plus the `-audio-drivers` probe (`0017-core-audio-device.patch`), and the Sega
+Chihiro machine and its Xbox integration (`0018-core-chihiro.patch`).
 
 A new xemu release is handled by rebasing the patch set and the `xgrid-core/`
 additions, not by re-porting the emulator.

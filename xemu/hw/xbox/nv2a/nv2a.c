@@ -637,6 +637,12 @@ static void nv2a_register(void)
 }
 type_init(nv2a_register);
 
+void nv2a_set_game_name(const char *name, const char *before)
+{
+    (void)name;
+    (void)before;
+}
+
 void nv2a_init(PCIBus *bus, int devfn, MemoryRegion *ram)
 {
     PCIDevice *dev = pci_create_simple(bus, devfn, "nv2a");

@@ -29,8 +29,14 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Touch(Path.Combine(_root, "firmware", "Complex_4627.bin"));
         Touch(Path.Combine(_root, "firmware", "eeprom.bin"));
         Touch(Path.Combine(_root, "firmware", "xbox_hdd.qcow2"));
+        Touch(Path.Combine(_root, "firmware", ChihiroSettings.BiosFileName));
+        Touch(Path.Combine(_root, "firmware", ChihiroSettings.MediaboardFileName));
+        Touch(Path.Combine(_root, "firmware", ChihiroSettings.Ic10FileName));
+        Touch(Path.Combine(_root, "firmware", ChihiroSettings.Ic11FileName));
+        Touch(Path.Combine(_root, "firmware", ChihiroSettings.Pc20FileName));
         Touch(Path.Combine(_root, "media", "game.iso"));
         Touch(Path.Combine(_root, "media", "other.iso"));
+        Touch(Path.Combine(_root, "media", "game.bin"));
     }
 
     [Fact]
@@ -64,6 +70,43 @@ public sealed class XemuLaunchPlanTests : IDisposable
 
         Assert.Equal(Path.Combine(_root, "media", "other.iso"), launch.DvdPath);
         Assert.Equal(1280, launch.WindowWidth);
+    }
+
+    [Fact]
+    public void Create_UsesTheChihiroForANetbootImage()
+    {
+        EmulatorSettings settings = Settings();
+        string image = Path.Combine(_root, "media", "game.bin");
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, image, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(XemuLaunchSettings.MachineChihiro, launch.Machine);
+        Assert.True(launch.IsChihiro);
+        Assert.Equal(128, launch.RamMb);
+        Assert.Equal(string.Empty, launch.HddPath);
+        Assert.Equal(image, launch.DvdPath);
+        Assert.Equal(Path.Combine(_root, "firmware", ChihiroSettings.BiosFileName), launch.ChihiroBiosPath);
+        Assert.Equal(
+            Path.Combine(_root, "firmware", ChihiroSettings.MediaboardFileName),
+            launch.ChihiroMediaboardPath);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
+    public void DescribeProblem_ReportsMissingChihiroFirmware()
+    {
+        string directory = Path.Combine(_root, "empty-chihiro");
+        _ = Directory.CreateDirectory(directory);
+        EmulatorSettings settings = Settings();
+        settings.Chihiro.Enabled = true;
+        settings.Chihiro.FirmwareDirectory = directory;
+
+        string? problem = XemuLaunchPlan.DescribeProblem(
+            settings, Path.Combine(_root, "media", "game.bin"), Path.Combine(_root, "work"));
+
+        Assert.NotNull(problem);
+        Assert.Contains("Chihiro BIOS", problem, StringComparison.Ordinal);
     }
 
     [Fact]

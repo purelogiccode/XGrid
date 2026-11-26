@@ -105,7 +105,8 @@ public static class HeadlessRunner
         LaunchArguments options)
     {
         EmulatorSettings settings;
-        if (disc is not null && DiscTitleId.TryRead(disc, out uint titleId, out _) && titleId != 0)
+        if (disc is not null && !XemuLaunchPlan.IsChihiroImage(disc)
+            && DiscTitleId.TryRead(disc, out uint titleId, out _) && titleId != 0)
         {
             settings = stored.WithTitleOverride(disc, titleId);
         }
@@ -120,6 +121,11 @@ public static class HeadlessRunner
 
         // The command line has the last word, including over a title override.
         options.ApplyTo(settings);
+        if (disc is not null && XemuLaunchPlan.IsChihiroImage(disc))
+        {
+            settings.Chihiro.Enabled = true;
+        }
+
         return settings;
     }
 

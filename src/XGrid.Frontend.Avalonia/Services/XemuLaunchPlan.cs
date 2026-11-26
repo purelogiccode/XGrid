@@ -35,6 +35,12 @@ public static class XemuLaunchPlan
         string? firmwareDirectory = XemuPaths.FindFirmwareDirectory(core);
 
         string dvd = discPath ?? settings.DvdPath;
+        bool chihiro = settings.Chihiro.Enabled || IsChihiroImage(dvd);
+        string chihiroDirectory = settings.Chihiro.ResolveDirectory(settings.BiosPath);
+        if (string.IsNullOrWhiteSpace(chihiroDirectory) && firmwareDirectory is not null)
+        {
+            chihiroDirectory = firmwareDirectory;
+        }
 
         // The core owns the picture. The shell only selects the filter and the
         // overlay; it never receives or presents frames. The pad section is a
@@ -45,12 +51,32 @@ public static class XemuLaunchPlan
         {
             CorePath = core ?? string.Empty,
             HostMode = settings.CoreHosting,
+            Machine = chihiro ? XemuLaunchSettings.MachineChihiro : XemuLaunchSettings.MachineXbox,
             BootRomPath = Resolve(settings.McpxRomPath, firmwareDirectory, "mcpx_1.0.bin"),
-            FlashRomPath = settings.BiosPath,
+            FlashRomPath = chihiro
+                ? ResolveChihiro(chihiroDirectory, ChihiroSettings.BiosFileName, firmwareDirectory)
+                : settings.BiosPath,
             EepromPath = Resolve(settings.EepromPath, firmwareDirectory, "eeprom.bin"),
-            HddPath = Resolve(settings.HddPath, firmwareDirectory, "xbox_hdd.qcow2"),
+            HddPath = chihiro
+                ? string.Empty
+                : Resolve(settings.HddPath, firmwareDirectory, "xbox_hdd.qcow2"),
             DvdPath = dvd,
-            RamMb = settings.RamMb,
+            ChihiroBiosPath = chihiro
+                ? ResolveChihiro(chihiroDirectory, ChihiroSettings.BiosFileName, firmwareDirectory)
+                : string.Empty,
+            ChihiroMediaboardPath = chihiro
+                ? ResolveChihiro(chihiroDirectory, ChihiroSettings.MediaboardFileName, firmwareDirectory)
+                : string.Empty,
+            ChihiroIc10Path = chihiro
+                ? ResolveChihiro(chihiroDirectory, ChihiroSettings.Ic10FileName, firmwareDirectory)
+                : string.Empty,
+            ChihiroIc11Path = chihiro
+                ? ResolveChihiro(chihiroDirectory, ChihiroSettings.Ic11FileName, firmwareDirectory)
+                : string.Empty,
+            ChihiroPc20Path = chihiro
+                ? ResolveChihiro(chihiroDirectory, ChihiroSettings.Pc20FileName, firmwareDirectory)
+                : string.Empty,
+            RamMb = chihiro ? 128 : settings.RamMb,
             // The display control publishes 1x1 before its first layout pass.
             WindowWidth = Math.Max(64, width),
             WindowHeight = Math.Max(64, height),
@@ -105,7 +131,8 @@ public static class XemuLaunchPlan
             return "The emulator binary was not found. Set its path in Settings.";
         }
 
-        if (!settings.IsBiosReady)
+        bool chihiro = settings.Chihiro.Enabled || IsChihiroImage(discPath ?? settings.DvdPath);
+        if (!chihiro && !settings.IsBiosReady)
         {
             return "Choose a BIOS image first.";
         }
@@ -139,6 +166,24 @@ public static class XemuLaunchPlan
         }
 
         return renderer;
+    }
+
+    /// <summary>
+    /// Returns true when a path is a Chihiro netboot image. These are raw FATX
+    /// images, not Xbox XISOs, and the extension is the only cheap signal.
+    /// </summary>
+    /// <param name="path">Image path, or null.</param>
+    /// <returns>True for a <c>.bin</c> image.</returns>
+    public static bool IsChihiroImage(string? path)
+    {
+        return !string.IsNullOrWhiteSpace(path)
+               && Path.GetExtension(path).Equals(".bin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveChihiro(string directory, string fileName, string? firmwareDirectory)
+    {
+        string resolved = string.IsNullOrWhiteSpace(directory) ? firmwareDirectory ?? string.Empty : directory;
+        return string.IsNullOrWhiteSpace(resolved) ? string.Empty : Path.Combine(resolved, fileName);
     }
 
     private static string Resolve(string configured, string? firmwareDirectory, string fileName)

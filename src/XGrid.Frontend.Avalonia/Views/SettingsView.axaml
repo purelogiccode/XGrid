@@ -191,6 +191,49 @@
             <Border Classes="card">
               <StackPanel Spacing="16">
                 <StackPanel Spacing="3">
+                  <TextBlock Text="Sega Chihiro" Classes="h3" />
+                  <TextBlock Text="A Chihiro is an Xbox with a media board and a DIMM. It boots netboot (.bin) images, not Xbox discs. Put chihiro_xbox_bios.bin, fpr21042_m29w160et.bin, ic10_g24lc64.bin, ic11_24lc024.bin and pc20_g24lc64.bin in the folder below."
+                             Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Classes="divider" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Enable Chihiro" Classes="label" />
+                    <TextBlock Text="Uses the Chihiro BIOS and 128 MB RAM. A .bin image also selects it for that launch."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroEnabled, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Boot the Sega Chihiro machine" />
+                </Grid>
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Chihiro firmware folder" Classes="label" />
+                    <TextBlock Text="Empty uses the folder beside the Xbox BIOS image." Classes="hint" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Classes="path"
+                             Text="{Binding ChihiroFirmwareDirectory, Mode=TwoWay}"
+                             PlaceholderText="Folder with the Chihiro BIOS and media-board files"
+                             ToolTip.Tip="Folder holding chihiro_xbox_bios.bin and the media-board firmware" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseChihiroFolderCommand}" Content="Browse."
+                            ToolTip.Tip="Choose the Chihiro firmware folder" />
+                    <Button Grid.Column="2"
+                            Classes="subtle icon"
+                            Command="{Binding ClearFieldCommand}"
+                            CommandParameter="chihiro-firmware"
+                            ToolTip.Tip="Clear the Chihiro firmware folder">
+                      <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                    </Button>
+                  </Grid>
+                  <TextBlock Text="{Binding ChihiroStatusText}" Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
                   <TextBlock Text="Session" Classes="h3" />
                   <TextBlock Text="Choose how XGrid starts, stops and saves the console."
                              Classes="hint" />

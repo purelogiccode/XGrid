@@ -88,6 +88,16 @@ files from the compressed archive. Nothing is extracted. If a file name cannot
 be represented in XDVDFS (Latin-1, up to 42 characters, no separators), the
 archive is refused with the offending name.
 
+## Can XGrid play Sega Chihiro games?
+
+Yes, with **netboot `.bin` images** and the Chihiro firmware. Open
+**Settings → System → Sega Chihiro**, choose the folder with
+`chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`, `ic10_g24lc64.bin`,
+`ic11_24lc024.bin` and `pc20_g24lc64.bin`, then launch a `.bin` from the
+Library. Redump/MAME GD-ROM sets must be converted first with the external
+`chihiro-netboot` tool; XGrid does not boot `.cue` GD-ROM sets directly. See
+[Sega Chihiro](../guides/chihiro.md).
+
 ## Can I use a split CCI set?
 
 Yes. Open the first part (`game.1.cci`); the core discovers `game.2.cci` and

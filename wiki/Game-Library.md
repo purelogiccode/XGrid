@@ -48,6 +48,7 @@ The old recent strip is gone; use the **Recently played** sort.
 | `.chd` | Yes | Yes |
 | `.cci` | Yes | Yes (single part or split set) |
 | `.zar` | Yes | Yes (entry form or file tree) |
+| `.bin` | Yes | Chihiro netboot image |
 
 Split CCI sets are listed once under the base name.
 | `.xbe` | Yes | No (inspection only) |

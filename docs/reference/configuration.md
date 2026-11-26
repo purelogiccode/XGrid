@@ -31,7 +31,7 @@ the platform.
 | --- | --- |
 | `--autostart` | Power on the console as soon as the shell is ready. |
 | `-fullscreen`, `--fullscreen`, `-f` | Open the shell in fullscreen. |
-| `--disc <path>` | Insert this ISO/XISO, CHD, CCI or ZAR image and power on. |
+| `--disc <path>` | Insert this ISO/XISO, CHD, CCI or ZAR image, or a Chihiro netboot `.bin`, and power on. |
 | `--core <path>` | Use this emulator binary for the session. |
 | `--data-dir <path>` | Use this shell data folder for the session. |
 | `--bios <path>` | Flash ROM image for the session. |
@@ -55,8 +55,8 @@ the platform.
 | `-h`, `--help`, `-?` | Print the command-line reference. |
 | `--version` | Print the application version. |
 
-A positional argument that ends in `.iso`, `.xiso`, `.chd`, `.cci` or `.zar` is
-treated as `--disc` and implies `--autostart`:
+A positional argument that ends in `.iso`, `.xiso`, `.chd`, `.cci`, `.zar` or
+`.bin` is treated as `--disc` and implies `--autostart`:
 
 ```text
 XGrid.Frontend.Avalonia.exe -f "D:\Games\Halo.iso"
@@ -119,8 +119,9 @@ The shell writes indented JSON. The main fields are:
 | `McpxRomPath` | 512-byte MCPX boot ROM. |
 | `EepromPath` | 256-byte EEPROM image. |
 | `HddPath` | Raw or qcow2 HDD image. |
-| `DvdPath` | Default disc image. |
-| `RamMb` | 64 or 128. |
+| `DvdPath` | Default disc image, or a Chihiro netboot `.bin`. |
+| `Chihiro` | Chihiro switch and firmware folder (`Enabled`, `FirmwareDirectory`). A `.bin` launch always uses the Chihiro. |
+| `RamMb` | 64 or 128 (a Chihiro launch is forced to 128). |
 | `DisplaySink` | Removed. The core always owns the picture; the frame sink is only used by headless runs. |
 | `ShowFpsOverlay` | The core draws the frame-rate overlay over a running console. |
 | `PowerOnAtStartup` | Power on automatically when the shell opens. |
@@ -179,10 +180,13 @@ complete file, so two launches cannot inherit each other's state.
 | `[input.bindings]` | `port1 = 'keyboard'` when the shell supplies the pad |
 | `[audio]` | `use_dsp`, `use_dsp_jit`, `hrtf`, `volume_limit` |
 | `[audio.vp]` | `num_workers` |
-| `[sys]` | `mem_limit`, `avpack` |
+| `[sys]` | `default_machine`, `mem_limit`, `avpack` |
 | `[sys.files]` | `bootrom_path`, `flashrom_path`, `eeprom_path`, `hdd_path`, `dvd_path` |
+| `[chihiro.roms]` | Chihiro only: `bios_path`, `mediaboard_path`, `ic10_path`, `ic11_path`, `pc20_path` |
 
-`mem_limit` is the core's string enum (`'64'` or `'128'`).
+`mem_limit` is the core's string enum (`'64'` or `'128'`). `default_machine` is
+`'xbox'` or `'chihiro'`; a Chihiro launch also writes the five
+`[chihiro.roms]` paths.
 
 ### Core capability manifest
 

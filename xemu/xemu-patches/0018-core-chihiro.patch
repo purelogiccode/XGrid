@@ -1,0 +1,1442 @@
+Subject: [PATCH] core: add the Sega Chihiro machine
+
+This records the XGrid integration of the Sega Chihiro machine. The machine
+itself is the ported xemu-Playtest-v2 / XPSemu-Chihiro source under
+xemu/hw/xbox/chihiro/ (LGPL-2.0-or-later; chihiro-pic.* LGPL-2.1-or-later;
+chihiro-des.* BSD-3-Clause). The memory-backed block driver is
+xemu/block/blkmemory.c with xemu/include/block/blkmemory.h (GPL-2.0-or-later).
+
+New files (whole files, not shown as hunks):
+  block/blkmemory.c
+  include/block/blkmemory.h
+  hw/xbox/chihiro/*.c, *.h and meson.build
+
+The diff below covers the edits to the existing xemu tree. It applies on top of
+the XGrid 0.8.139 tree with patches 0001-0017.
+diff --git a/xemu/block/meson.build b/xemu/block/meson.build
+index 34b1b2a3..5f3be43e 100644
+--- a/xemu/block/meson.build
++++ b/xemu/block/meson.build
+@@ -43,6 +43,7 @@ block_ss.add(files(
+ 
+ system_ss.add(when: 'CONFIG_TCG', if_true: files('blkreplay.c'))
+ system_ss.add(files('block-ram-registrar.c'))
++system_ss.add(files('blkmemory.c'))
+ 
+ if get_option('qcow1').allowed()
+   block_ss.add(files('qcow.c'))
+diff --git a/xemu/config_spec.yml b/xemu/config_spec.yml
+index 4f3e0ccf..0876354f 100644
+--- a/xemu/config_spec.yml
++++ b/xemu/config_spec.yml
+@@ -352,6 +352,17 @@ net:
+           default: tcp
+ 
+ sys:
++  # The machine that boots when no image is loaded: auto uses the machine
++  # last booted, xbox forces an Xbox and chihiro forces Sega Chihiro.
++  default_machine:
++    type: enum
++    values: [auto, xbox, chihiro]
++    default: auto
++  # The machine last booted, for default_machine = auto.
++  last_machine:
++    type: enum
++    values: [xbox, chihiro]
++    default: xbox
+   mem_limit:
+     type: enum
+     values: ['64', '128']
+@@ -367,6 +378,452 @@ sys:
+     hdd_path: string
+     dvd_path: string
+ 
++chihiro:
++  jvs:
++    # The game whose keys the Game tab edits; also the keys used for a game
++    # the cabinet table does not know.
++    profile:
++      type: enum
++      values: [hotd3, vc3, gs, ctx, or2, ok, wmmt2, gundam]
++      default: hotd3
++    # Pointer: "mouse" = system cursor, "" = none, else the identity of a
++    # pointer device (chihiro.settings.pointer_devices)
++    pointer_device:
++      type: string
++      default: mouse
++    crosshair_path:
++      type: string
++      default: ""
++    crosshair_scale:
++      type: integer
++      default: 100
++    # System keys, shared by every game
++    start:
++      type: integer
++      default: 40
++    service:
++      type: integer
++      default: 38
++    coin:
++      type: integer
++      default: 34
++    test:
++      type: integer
++      default: 39
++    # Driving keys, shared by the driving games (a wheel or a pad)
++    steer_left:
++      type: integer
++      default: 80
++    steer_right:
++      type: integer
++      default: 79
++    gas:
++      type: integer
++      default: 82
++    brake:
++      type: integer
++      default: 81
++    # Gear paddles: OutRun 2's sequential shifter, and Maximum Tune's lever
++    # moved one gear at a time
++    gear_up:
++      type: integer
++      default: 29
++    gear_down:
++      type: integer
++      default: 27
++    # Card In, shared by the card games: one press pushes the card in hand
++    # (or a blank one) into the reader. Maximum Tune takes it back on a
++    # second press, before its reader draws it in.
++    card_in:
++      type: integer
++      default: 6
++    hotd3:
++      trigger:
++        type: integer
++        default: 1001
++      body_button:
++        type: integer
++        default: 1003
++    vc3:
++      trigger:
++        type: integer
++        default: 1001
++      body_button:
++        type: integer
++        default: 1003
++      pedal:
++        type: integer
++        default: 44
++      reload:
++        type: integer
++        default: 0
++    gs:
++      trigger:
++        type: integer
++        default: 1001
++      body_button:
++        type: integer
++        default: 1003
++      change:
++        type: integer
++        default: 44
++      reload:
++        type: integer
++        default: 0
++      # Deprecated: read once into jvs.card_in
++      card:
++        type: integer
++        default: 6
++    ctx:
++      drive_gear:
++        type: integer
++        default: 225
++      reverse:
++        type: integer
++        default: 224
++      jump:
++        type: integer
++        default: 44
++    or2:
++      # Deprecated: read once into jvs.gear_up and jvs.gear_down
++      gear_up:
++        type: integer
++        default: 29
++      gear_down:
++        type: integer
++        default: 27
++      view_change:
++        type: integer
++        default: 224
++    # Maximum Tune reads its H shifter and its two wheel buttons from the
++    # SECOND switch byte of player 1 (V322.xbe 0x00055AA0): bits 7/6 are the
++    # lever's up/down, bits 5/4 its left/right, and bits 1/0 the two buttons.
++    # gear1..gear6: a real shifter's positions, none set by default.
++    wmmt2:
++      gear1:
++        type: integer
++        default: 0
++      gear2:
++        type: integer
++        default: 0
++      gear3:
++        type: integer
++        default: 0
++      gear4:
++        type: integer
++        default: 0
++      gear5:
++        type: integer
++        default: 0
++      gear6:
++        type: integer
++        default: 0
++      view_change:
++        type: integer
++        default: 224
++      intrude_change:
++        type: integer
++        default: 225
++      # Deprecated: read once into jvs.card_in
++      card:
++        type: integer
++        default: 6
++    ok:
++      swing_left:
++        type: integer
++        default: 80
++      swing_right:
++        type: integer
++        default: 79
++      board_front:
++        type: integer
++        default: 82
++      board_rear:
++        type: integer
++        default: 81
++      left_grab:
++        type: integer
++        default: 29
++      right_grab:
++        type: integer
++        default: 27
++    # Gundam Battle Operating Simulator's twin-stick cockpit, named as its
++    # INPUT TEST names it. Keyboard: W A S D + Q E left, the arrows + right
++    # Shift and Ctrl right, Space the pedal.
++    gundam:
++      l_up:
++        type: integer
++        default: 26
++      l_down:
++        type: integer
++        default: 22
++      l_left:
++        type: integer
++        default: 4
++      l_right:
++        type: integer
++        default: 7
++      l_trigger:
++        type: integer
++        default: 20
++      l_button:
++        type: integer
++        default: 8
++      r_up:
++        type: integer
++        default: 82
++      r_down:
++        type: integer
++        default: 81
++      r_left:
++        type: integer
++        default: 80
++      r_right:
++        type: integer
++        default: 79
++      r_trigger:
++        type: integer
++        default: 229
++      r_button:
++        type: integer
++        default: 228
++      pedal:
++        type: integer
++        default: 44
++      # Deprecated: read once into jvs.card_in
++      card:
++        type: integer
++        default: 6
++  jvs_p2:
++    pointer_device:
++      type: string
++      default: ""
++    crosshair_path:
++      type: string
++      default: ""
++    crosshair_scale:
++      type: integer
++      default: 100
++    start:
++      type: integer
++      default: 0
++    coin:
++      type: integer
++      default: 0
++    hotd3_trigger:
++      type: integer
++      default: 0
++    hotd3_body_button:
++      type: integer
++      default: 0
++    vc3_trigger:
++      type: integer
++      default: 0
++    vc3_body_button:
++      type: integer
++      default: 0
++    vc3_pedal:
++      type: integer
++      default: 0
++    vc3_reload:
++      type: integer
++      default: 0
++    gs_trigger:
++      type: integer
++      default: 0
++    gs_body_button:
++      type: integer
++      default: 0
++    gs_change:
++      type: integer
++      default: 0
++    gs_reload:
++      type: integer
++      default: 0
++    # Deprecated: read once into jvs_p2.card_in
++    gs_card:
++      type: integer
++      default: 25
++    # Player 2's Card In (Ghost Squad's second slot)
++    card_in:
++      type: integer
++      default: 25
++  settings:
++    lightgun_mode:
++      type: bool
++      default: false
++    freeplay:
++      type: bool
++      default: false
++    # The preferred region, the byte SEGABOOT reads at EEPROM 0x1F00 (the enum
++    # index: 1 Japan, 2 USA, 3 Export); a game outside its boot.id mask (0x38)
++    # would stop on Error 05, so it gets the first of Export, USA and Japan it
++    # accepts. 'auto' is Export's older name.
++    region:
++      type: enum
++      values: [auto, jp, us, ex]
++      default: ex
++    # The media board's DIMM: the JP1/JP2 jumper value (the enum index), for
++    # the host side and the Type-3 board's block table alike (a mismatch is
++    # SEGABOOT's Caution 53). Gundam's 603 MB image needs 1024 MB.
++    dimm_size:
++      type: enum
++      values: ['128', '256', '512', '1024', 'auto']
++      default: 'auto'
++    # Which media board the machine presents; Auto follows the cabinet table.
++    board_type:
++      type: enum
++      values: [auto, type1, type3]
++      default: auto
++    force_feedback:
++      type: bool
++      default: false
++    # Drive-board force-feedback strength, percent: 0-200, 100 = what the game
++    # asks for, 0 = off. Scales gamepad rumble and steering-wheel haptic
++    # effects (OutRun 2, Maximum Tune).
++    ffb_strength:
++      type: integer
++      default: 100
++    # Flip force-feedback direction. Off is correct on Linux and the standard case;
++    # enable if the wheel is driven away from center instead of toward it (some
++    # wheels/drivers on Windows or macOS invert the FFB polarity).
++    ffb_invert:
++      type: bool
++      default: false
++    # How heavy the wheel turns while a game drives it: the damping the
++    # Maximum Tune drive board asks for, as a share of the wheel's own damper,
++    # percent. Heavy without hiding the knocks on a geared wheel by default; a
++    # stronger wheel can take more.
++    wheel_weight:
++      type: integer
++      default: 40
++    # Degrees of physical wheel rotation that reach full in-game lock (Sega Rally
++    # Model 2 wrapper convention). Default 270 = a 270 deg turn covers the game's
++    # whole steering range (OutRun 2 cabinet). 0 = "Full range": the whole wheel
++    # maps 1:1. Software scaling assuming a 900 deg wheel.
++    wheel_rotation:
++      type: integer
++      default: 270
++    # Spring the wheel back to centre while the game is not driving force
++    # feedback. Arcade wheel cabs centre mechanically (Crazy Taxi HR has no FFB
++    # hardware at all), so a limp FFB wheel is less faithful than this.
++    wheel_autocenter:
++      type: bool
++      default: true
++    wheel_autocenter_strength:
++      type: integer
++      default: 50
++    # Read each mouse or light gun on its own (evdev on Linux, Raw Input on
++    # Windows) so two players can aim with their own device. Off: the system
++    # cursor aims.
++    pointer_devices:
++      type: bool
++      default: false
++    # Exclusive grab of the devices aimed with while playing (Linux)
++    pointer_grab:
++      type: bool
++      default: true
++    sinden_border:
++      type: bool
++      default: false
++    sinden_border_style:
++      type: enum
++      values: [game, fullscreen]
++      default: game
++    sinden_border_size:
++      type: integer
++      default: 2
++  link:
++    # Linked cabinets share a private Ethernet between xemu instances. The
++    # host cabinet listens once per other cabinet, on port + that cabinet's
++    # number, and relays every frame; the others connect to it. The game's
++    # own cabinet number is written into its backup for the titles whose
++    # layout is known (Ollie King, OutRun 2, OutRun 2 SP, Maximum Tune).
++    enable: bool
++    cabinets:
++      type: integer
++      default: 2
++    cabinet:
++      type: integer
++      default: 1
++    # Empty: this cabinet is the host (cabinet 1); the others give its
++    # address.
++    host:
++      type: string
++      default: ""
++    port:
++      type: integer
++      default: 9100
++  card_reader:
++    # Answer the cabinet's card reader; each reader has its own slots.
++    enable:
++      type: bool
++      default: true
++    # Tamura (SAXA) HW210, two slots: Ghost Squad. Gundam Battle Operating
++    # Simulator carries one reader of the same family on the same wire, but
++    # it takes Banpresto cards, not Sega ones, so its card has its own slot.
++    hw210:
++      slot1:
++        type: string
++        default: ""
++      slot2:
++        type: string
++        default: ""
++      gundam:
++        type: string
++        default: ""
++    # Sanwa CRP-1231LR-10NAB: Maximum Tune 1 and 2 share the reader, not
++    # the card, so each game has its own slot.
++    crp1231:
++      mt1:
++        type: string
++        default: ""
++      mt2:
++        type: string
++        default: ""
++    # Deprecated: the names the HW210 slots had before the readers were told
++    # apart; read into hw210 above at a Chihiro boot, when that slot is empty.
++    card1_path:
++      type: string
++      default: ""
++    card2_path:
++      type: string
++      default: ""
++  roms:
++    bios_path:
++      type: string
++      default: ""
++    mediaboard_path:
++      type: string
++      default: ""
++    ic10_path:
++      type: string
++      default: ""
++    ic11_path:
++      type: string
++      default: ""
++    pc20_path:
++      type: string
++      default: ""
++    # OPTIONAL: the DIMM board's network firmware (Au1500, VxWorks). Linked
++    # cabinets run it on the network board. The version the board reports is
++    # read from it: the word after "FIRM_VERSION is here!", 0x13050621 = 13.05
++    # in ver1305.bin. Network titles check it (OutRun 2 SP 11.01, MJ2 12.06,
++    # MJ3 13.05, Gundam 12.09 or 13.09 and later). Empty: 3.17.
++    net_firmware_path:
++      type: string
++      default: ""
++    # The qcow2 that holds the Chihiro VM snapshots. Empty: chihiro_snapshots.qcow2
++    # in the data directory, created when missing; that path is then saved
++    # here.
++    snapshot_store_path:
++      type: string
++      default: ""
++
++# DOGE (not upstream): the easter egg. Written by hand in the toml:
++#   [doge]
++#   doge_mode = 'wow'
++
+ perf:
+   hard_fpu:
+     type: bool
+diff --git a/xemu/hw/ide/core.c b/xemu/hw/ide/core.c
+index 26fb5a6e..8410e0ff 100644
+--- a/xemu/hw/ide/core.c
++++ b/xemu/hw/ide/core.c
+@@ -43,6 +43,7 @@
+ #include "system/runstate.h"
+ #include "ide-internal.h"
+ #include "trace.h"
++#include "hw/xbox/chihiro/chihiro.h"
+ 
+ /* These values were based on a Seagate ST3500418AS but have been modified
+    to make more sense in QEMU */
+@@ -958,6 +959,20 @@ static void ide_dma_cb(void *opaque, int ret)
+ 
+     trace_ide_dma_cb(s, sector_num, n, IDE_DMA_CMD_str(s->dma_cmd));
+ 
++    if (s->unit == 1 && n > 0) {
++        bool irq = false;
++        if (chihiro_ide_serve(s->dma_cmd, (uint32_t)sector_num, n,
++                              &s->sg, &irq)) {
++            ide_dma_buf_commit(s, s->sg.size);
++            sector_num += n;
++            ide_set_sector(s, sector_num);
++            s->nsector -= n;
++            s->status = READY_STAT | SEEK_STAT;
++            if (irq) ide_bus_set_irq(s->bus);
++            goto eot;
++        }
++    }
++
+     if ((s->dma_cmd == IDE_DMA_READ || s->dma_cmd == IDE_DMA_WRITE) &&
+         !ide_sect_range_ok(s, sector_num, n)) {
+         ide_dma_error(s);
+@@ -1459,6 +1474,33 @@ static bool cmd_identify(IDEState *s, uint8_t cmd)
+         } else {
+             ide_cfata_identify(s);
+         }
++
++        /* Chihiro: override IDENTIFY for baseboard (unit 1).
++         * MAME's ide_baseboard_device reports CHS 65535/255/255.
++         * The arcdkrnl MediaBoard driver checks this geometry to
++         * distinguish the baseboard from a regular HDD. Without it,
++         * the kernel never creates \Device\MediaBoard partitions. */
++        if (s->unit == 1) {
++            uint16_t *p = (uint16_t *)s->identify_data;
++            put_le16(p + 1, 65535);  /* cylinders */
++            put_le16(p + 3, 255);    /* heads */
++            put_le16(p + 6, 255);    /* sectors per track */
++            put_le16(p + 54, 65535); /* current cylinders */
++            put_le16(p + 55, 255);   /* current heads */
++            put_le16(p + 56, 255);   /* current sectors */
++            padstr((char *)(p + 27), "SEGA CHIHIRO BASEBOARD", 40);
++            /* The DIMM's capacity, so the kernel maps every MediaBoard
++             * partition (mbcom is the last 0x8000 sectors); the Chihiro IDE
++             * hooks serve the reads and writes themselves. */
++            int64_t bb_sectors = (int64_t)0x40000 << chihiro_dimm_factor();
++            put_le16(p + 60, bb_sectors);
++            put_le16(p + 61, bb_sectors >> 16);
++            put_le16(p + 100, bb_sectors);
++            put_le16(p + 101, bb_sectors >> 16);
++            put_le16(p + 102, 0);
++            put_le16(p + 103, 0);
++        }
++
+         s->status = READY_STAT | SEEK_STAT;
+         ide_transfer_start(s, s->io_buffer, 512, ide_transfer_stop);
+         ide_bus_set_irq(s->bus);
+diff --git a/xemu/hw/xbox/meson.build b/xemu/hw/xbox/meson.build
+index 8cf1ea0b..58e208ff 100644
+--- a/xemu/hw/xbox/meson.build
++++ b/xemu/hw/xbox/meson.build
+@@ -17,5 +17,6 @@ specific_ss.add(files(
+ 	'xblc.c',
+ 	'xid-gamepad.c',
+ 	))
++subdir('chihiro')
+ subdir('nv2a')
+ subdir('mcpx')
+diff --git a/xemu/hw/xbox/nv2a/nv2a.c b/xemu/hw/xbox/nv2a/nv2a.c
+index db4a5896..7221e941 100644
+--- a/xemu/hw/xbox/nv2a/nv2a.c
++++ b/xemu/hw/xbox/nv2a/nv2a.c
+@@ -637,6 +637,12 @@ static void nv2a_register(void)
+ }
+ type_init(nv2a_register);
+ 
++void nv2a_set_game_name(const char *name, const char *before)
++{
++    (void)name;
++    (void)before;
++}
++
+ void nv2a_init(PCIBus *bus, int devfn, MemoryRegion *ram)
+ {
+     PCIDevice *dev = pci_create_simple(bus, devfn, "nv2a");
+diff --git a/xemu/hw/xbox/nv2a/nv2a.h b/xemu/hw/xbox/nv2a/nv2a.h
+index 2a9b7312..edf65ab1 100644
+--- a/xemu/hw/xbox/nv2a/nv2a.h
++++ b/xemu/hw/xbox/nv2a/nv2a.h
+@@ -22,6 +22,9 @@
+ #define HW_NV2A_H
+ 
+ void nv2a_init(PCIBus *bus, int devfn, MemoryRegion *ram);
++/* Chihiro: name the running game for shader-cache tagging. The XGrid core
++ * keeps no per-game shader tag yet, so this is a no-op. */
++void nv2a_set_game_name(const char *name, const char *before);
+ void nv2a_context_init(void);
+ int nv2a_get_framebuffer_surface(void);
+ void nv2a_release_framebuffer_surface(void);
+diff --git a/xemu/hw/xbox/smbus_xbox_smc.c b/xemu/hw/xbox/smbus_xbox_smc.c
+index 4e987cf0..84323116 100644
+--- a/xemu/hw/xbox/smbus_xbox_smc.c
++++ b/xemu/hw/xbox/smbus_xbox_smc.c
+@@ -32,6 +32,7 @@
+ #include "qemu/config-file.h"
+ #include "qapi/error.h"
+ #include "system/block-backend.h"
++#include "chihiro/chihiro.h"
+ #include "system/blockdev.h"
+ #include "system/system.h"
+ #include "smbus.h"
+@@ -146,6 +147,9 @@ static int smc_write_data(SMBusDevice *dev, uint8_t *buf, uint8_t len)
+         break;
+ 
+     case SMC_REG_SCRATCH:
++        if (buf[0] == 0x04) {
++            chihiro_on_quickreboot_signal();
++        }
+         smc->scratch_reg = buf[0];
+         break;
+ 
+@@ -279,6 +283,12 @@ static void smbus_smc_realize(DeviceState *dev, Error **errp)
+         g_free(avpack);
+     }
+ 
++    /* A Chihiro's SMC reads 0x00 whatever the command line says: DIP 6-8
++     * ground the AV sense pins. */
++    if (object_property_get_bool(qdev_get_machine(), "chihiro", NULL)) {
++        smc->avpack_reg = SMC_REG_AVPACK_SCART;
++    }
++
+     smc_version = object_property_get_str(qdev_get_machine(), "smc-version", NULL);
+     if (smc_version) {
+         if (strlen(smc_version) != SMC_VERSION_LENGTH) {
+@@ -357,6 +367,14 @@ void xbox_smc_update_tray_state(void)
+ 
+     const char *blk_name = "ide0-cd1";
+     BlockBackend *blk = blk_by_name(blk_name);
++
++    /* A Chihiro has no DVD drive: report a closed tray with no disc. */
++    if (blk == NULL) {
++        smc->traystate_reg = SMC_REG_TRAYSTATE_NO_MEDIA_DETECTED;
++        smc->intstatus_reg |= SMC_REG_INTSTATUS_TRAYCLOSED;
++        xbox_assert_extsmi();
++        return;
++    }
+     assert(blk != NULL);
+ 
+     if (blk_dev_is_tray_open(blk)) {
+diff --git a/xemu/hw/xbox/xbox.c b/xemu/hw/xbox/xbox.c
+index 779a41bd..30aad70e 100644
+--- a/xemu/hw/xbox/xbox.c
++++ b/xemu/hw/xbox/xbox.c
+@@ -31,6 +31,7 @@
+ #include "net/net.h"
+ #include "hw/boards.h"
+ #include "hw/ide/pci.h"
++#include "ui/xemu-settings.h"
+ #include "system/system.h"
+ #include "system/kvm.h"
+ #include "kvm/kvm_i386.h"
+@@ -57,6 +58,7 @@
+ 
+ #include "hw/xbox/xbox.h"
+ #include "smbus.h"
++#include "chihiro/chihiro.h"
+ 
+ #define MAX_IDE_BUS 2
+ 
+@@ -291,6 +293,10 @@ void xbox_init_common(MachineState *machine,
+                              OBJECT(pit), &error_fatal);
+     isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
+ 
++    if (XBOX_MACHINE(machine)->chihiro) {
++        chihiro_ide_interface_init();
++    }
++
+     PCIDevice *dev = pci_create_simple(pci_bus, PCI_DEVFN(9, 0), "piix3-ide");
+     pci_ide_create_devs(dev);
+     // idebus[0] = qdev_get_child_bus(&dev->qdev, "ide.0");
+@@ -345,6 +351,142 @@ void xbox_init_common(MachineState *machine,
+     if (isa_bus_out) {
+         *isa_bus_out = isa_bus;
+     }
++
++    /* A real Chihiro is an Xbox with add-on boards. The machine property
++     * adds the mediaboard LPC I/O device, which provides the XBAM
++     * identification string that SEGABOOT checks to detect the baseboard. */
++    if (XBOX_MACHINE(machine)->chihiro) {
++        gint64 init_t0 = g_get_monotonic_time();
++        printf("Chihiro: enabling the media board\n");
++
++        chihiro_freeplay_setting = g_config.chihiro.settings.freeplay;
++
++        /* The media board files were loaded with the BIOS (vl.c): the paths
++         * set in Settings > System > Chihiro Files, else the files beside the
++         * BIOS. */
++        if (!chihiro_flash_rom_loaded()) {
++            fprintf(stderr, "Chihiro: ERROR - Flash ROM media board not found "
++                    "(fpr21042_m29w160et.bin). Set path in Settings > System > "
++                    "Chihiro Files.\n");
++        }
++
++        isa_create_simple(isa_bus, "chihiro-lpc");
++        /* The Super I/O is not added here: -device lpc47m157 plugs one in,
++         * and -serial then gets what SEGABOOT and the games print. */
++
++        /* Chihiro southbridge has revision >= 0xB4. This clears bit 0 of
++         * XboxHardwareInfo in the kernel, selecting PATH_B for USB topology
++         * (direct port mapping instead of hub-based). Without this, the
++         * kernel uses PATH_A which requires device table state=1 that LLE
++         * USB entries never reach. */
++        PCIDevice *lpc = pci_find_device(pci_bus, 0, PCI_DEVFN(1, 0));
++        if (lpc) {
++            pci_config_set_revision(lpc->config, 0xB4);
++            printf("Chihiro: LPC bridge revision set to 0xB4 (PATH_B)\n");
++        }
++
++        chihiro_ide_load_rom();
++
++        /* Load pre-built FATX netboot image into DIMM buffer */
++        {
++            const char *dvd = xemu_chihiro_image();
++            if (dvd && strlen(dvd) > 0) {
++                uint32_t fs_size = 0;
++                uint8_t *fs_buf = chihiro_fatx_get_buffer(&fs_size);
++                if (fs_buf) {
++                    FILE *f = qemu_fopen(dvd, "rb");
++                    if (f) {
++                        uint8_t magic[4];
++                        if (fread(magic, 1, 4, f) == 4 &&
++                            memcmp(magic, "FATX", 4) == 0) {
++                            rewind(f);
++                            gint64 t0 = g_get_monotonic_time();
++                            struct stat st;
++                            fstat(fileno(f), &st);
++                            uint32_t file_size = (uint32_t)st.st_size;
++                            if (file_size > fs_size) file_size = fs_size;
++                            size_t nread = fread(fs_buf, 1, file_size, f);
++                            printf("Chihiro: FATX image loaded '%s'"
++                                   " (%zu bytes, %lld ms)\n",
++                                   dvd, nread,
++                                   (long long)(g_get_monotonic_time() - t0)
++                                   / 1000);
++
++                            /* The game executable, from the image's boot.id */
++                            for (uint32_t off = 0;
++                                 off + CHIHIRO_BOOTID_LEN <= file_size; off++) {
++                                char name[64];
++                                if (memcmp(fs_buf + off, "BTID", 4) == 0 &&
++                                    chihiro_bootid_executable(fs_buf + off, name,
++                                                              sizeof(name))) {
++                                    chihiro_set_game_executable(name);
++                                    break;
++                                }
++                            }
++                        } else {
++                            fprintf(stderr,
++                                    "Chihiro: '%s' is not a FATX image\n",
++                                    dvd);
++                        }
++                        fclose(f);
++                    }
++                }
++                /* The image's folder, where a boot.id file may sit
++                 * (chihiro_capture_game_filename_from_dir) */
++                snprintf(chihiro_game_dir, sizeof(chihiro_game_dir),
++                         "%s", dvd);
++                char *slash = strrchr(chihiro_game_dir, '/');
++                if (!slash) slash = strrchr(chihiro_game_dir, '\\');
++                if (slash) *slash = '\0';
++            }
++        }
++
++        /* The Chihiro BIOS jamtable writes to SMBus device 0x6A (Focus
++         * FS454 video encoder) during early boot. Without this device,
++         * the SMBus transaction never completes and boot hangs. */
++        smbus_fs454_init(smbus, 0x6A);
++
++        /* Chihiro baseboard USB: AN2131 QC + SC
++         *
++         * On real hardware, the AN2131 chips load firmware from their
++         * I2C EEPROMs (ic10/pc20) at power-up (~200-500ms).
++         *
++         * We create the devices with auto_attach=0 (set in realize), then
++         * attach them 50 ms (QC) and 100 ms (SC) after each OHCI bus start
++         * (chihiro_on_ohci_bus_start). */
++        USBBus *usb0_bus = NULL;
++        for (int i = 0; i < 4 && !usb0_bus; i++) {
++            char bn[32]; snprintf(bn, sizeof(bn), "usb-bus.%d", i);
++            BusState *bs = qdev_get_child_bus(DEVICE(usb0), bn);
++            if (bs) usb0_bus = USB_BUS(bs);
++        }
++
++        if (usb0_bus &&
++            (!chihiro_ic10_data || !chihiro_pc20_data || !chihiro_ic11_data)) {
++            /* Their realize needs the dumps and usb_create_simple aborts on
++             * failure; the startup check has already told the user. */
++            fprintf(stderr, "Chihiro: QC/SC USB devices not created "
++                    "(ic10, pc20 or ic11 EEPROM dump missing)\n");
++        } else if (usb0_bus) {
++            /* Create but don't attach (auto_attach=0 in realize) */
++            USBDevice *qc = usb_create_simple(usb0_bus, "chihiro-an2131qc");
++            USBDevice *sc = usb_create_simple(usb0_bus, "chihiro-an2131sc");
++            printf("Chihiro: QC created port=%d (not attached yet)\n",
++                   qc->port ? qc->port->index : -1);
++            printf("Chihiro: SC created port=%d (not attached yet)\n",
++                   sc->port ? sc->port->index : -1);
++
++            /* Store globally for the hotplug timer */
++            chihiro_usb_set_devices(qc, sc);
++
++            /* Load per-game saves (ic11 + extmem) and register exit flusher */
++            chihiro_save_init();
++        } else {
++            printf("Chihiro: WARNING - could not find USB bus on OHCI\n");
++        }
++        printf("Chihiro: init complete (%lld ms)\n",
++               (long long)(g_get_monotonic_time() - init_t0) / 1000);
++    }
+ }
+ 
+ static char *machine_get_bootrom(Object *obj, Error **errp)
+@@ -362,6 +504,16 @@ static void machine_set_bootrom(Object *obj, const char *value, Error **errp)
+     ms->bootrom = g_strdup(value);
+ }
+ 
++static bool machine_get_chihiro(Object *obj, Error **errp)
++{
++    return XBOX_MACHINE(obj)->chihiro;
++}
++
++static void machine_set_chihiro(Object *obj, bool value, Error **errp)
++{
++    XBOX_MACHINE(obj)->chihiro = value;
++}
++
+ static char *machine_get_avpack(Object *obj, Error **errp)
+ {
+     XboxMachineState *ms = XBOX_MACHINE(obj);
+@@ -469,6 +621,11 @@ static void xbox_machine_options(MachineClass *m)
+                                   machine_set_bootrom);
+     object_class_property_set_description(oc, "bootrom", "Xbox bootrom file");
+ 
++    object_class_property_add_bool(oc, "chihiro", machine_get_chihiro,
++                                   machine_set_chihiro);
++    object_class_property_set_description(
++        oc, "chihiro", "Sega Chihiro: media board, baseboard and 128 MiB");
++
+     object_class_property_add_str(oc, "avpack", machine_get_avpack,
+                                   machine_set_avpack);
+     object_class_property_set_description(
+diff --git a/xemu/hw/xbox/xbox.h b/xemu/hw/xbox/xbox.h
+index 8e602d69..59134de2 100644
+--- a/xemu/hw/xbox/xbox.h
++++ b/xemu/hw/xbox/xbox.h
+@@ -44,6 +44,7 @@ typedef struct XboxMachineState {
+     /*< public >*/
+     char *bootrom;
+     char *avpack;
++    bool chihiro;
+     bool short_animation;
+     char *smc_version;
+     char *video_encoder;
+diff --git a/xemu/system/vl.c b/xemu/system/vl.c
+index 7900f869..8d5a18d0 100644
+--- a/xemu/system/vl.c
++++ b/xemu/system/vl.c
+@@ -148,6 +148,7 @@
+ #include "ui/xemu-net.h"
+ #include "ui/xemu-input.h"
+ #include "hw/xbox/eeprom_generation.h"
++#include "hw/xbox/chihiro/chihiro.h"
+ 
+ #define MAX_VIRTIO_CONSOLES 1
+ 
+@@ -2908,15 +2909,39 @@ void qmp_x_exit_preconfig(Error **errp)
+ 
+ static const char *get_eeprom_path(void)
+ {
+-    const char *path = g_config.sys.files.eeprom_path;
+-
+-    if (strlen(path) == 0) {
+-        path = xemu_settings_get_default_eeprom_path();
+-        xemu_settings_set_string(&g_config.sys.files.eeprom_path, path);
++    /* Each machine has its own EEPROM: the Xbox's is the configured file
++     * with a retail key; the Chihiro's carries the debug key its BIOS
++     * expects and lives in the data directory like a save. */
++    bool is_chihiro = xemu_chihiro_mode();
++    XboxEEPROMVersion needed = is_chihiro ? XBOX_EEPROM_VERSION_D
++                                          : XBOX_EEPROM_VERSION_R1;
++    static char *chihiro_path;
++    const char *path;
++    if (is_chihiro) {
++        if (!chihiro_path) {
++            const char *config_path = xemu_settings_get_path();
++            if (config_path && config_path[0]) {
++                char *directory = g_path_get_dirname(config_path);
++                chihiro_path = g_strdup_printf("%s%cchihiro_eeprom.bin",
++                                               directory,
++                                               G_DIR_SEPARATOR);
++                g_free(directory);
++            } else {
++                chihiro_path = g_strdup_printf("%schihiro_eeprom.bin",
++                                               xemu_settings_get_base_path());
++            }
++        }
++        path = chihiro_path;
++    } else {
++        path = g_config.sys.files.eeprom_path;
++        if (strlen(path) == 0) {
++            path = xemu_settings_get_default_eeprom_path();
++            xemu_settings_set_string(&g_config.sys.files.eeprom_path, path);
++        }
+     }
+ 
+     if (qemu_access(path, F_OK) == -1) {
+-        if (!xbox_eeprom_generate(path, XBOX_EEPROM_VERSION_R1)) {
++        if (!xbox_eeprom_generate(path, needed)) {
+             char *msg = g_strdup_printf("Failed to generate EEPROM file '%s'."
+                                         "\n\nPlease check machine settings.",
+                                         path);
+@@ -2979,10 +3004,35 @@ void qemu_init(int argc, char **argv)
+     fake_argv[fake_argc++] = argv[0];
+     fake_argv[fake_argc++] = strdup("-machine");
+ 
++    /* Allow overriding the image path from the command line before the
++     * machine is chosen: a Chihiro image decides the machine. */
++    const char *dvd_path = g_config.sys.files.dvd_path;
++    for (int i = 1; i < argc; i++) {
++        if (argv[i] && strcmp(argv[i], "-dvd_path") == 0) {
++            argv[i] = NULL;
++            if (i < argc - 1 && argv[i+1]) {
++                dvd_path = argv[i+1];
++                xemu_settings_set_string(&g_config.sys.files.dvd_path,
++                                         dvd_path);
++                argv[i+1] = NULL;
++            }
++            break;
++        }
++    }
++
++    /* The machine asked for on the command line, else the loaded image's
++     * (xemu_chihiro_mode), remembered for a launch with no image. */
++    bool chihiro_machine = xemu_chihiro_mode();
++    g_config.sys.last_machine = chihiro_machine
++        ? CONFIG_SYS_LAST_MACHINE_CHIHIRO : CONFIG_SYS_LAST_MACHINE_XBOX;
++
+     char *bootrom_arg = NULL;
+     const char *bootrom_path = g_config.sys.files.bootrom_path;
+ 
+-    if (strlen(bootrom_path) > 0) {
++    /* The Chihiro BIOS is an MCPX X2 image with its boot ROM built in, which
++     * xemu boots as is, like a debug BIOS. The MCPX ROM configured for the
++     * retail Xbox is not handed to that machine. */
++    if (!chihiro_machine && strlen(bootrom_path) > 0) {
+         int bootrom_size = get_image_size(bootrom_path, NULL);
+         if (bootrom_size < 0) {
+             char *msg = g_strdup_printf("Failed to open BootROM file '%s'. "
+@@ -3016,8 +3066,9 @@ void qemu_init(int argc, char **argv)
+         "none",
+     }[g_config.sys.avpack];
+ 
+-    fake_argv[fake_argc++] = g_strdup_printf("xbox%s%s%s,avpack=%s",
++    fake_argv[fake_argc++] = g_strdup_printf("xbox%s%s%s%s,avpack=%s",
+         (bootrom_arg != NULL) ? bootrom_arg : "",
++        chihiro_machine ? ",chihiro=on" : "",
+         g_config.general.skip_boot_anim ? ",short-animation=on" : "",
+         ",kernel-irqchip=off",
+         avpack_str
+@@ -3039,10 +3090,26 @@ void qemu_init(int argc, char **argv)
+     }
+ 
+     const char *flashrom_path = g_config.sys.files.flashrom_path;
++    bool chihiro_bios_ok = false;
++    /* A Chihiro only boots its own BIOS (Settings > System > Chihiro Files),
++     * never an Xbox one. Its other files, if not set, are taken from the BIOS
++     * folder. */
++    if (chihiro_machine) {
++        flashrom_path = g_config.chihiro.roms.bios_path;
++        if (!flashrom_path[0] &&
++            chihiro_bios_known(g_config.sys.files.flashrom_path)) {
++            flashrom_path = g_config.sys.files.flashrom_path;
++        }
++        chihiro_bios_ok = flashrom_path[0] &&
++                          !xemu_check_file(flashrom_path) &&
++                          chihiro_bios_known(flashrom_path);
++    }
+     if (g_config.general.show_welcome) {
+         // Don't display an error if this is the first boot. Give user a chance
+         // to configure the path.
+         autostart = 0;
++    } else if (chihiro_machine && !chihiro_bios_ok) {
++        autostart = 0; /* reported below with the other Chihiro files */
+     } else if (xemu_check_file(flashrom_path)) {
+         char *msg = g_strdup_printf("Failed to open flash file '%s'. Please check machine settings.", flashrom_path);
+         xemu_queue_error_message(msg);
+@@ -3053,12 +3120,58 @@ void qemu_init(int argc, char **argv)
+         fake_argv[fake_argc++] = strdup(flashrom_path);
+     }
+ 
+-    int mem = ((int)g_config.sys.mem_limit + 1) * 64;
++    /* A Chihiro has 128 MiB; the Xbox has what the setting says. */
++    int mem = chihiro_machine ? 128 : ((int)g_config.sys.mem_limit + 1) * 64;
+     fake_argv[fake_argc++] = strdup("-m");
+     fake_argv[fake_argc++] = g_strdup_printf("%d", mem);
+ 
++    /* Chihiro: the QC and SC USB devices are realized from their EEPROM
++     * dumps and a missing dump aborts the whole process from inside the
++     * machine build. Load the media board files here, where a missing one
++     * becomes a message and a paused machine like a missing BIOS. */
++    if (chihiro_machine) {
++        chihiro_load_flash_rom(flashrom_path);
++        chihiro_load_eeproms(flashrom_path);
++        GString *missing = g_string_new(NULL);
++        if (!flashrom_path[0] || xemu_check_file(flashrom_path)) {
++            g_string_append(missing, "\n- BIOS (chihiro_xbox_bios.bin)");
++        }
++        if (!chihiro_flash_rom_loaded()) {
++            g_string_append(missing, "\n- media board flash (fpr21042_m29w160et.bin)");
++        }
++        if (!chihiro_ic10_data) {
++            g_string_append(missing, "\n- QC EEPROM (ic10_g24lc64.bin)");
++        }
++        if (!chihiro_pc20_data) {
++            g_string_append(missing, "\n- SC EEPROM (pc20_g24lc64.bin)");
++        }
++        if (!chihiro_ic11_data) {
++            g_string_append(missing, "\n- baseboard EEPROM (ic11_24lc024.bin)");
++        }
++        if (missing->len) {
++            char *msg = g_strdup_printf(
++                "Chihiro files not found:%s\n\nSet them in Settings > System "
++                "> Chihiro Files (or put them next to the BIOS) and restart.",
++                missing->str);
++            xemu_queue_error_message(msg);
++            g_free(msg);
++            autostart = 0;
++        } else if (!chihiro_bios_ok) {
++            char *msg = g_strdup_printf(
++                "'%s' is not a Chihiro BIOS.\n\nSelect chihiro_xbox_bios.bin "
++                "(from MAME's chihiro set) in Settings > System > Chihiro "
++                "Files, then restart.",
++                flashrom_path);
++            xemu_queue_error_message(msg);
++            g_free(msg);
++        }
++        g_string_free(missing, TRUE);
++    }
++
+     const char *hdd_path = g_config.sys.files.hdd_path;
+-    if (strlen(hdd_path) > 0) {
++    if (chihiro_machine) {
++        /* Chihiro has no IDE hard disk; hdd_path is the Xbox's. */
++    } else if (strlen(hdd_path) > 0) {
+         if (xemu_check_file(hdd_path)) {
+             char *msg = g_strdup_printf("Failed to open hard disk image file '%s'. Please check machine settings.", hdd_path);
+             xemu_queue_error_message(msg);
+@@ -3073,49 +3186,43 @@ void qemu_init(int argc, char **argv)
+         }
+     }
+ 
+-    const char *dvd_path = g_config.sys.files.dvd_path;
+-    // Allow overriding the dvd path from command line
+-    for (int i = 1; i < argc; i++) {
+-        if (argv[i] && strcmp(argv[i], "-dvd_path") == 0) {
+-            argv[i] = NULL;
+-            if (i < argc - 1 && argv[i+1]) {
+-                dvd_path = argv[i+1];
+-                argv[i+1] = NULL;
++    /* An Xbox mounts the image in its DVD drive. A Chihiro has none: its IDE
++     * slave is the media board's interface (chihiro_ide_interface_init),
++     * which serves a FATX image from the DIMM; another -drive at index 1
++     * crashes QEMU's check of orphaned drives. */
++    if (!chihiro_machine) {
++        fake_argv[fake_argc++] = strdup("-drive");
++        char *escaped_dvd_path = strdup_double_commas(dvd_path);
++        /* XGrid: pick the driver the core needs; a .zar keeps its magic at the
++         * end and an ISO needs the XDVDFS partition offset detected. */
++        const char *dvd_format = "";
++        const char *dvd_extension = strrchr(dvd_path, '.');
++        if (dvd_extension != NULL) {
++            if (g_ascii_strcasecmp(dvd_extension, ".zar") == 0) {
++                dvd_format = ",format=xgridzar";
++            } else if (g_ascii_strcasecmp(dvd_extension, ".chd") == 0) {
++                dvd_format = ",format=xgridchd";
++            } else if (g_ascii_strcasecmp(dvd_extension, ".iso") == 0 ||
++                       g_ascii_strcasecmp(dvd_extension, ".xiso") == 0) {
++                dvd_format = ",format=xgridiso";
++            } else if (g_ascii_strcasecmp(dvd_extension, ".cci") == 0) {
++                dvd_format = ",format=xgridcci";
+             }
+-            break;
+         }
++        fake_argv[fake_argc++] = g_strdup_printf("index=1,media=cdrom,file=%s%s",
++            escaped_dvd_path, dvd_format);
++        free(escaped_dvd_path);
+     }
+ 
+-    // Always populate DVD drive. If disc path is the empty string, drive is
+-    // connected but no media present.
+-    fake_argv[fake_argc++] = strdup("-drive");
+-    char *escaped_dvd_path = strdup_double_commas(dvd_path);
+-    /* XGrid: pick the driver the core needs; a .zar keeps its magic at the
+-     * end and an ISO needs the XDVDFS partition offset detected. */
+-    const char *dvd_format = "";
+-    const char *dvd_extension = strrchr(dvd_path, '.');
+-    if (dvd_extension != NULL) {
+-        if (g_ascii_strcasecmp(dvd_extension, ".zar") == 0) {
+-            dvd_format = ",format=xgridzar";
+-        } else if (g_ascii_strcasecmp(dvd_extension, ".chd") == 0) {
+-            dvd_format = ",format=xgridchd";
+-        } else if (g_ascii_strcasecmp(dvd_extension, ".iso") == 0 ||
+-                   g_ascii_strcasecmp(dvd_extension, ".xiso") == 0) {
+-            dvd_format = ",format=xgridiso";
+-        } else if (g_ascii_strcasecmp(dvd_extension, ".cci") == 0) {
+-            dvd_format = ",format=xgridcci";
+-        }
+-    }
+-    fake_argv[fake_argc++] = g_strdup_printf("index=1,media=cdrom,file=%s%s",
+-        escaped_dvd_path, dvd_format);
+-    free(escaped_dvd_path);
+-
+     fake_argv[fake_argc++] = strdup("-display");
+     fake_argv[fake_argc++] = strdup("xemu");
+ 
+     // Create USB Daughterboard for 1.0 Xbox. This is connected to Port 1 of the Root hub.
+-    fake_argv[fake_argc++] = strdup("-device");
+-    fake_argv[fake_argc++] = strdup("usb-hub,port=1,ports=4");
++    // On a Chihiro, skip: the baseboard USB devices use these ports instead.
++    if (!chihiro_machine) {
++        fake_argv[fake_argc++] = strdup("-device");
++        fake_argv[fake_argc++] = strdup("usb-hub,port=1,ports=4");
++    }
+ 
+     for (int i = 1; i < argc; i++) {
+         if (argv[i] != NULL) {
+diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
+index 54595e1b..988eb419 100644
+--- a/xemu/ui/xemu-input.c
++++ b/xemu/ui/xemu-input.c
+@@ -36,6 +36,8 @@
+ #include <stdlib.h>
+ 
+ #include "system/blockdev.h"
++#include "hw/xbox/chihiro/chihiro.h"
++#include "hw/xbox/chihiro/chihiro-jvs.h"
+ 
+ // #define DEBUG_INPUT
+ 
+@@ -564,6 +566,127 @@ void xemu_input_update_controller(ControllerState *state)
+     state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+ }
+ 
++static bool chihiro_key_down(const bool *kbd, int scancode)
++{
++    return scancode > 0 && scancode < SDL_SCANCODE_COUNT && kbd[scancode];
++}
++
++/* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
++ * same bindings; the core's cabinet emulation itself does not care where the
++ * switches come from. */
++static void xemu_input_update_chihiro(void)
++{
++    if (!chihiro_jvs_global || !xemu_chihiro_mode()) {
++        return;
++    }
++
++    ChihiroJVSState *jvs = chihiro_jvs_global;
++    const bool *kbd = SDL_GetKeyboardState(NULL);
++    const __typeof__(g_config.chihiro.jvs) *jvs_cfg = &g_config.chihiro.jvs;
++    int profile = chihiro_detected_game_profile();
++    if (profile < 0) {
++        profile = jvs_cfg->profile;
++    }
++
++    uint8_t sw0 = 0;
++    uint8_t sw1 = 0;
++    jvs->player_switches[1][0] = 0;
++    jvs->player_switches[1][1] = 0;
++    for (int i = 0; i < JVS_MAX_ANALOG; i++) {
++        jvs->analog[i] = 0x8000;
++    }
++
++    switch (profile) {
++    case CONFIG_CHIHIRO_JVS_PROFILE_HOTD3:
++    case CONFIG_CHIHIRO_JVS_PROFILE_VC3:
++    case CONFIG_CHIHIRO_JVS_PROFILE_GS: {
++        int trigger = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
++            ? jvs_cfg->hotd3.trigger
++            : profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
++                ? jvs_cfg->vc3.trigger : jvs_cfg->gs.trigger;
++        int body = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
++            ? jvs_cfg->hotd3.body_button
++            : profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
++                ? jvs_cfg->vc3.body_button : jvs_cfg->gs.body_button;
++        int extra = profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
++            ? jvs_cfg->vc3.pedal : jvs_cfg->gs.change;
++
++        if (chihiro_key_down(kbd, trigger)) sw0 |= 0x02;
++        if (chihiro_key_down(kbd, body)) sw1 |= 0x80;
++        if (chihiro_key_down(kbd, extra)) sw1 |= 0x40;
++        /* Aim at the middle of the picture: the games need a position to
++         * fire, and a keyboard has none. */
++        jvs->analog[0] = 0x8000;
++        jvs->analog[1] = 0x8000;
++        break;
++    }
++    case CONFIG_CHIHIRO_JVS_PROFILE_CTX:
++    case CONFIG_CHIHIRO_JVS_PROFILE_OR2:
++    case CONFIG_CHIHIRO_JVS_PROFILE_WMMT2: {
++        bool left = chihiro_key_down(kbd, jvs_cfg->steer_left);
++        bool right = chihiro_key_down(kbd, jvs_cfg->steer_right);
++        jvs->analog[0] = left ? 0 : right ? 0xFFFF : 0x8000;
++        jvs->analog[1] = chihiro_key_down(kbd, jvs_cfg->gas) ? 0xFFFF : 0;
++        jvs->analog[2] = chihiro_key_down(kbd, jvs_cfg->brake) ? 0xFFFF : 0;
++
++        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_CTX) {
++            if (chihiro_key_down(kbd, jvs_cfg->ctx.drive_gear)) sw0 |= 0x20;
++            if (chihiro_key_down(kbd, jvs_cfg->ctx.reverse)) sw0 |= 0x10;
++            if (chihiro_key_down(kbd, jvs_cfg->ctx.jump)) sw0 |= 0x02;
++        } else if (profile == CONFIG_CHIHIRO_JVS_PROFILE_OR2) {
++            if (chihiro_key_down(kbd, jvs_cfg->or2.view_change)) sw0 |= 0x10;
++        } else {
++            if (chihiro_key_down(kbd, jvs_cfg->wmmt2.view_change)) sw1 |= 0x02;
++            if (chihiro_key_down(kbd, jvs_cfg->wmmt2.intrude_change)) sw1 |= 0x01;
++        }
++        if (chihiro_key_down(kbd, jvs_cfg->gear_up)) sw1 |= 0x80;
++        if (chihiro_key_down(kbd, jvs_cfg->gear_down)) sw1 |= 0x40;
++        break;
++    }
++    case CONFIG_CHIHIRO_JVS_PROFILE_OK: {
++        if (chihiro_key_down(kbd, jvs_cfg->ok.swing_left)) jvs->analog[1] = 0;
++        if (chihiro_key_down(kbd, jvs_cfg->ok.swing_right)) jvs->analog[1] = 0xFFFF;
++        if (chihiro_key_down(kbd, jvs_cfg->ok.board_front)) sw0 |= 0x20;
++        if (chihiro_key_down(kbd, jvs_cfg->ok.board_rear)) sw0 |= 0x10;
++        if (chihiro_key_down(kbd, jvs_cfg->ok.left_grab)) sw0 |= 0x02;
++        if (chihiro_key_down(kbd, jvs_cfg->ok.right_grab)) sw0 |= 0x01;
++        break;
++    }
++    case CONFIG_CHIHIRO_JVS_PROFILE_GUNDAM: {
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_up)) sw0 |= 0x20;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_down)) sw0 |= 0x10;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_left)) sw0 |= 0x08;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_right)) sw0 |= 0x04;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_trigger)) sw0 |= 0x02;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_button)) sw0 |= 0x01;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_up)) sw1 |= 0x20;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_down)) sw1 |= 0x10;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_left)) sw1 |= 0x08;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_right)) sw1 |= 0x04;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_trigger)) sw1 |= 0x02;
++        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_button)) sw1 |= 0x01;
++        jvs->analog[1] = chihiro_key_down(kbd, jvs_cfg->gundam.pedal) ? 0xFFFF : 0;
++        break;
++    }
++    default:
++        break;
++    }
++
++    if (chihiro_key_down(kbd, jvs_cfg->start)) sw0 |= 0x80;
++    if (chihiro_key_down(kbd, jvs_cfg->service)) sw0 |= 0x40;
++
++    jvs->player_switches[0][0] = sw0;
++    jvs->player_switches[0][1] = sw1;
++    jvs->system_switches = chihiro_key_down(kbd, jvs_cfg->test) ? 0x80 : 0;
++
++    static bool coin_was_down;
++    bool coin = chihiro_key_down(kbd, jvs_cfg->coin);
++    if (coin && !coin_was_down) {
++        jvs->coin_count[0]++;
++    }
++    coin_was_down = coin;
++}
++
+ void xemu_input_update_controllers(void)
+ {
+     ControllerState *iter;
+@@ -573,6 +696,7 @@ void xemu_input_update_controllers(void)
+     QTAILQ_FOREACH(iter, &available_controllers, entry) {
+         xemu_input_update_rumble(iter);
+     }
++    xemu_input_update_chihiro();
+ }
+ 
+ void xemu_input_update_sdl_kbd_controller_state(ControllerState *state)
+diff --git a/xemu/ui/xemu-notifications.h b/xemu/ui/xemu-notifications.h
+index f023eb35..c3617b21 100644
+--- a/xemu/ui/xemu-notifications.h
++++ b/xemu/ui/xemu-notifications.h
+@@ -29,6 +29,7 @@ extern "C" {
+ 
+ // Simple API to show a message on the screen when some event happens
+ void xemu_queue_notification(const char *msg);
++void xemu_queue_notification_warning(const char *msg);
+ void xemu_queue_error_message(const char *msg);
+ 
+ #ifdef __cplusplus
+diff --git a/xemu/ui/xemu-settings.cc b/xemu/ui/xemu-settings.cc
+index 5f9148af..4e6c5351 100644
+--- a/xemu/ui/xemu-settings.cc
++++ b/xemu/ui/xemu-settings.cc
+@@ -343,3 +343,83 @@ void xemu_settings_reset_keyboard_mapping(void)
+   cnode->reset_to_defaults();
+   cnode->store_to_struct(&g_config);
+ }
++
++/* Sega Chihiro */
++bool xemu_media_is_xbox_disc(const char *path)
++{
++    /* The XISO volume descriptor sits in sector 32, at the start of the
++     * game partition: offset 0 of an XISO, after the video partition of a
++     * redump image. */
++    static const char magic[] = "MICROSOFT*XBOX*MEDIA";
++    static const long partitions[] = { 0, 0x18300000 };
++    if (!path || !path[0] || g_file_test(path, G_FILE_TEST_IS_DIR)) {
++        return false;
++    }
++    FILE *f = qemu_fopen(path, "rb");
++    if (!f) {
++        return false;
++    }
++    bool disc = false;
++    for (int i = 0; i < 2 && !disc; i++) {
++        char buf[sizeof(magic) - 1];
++        disc = fseek(f, partitions[i] + 0x10000, SEEK_SET) == 0 &&
++               fread(buf, 1, sizeof(buf), f) == sizeof(buf) &&
++               memcmp(buf, magic, sizeof(buf)) == 0;
++    }
++    fclose(f);
++    return disc;
++}
++
++/* -1 when the command line does not ask. */
++static int chihiro_mode_asked = -1;
++
++void xemu_chihiro_mode_ask(bool chihiro)
++{
++    chihiro_mode_asked = chihiro;
++}
++
++const char *xemu_chihiro_image(void)
++{
++    static char *image;
++    if (!image) {
++        const char *path = g_config.sys.files.dvd_path;
++        image = g_strdup(path ? path : "");
++    }
++    return image;
++}
++
++bool xemu_debug_mode(void)
++{
++    static int mode = -1;
++    if (mode < 0) {
++        const char *e = getenv("XEMU_DEBUG_MODE");
++        mode = e && e[0] && e[0] != '0';
++    }
++    return mode;
++}
++
++bool xemu_chihiro_mode(void)
++{
++    static int mode = -1;
++    if (mode < 0) {
++        const char *image = xemu_chihiro_image();
++        if (chihiro_mode_asked >= 0) {
++            mode = chihiro_mode_asked;
++        } else if (g_config.sys.default_machine ==
++                   CONFIG_SYS_DEFAULT_MACHINE_XBOX) {
++            /* The shell writes the machine it chose; do not second-guess it
++             * from a compressed Xbox image whose magic is not visible. */
++            mode = 0;
++        } else if (g_config.sys.default_machine ==
++                   CONFIG_SYS_DEFAULT_MACHINE_CHIHIRO) {
++            mode = 1;
++        } else if (image && image[0]) {
++            const char *extension = strrchr(image, '.');
++            mode = extension && !g_ascii_strcasecmp(extension, ".bin");
++        } else {
++            mode = g_config.sys.last_machine ==
++                   CONFIG_SYS_LAST_MACHINE_CHIHIRO;
++        }
++    }
++    return mode;
++}
+diff --git a/xemu/ui/xemu-settings.h b/xemu/ui/xemu-settings.h
+index 880b62f2..43a0b47a 100644
+--- a/xemu/ui/xemu-settings.h
++++ b/xemu/ui/xemu-settings.h
+@@ -70,6 +70,23 @@ static inline void xemu_settings_set_string(const char **str, const char *new_st
+     *str = strdup(new_str);
+ }
+ 
++/* Sega Chihiro: the machine asked for on the command line
++ * (-machine ...,chihiro=on|off, see xemu_chihiro_mode_ask), else the loaded
++ * image's. An Xbox disc (XISO) boots an Xbox, any other image boots a
++ * Chihiro; with no image the sys.default_machine setting decides, "auto"
++ * being the machine last booted (sys.last_machine). Decided once, at the
++ * first call. */
++bool xemu_media_is_xbox_disc(const char *path);
++bool xemu_chihiro_mode(void);
++void xemu_chihiro_mode_ask(bool chihiro);
++/* The image the machine booted, kept at the first xemu_chihiro_mode() call.
++ * Load Disc on a Chihiro only sets dvd_path for the next launch. */
++const char *xemu_chihiro_image(void);
++
++/* Debug mode: XEMU_DEBUG_MODE=1 enables the Chihiro log categories and
++ * tracing that are too noisy for normal runs. Read once. */
++bool xemu_debug_mode(void);
++
+ void add_net_nat_forward_ports(int host, int guest, CONFIG_NET_NAT_FORWARD_PORTS_PROTOCOL protocol);
+ void remove_net_nat_forward_ports(unsigned int index);
+ 
+diff --git a/xemu/ui/xui/notifications.cc b/xemu/ui/xui/notifications.cc
+index f4c5179e..21a13b5e 100644
+--- a/xemu/ui/xui/notifications.cc
++++ b/xemu/ui/xui/notifications.cc
+@@ -153,6 +153,11 @@ void xemu_queue_notification(const char *msg)
+     notification_manager.QueueNotification(msg);
+ }
+ 
++void xemu_queue_notification_warning(const char *msg)
++{
++    notification_manager.QueueNotification(msg);
++}
++
+ void xemu_queue_error_message(const char *msg)
+ {
+     notification_manager.QueueError(msg);

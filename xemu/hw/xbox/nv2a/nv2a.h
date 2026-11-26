@@ -22,6 +22,9 @@
 #define HW_NV2A_H
 
 void nv2a_init(PCIBus *bus, int devfn, MemoryRegion *ram);
+/* Chihiro: name the running game for shader-cache tagging. The XGrid core
+ * keeps no per-game shader tag yet, so this is a no-op. */
+void nv2a_set_game_name(const char *name, const char *before);
 void nv2a_context_init(void);
 int nv2a_get_framebuffer_surface(void);
 void nv2a_release_framebuffer_surface(void);

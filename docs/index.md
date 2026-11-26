@@ -15,6 +15,7 @@ diagnostics, packaging and the documentation you are reading.
 | Area | What XGrid provides |
 | --- | --- |
 | **Core** | xemu 0.8.139 / QEMU 10.2.0 TCG i386, NV2A OpenGL/Vulkan/NULL renderers, MCPX, APU/ACI, IDE/ATAPI, USB/OHCI, SMBus and the full Xbox boot chain |
+| **Arcade** | Sega Chihiro machine with media board, DIMM, JVS, drive boards and card readers; boots netboot `.bin` images |
 | **Shell** | Avalonia 12 desktop application with Home, Library, Settings, Activity and About pages |
 | **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
 | **Media** | ISO/XISO (optimized or full Redump), compressed CHD, CCI, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
@@ -75,6 +76,18 @@ Read [Architecture](reference/architecture.md) for the full picture.
   headless runs.
 - A missing DirectSound device falls back to the system default instead of
   stopping the core.
+
+### Sega Chihiro in the same shell
+
+- The ported Chihiro machine boots netboot `.bin` images with its own BIOS,
+  media-board flash and baseboard EEPROMs.
+- **Settings → System → Sega Chihiro** selects the firmware folder; a `.bin`
+  in the Library selects the machine for that launch.
+- Chihiro launches use 128 MB and skip the Xbox hard disk. Xbox discs and
+  Chihiro images coexist in the same library, labelled **ISO/CHD/CCI/ZAR** and
+  **BIN**.
+- Redump GD-ROM sets need conversion to netboot format first; see
+  [Sega Chihiro](guides/chihiro.md).
 
 ### Save states that belong to the machine
 

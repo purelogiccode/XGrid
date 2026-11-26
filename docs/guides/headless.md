@@ -149,9 +149,11 @@ are case-insensitive and accept both `--name value` and `--name=value`.
 | Headless | `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` |
 
 `--seconds`, `--frames`, `--summary` and `--benchmark` select headless mode even
-when `--headless` is omitted. A positional disc path also works when it ends in
-`.iso`, `.xiso`, `.chd` or `.zar`; it implies `--autostart`. Use `--` to stop
-parsing and pass the rest to Avalonia unchanged.
+when `--headless` is omitted. A positional image path also works when it ends in
+`.iso`, `.xiso`, `.chd`, `.cci`, `.zar` or `.bin`; it implies `--autostart`. A
+`.bin` path boots the Sega Chihiro with the firmware configured in
+**Settings → System → Sega Chihiro**. Use `--` to stop parsing and pass the rest
+to Avalonia unchanged.
 
 ## Host notes
 

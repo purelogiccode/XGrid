@@ -91,6 +91,7 @@ public static class XemuTomlWriter
         text.Append('\n');
 
         text.Append("[sys]\n");
+        text.Append("default_machine = '").Append(settings.Machine).Append("'\n");
         text.Append("mem_limit = '").Append(settings.RamMb == 128 ? "128" : "64").Append("'\n");
         text.Append("avpack = '").Append(settings.AvPack).Append("'\n");
         text.Append('\n');
@@ -101,6 +102,17 @@ public static class XemuTomlWriter
         AppendPath(text, "eeprom_path", settings.EepromPath);
         AppendPath(text, "hdd_path", settings.HddPath);
         AppendPath(text, "dvd_path", settings.DvdPath);
+        if (settings.IsChihiro)
+        {
+            text.Append('\n');
+            text.Append("[chihiro.roms]\n");
+            AppendPath(text, "bios_path", settings.ChihiroBiosPath);
+            AppendPath(text, "mediaboard_path", settings.ChihiroMediaboardPath);
+            AppendPath(text, "ic10_path", settings.ChihiroIc10Path);
+            AppendPath(text, "ic11_path", settings.ChihiroIc11Path);
+            AppendPath(text, "pc20_path", settings.ChihiroPc20Path);
+        }
+
         return text.ToString();
     }
 

@@ -64,7 +64,8 @@ and packaging.
 | Area | Support |
 | --- | --- |
 | **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
-| **Media** | ISO/XISO (optimized or full Redump), CHD, CCI, ZAR (entry form or file tree); raw/qcow2 HDD |
+| **Media** | ISO/XISO (optimized or full Redump), CHD, CCI, ZAR (entry form or file tree); Chihiro netboot `.bin`; raw/qcow2 HDD |
+| **Arcade** | Sega Chihiro machine (media board, DIMM, JVS, drive boards) with its own BIOS and netboot images |
 | **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
 | **Display** | Shell frame sink or embedded core window (in-process or separate); filters, resolution scale, aspect/fit, fullscreen, optional FPS overlay |
 | **Audio** | Core APU/DSP, Auto/DirectSound/native backends/Null/WAV capture, output-device selection, HRTF, volume limit |
@@ -83,6 +84,10 @@ and packaging.
    **HDD** image.
 4. Add your game folders in **Settings → Library**.
 5. Pick a title in **Library**, or press **Power on** to reach the dashboard.
+
+For Sega Chihiro, put its five firmware files in one folder, select it under
+**Settings → System → Sega Chihiro**, and add your netboot `.bin` images to a
+library folder. See [Sega Chihiro](docs/guides/chihiro.md).
 
 Full walkthrough: [First boot](docs/getting-started/first-boot.md).
 

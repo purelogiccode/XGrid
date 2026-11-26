@@ -24,6 +24,8 @@ point, but XGrid's patches and media drivers can change the result.
 | Live host audio and WAV capture | Supported through the core |
 | Audio backend and device selection | Supported; the list comes from the core and DirectSound devices are enumerated |
 | Null audio sink for headless runs | Supported (automatic) |
+| Sega Chihiro netboot `.bin` images | Supported with the Chihiro machine; Chihiro firmware and a FATX netboot image are required |
+| Chihiro keyboard cabinet controls | Supported (default key map) |
 | Four save-state slots | Supported with in-process hosting |
 | Automatic session save/resume | Supported with in-process hosting; one `xgrid-session` snapshot |
 | Powered-off screen and stay-open mode | Supported |
@@ -46,6 +48,8 @@ point, but XGrid's patches and media drivers can change the result.
 | **Save states are in-process only** | The separate-process host has no ABI for snapshot control, so manual slots and automatic session save/resume require in-process hosting. |
 | **Pause, frame stepping and disc swap need in-process hosting** | On Linux, power off before changing a disc. |
 | **No shell netplay UI** | The core may support netplay, but the shell does not expose it. |
+| **Chihiro GD-ROMs need conversion** | The ported machine boots FATX netboot `.bin` images. Redump/MAME GD-ROM dumps must be converted with `chihiro-netboot`; direct GD-ROM emulation and in-shell conversion are not available. |
+| **Chihiro gamepads, wheels and light guns** | The core supports them in its wider fork, but this shell currently exposes the Chihiro keyboard map only. |
 | **Direct3D 11 renderer is a preview** | The native Direct3D 11 NV2A backend renders the boot chain, menus and gameplay draws through HLSL shaders, a surface/zeta cache, occlusion queries and a texture cache. Remaining differences are the CPU presentation readback (no D3D11↔GL interop yet), line smoothing and some texture/filter edge cases; `ImplementDirectX.md` tracks them. Windows builds report `D3D11` only when the backend is compiled. OpenGL remains the safe default. |
 | **No firmware or games** | Everything copyrighted must come from the user. |
 | **Alpha shell** | UI and settings may change between releases. |

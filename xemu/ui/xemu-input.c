@@ -36,6 +36,8 @@
 #include <stdlib.h>
 
 #include "system/blockdev.h"
+#include "hw/xbox/chihiro/chihiro.h"
+#include "hw/xbox/chihiro/chihiro-jvs.h"
 
 // #define DEBUG_INPUT
 
@@ -564,6 +566,127 @@ void xemu_input_update_controller(ControllerState *state)
     state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 }
 
+static bool chihiro_key_down(const bool *kbd, int scancode)
+{
+    return scancode > 0 && scancode < SDL_SCANCODE_COUNT && kbd[scancode];
+}
+
+/* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
+ * same bindings; the core's cabinet emulation itself does not care where the
+ * switches come from. */
+static void xemu_input_update_chihiro(void)
+{
+    if (!chihiro_jvs_global || !xemu_chihiro_mode()) {
+        return;
+    }
+
+    ChihiroJVSState *jvs = chihiro_jvs_global;
+    const bool *kbd = SDL_GetKeyboardState(NULL);
+    const __typeof__(g_config.chihiro.jvs) *jvs_cfg = &g_config.chihiro.jvs;
+    int profile = chihiro_detected_game_profile();
+    if (profile < 0) {
+        profile = jvs_cfg->profile;
+    }
+
+    uint8_t sw0 = 0;
+    uint8_t sw1 = 0;
+    jvs->player_switches[1][0] = 0;
+    jvs->player_switches[1][1] = 0;
+    for (int i = 0; i < JVS_MAX_ANALOG; i++) {
+        jvs->analog[i] = 0x8000;
+    }
+
+    switch (profile) {
+    case CONFIG_CHIHIRO_JVS_PROFILE_HOTD3:
+    case CONFIG_CHIHIRO_JVS_PROFILE_VC3:
+    case CONFIG_CHIHIRO_JVS_PROFILE_GS: {
+        int trigger = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
+            ? jvs_cfg->hotd3.trigger
+            : profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
+                ? jvs_cfg->vc3.trigger : jvs_cfg->gs.trigger;
+        int body = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
+            ? jvs_cfg->hotd3.body_button
+            : profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
+                ? jvs_cfg->vc3.body_button : jvs_cfg->gs.body_button;
+        int extra = profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
+            ? jvs_cfg->vc3.pedal : jvs_cfg->gs.change;
+
+        if (chihiro_key_down(kbd, trigger)) sw0 |= 0x02;
+        if (chihiro_key_down(kbd, body)) sw1 |= 0x80;
+        if (chihiro_key_down(kbd, extra)) sw1 |= 0x40;
+        /* Aim at the middle of the picture: the games need a position to
+         * fire, and a keyboard has none. */
+        jvs->analog[0] = 0x8000;
+        jvs->analog[1] = 0x8000;
+        break;
+    }
+    case CONFIG_CHIHIRO_JVS_PROFILE_CTX:
+    case CONFIG_CHIHIRO_JVS_PROFILE_OR2:
+    case CONFIG_CHIHIRO_JVS_PROFILE_WMMT2: {
+        bool left = chihiro_key_down(kbd, jvs_cfg->steer_left);
+        bool right = chihiro_key_down(kbd, jvs_cfg->steer_right);
+        jvs->analog[0] = left ? 0 : right ? 0xFFFF : 0x8000;
+        jvs->analog[1] = chihiro_key_down(kbd, jvs_cfg->gas) ? 0xFFFF : 0;
+        jvs->analog[2] = chihiro_key_down(kbd, jvs_cfg->brake) ? 0xFFFF : 0;
+
+        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_CTX) {
+            if (chihiro_key_down(kbd, jvs_cfg->ctx.drive_gear)) sw0 |= 0x20;
+            if (chihiro_key_down(kbd, jvs_cfg->ctx.reverse)) sw0 |= 0x10;
+            if (chihiro_key_down(kbd, jvs_cfg->ctx.jump)) sw0 |= 0x02;
+        } else if (profile == CONFIG_CHIHIRO_JVS_PROFILE_OR2) {
+            if (chihiro_key_down(kbd, jvs_cfg->or2.view_change)) sw0 |= 0x10;
+        } else {
+            if (chihiro_key_down(kbd, jvs_cfg->wmmt2.view_change)) sw1 |= 0x02;
+            if (chihiro_key_down(kbd, jvs_cfg->wmmt2.intrude_change)) sw1 |= 0x01;
+        }
+        if (chihiro_key_down(kbd, jvs_cfg->gear_up)) sw1 |= 0x80;
+        if (chihiro_key_down(kbd, jvs_cfg->gear_down)) sw1 |= 0x40;
+        break;
+    }
+    case CONFIG_CHIHIRO_JVS_PROFILE_OK: {
+        if (chihiro_key_down(kbd, jvs_cfg->ok.swing_left)) jvs->analog[1] = 0;
+        if (chihiro_key_down(kbd, jvs_cfg->ok.swing_right)) jvs->analog[1] = 0xFFFF;
+        if (chihiro_key_down(kbd, jvs_cfg->ok.board_front)) sw0 |= 0x20;
+        if (chihiro_key_down(kbd, jvs_cfg->ok.board_rear)) sw0 |= 0x10;
+        if (chihiro_key_down(kbd, jvs_cfg->ok.left_grab)) sw0 |= 0x02;
+        if (chihiro_key_down(kbd, jvs_cfg->ok.right_grab)) sw0 |= 0x01;
+        break;
+    }
+    case CONFIG_CHIHIRO_JVS_PROFILE_GUNDAM: {
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_up)) sw0 |= 0x20;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_down)) sw0 |= 0x10;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_left)) sw0 |= 0x08;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_right)) sw0 |= 0x04;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_trigger)) sw0 |= 0x02;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.l_button)) sw0 |= 0x01;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_up)) sw1 |= 0x20;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_down)) sw1 |= 0x10;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_left)) sw1 |= 0x08;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_right)) sw1 |= 0x04;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_trigger)) sw1 |= 0x02;
+        if (chihiro_key_down(kbd, jvs_cfg->gundam.r_button)) sw1 |= 0x01;
+        jvs->analog[1] = chihiro_key_down(kbd, jvs_cfg->gundam.pedal) ? 0xFFFF : 0;
+        break;
+    }
+    default:
+        break;
+    }
+
+    if (chihiro_key_down(kbd, jvs_cfg->start)) sw0 |= 0x80;
+    if (chihiro_key_down(kbd, jvs_cfg->service)) sw0 |= 0x40;
+
+    jvs->player_switches[0][0] = sw0;
+    jvs->player_switches[0][1] = sw1;
+    jvs->system_switches = chihiro_key_down(kbd, jvs_cfg->test) ? 0x80 : 0;
+
+    static bool coin_was_down;
+    bool coin = chihiro_key_down(kbd, jvs_cfg->coin);
+    if (coin && !coin_was_down) {
+        jvs->coin_count[0]++;
+    }
+    coin_was_down = coin;
+}
+
 void xemu_input_update_controllers(void)
 {
     ControllerState *iter;
@@ -573,6 +696,7 @@ void xemu_input_update_controllers(void)
     QTAILQ_FOREACH(iter, &available_controllers, entry) {
         xemu_input_update_rumble(iter);
     }
+    xemu_input_update_chihiro();
 }
 
 void xemu_input_update_sdl_kbd_controller_state(ControllerState *state)
