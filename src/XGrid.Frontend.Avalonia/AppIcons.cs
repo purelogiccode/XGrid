@@ -119,6 +119,10 @@ public static class AppIcons
     public static Geometry FastForward { get; } = Geometry.Parse(
         "M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z");
 
+    /// <summary>Search glyph.</summary>
+    public static Geometry Search { get; } = Geometry.Parse(
+        "M10 4a6 6 0 1 0 3.47 10.9l4.3 4.3 1.42-1.42-4.3-4.3A6 6 0 0 0 10 4zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8z");
+
     /// <summary>List glyph.</summary>
     public static Geometry List { get; } = Geometry.Parse(
         "M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z");

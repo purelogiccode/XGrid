@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using XGrid.Frontend.Avalonia.Models;
+using XGrid.Frontend.Avalonia.Services;
 using XGrid.Frontend.Avalonia.ViewModels;
 using Xunit;
 
@@ -286,5 +287,82 @@ public sealed class EmulatorSettingsTests
             () => SettingsViewModel.CopyDonationState(null!, settings));
         Assert.Throws<ArgumentNullException>(
             () => SettingsViewModel.CopyDonationState(settings, null!));
+    }
+
+    [Fact]
+    public void CloneCopiesLibraryStateAndCoverOptions()
+    {
+        string image = Path.Combine(Path.GetTempPath(), "xgrid-games", "halo.iso");
+        var settings = new EmulatorSettings
+        {
+            LibraryIconSize = 240,
+            Covers = new CoverSettings
+            {
+                Directory = @"D:\covers",
+                UseOnline = false,
+                AutoDownload = false,
+                CatalogUrl = "https://example.test/catalog.json",
+                FuzzyMatching = false,
+                StripAnnotations = false,
+                FuzzyThreshold = 0.91,
+            },
+            LibraryFavorites = [image],
+            LibraryPlayState =
+            {
+                [image] = new LibraryPlayRecord { Seconds = 120, LaunchCount = 2 },
+            },
+            LibraryTitleIds =
+            {
+                [image] = 0x4D530002u,
+            },
+        };
+
+        EmulatorSettings copy = settings.Clone();
+
+        Assert.Equal(240, copy.LibraryIconSize);
+        Assert.Equal(@"D:\covers", copy.Covers.Directory);
+        Assert.False(copy.Covers.UseOnline);
+        Assert.Equal(0.91, copy.Covers.FuzzyThreshold);
+        Assert.Contains(image, copy.LibraryFavorites, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(120, copy.LibraryPlayState[image].Seconds);
+        Assert.Equal(0x4D530002u, copy.LibraryTitleIds[image]);
+
+        copy.LibraryFavorites.Clear();
+        copy.Covers.UseOnline = true;
+        Assert.Single(settings.LibraryFavorites);
+        Assert.False(settings.Covers.UseOnline);
+    }
+
+    [Fact]
+    public void NormalizeClampsCoverSettingsAndLibraryState()
+    {
+        var settings = new EmulatorSettings
+        {
+            LibraryIconSize = 1000,
+            Covers = new CoverSettings
+            {
+                CatalogUrl = "https://example.test/base",
+                FuzzyThreshold = 2.0,
+            },
+            LibraryFavorites = ["", "  ", "relative.iso", "relative.iso"],
+            LibraryPlayState =
+            {
+                ["relative.iso"] = new LibraryPlayRecord { Seconds = 10 },
+            },
+            LibraryTitleIds =
+            {
+                ["relative.iso"] = 0x4D530002u,
+                ["zero.iso"] = 0,
+            },
+        };
+
+        settings.Normalize();
+
+        Assert.Equal(384, settings.LibraryIconSize);
+        Assert.EndsWith("/catalog.json", settings.Covers.CatalogUrl, StringComparison.Ordinal);
+        Assert.Equal(CoverDefaults.MaxFuzzyThreshold, settings.Covers.FuzzyThreshold);
+        Assert.Single(settings.LibraryFavorites);
+        Assert.Single(settings.LibraryPlayState);
+        Assert.Single(settings.LibraryTitleIds);
     }
 }

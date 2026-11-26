@@ -37,7 +37,7 @@ and packaging.
 ## Why XGrid?
 
 - **A real desktop application.** Home, Library, Settings, Activity and About
-  pages, with local cover art in the game library, instead of a bare emulator
+  pages, with local and online cover art in the game library, instead of a bare emulator
   window.
 - **The core is the proven one.** xemu 0.8.139 with a small, documented patch
   set — not a re-implementation.

@@ -114,7 +114,27 @@ Overrides apply when the title is launched from the Library or **Open Disc**.
 
 ## Library
 
+### Folders
+
 Manage the folders scanned by the Library. See [Game library](library.md).
+
+### Cover art
+
+| Setting | Meaning |
+| --- | --- |
+| **Local covers folder** | Folder containing PNG, JPEG, WebP or BMP covers. Empty uses `<data>/covers`. |
+| **Use the online cover catalog** | Resolve covers from the XGrid R2 catalog. Local covers keep working offline. |
+| **Download missing covers automatically** | Fetch only covers matched to games in the library after a scan. |
+| **Catalog URL** | Full `catalog.json` URL or a base URL. The default is the XGrid R2 catalog. |
+| **Fuzzy title matching** | Use Jaro-Winkler scoring after the exact and annotation-stripped passes. |
+| **Ignore region, language and revision annotations** | Strip `(USA)`, `(Europe)`, `(En,Fr,De)`, `Rev 1` and similar groups before matching. |
+| **Fuzzy threshold** | 0.70-0.95. The default **0.85** prefers a missing cover over a wrong one. |
+| **Refresh** | Fetch the catalog now and rescan covers. |
+| **Clear cache** | Delete the cached catalog and downloaded images. |
+
+Matching order is title id, exact name, annotation-stripped exact name,
+token/no-space forms, a catalog title-id/exact match, local fuzzy, and catalog
+fuzzy. The cover source and match confidence appear in the card tooltip.
 
 ## Appearance
 

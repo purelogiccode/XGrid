@@ -88,6 +88,27 @@ public sealed class EmulatorSettings
     /// </summary>
     public bool LibraryGridView { get; set; } = true;
 
+    /// <summary>Gets or sets the tile width used by the library grid.</summary>
+    public double LibraryIconSize { get; set; } = 176;
+
+    /// <summary>Gets or sets local and online cover-art options.</summary>
+    public CoverSettings Covers { get; set; } = new();
+
+    /// <summary>Gets or sets favorite library keys (title id or image path).</summary>
+    public List<string> LibraryFavorites { get; set; } = [];
+
+    /// <summary>Gets or sets accumulated play state keyed by title id or image path.</summary>
+    public Dictionary<string, LibraryPlayRecord> LibraryPlayState { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Gets or sets the XBE title id last resolved for each image path. The
+    /// library scan is metadata-only, so this cache lets favorites and play
+    /// time follow the title id without opening every disc again.
+    /// </summary>
+    public Dictionary<string, uint> LibraryTitleIds { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Gets or sets the most recently launched games, newest first. Entries are
     /// informational; a missing file is ignored by the Library page.
@@ -262,11 +283,34 @@ public sealed class EmulatorSettings
             Graphics = NullSafe.Value(Graphics, new GraphicsSettings()).Clone(),
             Audio = NullSafe.Value(Audio, new AudioSettings()).Clone(),
             LibraryFolders = [.. NullSafe.Value(LibraryFolders, new List<string>())],
+            LibraryGridView = LibraryGridView,
+            LibraryIconSize = LibraryIconSize,
+            Covers = NullSafe.Value(Covers, new CoverSettings()).Clone(),
+            LibraryFavorites = [.. NullSafe.Value(LibraryFavorites, new List<string>())],
             RecentGames = CloneRecentGames(),
             DonationEmail = NullSafe.Text(DonationEmail),
             HasDonated = HasDonated,
             DonationLastCheckedUtc = DonationLastCheckedUtc,
         };
+        foreach (KeyValuePair<string, LibraryPlayRecord> pair in NullSafe.Value(
+                     LibraryPlayState,
+                     new Dictionary<string, LibraryPlayRecord>(StringComparer.OrdinalIgnoreCase)))
+        {
+            if (pair.Value is not null)
+            {
+                result.LibraryPlayState[pair.Key] = pair.Value.Clone();
+            }
+        }
+
+        foreach (KeyValuePair<string, uint> pair in NullSafe.Value(
+                     LibraryTitleIds,
+                     new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)))
+        {
+            if (pair.Value != 0)
+            {
+                result.LibraryTitleIds[pair.Key] = pair.Value;
+            }
+        }
         foreach (KeyValuePair<string, TitleOverride> pair in NullSafe.Value(
                      TitleOverrides,
                      new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase)))
@@ -316,6 +360,67 @@ public sealed class EmulatorSettings
 
         LibraryFolders = NullSafe.Value(LibraryFolders, []);
         LibraryFolders.RemoveAll(string.IsNullOrWhiteSpace);
+        LibraryIconSize = double.IsFinite(LibraryIconSize) && LibraryIconSize > 0
+            ? Math.Clamp(LibraryIconSize, 128, 384)
+            : 176;
+        Covers = NullSafe.Value(Covers, new CoverSettings());
+        Covers.Normalize();
+
+        var favorites = new List<string>();
+        var favoriteKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string? favorite in NullSafe.Value(LibraryFavorites, new List<string>()))
+        {
+            if (string.IsNullOrWhiteSpace(favorite))
+            {
+                continue;
+            }
+
+            string key = CanonicalTitleKey(favorite);
+            if (key.Length > 0 && favoriteKeys.Add(key))
+            {
+                favorites.Add(key);
+            }
+        }
+
+        LibraryFavorites = favorites;
+
+        var playState = new Dictionary<string, LibraryPlayRecord>(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, LibraryPlayRecord> pair in NullSafe.Value(
+                     LibraryPlayState,
+                     new Dictionary<string, LibraryPlayRecord>(StringComparer.OrdinalIgnoreCase)))
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null)
+            {
+                continue;
+            }
+
+            string key = CanonicalTitleKey(pair.Key);
+            if (key.Length > 0)
+            {
+                playState[key] = pair.Value;
+            }
+        }
+
+        LibraryPlayState = playState;
+
+        var titleIds = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, uint> pair in NullSafe.Value(
+                     LibraryTitleIds,
+                     new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)))
+        {
+            if (pair.Value == 0 || string.IsNullOrWhiteSpace(pair.Key))
+            {
+                continue;
+            }
+
+            string key = NormalizeTitleKey(pair.Key);
+            if (key.Length > 0)
+            {
+                titleIds[key] = pair.Value;
+            }
+        }
+
+        LibraryTitleIds = titleIds;
         DonationEmail = NullSafe.Text(DonationEmail).Trim();
 
         var recent = new List<RecentGame>(NullSafe.Value(RecentGames, []).Count);

@@ -19,10 +19,12 @@ public static class GameLibraryService
     /// passes false so adding a large folder is a directory scan; the title id
     /// is resolved when a game launches.
     /// </param>
+    /// <param name="coverOptions">Cover matching options, or null for the defaults.</param>
     public static List<GameEntry> Scan(
         IEnumerable<string> folders,
         string? coversDirectory = null,
-        bool resolveTitleIds = true)
+        bool resolveTitleIds = true,
+        CoverMatchOptions? coverOptions = null)
     {
         ArgumentNullException.ThrowIfNull(folders);
         StringComparer pathComparer = OperatingSystem.IsWindows()
@@ -30,7 +32,9 @@ public static class GameLibraryService
             : StringComparer.Ordinal;
         var seen = new HashSet<string>(pathComparer);
         var entries = new List<GameEntry>();
-        CoverArtIndex covers = CoverArtIndex.Create(coversDirectory);
+        LocalCoverIndex covers = LocalCoverIndex.Create(
+            coversDirectory,
+            coverOptions?.StripAnnotations ?? true);
         foreach (string folder in folders)
         {
             if (entries.Count >= MaxEntries)
@@ -64,7 +68,7 @@ public static class GameLibraryService
                         continue;
                     }
 
-                    GameEntry? entry = GameEntry.FromFile(file, covers, resolveTitleIds);
+                    GameEntry? entry = GameEntry.FromFile(file, covers, resolveTitleIds, coverOptions);
                     if (entry is not null)
                     {
                         entries.Add(entry);

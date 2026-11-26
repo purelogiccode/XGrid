@@ -9,7 +9,7 @@ condition.
 | Project | Covers |
 | --- | --- |
 | `XGrid.Diagnostics.Tests` | Serilog report text, environment snapshot, version comparison, diagnostics HTTP clients, bug-report queue and donation verification. |
-| `XGrid.Frontend.Tests` | Settings persistence, launch arguments, input mapping, library scanning, frame filters, pacing, screenshots, save-state/playback runners, updates and presentation models. |
+| `XGrid.Frontend.Tests` | Settings persistence, launch arguments, input mapping, library scanning, cover matching and caching, library filters/sorts, frame filters, pacing, screenshots, save-state/playback runners, updates and presentation models. |
 | `XGrid.Core.Tests` | Core capabilities, launch settings, TOML writer, paths, display sink and the core hosting contract. |
 | `XGrid.Cpu.Tests` | Decoder, interpreter and JIT execution, paging, interrupts, FPU/SSE and the CPU oracle corpus. |
 | `XGrid.Memory.Tests` | Address space, physical memory, endianness, snapshots and dirty-watch behavior. |

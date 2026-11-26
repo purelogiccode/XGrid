@@ -102,6 +102,19 @@
         <MenuItem Header="Activity" Click="OnMenuLogs"
                   ToolTip.Tip="Show the activity log page" />
         <Separator />
+        <MenuItem Header="Add library folder…"
+                  Command="{Binding Library.AddFolderCommand}"
+                  ToolTip.Tip="Add a folder that the library scans for disc images" />
+        <MenuItem Header="Rescan library"
+                  Command="{Binding Library.RescanCommand}"
+                  ToolTip.Tip="Rescan the configured library folders" />
+        <MenuItem Header="Open covers folder"
+                  Command="{Binding OpenCoversFolderCommand}"
+                  ToolTip.Tip="Show the local cover art folder" />
+        <MenuItem Header="Open screenshots folder"
+                  Command="{Binding OpenScreenshotsFolderCommand}"
+                  ToolTip.Tip="Show the folder that holds F8 captures" />
+        <Separator />
         <MenuItem Header="Save Screenshot" InputGesture="F8" Click="OnMenuScreenshot"
                   ToolTip.Tip="Write the current frame to the screenshots folder as a PNG." />
         <MenuItem Header="Show Log Dock" ToggleType="CheckBox" IsChecked="{Binding ShowLogDock}"

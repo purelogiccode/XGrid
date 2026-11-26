@@ -62,6 +62,27 @@ state objects, occlusion-query reporting and a texture cache; presentation is a
 D3D11 readback into the core GL display texture. The staged plan, current phase
 and known limitations are in `ImplementDirectX.md` at the repository root.
 
+## Shell cover art
+
+The shell resolves cover art without touching the emulated picture:
+
+| File | Role |
+| --- | --- |
+| `Services/Covers/CoverMatcher.cs` | Annotation stripping, normalization, Jaro-Winkler scoring, alias and sequel-number rules. |
+| `Services/Covers/LocalCoverIndex.cs` | Read-only index of a local cover folder; exact, token, no-space and fuzzy lookups. |
+| `Services/Covers/CoverCatalog.cs` | `catalog.json` validation, title/game-id indexes and image URI resolution. |
+| `Services/Covers/CoverStore.cs` | Content-addressed image cache and catalog sidecar. |
+| `Services/Covers/CoverDownloader.cs` | Conditional catalog GETs, retries and image downloads. |
+| `Services/Covers/CoverService.cs` | Local/catalog resolution order, metadata and automatic downloads. |
+
+The matching behavior follows Simple Launcher and 5DO (annotation groups,
+token/no-space forms, subtitle aliases, Jaro-Winkler and sequel-number
+protection) but is a separate XGrid implementation, not a copy of those
+projects. The catalog uses SHA-256-named WebP images and a sidecar ETag, and
+every downloaded image is verified before it enters the cache. The default
+catalog is `https://assets.purelogiccode.com/xgrid/v1/catalog.json`; it is
+configurable and may be a `file://` catalog for offline use.
+
 ## In-process ABI
 
 ```c

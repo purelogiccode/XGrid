@@ -610,6 +610,30 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the library folders being edited.</summary>
     public ObservableCollection<LibraryFolderItem> LibraryFolders { get; } = [];
 
+    [ObservableProperty]
+    private string _coverDirectory = string.Empty;
+
+    [ObservableProperty]
+    private bool _useOnlineCovers = true;
+
+    [ObservableProperty]
+    private bool _autoDownloadCovers = true;
+
+    [ObservableProperty]
+    private string _coverCatalogUrl = CoverDefaults.CatalogUrl;
+
+    [ObservableProperty]
+    private bool _coverFuzzyMatching = true;
+
+    [ObservableProperty]
+    private bool _coverStripAnnotations = true;
+
+    [ObservableProperty]
+    private double _coverFuzzyThreshold = CoverDefaults.DefaultFuzzyThreshold;
+
+    [ObservableProperty]
+    private string _coverCacheText = string.Empty;
+
     /// <summary>Gets the BIOS status label.</summary>
     public string BiosStatusText =>
         string.IsNullOrWhiteSpace(BiosPath)
@@ -707,6 +731,15 @@ public sealed partial class SettingsViewModel : PageViewModel
             LibraryFolders.Add(new LibraryFolderItem(folder, RemoveFolder));
         }
 
+        CoverDirectory = settings.Covers.Directory;
+        UseOnlineCovers = settings.Covers.UseOnline;
+        AutoDownloadCovers = settings.Covers.AutoDownload;
+        CoverCatalogUrl = settings.Covers.CatalogUrl;
+        CoverFuzzyMatching = settings.Covers.FuzzyMatching;
+        CoverStripAnnotations = settings.Covers.StripAnnotations;
+        CoverFuzzyThreshold = settings.Covers.FuzzyThreshold;
+        UpdateCoverCacheText();
+
         OnPropertyChanged(nameof(HasLibraryFolders));
         OnPropertyChanged(nameof(BiosStatusText));
         OnPropertyChanged(nameof(BiosPathValid));
@@ -733,11 +766,26 @@ public sealed partial class SettingsViewModel : PageViewModel
             Filter = SelectedFilter?.Key ?? XemuPresentationFilter.Nearest,
             Accent = SelectedAccent?.Key ?? "Emerald",
             LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],
+            Covers = BuildCoverSettings(),
         };
         CopyDonationState(next, Shell.Config);
         CopyRecentGames(next, Shell.Config);
         next.ShowFpsOverlay = Shell.Config.ShowFpsOverlay;
         next.LibraryGridView = Shell.Config.LibraryGridView;
+        next.LibraryIconSize = Shell.Config.LibraryIconSize;
+        next.LibraryFavorites = [.. Shell.Config.LibraryFavorites];
+        foreach (KeyValuePair<string, LibraryPlayRecord> pair in Shell.Config.LibraryPlayState)
+        {
+            if (pair.Value is not null)
+            {
+                next.LibraryPlayState[pair.Key] = pair.Value.Clone();
+            }
+        }
+
+        foreach (KeyValuePair<string, uint> pair in Shell.Config.LibraryTitleIds)
+        {
+            next.LibraryTitleIds[pair.Key] = pair.Value;
+        }
         foreach (TitleOverrideItem item in TitleOverrides)
         {
             next.TitleOverrides[EmulatorSettings.CanonicalTitleKey(item.Path)] = item.ToOverride();
@@ -745,6 +793,109 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         Shell.SaveSettings(next);
         Shell.Home.NotifySettingsChanged();
+    }
+
+    /// <summary>Builds cover settings from the current controls.</summary>
+    /// <returns>The normalized cover settings.</returns>
+    private CoverSettings BuildCoverSettings()
+    {
+        return new CoverSettings
+        {
+            Directory = CoverDirectory.Trim(),
+            UseOnline = UseOnlineCovers,
+            AutoDownload = AutoDownloadCovers,
+            CatalogUrl = CoverDefaults.NormalizeCatalogUrl(CoverCatalogUrl),
+            FuzzyMatching = CoverFuzzyMatching,
+            StripAnnotations = CoverStripAnnotations,
+            FuzzyThreshold = CoverDefaults.ClampThreshold(CoverFuzzyThreshold),
+        };
+    }
+
+    /// <summary>Public command: chooses the local cover folder.</summary>
+    [RelayCommand]
+    private async Task BrowseCoverDirectoryAsync()
+    {
+        string? folder = await Shell.Dialogs.PickFolderAsync("Choose the folder containing cover images");
+        if (!string.IsNullOrWhiteSpace(folder))
+        {
+            CoverDirectory = folder;
+        }
+    }
+
+    /// <summary>Public command: restores the default local cover folder.</summary>
+    [RelayCommand]
+    private void ResetCoverDirectory()
+    {
+        CoverDirectory = string.Empty;
+    }
+
+    /// <summary>Public command: restores the default catalog URL.</summary>
+    [RelayCommand]
+    private void ResetCoverCatalogUrl()
+    {
+        CoverCatalogUrl = CoverDefaults.CatalogUrl;
+    }
+
+    /// <summary>Public command: refreshes the online cover catalog now.</summary>
+    [RelayCommand]
+    private async Task RefreshCoverCatalogAsync()
+    {
+        string directory = string.IsNullOrWhiteSpace(CoverDirectory)
+            ? CoverDefaults.LocalDirectory
+            : CoverDirectory.Trim();
+        using var service = new CoverService(new CoverServiceOptions
+        {
+            CatalogUri = new Uri(CoverDefaults.NormalizeCatalogUrl(CoverCatalogUrl)),
+            UseOnlineCovers = true,
+            CoverDirectory = directory,
+            CacheDirectory = CoverDefaults.CacheDirectory,
+            FuzzyThreshold = CoverDefaults.ClampThreshold(CoverFuzzyThreshold),
+            AnnotationStripping = CoverStripAnnotations,
+            FuzzyMatching = CoverFuzzyMatching,
+        });
+        CoverCacheText = "Refreshing cover catalog…";
+        CoverCatalogRefreshResult result = await service.RefreshCatalogAsync(force: true);
+        if (result.Success)
+        {
+            CoverCacheText = "Catalog " + result.PackVersion + " · " + result.CoverCount + " covers";
+            Shell.ShowToast("Cover catalog refreshed; save settings to apply changes.");
+        }
+        else
+        {
+            CoverCacheText = "Catalog refresh failed: " + (result.Error ?? "unknown error");
+            Shell.ShowToast("Cover catalog refresh failed.");
+        }
+
+        UpdateCoverCacheText();
+    }
+
+    /// <summary>Public command: clears the online cover cache.</summary>
+    [RelayCommand]
+    private void ClearCoverCache()
+    {
+        new CoverStore(CoverDefaults.CacheDirectory).Clear();
+        UpdateCoverCacheText();
+        Shell.ShowToast("Cover cache cleared; rescan the library to download covers again.");
+    }
+
+    private void UpdateCoverCacheText()
+    {
+        CoverCacheStats stats = new CoverStore(CoverDefaults.CacheDirectory).GetStats();
+        CoverCacheText = stats.ImageCount == 0
+            ? "No online covers cached."
+            : stats.ImageCount + " covers · " + FormatBytes(stats.Bytes) + " cached";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1024L * 1024 * 1024)
+        {
+            return (bytes / (1024.0 * 1024 * 1024)).ToString("0.0", CultureInfo.InvariantCulture) + " GB";
+        }
+
+        return bytes >= 1024L * 1024
+            ? (bytes / (1024.0 * 1024)).ToString("0.0", CultureInfo.InvariantCulture) + " MB"
+            : (bytes / 1024.0).ToString("0", CultureInfo.InvariantCulture) + " KB";
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ are deliberately small, documented and optional.
 | Usage hit | Once at launch | ApplicationStats service | `XGRID_DISABLE_STATISTICS=1` |
 | Warning/error bug report | When the app logs a warning or error | Bug-report service | `XGRID_DISABLE_BUG_REPORTS=1` |
 | Donation email | When you check a donation or a saved address is refreshed | Donation verification API | Do not use **I already donated** |
+| Cover catalog and images | When online covers are enabled and the library scans or downloads matched covers | Cloudflare R2 custom domain | Settings → Library → Cover art → **Use the online cover catalog** |
 | Update check | Once at launch | GitHub API | `XGRID_DISABLE_UPDATE_CHECK=1` |
 | Log file | Continuously | Local data folder | Delete the file; set `XGRID_LOG_LEVEL` |
 | Settings | When changed | Local `settings.json` | Delete the file |
@@ -49,6 +50,18 @@ to the donation verification API, only when you ask to check a donation or when
 a previously saved address is refreshed at startup. It is never written to the
 log and never attached to bug reports. The confirmed donation flag is local; the
 website holds the donation record and the email you used there.
+
+## Online cover art
+
+The online cover catalog is optional and can be turned off under **Settings →
+Library → Cover art**. When enabled, XGrid downloads the static `catalog.json`
+and, for games that match locally, the content-addressed cover images. Matching
+runs on your machine; game titles, paths and library contents are **not** sent
+to the catalog host. Requests go to the configured catalog URL (the default is
+`assets.purelogiccode.com`), with the usual HTTP headers including the
+`XGrid-CoverService/1.0` user agent and `If-None-Match` for catalog caching.
+Catalog and image responses are cached under `<data>/covers-cache/` and can be
+cleared at any time.
 
 ## Logs
 

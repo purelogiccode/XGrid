@@ -12,7 +12,7 @@ save states, display/input plumbing, screenshots and packaging.
 | Page | What it covers |
 | --- | --- |
 | [Getting started](Getting-Started) | Install, configure firmware and boot. |
-| [Game library](Game-Library) | Scan folders, search and launch titles. |
+| [Game library](Game-Library) | Scan folders, search, favorites, play time and covers. |
 | [Settings](Settings) | Every tab and option. |
 | [Display and filters](Display-and-Filters) | Embedded window, core filters, FPS overlay, fullscreen. |
 | [Input](Input) | Keyboard defaults, XInput, dead zones. |

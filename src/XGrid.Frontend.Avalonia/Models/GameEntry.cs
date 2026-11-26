@@ -88,6 +88,14 @@ public sealed class GameEntry
     /// <summary>Gets a value indicating whether this entry carries a distinct certificate title id.</summary>
     public bool HasDistinctTitleId => TitleId != 0 && TitleId != PlaceholderTitleId;
 
+    /// <summary>
+    /// Gets the stable library-state key: the title id when the certificate is
+    /// known, otherwise the absolute image path.
+    /// </summary>
+    public string LibraryKey => HasDistinctTitleId
+        ? EmulatorSettings.TitleIdKey(TitleId)
+        : EmulatorSettings.NormalizeTitleKey(Path);
+
     private const uint PlaceholderTitleId = 0xFFFF0002u;
 
     /// <summary>Gets the containing folder.</summary>
@@ -101,7 +109,12 @@ public sealed class GameEntry
     /// scan passes false: opening every disc (and decompressing every CHD) is
     /// what made the scan take minutes.
     /// </param>
-    public static GameEntry? FromFile(string path, CoverArtIndex? covers = null, bool resolveTitleId = true)
+    /// <param name="coverOptions">Cover matching options, or null for the defaults.</param>
+    public static GameEntry? FromFile(
+        string path,
+        LocalCoverIndex? covers = null,
+        bool resolveTitleId = true,
+        CoverMatchOptions? coverOptions = null)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -138,13 +151,18 @@ public sealed class GameEntry
                 && DiscTitleId.TryRead(path, out uint titleId, out _)
                     ? titleId
                     : 0u;
-            CoverArtIndex coverIndex = covers ?? CoverArtIndex.Empty;
+            LocalCoverIndex coverIndex = covers ?? LocalCoverIndex.Empty;
+            CoverMatch? cover = coverIndex.Find(
+                title,
+                System.IO.Path.GetFileNameWithoutExtension(path),
+                resolvedTitleId,
+                coverOptions);
             return new GameEntry(
                 path,
                 title,
                 format,
                 info.Length,
-                coverIndex.Find(path, title, resolvedTitleId))
+                cover?.Path)
             {
                 TitleId = resolvedTitleId,
             };
@@ -173,6 +191,16 @@ public sealed class GameEntry
         }
 
         return TitleId;
+    }
+
+    /// <summary>Applies a title id cached from an earlier launch.</summary>
+    /// <param name="titleId">Known XBE certificate title id.</param>
+    internal void SetTitleId(uint titleId)
+    {
+        if (TitleId == 0 && titleId != 0)
+        {
+            TitleId = titleId;
+        }
     }
 
     private static string? ReadXbeTitle(string path)

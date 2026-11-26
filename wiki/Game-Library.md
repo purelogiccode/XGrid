@@ -5,7 +5,8 @@ or modifies your files.
 
 ## Add folders
 
-Use **Library → Add folder** or **Settings → Library → Add folder**.
+Use **View → Add library folder…**, the empty-state **Add folder** button, or
+**Settings → Library → Add folder**.
 
 A scan:
 
@@ -13,28 +14,31 @@ A scan:
 - skips inaccessible folders and reparse points;
 - stops at 4,096 entries;
 - de-duplicates paths;
-- sorts by title.
+- reads only file metadata.
 
-## Tile and list views
+## Toolbar
 
-XGrid opens the Library in **Tiles** mode: a card per game with its cover art,
-title, format and size. Click a card to launch it.
+- **Search games…** filters by title, path, format, title id, region, year,
+  publisher or description.
+- **All games / Favorites / Played / Unplayed** filters the collection.
+- **Title / Recently played / Most played / Release year / Publisher** sorts.
+- **Icon size** changes the tile width from 128 to 384 pixels.
+- **Tiles** and **List** switch layouts.
 
-Switch modes with **Tiles** and **List** in the library toolbar:
+Select a game and **double-click** it (or press **Enter**) to boot it. A single
+click only selects. The tile/list choice is saved in `settings.json`.
 
-- **Tiles** shows the cover grid (the default).
-- **List** shows the detailed rows with folder, title id, format, size and a
-  **Play** button.
+## Favorites and play time
 
-The choice is saved in `settings.json` and restored next time. XGrid always
-opens on the Library page; use **Console** to see the emulated picture.
+- Click the star on a card or row to favorite a game.
+- XGrid records accumulated play time, launch count and last-played time when a
+  game starts and when the console stops.
+- **Recently played**, **Most played**, **Played** and **Unplayed** use this
+  state.
+- State follows the XBE title id once XGrid has seen the game launch; otherwise
+  it uses the image path. The resolved id is cached so later scans stay fast.
 
-## Recently played
-
-The strip above the games shows up to ten recently launched titles, newest first.
-Click a card to play it again, or **Clear** to empty the list. The entries are
-stored in `settings.json` and survive restarts. A moved or deleted file is
-dropped when you try to launch it.
+The old recent strip is gone; use the **Recently played** sort.
 
 ## Supported files
 
@@ -47,27 +51,54 @@ dropped when you try to launch it.
 
 ## Cover art
 
-Each row shows a cover when one is available. Covers live in the user data
-folder, never beside the disc:
+Covers live in a folder you choose, never beside the disc. The default is:
 
 ```text
 <data>/covers/
 ```
 
-The lookup order is:
+Matching order:
 
-1. An image named after the title ID, for example `4D530002.png`.
-2. An image named after the title. `(USA)`, `[!]` and similar annotations are
-   ignored when matching.
+1. A file named after the title ID, e.g. `4D530002.png`.
+2. An exact base name.
+3. An annotation-stripped exact name (`(USA)`, `(Europe)`, `(En,Fr,De)`, `[!]`
+   and `Rev 1` are ignored).
+4. Token-order and compound-word forms.
+5. A catalog title-id or exact-title match.
+6. Local fuzzy Jaro-Winkler matching (default threshold 0.85).
+7. Catalog fuzzy matching.
+8. Subtitle aliases.
 
-Use **Library → Covers** to open the folder and **Rescan** after adding images.
-PNG, JPEG, WebP and BMP are supported. A missing image falls back to the disc
-placeholder.
+Sequel numbers are protected: `Halo` does not match `Halo 2`. Region and year
+break ties. PNG, JPEG, WebP and BMP are supported. A missing image falls back to
+the disc placeholder.
+
+### Online covers
+
+The optional R2 catalog uses the same content-addressed layout as 5DO:
+
+```text
+https://assets.purelogiccode.com/xgrid/v1/catalog.json
+```
+
+This is the planned default endpoint. Until the Xbox catalog is published there,
+the request fails gracefully and local covers keep working; a self-hosted or
+`file://` catalog works in the meantime.
+
+XGrid caches the catalog and images under `<data>/covers-cache/`, revalidates
+with `If-None-Match`, verifies every image by SHA-256, and downloads only covers
+matched to games in your library. Local covers keep working offline.
+
+Configure it under **Settings → Library → Cover art**: local folder, online
+toggle, automatic downloads, catalog URL, fuzzy matching, annotation stripping
+and threshold. **Refresh** fetches the catalog now; **Clear cache** deletes the
+cache.
 
 ## Titles and overrides
 
 - Loose XBE files show their certificate title.
-- Disc images use the file name as the display title.
+- Disc images use the file name as the display title, with annotation groups
+  removed for the card.
 - When readable, the XBE title ID (`Title XXXXXXXX`) keys per-title overrides.
 - Otherwise the image path keys the override.
 - An override can set guest memory, the renderer, texture filtering and the
@@ -75,18 +106,17 @@ placeholder.
 
 ## Launch
 
-Click a tile, or the **Play** button in list mode, to launch. Power off a
-running console first. XGrid applies the global settings plus any matching
-per-title override.
+Double-click a tile or press **Enter** on the selection. XGrid applies the
+global settings plus any matching per-title override.
 
-While the console runs, clicking a different game inserts that disc instead of
+While the console runs, choosing a different game inserts that disc instead of
 power-cycling. **Ctrl+E** ejects. Both need in-process core hosting.
 
 ## Missing games
 
 1. Check the extension.
 2. Confirm the folder exists and is in the list.
-3. Press **Rescan**.
+3. Press **Rescan** or use **View → Rescan library**.
 4. Read **Activity** for scan errors.
 
 For boot failures, see [Media formats](Media-Formats) and
@@ -94,7 +124,5 @@ For boot failures, see [Media formats](Media-Formats) and
 
 ## Screenshots
 
-The newest captures appear as a thumbnail strip at the bottom of the page.
-Click a picture to open it, **Refresh** to re-read the folder, or **Open folder**
-to browse the PNGs. **F8** saves the console picture; with separate-process
-hosting it captures the whole window instead.
+**F8** saves the console picture. Open the folder with **View → Open screenshots
+folder**; the Library no longer embeds a screenshot strip.
