@@ -137,7 +137,8 @@ XGRID_CORE_EXPORT int xgrid_core_get_speed(void);
  * shell has no menu, so it queues the same block-layer operation here. The
  * request runs on the core's main loop and the shell polls the status, exactly
  * like a save-state request. The medium format follows the file extension:
- * .chd and .zar open through the XGrid block drivers, everything else is raw.
+ * .iso/.xiso open through the offset-aware XDVDFS driver, .chd and .zar through
+ * the XGrid block drivers, and everything else is raw.
  *
  * Status values returned by xgrid_core_disc_status().
  */

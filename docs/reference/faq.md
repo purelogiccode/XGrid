@@ -73,18 +73,19 @@ build cannot start.
 
 ## What media formats work?
 
-- ISO/XISO — direct.
-- CHD — real-time decode.
-- ZAR — real-time decode when the archive contains an `.iso` entry.
+- ISO/XISO — direct; optimized XISO and full Redump images both boot.
+- CHD — real-time decode, including full Redump CHDs.
+- ZAR — real-time decode for entry-form and file-tree archives.
 - XBE — inspection only.
 
 See [Media formats](../guides/media.md).
 
-## Why does a `.zar` say it needs a synthesizer?
+## Do file-tree `.zar` archives work?
 
-That archive stores the game as a **file tree**, not as one ISO entry. The guest
-expects an XDVDFS volume, so the archive must contain the disc as an `.iso` entry.
-File-tree archives are a known limitation.
+Yes. The core builds an XDVDFS volume in memory at open time and reads the
+files from the compressed archive. Nothing is extracted. If a file name cannot
+be represented in XDVDFS (Latin-1, up to 42 characters, no separators), the
+archive is refused with the offending name.
 
 ## Do save states work in the separate process?
 

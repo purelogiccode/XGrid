@@ -49,6 +49,10 @@ The old recent strip is gone; use the **Recently played** sort.
 | `.zar` | Yes | Yes (entry form or file tree) |
 | `.xbe` | Yes | No (inspection only) |
 
+`.iso` covers both optimized XISOs and full Redump images; the core finds the
+XGD game partition and maps it to LBA 0. `.chd` and entry-form `.zar` images get
+the same treatment.
+
 ## Cover art
 
 Covers live in a folder you choose, never beside the disc. The default is:

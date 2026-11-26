@@ -48,8 +48,9 @@ renderers and the shell hides unsupported options.
 
 ### What media works?
 
-ISO/XISO, CHD, ZAR (entry form or file tree), raw/qcow2 HDD. XBE is inspection
-only.
+ISO/XISO (optimized or full Redump), CHD, ZAR (entry form or file tree),
+raw/qcow2 HDD. XBE is inspection only. Full Redump ISOs are mapped to the game
+partition automatically.
 
 ### Why does my ZAR fail?
 
