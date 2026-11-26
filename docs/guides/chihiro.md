@@ -8,8 +8,8 @@ drive.
 
 > **Netboot images only.** XGrid boots Chihiro **`.bin` netboot images** (raw
 > FATX images), not Redump `.cue`/`.bin` GD-ROM sets or MAME `.chd` files
-> directly. The `XBOXOG - Chihiro` style Xbox ISOs convert in Settings; raw
-> GD-ROM dumps need the external converter. See
+> directly. Build one in **Settings → System → Sega Chihiro** from an
+> `XBOXOG - Chihiro` ISO or from a Redump cue/bin set with its MAME key ZIP. See
 > [Converting an Xbox-format Chihiro ISO](#converting-an-xbox-format-chihiro-iso)
 > and [Converting a GD-ROM](#converting-a-gd-rom).
 
@@ -49,7 +49,7 @@ XISOs that already contain the decrypted Chihiro file tree: `boot.id`, the game
 executable and the `media` folder. XGrid can turn one into a netboot image
 without a key:
 
-- **Settings → System → Sega Chihiro → Convert Chihiro ISO...**, or
+- **Settings → System → Sega Chihiro → Convert ISO...**, or
 - the CLI:
 
 ```text
@@ -63,30 +63,36 @@ ISO renamed the executable. The output `.bin` is ready for the Library.
 
 ## Converting a GD-ROM
 
-The Redump and MAME Chihiro sets are raw GD-ROM dumps. Convert one to the netboot
-format with [chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot),
-an external MIT-licensed tool based on JayFoxRox's Chihiro-Tools:
+The Redump Chihiro sets are raw GD-ROM dumps. XGrid converts a cue/bin set
+itself:
 
-1. Put the game's small MAME `.zip` (the security key) beside the disc dump.
-2. Run `chihiro-netboot` on the `.cue`/`.bin` set or the MAME `.chd`.
-3. Put the `output/<game>.bin` file in an XGrid library folder.
-4. Launch the `.bin` from **Library**.
+1. Extract the `.cue` and its `.bin` tracks into one folder.
+2. Get the game's small MAME `.zip` (the security key).
+3. Choose **Settings → System → Sega Chihiro → Convert GD-ROM...** and pick the
+   `.cue`, the key `.zip`, and then the output `.bin`.
+4. Put the `.bin` in an XGrid library folder and launch it.
 
-For example, with the Redump cue/bin set extracted beside the key:
+The CLI does the same:
 
 ```text
-python chihiro-netboot.py "House of the Dead 3, The (World).cue" hotd3.zip -o output
+XGrid.Cli.exe chihiro-redump --cue "House of the Dead 3, The (World).cue" --key hotd3.zip --out hotd3.bin
 ```
+
+The converter reads the high-density track directly and accepts both `80`-byte
+`.data` keys and 16 KB `.pic` keys. It reads the loader named by the key, then
+decrypts the FATX image that loader names. A MAME `.chd` set must be extracted
+to cue/bin first (for example with `chdman extractcd`). The output image keeps
+the game's FATX name (such as `VSG.BIN`); rename the catalogued `.bin` only for
+your own library organization.
 
 The small key sets used by this collection are `hotd3.zip`, `outr2.zip`,
 `vcop3.zip`, `ghostsqu.zip`, `crtaxihr.zip`, `wangmid.zip`, `wangmid2.zip`,
-`ollie.zip`, `mj2.zip`, `mj3.zip` and `mj3evo.zip`. The output is named after
-the key set (`hotd3.bin`, `outr2.bin`, ...); rename it for the Library if you
-like.
+`ollie.zip`, `mj2.zip`, `mj3.zip` and `mj3evo.zip`.
 
-XGrid does not bundle the converter, game keys, firmware, GD-ROM data or game
-images. The converter produces a decrypted FATX image; without the matching
-key it cannot make a bootable image.
+XGrid does not bundle game keys, firmware, GD-ROM data or game images. The
+converter's format and DES byte-swap scheme follow the MIT-licensed
+[chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot); without the
+matching key it cannot make a bootable image.
 
 ## Titles
 
@@ -154,9 +160,8 @@ exposed by the shell yet.
 ## Limits
 
 - **No direct GD-ROM boot.** The ported machine loads a FATX netboot image into
-  DIMM; it does not emulate the GD-ROM drive. Convert the disc first. The
-  `XBOXOG - Chihiro` patched ISOs can be converted in XGrid itself; raw Redump
-  `.cue` sets still need the external `chihiro-netboot` and their key.
+  DIMM; it does not emulate the GD-ROM drive. Convert the disc first, in XGrid,
+  using the game's key.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
   the cabinet (stick, triggers, D-pad and face buttons). Per-game bindings and
   force feedback are still follow-ups.

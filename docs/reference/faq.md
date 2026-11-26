@@ -94,11 +94,11 @@ Yes, with **netboot `.bin` images** and the Chihiro firmware. Open
 **Settings → System → Sega Chihiro**, choose the folder with
 `chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`, `ic10_g24lc64.bin`,
 `ic11_24lc024.bin` and `pc20_g24lc64.bin`, then launch a `.bin` from the
-Library. The homebrew `XBOXOG - Chihiro` style ISOs can be converted in
-**Settings → System → Sega Chihiro** (or with `XGrid.Cli chihiro-netboot`).
-Raw Redump/MAME GD-ROM sets still need the external `chihiro-netboot` and their
-key; XGrid does not boot `.cue` GD-ROM sets directly. See
-[Sega Chihiro](../guides/chihiro.md).
+Library. The homebrew `XBOXOG - Chihiro` style ISOs convert in
+**Settings → System → Sega Chihiro** (or with `XGrid.Cli chihiro-netboot`), and
+Redump cue/bin GD-ROM sets convert there too (or with
+`XGrid.Cli chihiro-redump`) using the game's MAME key ZIP. XGrid does not boot
+`.cue` GD-ROM sets directly. See [Sega Chihiro](../guides/chihiro.md).
 
 ## Can I use a split CCI set?
 
