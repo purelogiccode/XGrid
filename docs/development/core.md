@@ -20,12 +20,14 @@ xemu/
 | --- | --- |
 | `block/xgrid-iso.c` | Shared XDVDFS game-partition detection for the XISO, CHD and ZArchive drivers. |
 | `block/xgridiso.c` | ISO/XISO block driver; maps the detected game partition (optimized XISO or full Redump) to LBA 0. |
+| `block/xgridcci.c` | CCI block driver; LZ4 sectors through vendored libCCI, with split-part discovery and game-partition mapping. |
 | `block/xgridchd.c` | CHD block driver; decodes hunks on demand through libchdr and maps the detected game partition. |
 | `block/xgridzar.c` | ZArchive block driver; decodes zstd blocks, exposes an entry-form `.iso`, and synthesizes XDVDFS for file-tree archives. |
 | `display/xgrid-display.c` | Presentation filter/overlay selection plus the headless frame sink (Windows named section or POSIX shared memory). |
 | `input/xgrid-input.c` | Input sink; reads one pad record per Xbox port. |
 | `abi/xgrid-core.c` | In-process host ABI and save-state request bridge. |
 | `thirdparty/libchdr/` | Vendored libchdr 0.3.0 (BSD-3-Clause). |
+| `thirdparty/libcci/` | Vendored libCCI 0.1 (GPL-2.0-or-later), built against the host LZ4. |
 | `meson.build` | Wires the additions into the xemu build. |
 
 ### `xemu-patches/`
@@ -235,6 +237,8 @@ core:
 pwsh -File scripts/chd-boot-check.ps1 -Disc path\to\optimized.iso -Shot wt-data\xiso-boot.png
 pwsh -File scripts/chd-boot-check.ps1 -Disc path\to\redump.iso -Shot wt-data\redump-boot.png
 pwsh -File scripts/chd-boot-check.ps1 -Disc path\to\game.chd -Shot wt-data\chd-boot.png
+pwsh -File scripts/chd-boot-check.ps1 -Disc path\to\game.cci -Shot wt-data\cci-boot.png
+pwsh -File scripts/chd-boot-check.ps1 -Disc path\to\game.1.cci -Shot wt-data\cci-split-boot.png
 pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\007-entry.zar -Shot wt-data\zar-boot.png
 pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\hello.zar -Shot wt-data\zar-tree-boot.png
 ```
@@ -243,7 +247,9 @@ pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\hello.zar -Sho
 them after a core rebase that touches the block layer. A full Redump ISO must
 show the game, not the dashboard's video tray; the `xgridiso` driver maps the
 XGD game partition to LBA 0. The file-tree check exercises the XDVDFS
-synthesizer; entry-form archives expose the disc as one `.iso` entry.
+synthesizer; entry-form archives expose the disc as one `.iso` entry. For CCI,
+check both a single file and the first part of a split set; `qemu-img compare`
+can validate the decoded stream against the source ISO.
 
 ## Adding an enhancement
 

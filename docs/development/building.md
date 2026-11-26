@@ -22,13 +22,13 @@ builds are not yet supported by XGrid's scripts.
 - PowerShell 7 (`pwsh`).
 - **MSYS2** with the MINGW64 toolchain. The default install path is `C:\msys64`.
 - MINGW64 packages: GCC, meson, ninja, CMake, Python, pkg-config, GLib, pixman,
-  zlib, zstd, SDL3 and libepoxy.
+  zlib, zstd, lz4, SDL3 and libepoxy.
 - The repository's build script expects `C:\msys64\usr\bin\bash.exe` and uses
   `C:\cmake\bin` and `/mingw64/bin` on `PATH`; adjust the script if your install
   lives elsewhere.
 
-The core vendors libchdr and uses system zlib/zstd. A clean QEMU tree may still
-let meson fetch its own subprojects on the first build.
+The core vendors libchdr and libCCI and uses system zlib/zstd/lz4. A clean QEMU
+tree may still let meson fetch its own subprojects on the first build.
 
 ### Core (Linux)
 
@@ -36,7 +36,7 @@ let meson fetch its own subprojects on the first build.
 - meson 1.5 or newer. Distribution packages are often older (Ubuntu 22.04
   ships 0.61), so use a virtual environment when in doubt.
 - Python modules: PyYAML, plus `tomli` on Python older than 3.11.
-- Development headers: GLib, zlib, zstd, libepoxy, libusb, libpcap,
+- Development headers: GLib, zlib, zstd, lz4, libepoxy, libusb, libpcap,
   libsamplerate, GMP, SDL3 and the X11 libraries.
 
 On Ubuntu 22.04 the tested package set is:
@@ -45,6 +45,7 @@ On Ubuntu 22.04 the tested package set is:
 sudo apt install build-essential ninja-build pkg-config cmake \
   python3-venv python3-pip libglib2.0-dev libpixman-1-dev libepoxy-dev \
   libssl-dev libcurl4-openssl-dev libslirp-dev libzstd-dev zlib1g-dev \
+  liblz4-dev \
   libusb-1.0-0-dev libpcap-dev libasound2-dev libpulse-dev libx11-dev \
   libxext-dev libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev \
   libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev \

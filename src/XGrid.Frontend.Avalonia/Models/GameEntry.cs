@@ -17,6 +17,9 @@ public enum GameFormat
     /// <summary>A compressed CHD disc image.</summary>
     Chd,
 
+    /// <summary>A CCI (CCIM) compressed Xbox disc image.</summary>
+    Cci,
+
     /// <summary>A ZArchive (.zar) container holding a disc image.</summary>
     Zar,
 
@@ -52,13 +55,14 @@ public sealed class GameEntry
     private long SizeBytes { get; }
 
     /// <summary>Gets a value indicating whether the entry can be inserted as a disc.</summary>
-    public bool IsLaunchable => Format is GameFormat.Iso or GameFormat.Chd or GameFormat.Zar;
+    public bool IsLaunchable => Format is GameFormat.Iso or GameFormat.Chd or GameFormat.Cci or GameFormat.Zar;
 
     /// <summary>Gets the short format label.</summary>
     public string FormatText => Format switch
     {
         GameFormat.Iso => "ISO",
         GameFormat.Chd => "CHD",
+        GameFormat.Cci => "CCI",
         GameFormat.Zar => "ZAR",
         _ => "XBE",
     };
@@ -133,12 +137,14 @@ public sealed class GameEntry
             {
                 ".iso" => GameFormat.Iso,
                 ".chd" => GameFormat.Chd,
+                ".cci" => GameFormat.Cci,
                 ".zar" => GameFormat.Zar,
                 ".xbe" => GameFormat.Xbe,
                 _ => GameFormat.Iso,
             };
 
-            string title = Prettify(System.IO.Path.GetFileNameWithoutExtension(path));
+            string baseName = BaseName(path, format);
+            string title = Prettify(baseName);
             if (resolveTitleId && format == GameFormat.Xbe)
             {
                 title = ReadXbeTitle(path) ?? title;
@@ -154,7 +160,7 @@ public sealed class GameEntry
             LocalCoverIndex coverIndex = covers ?? LocalCoverIndex.Empty;
             CoverMatch? cover = coverIndex.Find(
                 title,
-                System.IO.Path.GetFileNameWithoutExtension(path),
+                baseName,
                 resolvedTitleId,
                 coverOptions);
             return new GameEntry(
@@ -232,6 +238,36 @@ public sealed class GameEntry
             Log.Debug(exception, "Could not access the XBE {Path}", path);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Returns the display base name, dropping the numeric part suffix of a
+    /// split CCI set (<c>game.1.cci</c> becomes <c>game</c>).
+    /// </summary>
+    private static string BaseName(string path, GameFormat format)
+    {
+        string name = System.IO.Path.GetFileNameWithoutExtension(path);
+        if (format != GameFormat.Cci)
+        {
+            return name;
+        }
+
+        int separator = name.LastIndexOf('.');
+        if (separator <= 0 || separator == name.Length - 1)
+        {
+            return name;
+        }
+
+        ReadOnlySpan<char> part = name.AsSpan(separator + 1);
+        foreach (char character in part)
+        {
+            if (!char.IsAsciiDigit(character))
+            {
+                return name;
+            }
+        }
+
+        return name[..separator];
     }
 
     private static string Prettify(string name)

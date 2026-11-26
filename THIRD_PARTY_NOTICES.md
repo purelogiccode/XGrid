@@ -41,6 +41,8 @@ Vendored inside the core additions:
 | Package | Version | License | Use |
 |---|---|---|---|
 | libchdr | 0.3.0 | BSD-3-Clause (Copyright Romain Tisserand) | CHD hunk decoding behind `block/xgridchd.c`; ships its LZMA decoder, zlib/zstd come from the host. |
+| libCCI | 0.1.0 | GPL-2.0-or-later (Copyright Team-Resurgent) | CCI header/index and LZ4 sector decoding behind `block/xgridcci.c`; built against the host LZ4. |
+| LZ4 | 1.10.0 (host) | BSD-2-Clause | CCI block decode/encode; linked from the host. |
 
 ## Runtime libraries redistributed with the Windows core package
 
@@ -65,6 +67,7 @@ separate programs invoked by it.
 | libslirp | `libslirp-0.dll` | BSD-3-Clause |
 | zlib | `zlib1.dll` | Zlib |
 | Zstandard | `libzstd.dll` | BSD-3-Clause (dual-licensed with GPL-2.0) |
+| LZ4 | `liblz4.dll` | BSD-2-Clause |
 | nghttp2 / nghttp3 / ngtcp2 | `libnghttp2-14.dll`, `libnghttp3-9.dll`, `libngtcp2-16.dll`, `libngtcp2_crypto_ossl-0.dll` | MIT |
 | libidn2 | `libidn2-0.dll` | LGPL-3.0-or-later |
 | libunistring | `libunistring-5.dll` | LGPL-3.0-or-later |
@@ -93,13 +96,13 @@ Every archive carries `licenses/` beside `COPYING` and `LICENSE`:
 
 | Text | Covers |
 | --- | --- |
-| `GPL-2.0.txt` | XGrid, the xemu core and its QEMU base, the ported DSP modules |
+| `GPL-2.0.txt` | XGrid, the xemu core and its QEMU base, the ported DSP modules, libCCI |
 | `LGPL-2.1.txt` | GLib, gettext, libiconv, LGPL files inside xemu/QEMU |
 | `LGPL-3.0.txt` | libidn2, libunistring |
 | `GPL-3.0.txt`, `GCC-exception-3.1.txt` | The GCC runtime DLLs |
 | `Apache-2.0.txt` | OpenSSL |
 | `MIT.txt` | NuGet runtime dependencies, libepoxy, nghttp2/nghttp3/ngtcp2, libpsl, Brotli, winpthreads |
-| `BSD-2-Clause.txt` | libsamplerate |
+| `BSD-2-Clause.txt` | libsamplerate, LZ4 |
 | `BSD-3-Clause.txt` | libchdr, PCRE2, libssh2, libslirp, Zstandard, winpthreads |
 | `Zlib.txt` | SDL3, zlib |
 | `curl.txt` | libcurl |

@@ -2,7 +2,7 @@ diff --git a/xemu/system/vl.c b/xemu/system/vl.c
 index f45bdc34..38297bba 100644
 --- a/xemu/system/vl.c
 +++ b/xemu/system/vl.c
-@@ -3090,8 +3090,22 @@ void qemu_init(int argc, char **argv)
+@@ -3090,8 +3090,24 @@ void qemu_init(int argc, char **argv)
      // connected but no media present.
      fake_argv[fake_argc++] = strdup("-drive");
      char *escaped_dvd_path = strdup_double_commas(dvd_path);
@@ -20,6 +20,8 @@ index f45bdc34..38297bba 100644
 +        } else if (g_ascii_strcasecmp(dvd_extension, ".iso") == 0 ||
 +                   g_ascii_strcasecmp(dvd_extension, ".xiso") == 0) {
 +            dvd_format = ",format=xgridiso";
++        } else if (g_ascii_strcasecmp(dvd_extension, ".cci") == 0) {
++            dvd_format = ",format=xgridcci";
 +        }
 +    }
 +    fake_argv[fake_argc++] = g_strdup_printf("index=1,media=cdrom,file=%s%s",

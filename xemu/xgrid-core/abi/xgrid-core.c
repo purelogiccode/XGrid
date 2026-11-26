@@ -444,6 +444,9 @@ static const char *xgrid_core_disc_format(const char *path)
     if (length > 5 && g_ascii_strcasecmp(path + length - 5, ".xiso") == 0) {
         return "xgridiso";
     }
+    if (length > 4 && g_ascii_strcasecmp(path + length - 4, ".cci") == 0) {
+        return "xgridcci";
+    }
 
     return "raw";
 }

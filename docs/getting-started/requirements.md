@@ -45,6 +45,7 @@ files are not included, so configure them explicitly in **Settings → System**.
 | --- | --- | --- |
 | **ISO / XISO** | Yes | Optimized XISO or full Redump; the game partition is mapped automatically. |
 | **CHD** | Yes | Compressed MAME CHD; decoded on demand, with partition-offset detection. |
+| **CCI (`.cci`)** | Yes | Cerbios/Repackinator compressed image; single or split, decoded on demand. |
 | **ZArchive (`.zar`)** | Entry form or file tree | An `.iso` entry is exposed directly; a file tree is synthesized into an XDVDFS volume. |
 | **XBE** | Inspect only | A loose executable is not a disc; wrap it in an ISO/CHD to boot. |
 

@@ -49,6 +49,7 @@ and failures. The same events are in the Serilog rolling log under
 | Symptom | Fix |
 | --- | --- |
 | `.zar` refused | Check **Activity**: the archive may be corrupt or contain a name XDVDFS cannot store. Both entry-form and file-tree archives are supported. |
+| `.cci` refused | Open the first part of a split set (`game.1.cci`); a later part cannot be stitched without part 1. |
 | Full Redump ISO shows the dashboard | The game partition was not detected; check that the image is complete and not truncated. |
 | `.xbe` won’t launch | Wrap it in ISO/CHD. |
 | Game not listed | Check extension, folder and 4,096-entry cap. |

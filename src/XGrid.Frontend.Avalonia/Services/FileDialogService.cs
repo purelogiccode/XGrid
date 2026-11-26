@@ -90,7 +90,7 @@ public sealed class FileDialogService
     /// <summary>Common disc-image filter.</summary>
     public static IReadOnlyList<FilePickerFileType> DiscTypes { get; } =
     [
-        new FilePickerFileType("Xbox disc images") { Patterns = ["*.iso", "*.xiso", "*.chd", "*.zar", "*.xbe"] },
+        new FilePickerFileType("Xbox disc images") { Patterns = ["*.iso", "*.xiso", "*.chd", "*.cci", "*.zar", "*.xbe"] },
         new FilePickerFileType("All files") { Patterns = ["*"] },
     ];
 

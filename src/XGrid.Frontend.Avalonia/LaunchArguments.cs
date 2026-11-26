@@ -166,7 +166,7 @@ public sealed record LaunchArguments
 
         Other:
           --                          Pass the remaining arguments through.
-          A positional .iso/.xiso/.chd/.zar path is --disc plus --autostart.
+          A positional .iso/.xiso/.chd/.cci/.zar path is --disc plus --autostart.
 
         This build:
           -h, --help                  Show this help.
@@ -611,13 +611,13 @@ public sealed record LaunchArguments
 
             if (!GameLibraryService.IsGameCandidate(path))
             {
-                Errors.Add($"'{path}' is not a supported disc image. Use .iso, .xiso, .chd or .zar.");
+                Errors.Add($"'{path}' is not a supported disc image. Use .iso, .xiso, .chd, .cci or .zar.");
                 return;
             }
 
             if (Path.GetExtension(path).Equals(".xbe", StringComparison.OrdinalIgnoreCase))
             {
-                Errors.Add("A loose .xbe is not bootable; wrap it in an ISO or CHD image.");
+                Errors.Add("A loose .xbe is not bootable; wrap it in an ISO, CHD, CCI or ZAR image.");
                 return;
             }
 

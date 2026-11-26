@@ -75,6 +75,7 @@ build cannot start.
 
 - ISO/XISO — direct; optimized XISO and full Redump images both boot.
 - CHD — real-time decode, including full Redump CHDs.
+- CCI — Cerbios/Repackinator compressed image; single or split, real-time decode.
 - ZAR — real-time decode for entry-form and file-tree archives.
 - XBE — inspection only.
 
@@ -86,6 +87,12 @@ Yes. The core builds an XDVDFS volume in memory at open time and reads the
 files from the compressed archive. Nothing is extracted. If a file name cannot
 be represented in XDVDFS (Latin-1, up to 42 characters, no separators), the
 archive is refused with the offending name.
+
+## Can I use a split CCI set?
+
+Yes. Open the first part (`game.1.cci`); the core discovers `game.2.cci` and
+the later parts and stitches them at sector granularity. The library lists the
+set once under `game`.
 
 ## Do save states work in the separate process?
 

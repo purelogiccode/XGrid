@@ -36,14 +36,30 @@ libchdr = static_library('xgrid_libchdr', libchdr_sources,
   c_args: ['-DCHDR_SYSTEM_ZLIB', '-DCHDR_SYSTEM_ZSTD'],
 )
 
+# libCCI is vendored under thirdparty/ and uses the host LZ4 rather than its
+# git submodule, so the build never fetches the network.
+liblz4 = dependency('liblz4', required: true)
+libcci_include = include_directories('thirdparty/libcci/include')
+libcci = static_library('xgrid_libcci',
+  files(
+    'thirdparty/libcci/src/cci_reader.c',
+    'thirdparty/libcci/src/cci_volume.c',
+    'thirdparty/libcci/src/cci_file.c',
+    'thirdparty/libcci/src/cci_writer.c',
+  ),
+  include_directories: libcci_include,
+  dependencies: [liblz4],
+)
+
 xgrid_core_dep = declare_dependency(
-  link_with: libchdr,
-  include_directories: libchdr_include,
-  dependencies: [zlib, zstd],
+  link_with: [libchdr, libcci],
+  include_directories: [libchdr_include, libcci_include],
+  dependencies: [zlib, zstd, liblz4],
 )
 
 block_ss.add(xgrid_core_dep)
 block_ss.add(files('block/xgrid-iso.c'))
+block_ss.add(files('block/xgridcci.c'))
 block_ss.add(files('block/xgridchd.c'))
 block_ss.add(files('block/xgridiso.c'))
 block_ss.add(files('block/xgridzar.c'))

@@ -343,11 +343,11 @@ when XGrid needs the fix sooner.
 
 #### Media and I/O
 
-- [ ] **Disc formats** — CCI compressed images and XDVD security responses;
-  native CHD is already covered by `xgridchd`, so reassess only if a correct
-  upstream CHD PR appears
+- [x] **CCI compressed images** - implemented in `xgridcci` with vendored
+  libCCI; XDVD security responses remain open
   ([#2808](https://github.com/xemu-project/xemu/pull/2808),
-  [#1659](https://github.com/xemu-project/xemu/pull/1659)).
+  [#1659](https://github.com/xemu-project/xemu/pull/1659),
+  [#1036](https://github.com/xemu-project/xemu/issues/1036)).
 - [ ] **Disc and tray timing** — SMC tray handling (draft) and disc/HDD
   throttling (draft)
   ([#2864](https://github.com/xemu-project/xemu/pull/2864),

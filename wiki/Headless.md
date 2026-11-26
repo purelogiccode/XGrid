@@ -39,7 +39,7 @@ XGrid.Frontend.Avalonia.exe --headless --seconds 20 ^
 ```
 
 The normal shell accepts the same overrides without `--headless`. A positional
-`.iso`, `.xiso`, `.chd` or `.zar` path is a `--disc` shortcut and powers on.
+`.iso`, `.xiso`, `.chd`, `.cci` or `.zar` path is a `--disc` shortcut and powers on.
 
 ## Common switches
 

@@ -27,6 +27,8 @@ files are recorded in `xemu/xemu-patches/`.
 | --- | --- | --- |
 | xemu / QEMU | GPL-2.0 family, LGPL, MIT per file | Emulation core. |
 | libchdr | BSD-3-Clause | CHD decoding. |
+| libCCI | GPL-2.0-or-later | CCI header/index and LZ4 sector decoding. |
+| LZ4 | BSD-2-Clause | CCI block compression (host library). |
 | Avalonia | MIT | Desktop UI framework. |
 | CommunityToolkit.Mvvm | MIT | MVVM helpers. |
 | Serilog and its console/file/debug sinks | Apache-2.0 | Structured diagnostic logging. |

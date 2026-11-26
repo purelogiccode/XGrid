@@ -17,7 +17,7 @@ diagnostics, packaging and the documentation you are reading.
 | **Core** | xemu 0.8.139 / QEMU 10.2.0 TCG i386, NV2A OpenGL/Vulkan/NULL renderers, MCPX, APU/ACI, IDE/ATAPI, USB/OHCI, SMBus and the full Xbox boot chain |
 | **Shell** | Avalonia 12 desktop application with Home, Library, Settings, Activity and About pages |
 | **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
-| **Media** | ISO/XISO (optimized or full Redump), compressed CHD, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
+| **Media** | ISO/XISO (optimized or full Redump), compressed CHD, CCI, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
 | **Display** | Core-owned picture with nearest, bilinear, scanline and CRT filters; embedded core window; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
 | **Quality of life** | Four save-state slots, multiple library roots, favorites, play time, per-title overrides, 4x fast-forward, local and online cover art, core-owned console screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
@@ -55,6 +55,8 @@ Read [Architecture](reference/architecture.md) for the full picture.
 ### Media without extraction
 
 - **CHD** discs are decoded on demand by the `xgridchd` block driver.
+- **CCI** discs are decoded on demand by `xgridcci`; single files and split
+  `.1.cci` / `.2.cci` sets are read directly.
 - **ZArchive** discs are decoded on demand by `xgridzar`; an entry-form archive
   exposes its `.iso` entry, and a file-tree archive is synthesized into an
   XDVDFS volume at open time.

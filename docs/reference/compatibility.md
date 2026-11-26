@@ -13,6 +13,7 @@ point, but XGrid's patches and media drivers can change the result.
 | Retail boot chain and dashboard from an HDD image | Supported |
 | ISO/XISO disc images | Supported, optimized or full Redump (game partition mapped automatically) |
 | Compressed CHD disc images | Supported (real-time decode, optimized or full Redump) |
+| Compressed CCI disc images | Supported (single part or split set, real-time LZ4 decode) |
 | ZArchive discs | Supported, entry form or synthesized file tree |
 | 64 MB and 128 MB guest RAM | Supported |
 | OpenGL renderer | Supported |

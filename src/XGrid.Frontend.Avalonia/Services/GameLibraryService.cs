@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using Serilog;
 using XGrid.Frontend.Avalonia.Models;
@@ -94,6 +95,13 @@ public static class GameLibraryService
     public static bool IsGameCandidate(string path)
     {
         string extension = Path.GetExtension(path);
+        if (extension.Equals(".cci", StringComparison.OrdinalIgnoreCase))
+        {
+            // A split set is one game: list the first part and let the core
+            // discover the rest from it.
+            return IsPrimaryCciPart(path);
+        }
+
         return extension.Equals(".iso", StringComparison.OrdinalIgnoreCase)
                || extension.Equals(".xiso", StringComparison.OrdinalIgnoreCase)
                || extension.Equals(".chd", StringComparison.OrdinalIgnoreCase)
@@ -101,4 +109,20 @@ public static class GameLibraryService
                || extension.Equals(".xbe", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsPrimaryCciPart(string path)
+    {
+        string name = Path.GetFileNameWithoutExtension(path);
+        int separator = name.LastIndexOf('.');
+        if (separator <= 0 || separator == name.Length - 1)
+        {
+            return true;
+        }
+
+        return !int.TryParse(
+                   name.AsSpan(separator + 1),
+                   NumberStyles.None,
+                   CultureInfo.InvariantCulture,
+                   out int part)
+               || part == 1;
+    }
 }

@@ -23,6 +23,11 @@ public sealed class GameLibraryServiceTests : IDisposable
     [InlineData("game.ISO", true)]
     [InlineData("game.xiso", true)]
     [InlineData("game.chd", true)]
+    [InlineData("game.cci", true)]
+    [InlineData("game.1.cci", true)]
+    [InlineData("game.2.cci", false)]
+    [InlineData("game.12.cci", false)]
+    [InlineData("game.01.cci", true)]
     [InlineData("game.zar", true)]
     [InlineData("game.xbe", true)]
     [InlineData("game.zip", false)]
@@ -58,6 +63,19 @@ public sealed class GameLibraryServiceTests : IDisposable
         List<GameEntry> entries = GameLibraryService.Scan([_root, Path.Combine(_root, ".")]);
 
         Assert.Single(entries);
+    }
+
+    [Fact]
+    public void Scan_ListsASplitCciSetOnceUnderItsBaseName()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "halo.1.cci"), [0]);
+        File.WriteAllBytes(Path.Combine(_root, "halo.2.cci"), [0]);
+
+        List<GameEntry> entries = GameLibraryService.Scan([_root]);
+
+        GameEntry entry = Assert.Single(entries);
+        Assert.Equal(GameFormat.Cci, entry.Format);
+        Assert.Equal("halo", entry.Title);
     }
 
     [Fact]
