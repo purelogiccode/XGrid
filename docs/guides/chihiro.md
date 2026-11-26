@@ -82,6 +82,11 @@ The core's default Chihiro keyboard map is below. The keys can be changed in
 `xemu.toml` under `[chihiro.jvs]`; the shell does not expose a Chihiro key editor
 yet.
 
+Click the game picture once after launch: the embedded core takes keyboard
+focus for the cabinet (the Xbox path keeps focus in the shell for its pad
+sink). Click the toolbar or a shell page to return focus to XGrid. Then press
+**5** for a coin and **Enter** to start.
+
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
 | Start | Enter | Start |

@@ -36,6 +36,7 @@ public sealed class XemuCoreSession : IDisposable
     private int _displayWidth;
     private int _displayHeight;
     private bool _displayVisible = true;
+    private bool _takeFocus;
     private long _stopDeadline;
     private bool _stopping;
     private bool _stopDeadlineReported;
@@ -164,6 +165,8 @@ public sealed class XemuCoreSession : IDisposable
         {
             throw new InvalidOperationException("The core is already running.");
         }
+
+        _takeFocus = launch.IsChihiro;
 
         // The core owns the picture. The shell never creates a frame reader;
         // filters and the overlay are selected through the core ABI/env.
@@ -410,6 +413,7 @@ public sealed class XemuCoreSession : IDisposable
             try
             {
                 _embedder ??= new XemuWindowEmbedder();
+                _embedder.TakeFocus = _takeFocus;
                 _embedder.Embed(_displayHost, window, _displayWidth, _displayHeight);
                 // The embed may arrive while the user is on another page.
                 _embedder.SetVisible(_displayVisible);

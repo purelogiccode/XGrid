@@ -30,6 +30,14 @@ public sealed class XemuWindowEmbedder : IDisposable
     /// <summary>Gets a value indicating whether a core window is currently hosted.</summary>
     public bool IsEmbedded => _child != IntPtr.Zero;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the core window may take
+    /// keyboard focus when the picture is clicked. Xbox launches keep focus on
+    /// the shell because it publishes the pad state; a Chihiro reads SDL
+    /// keyboard/gamepad input directly, so its picture must be focusable.
+    /// </summary>
+    public bool TakeFocus { get; set; }
+
     /// <summary>Gets a value indicating whether the core window is hosted by a specific surface.</summary>
     /// <param name="host">Host window handle to test.</param>
     /// <remarks>
@@ -87,11 +95,20 @@ public sealed class XemuWindowEmbedder : IDisposable
                      | Win32Window.WsExClientEdge
                      | Win32Window.WsExDlgModalFrame
                      | Win32Window.WsExToolWindow);
-        // Keep activation on the shell window. The shell's key handlers and pad
-        // poll are what publish input; if a click on the picture activated the
-        // core window, the shell would see the main window as inactive and
-        // publish neutral pads.
-        exStyle |= Win32Window.WsExNoActivate;
+        if (TakeFocus)
+        {
+            // A Chihiro reads SDL input directly; clicking the picture must
+            // focus the core so the cabinet keys and gamepad reach it.
+            exStyle &= ~Win32Window.WsExNoActivate;
+        }
+        else
+        {
+            // Keep activation on the shell window. The shell's key handlers and
+            // pad poll are what publish Xbox input; if a click on the picture
+            // activated the core window, the shell would see the main window as
+            // inactive and publish neutral pads.
+            exStyle |= Win32Window.WsExNoActivate;
+        }
         _ = Win32Window.SetWindowLongW(child, Win32Window.GwlExStyle, unchecked((int)exStyle));
 
         // SetParent answers the previous parent, which is null for a top-level

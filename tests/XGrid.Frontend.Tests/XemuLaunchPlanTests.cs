@@ -85,6 +85,7 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.True(launch.IsChihiro);
         Assert.Equal(128, launch.RamMb);
         Assert.Equal(string.Empty, launch.HddPath);
+        Assert.Equal(string.Empty, launch.InputSinkName);
         Assert.Equal(image, launch.DvdPath);
         Assert.Equal(Path.Combine(_root, "firmware", ChihiroSettings.BiosFileName), launch.ChihiroBiosPath);
         Assert.Equal(
