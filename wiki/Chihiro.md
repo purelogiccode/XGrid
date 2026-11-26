@@ -108,7 +108,9 @@ Tune create a blank card when none is in hand, and the core keeps it for later
 sessions. In gun games the mouse buttons belong to the gun, so the core's
 pop-up menu stays on **F2** (or the Guide button) and a double-click does not
 toggle fullscreen. Force feedback rumbles the first gamepad from the drive
-board and is scaled in Settings.
+board and is scaled in Settings. Gundam's twin-stick keys (WASD + Q/E, the
+arrow keys + Right Shift/Ctrl, Space pedal) are editable under **Gundam
+cockpit**.
 
 Click the game picture once after launch so the embedded core takes keyboard
 focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a
@@ -123,7 +125,7 @@ network-firmware check with `ver1305.bin` and then wait for their own server.
 ## Limits
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
-- Per-game bindings are editable in Settings; Gundam-specific bindings,
+- Per-game bindings are editable in Settings, including the Gundam cockpit;
   steering-wheel haptics and raw light-gun aiming are not exposed yet.
 - Chihiro audio is incomplete in upstream xemu; some games are silent or have
   missing effects. The host backend and Xbox audio path are not at fault.

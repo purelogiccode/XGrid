@@ -64,6 +64,45 @@ public sealed class ChihiroJvsSettings
     /// <summary>Gets or sets Ghost Squad's weapon-change button.</summary>
     public int GsChange { get; set; } = 44;
 
+    /// <summary>Gets or sets Gundam's left stick up.</summary>
+    public int GundamLUp { get; set; } = 26;
+
+    /// <summary>Gets or sets Gundam's left stick down.</summary>
+    public int GundamLDown { get; set; } = 22;
+
+    /// <summary>Gets or sets Gundam's left stick left.</summary>
+    public int GundamLLeft { get; set; } = 4;
+
+    /// <summary>Gets or sets Gundam's left stick right.</summary>
+    public int GundamLRight { get; set; } = 7;
+
+    /// <summary>Gets or sets Gundam's left trigger.</summary>
+    public int GundamLTrigger { get; set; } = 20;
+
+    /// <summary>Gets or sets Gundam's left button.</summary>
+    public int GundamLButton { get; set; } = 8;
+
+    /// <summary>Gets or sets Gundam's right stick up.</summary>
+    public int GundamRUp { get; set; } = 82;
+
+    /// <summary>Gets or sets Gundam's right stick down.</summary>
+    public int GundamRDown { get; set; } = 81;
+
+    /// <summary>Gets or sets Gundam's right stick left.</summary>
+    public int GundamRLeft { get; set; } = 80;
+
+    /// <summary>Gets or sets Gundam's right stick right.</summary>
+    public int GundamRRight { get; set; } = 79;
+
+    /// <summary>Gets or sets Gundam's right trigger.</summary>
+    public int GundamRTrigger { get; set; } = 229;
+
+    /// <summary>Gets or sets Gundam's right button.</summary>
+    public int GundamRButton { get; set; } = 228;
+
+    /// <summary>Gets or sets Gundam's pedal.</summary>
+    public int GundamPedal { get; set; } = 44;
+
     /// <summary>Creates an independent copy of these bindings.</summary>
     /// <returns>The copy.</returns>
     public ChihiroJvsSettings Clone()
@@ -96,6 +135,19 @@ public sealed class ChihiroJvsSettings
             GsTrigger,
             GsBody,
             GsChange,
+            GundamLUp,
+            GundamLDown,
+            GundamLLeft,
+            GundamLRight,
+            GundamLTrigger,
+            GundamLButton,
+            GundamRUp,
+            GundamRDown,
+            GundamRLeft,
+            GundamRRight,
+            GundamRTrigger,
+            GundamRButton,
+            GundamPedal,
         ];
     }
 
@@ -121,6 +173,19 @@ public sealed class ChihiroJvsSettings
         GsTrigger = Clamp(GsTrigger);
         GsBody = Clamp(GsBody);
         GsChange = Clamp(GsChange);
+        GundamLUp = Clamp(GundamLUp);
+        GundamLDown = Clamp(GundamLDown);
+        GundamLLeft = Clamp(GundamLLeft);
+        GundamLRight = Clamp(GundamLRight);
+        GundamLTrigger = Clamp(GundamLTrigger);
+        GundamLButton = Clamp(GundamLButton);
+        GundamRUp = Clamp(GundamRUp);
+        GundamRDown = Clamp(GundamRDown);
+        GundamRLeft = Clamp(GundamRLeft);
+        GundamRRight = Clamp(GundamRRight);
+        GundamRTrigger = Clamp(GundamRTrigger);
+        GundamRButton = Clamp(GundamRButton);
+        GundamPedal = Clamp(GundamPedal);
     }
 
     /// <summary>Returns true for an unbound, keyboard or mouse binding.</summary>
