@@ -12,9 +12,9 @@ New files (whole files, not shown as hunks):
   hw/xbox/chihiro/*.c, *.h and meson.build
 
 The diff below covers the edits to the existing xemu tree, including the OHCI
-enumeration hooks, the keyboard/gamepad/mouse JVS mapping, the pointer aim
-mapped onto the rendered picture, the gun-profile menu suppression and the
-player-1 card insert. It applies on top of the XGrid 0.8.139 tree with patches
+enumeration hooks, the keyboard/gamepad/mouse JVS mapping, the pointer aim,
+the gun-profile menu suppression, the player-1 card insert and the gamepad
+force-feedback output. It applies on top of the XGrid 0.8.139 tree with patches
 0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
 index 34b1b2a3..5f3be43e 100644
@@ -1226,19 +1226,22 @@ index 7900f869..8d5a18d0 100644
      for (int i = 1; i < argc; i++) {
          if (argv[i] != NULL) {
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 54595e1b..d98269d3 100644
+index 54595e1b..9c48cd05 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
-@@ -36,6 +36,8 @@
+@@ -36,6 +36,11 @@
  #include <stdlib.h>
  
  #include "system/blockdev.h"
 +#include "hw/xbox/chihiro/chihiro.h"
 +#include "hw/xbox/chihiro/chihiro-jvs.h"
++#include "hw/xbox/chihiro/chihiro-driveboard-sega838.h"
++#include "hw/xbox/chihiro/chihiro-driveboard-v257.h"
++#include "hw/xbox/chihiro/chihiro-log.h"
  
  // #define DEBUG_INPUT
  
-@@ -564,6 +566,365 @@ void xemu_input_update_controller(ControllerState *state)
+@@ -564,6 +569,413 @@ void xemu_input_update_controller(ControllerState *state)
      state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
  }
  
@@ -1379,6 +1382,41 @@ index 54595e1b..d98269d3 100644
 +           profile == CONFIG_CHIHIRO_JVS_PROFILE_GS;
 +}
 +
++/* A gamepad renders the drive board's event channel: the Sega 838 package and
++ * vibration pulses, or the V257's short pushes. Continuous spring/damper
++ * forces belong to a wheel and a pad cannot reproduce them. */
++static uint16_t chihiro_ffb_rumble(void)
++{
++    if (!g_config.chihiro.settings.force_feedback) {
++        return 0;
++    }
++
++    uint32_t value = 0;
++    if (chihiro_driveboard_global) {
++        DriveBoardFFB ffb;
++        driveboard_get_ffb(chihiro_driveboard_global, &ffb);
++        value = driveboard_get_rumble(chihiro_driveboard_global);
++    } else if (chihiro_v257_global) {
++        int target, spring, damping, torque;
++        if (v257_drive(chihiro_v257_global, &target, &spring, &damping,
++                       &torque)) {
++            int mag = torque < 0 ? -torque : torque;
++            value = (uint32_t)mag * 0xFFFFu / 0x7F;
++        }
++    }
++
++    int strength = g_config.chihiro.settings.ffb_strength;
++    if (strength <= 0) {
++        return 0;
++    }
++    if (strength > 200) {
++        strength = 200;
++    }
++
++    value = value * (uint32_t)strength / 100u;
++    return value > 0xFFFF ? 0xFFFF : (uint16_t)value;
++}
++
 +/* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
 + * same bindings; the core's cabinet emulation itself does not care where the
 + * switches come from. */
@@ -1396,6 +1434,19 @@ index 54595e1b..d98269d3 100644
 +    int profile = chihiro_detected_game_profile();
 +    if (profile < 0) {
 +        profile = jvs_cfg->profile;
++    }
++
++    {
++        static uint16_t last_rumble;
++        uint16_t rumble = chihiro_ffb_rumble();
++        if (rumble != last_rumble) {
++            CHIHIRO_LOGF(FFB, "gamepad rumble %04X (pad %s)\n", rumble,
++                         pad ? "yes" : "no");
++            if (pad && pad->sdl_gamepad) {
++                SDL_RumbleGamepad(pad->sdl_gamepad, rumble, rumble, 250);
++            }
++            last_rumble = rumble;
++        }
 +    }
 +
 +    uint8_t sw0 = 0;
@@ -1604,7 +1655,7 @@ index 54595e1b..d98269d3 100644
  void xemu_input_update_controllers(void)
  {
      ControllerState *iter;
-@@ -573,6 +934,7 @@ void xemu_input_update_controllers(void)
+@@ -573,6 +985,7 @@ void xemu_input_update_controllers(void)
      QTAILQ_FOREACH(iter, &available_controllers, entry) {
          xemu_input_update_rumble(iter);
      }

@@ -38,6 +38,9 @@
 #include "system/blockdev.h"
 #include "hw/xbox/chihiro/chihiro.h"
 #include "hw/xbox/chihiro/chihiro-jvs.h"
+#include "hw/xbox/chihiro/chihiro-driveboard-sega838.h"
+#include "hw/xbox/chihiro/chihiro-driveboard-v257.h"
+#include "hw/xbox/chihiro/chihiro-log.h"
 
 // #define DEBUG_INPUT
 
@@ -703,6 +706,41 @@ bool xemu_input_chihiro_gun_active(void)
            profile == CONFIG_CHIHIRO_JVS_PROFILE_GS;
 }
 
+/* A gamepad renders the drive board's event channel: the Sega 838 package and
+ * vibration pulses, or the V257's short pushes. Continuous spring/damper
+ * forces belong to a wheel and a pad cannot reproduce them. */
+static uint16_t chihiro_ffb_rumble(void)
+{
+    if (!g_config.chihiro.settings.force_feedback) {
+        return 0;
+    }
+
+    uint32_t value = 0;
+    if (chihiro_driveboard_global) {
+        DriveBoardFFB ffb;
+        driveboard_get_ffb(chihiro_driveboard_global, &ffb);
+        value = driveboard_get_rumble(chihiro_driveboard_global);
+    } else if (chihiro_v257_global) {
+        int target, spring, damping, torque;
+        if (v257_drive(chihiro_v257_global, &target, &spring, &damping,
+                       &torque)) {
+            int mag = torque < 0 ? -torque : torque;
+            value = (uint32_t)mag * 0xFFFFu / 0x7F;
+        }
+    }
+
+    int strength = g_config.chihiro.settings.ffb_strength;
+    if (strength <= 0) {
+        return 0;
+    }
+    if (strength > 200) {
+        strength = 200;
+    }
+
+    value = value * (uint32_t)strength / 100u;
+    return value > 0xFFFF ? 0xFFFF : (uint16_t)value;
+}
+
 /* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
  * same bindings; the core's cabinet emulation itself does not care where the
  * switches come from. */
@@ -720,6 +758,19 @@ static void xemu_input_update_chihiro(void)
     int profile = chihiro_detected_game_profile();
     if (profile < 0) {
         profile = jvs_cfg->profile;
+    }
+
+    {
+        static uint16_t last_rumble;
+        uint16_t rumble = chihiro_ffb_rumble();
+        if (rumble != last_rumble) {
+            CHIHIRO_LOGF(FFB, "gamepad rumble %04X (pad %s)\n", rumble,
+                         pad ? "yes" : "no");
+            if (pad && pad->sdl_gamepad) {
+                SDL_RumbleGamepad(pad->sdl_gamepad, rumble, rumble, 250);
+            }
+            last_rumble = rumble;
+        }
     }
 
     uint8_t sw0 = 0;

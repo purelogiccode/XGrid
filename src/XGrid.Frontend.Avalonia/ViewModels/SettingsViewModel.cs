@@ -718,6 +718,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private bool _chihiroFreePlay;
 
     [ObservableProperty]
+    private bool _chihiroForceFeedback;
+
+    [ObservableProperty]
+    private int _chihiroFfbStrength = 100;
+
+    [ObservableProperty]
     private KeyedOption? _selectedChihiroRegion;
 
     [ObservableProperty]
@@ -927,6 +933,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         _chihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone();
         RebuildChihiroBindings();
         ChihiroFreePlay = settings.Chihiro.FreePlay;
+        ChihiroForceFeedback = settings.Chihiro.ForceFeedback;
+        ChihiroFfbStrength = settings.Chihiro.FfbStrength;
         SelectedChihiroRegion = ChihiroRegionOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Chihiro.Region, StringComparison.Ordinal))
             ?? ChihiroRegionOptions.First(option => string.Equals(option.Key, "ex", StringComparison.Ordinal));
@@ -1061,6 +1069,8 @@ public sealed partial class SettingsViewModel : PageViewModel
                 Region = SelectedChihiroRegion?.Key ?? "ex",
                 DimmSize = SelectedChihiroDimm?.Key ?? "auto",
                 BoardType = SelectedChihiroBoardType?.Key ?? "auto",
+                ForceFeedback = ChihiroForceFeedback,
+                FfbStrength = ChihiroFfbStrength,
             },
             RamMb = RamMb,
             Input = BuildInputSettings(),

@@ -23,7 +23,8 @@ off. The machine uses 128 MB of RAM and no Xbox hard disk.
 
 The same page sets **Free play** (Start without a coin), **Region** (Auto,
 Japan, USA, Export; Error 05 may need another), **DIMM size** (Auto; Gundam
-needs 1024 MB) and **Media board** (Auto, Type 1, Type 3).
+needs 1024 MB), **Media board** (Auto, Type 1, Type 3) and **Force feedback**
+(gamepad rumble from the drive board, 0-200% strength).
 
 ## Linked cabinets
 
@@ -118,8 +119,8 @@ network-firmware check with `ver1305.bin` and then wait for their own server.
 ## Limits
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
-- Per-game bindings are editable in Settings; Gundam-specific bindings, force
-  feedback and the second card reader are not exposed yet.
+- Per-game bindings are editable in Settings; Gundam-specific bindings,
+  steering-wheel haptics and the second card reader are not exposed yet.
 - Chihiro audio is incomplete in upstream xemu; some games are silent or have
   missing effects. The host backend and Xbox audio path are not at fault.
 - Linked cabinets are exposed in Settings; save states are disabled while the

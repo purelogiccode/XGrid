@@ -59,6 +59,9 @@ disk. The shell writes `default_machine = 'chihiro'` and the
   1024 MB; other titles use 128 to 512 MB.
 - **Media board** defaults to Auto. Early Crazy Taxi High Roller and House of
   the Dead III cabinets are Type 1; most others are Type 3.
+- **Force feedback** sends the drive board's event pulses to the first
+  gamepad as rumble. The strength slider scales it from 0 to 200%. Steering
+  wheel haptic effects are not exposed yet.
 
 ## Linked cabinets
 
@@ -208,8 +211,8 @@ it up again. Ghost Squad's second reader is not exposed by the shell yet.
   using the game's key.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
   the cabinet (stick, triggers, D-pad and face buttons). The cabinet keys are
-  editable in Settings; Gundam-specific bindings and force feedback are still
-  follow-ups.
+  editable in Settings; Gundam-specific bindings and steering-wheel haptics
+  are still follow-ups.
 - **The second card reader** is present in the core but not exposed by the
   shell. Player 1's card insert works.
 - **Chihiro audio is incomplete.** Upstream xemu's Chihiro audio emulation can
