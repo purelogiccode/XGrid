@@ -86,6 +86,15 @@ states are disabled while the link runs, because the other cabinets would not
 come back with a snapshot. MJ2/MJ3 are network mahjong games with their own
 server; the cabinet link is not a substitute for it.
 
+XGrid writes the cabinet count and 1-based cabinet number into the backup of
+Ollie King, OutRun 2, OutRun 2 SP and Maximum Tune. If a game still reports
+that its **GAME ASSIGNMENTS** differ from the link, set the count and link ID
+in the game's test menu once; the link cannot form while they disagree.
+
+Four OutRun 2 instances on one PC have been validated: the host listens on
+9102, 9103 and 9104, each client connects to its own port, and the game
+reports cabinet 1 of 4 through cabinet 4 of 4.
+
 ## Converting an Xbox-format Chihiro ISO
 
 Some homebrew Chihiro conversions (the `XBOXOG - Chihiro` style ISOs) are Xbox

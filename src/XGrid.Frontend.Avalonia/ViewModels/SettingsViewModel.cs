@@ -2036,6 +2036,14 @@ public sealed partial class SettingsViewModel : PageViewModel
         OnPropertyChanged(nameof(ChihiroStatusText));
     }
 
+    partial void OnChihiroLinkCabinetsChanged(int value)
+    {
+        if (ChihiroLinkCabinet > value)
+        {
+            ChihiroLinkCabinet = value;
+        }
+    }
+
     // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnChihiroFirmwareDirectoryChanged(string value)
     {
