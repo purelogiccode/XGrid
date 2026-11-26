@@ -34,7 +34,7 @@ public partial class SettingsView : UserControl
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (DataContext is SettingsViewModel viewModel && viewModel.CaptureKey(e.Key))
+        if (DataContext is SettingsViewModel viewModel && viewModel.CaptureKey(e.Key, e.PhysicalKey))
         {
             e.Handled = true;
         }

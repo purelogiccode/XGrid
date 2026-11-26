@@ -75,6 +75,8 @@ firmware or game data.
 
 ## Controls
 
+The keys can be changed in **Settings -> Input -> Sega Chihiro cabinet keys**.
+
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
 | Start | Enter | Start |
@@ -112,8 +114,8 @@ network-firmware check with `ver1305.bin` and then wait for their own server.
 ## Limits
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
-- Per-game bindings, force feedback and the second card reader are not exposed
-  by the shell yet.
+- Per-game bindings are editable in Settings; Gundam-specific bindings, force
+  feedback and the second card reader are not exposed yet.
 - Linked cabinets are exposed in Settings; save states are disabled while the
   link runs.
 - MJ2/MJ3/MJ3 Evolution boot to their network startup but need their own
