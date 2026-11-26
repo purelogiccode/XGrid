@@ -759,6 +759,11 @@ public sealed partial class SettingsViewModel : PageViewModel
     [ObservableProperty]
     private string _chihiroCardMt2 = string.Empty;
 
+    private readonly string _chihiroCardsFolder = ChihiroCardPaths.ResolveCardsDirectory();
+
+    /// <summary>Gets the xemu folder where blank cards are created.</summary>
+    public string ChihiroCardsFolder => _chihiroCardsFolder;
+
     [ObservableProperty]
     private KeyedOption? _selectedChihiroRegion;
 
@@ -1923,6 +1928,24 @@ public sealed partial class SettingsViewModel : PageViewModel
                 ChihiroCardMt2 = path;
                 break;
         }
+    }
+
+    /// <summary>Public command: opens the folder where the core creates blank cards.</summary>
+    [RelayCommand]
+    private async Task OpenChihiroCardsFolderAsync()
+    {
+        string folder = ChihiroCardPaths.ResolveCardsDirectory();
+        try
+        {
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception exception)
+        {
+            Shell.ShowToast("Could not create the cards folder: " + exception.Message);
+            return;
+        }
+
+        await Shell.Dialogs.OpenFolderAsync(folder);
     }
 
     /// <summary>Public command: browses for a disc image.</summary>

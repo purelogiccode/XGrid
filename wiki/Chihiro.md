@@ -109,9 +109,10 @@ and 2 in order, with fire, body, change/pedal and reload on their buttons.
 Press **C** (or X) to insert player 1's card and **V** (or X on the second pad)
 for player 2's; Ghost Squad and Maximum Tune create a blank card when none is
 in hand, and the core keeps it for later sessions. The HW210 and CRP-1231 card
-files are assignable under **Card files** in Settings. In gun games the mouse
-buttons belong to the gun, so the core's pop-up menu stays on **F2** (or the
-Guide button) and a double-click does not toggle fullscreen. Force feedback
+files are assignable under **Card files** in Settings; **Open cards folder**
+opens the core's card folder. In gun games the mouse buttons belong to the gun,
+so the core's pop-up menu stays on **F2** (or the Guide button) and a
+double-click does not toggle fullscreen. Force feedback
 drives a force-feedback wheel, or rumbles the first gamepad when no wheel is
 found; the wheel's weight, autocenter and direction are in Settings. Gundam's
 twin-stick keys (WASD + Q/E, the arrow keys + Right Shift/Ctrl, Space pedal)
