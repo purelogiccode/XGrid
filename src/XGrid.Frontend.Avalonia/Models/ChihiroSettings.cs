@@ -98,6 +98,12 @@ public sealed class ChihiroSettings
     /// <summary>Gets or sets the self-centering strength, 0 to 100 percent.</summary>
     public int WheelAutocenterStrength { get; set; } = 50;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether each light gun or mouse is read
+    /// on its own instead of sharing the host cursor.
+    /// </summary>
+    public bool PointerDevices { get; set; }
+
     /// <summary>The Chihiro flash ROM file name.</summary>
     public const string BiosFileName = "chihiro_xbox_bios.bin";
 
@@ -153,6 +159,7 @@ public sealed class ChihiroSettings
             WheelWeight = WheelWeight,
             WheelAutocenter = WheelAutocenter,
             WheelAutocenterStrength = WheelAutocenterStrength,
+            PointerDevices = PointerDevices,
         };
     }
 

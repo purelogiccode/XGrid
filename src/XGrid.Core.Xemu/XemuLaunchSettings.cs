@@ -105,6 +105,9 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the self-centering strength, 0 to 100 percent.</summary>
     public int ChihiroWheelAutocenterStrength { get; init; } = 50;
 
+    /// <summary>Gets a value indicating whether pointer devices aim separately.</summary>
+    public bool ChihiroPointerDevices { get; init; }
+
     /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
     public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
 

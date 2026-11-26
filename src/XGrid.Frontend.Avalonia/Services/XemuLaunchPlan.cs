@@ -94,6 +94,7 @@ public static class XemuLaunchPlan
             ChihiroWheelWeight = settings.Chihiro.WheelWeight,
             ChihiroWheelAutocenter = settings.Chihiro.WheelAutocenter,
             ChihiroWheelAutocenterStrength = settings.Chihiro.WheelAutocenterStrength,
+            ChihiroPointerDevices = settings.Chihiro.PointerDevices,
             ChihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone(),
             ChihiroJvsP2 = (settings.Chihiro.JvsP2 ?? new ChihiroJvsP2Settings()).Clone(),
             ChihiroCardReader = (settings.Chihiro.CardReader ?? new ChihiroCardReaderSettings()).Clone(),
