@@ -103,7 +103,11 @@ public static class XemuLaunchPlan
                 ? Path.Combine(workingDirectory, "audio.wav")
                 : string.Empty,
             DisplaySinkName = string.Empty,
-            InputSinkName = hostInput ? XemuInputSink.CreateName() : string.Empty,
+            // A Chihiro reads its cabinet inputs from SDL directly; a shell
+            // Xbox pad would claim a USB port on the arcade USB bus.
+            InputSinkName = chihiro
+                ? string.Empty
+                : hostInput ? XemuInputSink.CreateName() : string.Empty,
             PresentationFilter = XemuPresentationFilter.Normalize(settings.Filter),
             FpsOverlay = settings.ShowFpsOverlay,
             WorkingDirectory = workingDirectory,

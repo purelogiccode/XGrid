@@ -59,6 +59,10 @@ Ollie King and Gundam layouts are supported. The first detected gamepad drives
 the cabinet; pointer devices, light-gun aim and force feedback are not exposed
 yet.
 
+Click the game picture once after launch so the embedded core takes keyboard
+focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a
+shell page to return focus to XGrid.
+
 ## Limits
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.

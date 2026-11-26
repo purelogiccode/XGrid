@@ -11,9 +11,9 @@ New files (whole files, not shown as hunks):
   include/block/blkmemory.h
   hw/xbox/chihiro/*.c, *.h and meson.build
 
-The diff below covers the edits to the existing xemu tree, including the
-keyboard/gamepad JVS mapping. It applies on top of the XGrid 0.8.139 tree with
-patches 0001-0017.
+The diff below covers the edits to the existing xemu tree, including the OHCI
+enumeration hooks and the keyboard/gamepad JVS mapping. It applies on top of
+the XGrid 0.8.139 tree with patches 0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
 index 34b1b2a3..5f3be43e 100644
 --- a/xemu/block/meson.build
@@ -568,6 +568,81 @@ index 26fb5a6e..8410e0ff 100644
          s->status = READY_STAT | SEEK_STAT;
          ide_transfer_start(s, s->io_buffer, 512, ide_transfer_stop);
          ide_bus_set_irq(s->bus);
+diff --git a/xemu/hw/usb/hcd-ohci.c b/xemu/hw/usb/hcd-ohci.c
+index 7b3f120b..e9c49729 100644
+--- a/xemu/hw/usb/hcd-ohci.c
++++ b/xemu/hw/usb/hcd-ohci.c
+@@ -37,6 +37,7 @@
+ #include "hw/qdev-properties.h"
+ #include "trace.h"
+ #include "hcd-ohci.h"
++#include "hw/xbox/chihiro/chihiro.h"
+ 
+ /* This causes frames to occur 1000x slower */
+ /*#define OHCI_TIME_WARP 1*/
+@@ -280,18 +281,22 @@ static inline void ohci_set_interrupt(OHCIState *ohci, uint32_t intr)
+ static USBDevice *ohci_find_device(OHCIState *ohci, uint8_t addr)
+ {
+     USBDevice *dev;
++    USBDevice *fallback = NULL;
+     int i;
+ 
+     for (i = 0; i < ohci->num_ports; i++) {
+-        if ((ohci->rhport[i].ctrl & OHCI_PORT_PES) == 0) {
+-            continue;
+-        }
+         dev = usb_find_device(&ohci->rhport[i].port, addr);
+         if (dev != NULL) {
+-            return dev;
++            int pes = (ohci->rhport[i].ctrl & OHCI_PORT_PES) ? 1 : 0;
++            if (pes) {
++                return dev;
++            }
++            if (!fallback) {
++                fallback = dev;
++            }
+         }
+     }
+-    return NULL;
++    return fallback;
+ }
+ 
+ void ohci_stop_endpoints(OHCIState *ohci)
+@@ -1284,6 +1289,11 @@ static void ohci_frame_boundary(void *opaque)
+ static int ohci_bus_start(OHCIState *ohci)
+ {
+     trace_usb_ohci_start(ohci->name);
++
++    /* Chihiro: the USB devices attach after the kernel enables RHSC, so
++     * fresh CSC events trigger the full enumeration, SET_CONFIG included. */
++    chihiro_on_ohci_bus_start();
++
+     /*
+      * Delay the first SOF event by one frame time as linux driver is
+      * not ready to receive it and can meet some race conditions
+@@ -1298,6 +1308,9 @@ static int ohci_bus_start(OHCIState *ohci)
+ void ohci_bus_stop(OHCIState *ohci)
+ {
+     trace_usb_ohci_stop(ohci->name);
++
++    chihiro_on_ohci_bus_stop();
++
+     timer_del(ohci->eof_timer);
+ }
+ 
+@@ -1481,7 +1494,12 @@ static void ohci_port_set_status(OHCIState *ohci, int portnum, uint32_t val)
+         port->ctrl &= ~(val & OHCI_PORT_WTC);
+     }
+     if (val & OHCI_PORT_CCS) {
++        /* ClearPortEnable goes through on a Chihiro too: the kernel's USB
++         * enumeration disables and re-enables the port
++         * (GET_DESC -> SET_ADDRESS -> ClearPortEnable -> re-enable ->
++         * SET_CONFIG). */
+         port->ctrl &= ~OHCI_PORT_PES;
++        port->ctrl |= OHCI_PORT_PESC;
+     }
+     ohci_port_set_if_connected(ohci, portnum, val & OHCI_PORT_PES);
+ 
 diff --git a/xemu/hw/xbox/meson.build b/xemu/hw/xbox/meson.build
 index 8cf1ea0b..58e208ff 100644
 --- a/xemu/hw/xbox/meson.build
