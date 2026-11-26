@@ -46,8 +46,9 @@ the next power-on; the session stop/close choices apply immediately.
 
 ## Audio
 
-- **Host audio backend** — Auto, DirectSound (Windows), None, WAV capture.
-- **Guest DSP** — required for game audio.
+- **Host audio backend** - the list is read from the core: Auto, DirectSound (Windows), native Linux/BSD backends when compiled, **Null (no output)** and WAV capture. Null discards audio; headless runs use it automatically.
+- **Output device** - DirectSound shows host playback devices; PulseAudio, PipeWire, ALSA, OSS, sndio and JACK take an optional device/server name.
+- **Guest DSP** - required for game audio.
 - **DSP JIT**, **HRTF**, **Volume limit**, **Voice workers**.
 
 ## Input

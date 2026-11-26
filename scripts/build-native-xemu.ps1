@@ -116,8 +116,43 @@ if ($hasD3D11) { $renderers += 'D3D11' }
 $renderers += 'OPENGL'
 if ($hasVulkan) { $renderers += 'VULKAN' }
 $renderers += 'NULL'
-[ordered]@{ core = 'xemu'; version = $version; renderers = $renderers } |
+
+# The shell offers only audio backends this binary actually registered. The
+# probe exits before SDL/GL, so it is safe to run on a build host.
+$audioDrivers = @()
+$audioProbeOut = Join-Path $root 'wt-data/audio-drivers.txt'
+$audioProbeErr = Join-Path $root 'wt-data/audio-drivers-err.txt'
+try {
+    $probe = Start-Process -FilePath $exe -ArgumentList @('-audio-drivers') -Wait -PassThru `
+        -RedirectStandardOutput $audioProbeOut -RedirectStandardError $audioProbeErr
+    if ($probe.ExitCode -eq 0 -and (Test-Path $audioProbeOut)) {
+        $capture = $false
+        foreach ($line in Get-Content $audioProbeOut) {
+            if ($line -match '^Available audio drivers:') {
+                $capture = $true
+                continue
+            }
+            if ($capture -and $line.Trim().Length -gt 0) {
+                $audioDrivers += $line.Trim()
+            }
+        }
+    }
+}
+catch {
+    Write-Warning "Could not read the core audio drivers: $($_.Exception.Message)"
+}
+if ($audioDrivers.Count -eq 0) {
+    $audioDrivers = @('none', 'dsound', 'wav')
+}
+
+[ordered]@{
+    core = 'xemu'
+    version = $version
+    renderers = $renderers
+    audioDrivers = $audioDrivers
+} |
     ConvertTo-Json |
     Set-Content -Path (Join-Path $tree 'dist/xgrid-core.json') -Encoding utf8
 
-Write-Output ("core: {0} ({1:N1} MB, renderers {2})" -f $exe, ((Get-Item $exe).Length / 1MB), ($renderers -join ', '))
+Write-Output ("core: {0} ({1:N1} MB, renderers {2}, audio {3})" -f
+    $exe, ((Get-Item $exe).Length / 1MB), ($renderers -join ', '), ($audioDrivers -join ', '))

@@ -22,6 +22,8 @@ point, but XGrid's patches and media drivers can change the result.
 | Keyboard input | Supported |
 | XInput controllers, players 1–4 | Supported on Windows |
 | Live host audio and WAV capture | Supported through the core |
+| Audio backend and device selection | Supported; the list comes from the core and DirectSound devices are enumerated |
+| Null audio sink for headless runs | Supported (automatic) |
 | Four save-state slots | Supported with in-process hosting |
 | Automatic session save/resume | Supported with in-process hosting; one `xgrid-session` snapshot |
 | Powered-off screen and stay-open mode | Supported |

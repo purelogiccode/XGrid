@@ -72,6 +72,14 @@ Yes, with in-process hosting. Enable **Save state before power off** and
 Launching a game from the Library starts it fresh. The console boots for about
 12 seconds before the saved state is restored.
 
+### How do I choose the audio device?
+
+Open **Settings → Audio**. The backend list comes from the core's compiled
+drivers. DirectSound lists the host playback devices; use **Refresh** after
+plugging one in. PulseAudio, PipeWire, ALSA, OSS, sndio and JACK accept an
+optional device or server name. **Null (no output)** discards audio and is used
+automatically by headless runs.
+
 ### Do save states work in separate process?
 
 No. Use in-process hosting.

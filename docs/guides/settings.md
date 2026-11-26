@@ -88,7 +88,8 @@ FPS overlay in the core. See [Display and filters](display.md).
 
 | Setting | Meaning |
 | --- | --- |
-| **Host audio backend** | **Auto** lets the core choose; **DirectSound** on Windows; **None** disables host output; **WAV capture** writes `audio.wav` in the core working directory. |
+| **Host audio backend** | The list is read from the core and includes **Auto**, **DirectSound** (Windows), native Linux/BSD backends when compiled, **Null (no output)** and **WAV capture**. Null discards audio; headless runs use it automatically. WAV capture writes `audio.wav` in the core working directory. |
+| **Output device** | DirectSound shows the host playback devices and **System default**. PulseAudio, PipeWire, ALSA, OSS, sndio and JACK accept an optional device or server name. Other backends use the system default. |
 | **Guest DSP** | Runs the APU's GP/EP microcode. Required for game audio. |
 | **DSP JIT** | Native code generation for the DSP. Off keeps the interpreter. |
 | **HRTF** | Head-related filtering for 3D voices. |

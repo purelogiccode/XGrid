@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.Services;
 using Xunit;
@@ -53,6 +54,11 @@ public sealed class SettingsStoreTests : IDisposable
             SaveStateOnExit = true,
             ResumeStateOnStart = true,
             ShowPoweredOffScreen = false,
+            Audio = new AudioSettings
+            {
+                Backend = AudioBackends.Wav,
+                Device = "test-device",
+            },
         };
 
         store.Save(settings);
@@ -70,6 +76,8 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.True(loaded.SaveStateOnExit);
         Assert.True(loaded.ResumeStateOnStart);
         Assert.False(loaded.ShowPoweredOffScreen);
+        Assert.Equal(AudioBackends.Wav, loaded.Audio.Backend);
+        Assert.Equal("test-device", loaded.Audio.Device);
     }
 
     [Fact]

@@ -1,0 +1,102 @@
+diff --git a/xemu/qapi/audio.json b/xemu/qapi/audio.json
+index 2df87b97..a31e3222 100644
+--- a/xemu/qapi/audio.json
++++ b/xemu/qapi/audio.json
+@@ -193,13 +193,17 @@
+ # @latency: add extra latency to playback in microseconds (default
+ #     10000)
+ #
++# @device: GUID of the DirectSound playback device to use (default:
++#     the system default device)
++#
+ # Since: 4.0
+ ##
+ { 'struct': 'AudiodevDsoundOptions',
+   'data': {
+     '*in':      'AudiodevPerDirectionOptions',
+     '*out':     'AudiodevPerDirectionOptions',
+-    '*latency': 'uint32' } }
++    '*latency': 'uint32',
++    '*device':  'str' } }
+ 
+ ##
+ # @AudiodevJackPerDirectionOptions:
+diff --git a/xemu/audio/dsoundaudio.c b/xemu/audio/dsoundaudio.c
+index 7a03d1da..cc38da90 100644
+--- a/xemu/audio/dsoundaudio.c
++++ b/xemu/audio/dsoundaudio.c
+@@ -595,6 +595,8 @@ static void *dsound_audio_init(Audiodev *dev, Error **errp)
+     HRESULT hr;
+     dsound *s = g_new0(dsound, 1);
+     AudiodevDsoundOptions *dso;
++    GUID device_guid;
++    LPGUID device_guid_ptr = NULL;
+ 
+     assert(dev->driver == AUDIODEV_DRIVER_DSOUND);
+     s->dev = dev;
+@@ -605,6 +607,24 @@ static void *dsound_audio_init(Audiodev *dev, Error **errp)
+         dso->latency = 10000; /* 10 ms */
+     }
+ 
++    if (dso->device != NULL && dso->device[0] != '\0') {
++        gunichar2 *wide = g_utf8_to_utf16(dso->device, -1, NULL, NULL, NULL);
++        if (wide == NULL) {
++            error_setg(errp, "Could not convert DirectSound device id");
++            dsound_audio_fini(s);
++            return NULL;
++        }
++        hr = CLSIDFromString((LPCOLESTR)wide, &device_guid);
++        g_free(wide);
++        if (FAILED(hr)) {
++            dserror_set(errp, hr,
++                        "Invalid DirectSound device id (expected a device GUID)");
++            dsound_audio_fini(s);
++            return NULL;
++        }
++        device_guid_ptr = &device_guid;
++    }
++
+     hr = CoInitialize (NULL);
+     if (FAILED (hr)) {
+         dserror_set(errp, hr, "Could not initialize COM");
+@@ -625,7 +645,7 @@ static void *dsound_audio_init(Audiodev *dev, Error **errp)
+         return NULL;
+     }
+ 
+-    hr = IDirectSound_Initialize (s->dsound, NULL);
++    hr = IDirectSound_Initialize (s->dsound, device_guid_ptr);
+     if (FAILED (hr)) {
+         dserror_set(errp, hr, "Could not initialize DirectSound");
+         dsound_audio_fini(s);
+diff --git a/xemu/ui/xemu.c b/xemu/ui/xemu.c
+index 94d9b360..078606c7 100644
+--- a/xemu/ui/xemu.c
++++ b/xemu/ui/xemu.c
+@@ -29,6 +29,7 @@
+ #include "qemu/osdep.h"
+ #include "qemu/module.h"
++#include "qemu/audio.h"
+ #include "qemu/thread.h"
+ 
+@@ -1461,6 +1461,21 @@ int xemu_run(int argc, char **argv, bool library_mode)
+     setlocale(LC_NUMERIC, "C");
+     xemu_library_mode = library_mode;
+ 
++    /*
++     * Build-time probe: list the audio drivers this binary actually
++     * registered. It must not initialize SDL/GL, so it runs before the
++     * display path. module_call_init registers the QOM type init functions
++     * that audio_driver_register() lives in.
++     */
++    if (!library_mode) {
++        for (int i = 1; i < argc; i++) {
++            if (argv[i] != NULL && strcmp(argv[i], "-audio-drivers") == 0) {
++                module_call_init(MODULE_INIT_QOM);
++                audio_help();
++                return 0;
++            }
++        }
++    }
+ 
+     fprintf(stderr, "xemu_version: %s\n", xemu_version);
+     fprintf(stderr, "xemu_commit: %s\n", xemu_commit);

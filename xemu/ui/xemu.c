@@ -29,6 +29,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/module.h"
+#include "qemu/audio.h"
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
 #include "qemu/rcu.h"
@@ -1459,6 +1460,22 @@ int xemu_run(int argc, char **argv, bool library_mode)
 
     setlocale(LC_NUMERIC, "C");
     xemu_library_mode = library_mode;
+
+    /*
+     * Build-time probe: list the audio drivers this binary actually
+     * registered. It must not initialize SDL/GL, so it runs before the
+     * display path. module_call_init registers the QOM type init functions
+     * that audio_driver_register() lives in.
+     */
+    if (!library_mode) {
+        for (int i = 1; i < argc; i++) {
+            if (argv[i] != NULL && strcmp(argv[i], "-audio-drivers") == 0) {
+                module_call_init(MODULE_INIT_QOM);
+                audio_help();
+                return 0;
+            }
+        }
+    }
 
     fprintf(stderr, "xemu_version: %s\n", xemu_version);
     fprintf(stderr, "xemu_commit: %s\n", xemu_commit);

@@ -73,6 +73,7 @@ public static class HeadlessRunner
             // A headless run has no device to play into; tests and benchmarks
             // should not depend on the host audio device.
             settings.Audio.Backend = AudioSettings.BackendNone;
+            settings.Audio.Device = string.Empty;
         }
 
         string workingDirectory = Path.Combine(SettingsStore.ResolveDirectory(), "xemu");

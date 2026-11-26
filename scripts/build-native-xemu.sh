@@ -116,19 +116,26 @@ fi
 # of the packaged core.
 ninja -C build qemu-img qemu-io
 
-# Tell the shell which renderers this build can start. The Windows build script
-# writes the same manifest; `CONFIG_VULKAN` stays undefined when the Vulkan
-# dependencies are absent, and the renderer is then not offered.
+# Tell the shell which renderers and audio backends this build can start. The
+# Windows build script writes the same manifest; `-audio-drivers` exits before
+# SDL/GL, so it is safe on a headless build host.
 version=$(head -n 1 XEMU_VERSION | tr -d '\r')
 if grep -q '^#define CONFIG_VULKAN\b' build/config-host.h; then
     renderers='["OPENGL", "VULKAN", "NULL"]'
 else
     renderers='["OPENGL", "NULL"]'
 fi
-printf '{\n  "core": "xemu",\n  "version": "%s",\n  "renderers": %s\n}\n' \
-    "$version" "$renderers" > dist/xgrid-core.json
+audio_drivers=$(./dist/xemu -audio-drivers 2>/dev/null |
+    awk 'found && NF { print } /^Available audio drivers:/ { found = 1 }')
+if [ -z "$audio_drivers" ]; then
+    audio_drivers=$'none\nwav'
+fi
+audio_json=$(printf '%s\n' "$audio_drivers" | sed 's/.*/"&"/' | paste -sd, -)
+printf '{\n  "core": "xemu",\n  "version": "%s",\n  "renderers": %s,\n  "audioDrivers": [%s]\n}\n' \
+    "$version" "$renderers" "$audio_json" > dist/xgrid-core.json
 
 size=$(wc -c < dist/xemu)
-printf 'core: %s (%.1f MB, renderers %s)\n' \
-    "$tree/dist/xemu" "$(awk "BEGIN { print $size / 1048576 }")" "$renderers"
+printf 'core: %s (%.1f MB, renderers %s, audio %s)\n' \
+    "$tree/dist/xemu" "$(awk "BEGIN { print $size / 1048576 }")" "$renderers" \
+    "$(printf '%s' "$audio_drivers" | tr '\n' ' ')"
 printf 'run: %s --version\n' "$tree/dist/xemu"

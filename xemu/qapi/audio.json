@@ -193,13 +193,17 @@
 # @latency: add extra latency to playback in microseconds (default
 #     10000)
 #
+# @device: GUID of the DirectSound playback device to use (default:
+#     the system default device)
+#
 # Since: 4.0
 ##
 { 'struct': 'AudiodevDsoundOptions',
   'data': {
     '*in':      'AudiodevPerDirectionOptions',
     '*out':     'AudiodevPerDirectionOptions',
-    '*latency': 'uint32' } }
+    '*latency': 'uint32',
+    '*device':  'str' } }
 
 ##
 # @AudiodevJackPerDirectionOptions:

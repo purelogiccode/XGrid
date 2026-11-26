@@ -145,7 +145,7 @@ are case-insensitive and accept both `--name value` and `--name=value`.
 | --- | --- |
 | Launch | `--disc`, `--core`, `--data-dir`, `--bios`, `--mcpx`, `--eeprom`, `--hdd` |
 | Graphics | `--renderer`, `--scale`, `--filtering`, `--filter`, `--aspect`, `--fit` |
-| Machine | `--ram`, `--audio` |
+| Machine | `--ram`, `--audio`, `--audio-device` |
 | Headless | `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` |
 
 `--seconds`, `--frames`, `--summary` and `--benchmark` select headless mode even
@@ -162,8 +162,9 @@ parsing and pass the rest to Avalonia unchanged.
   a working desktop driver is enough on Windows; on Linux and macOS the SDL video
   backend must be able to create a hidden window (use Xvfb on a server without a
   display).
-- Audio defaults to the `none` backend for a headless run. Pass `--audio wav` to
-  capture to `audio.wav` in the core working directory instead.
+- Audio defaults to the `none` (null) backend for a headless run. Pass
+  `--audio wav` to capture to `audio.wav` in the core working directory instead,
+  or `--audio-device` with a backend-specific device.
 - The hard-disk image is written when the core shuts down, including on a
   duration or frame limit. Use a copy of the image for repeatable benchmark runs.
 - The run uses the configured renderer unless `--renderer` overrides it. For a

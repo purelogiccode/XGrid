@@ -213,6 +213,26 @@ public sealed class LaunchArgumentsTests
     }
 
     [Fact]
+    public void Parse_ReadsTheAudioDevice()
+    {
+        LaunchArguments options = LaunchArguments.Parse(
+            ["--audio-device", "{c847f520-6c79-4ae1-ab1e-b9cc32469df8}"]);
+
+        Assert.False(options.HasErrors);
+        Assert.Equal("{c847f520-6c79-4ae1-ab1e-b9cc32469df8}", options.AudioDevice);
+        Assert.True(options.HasOverrides);
+    }
+
+    [Fact]
+    public void Parse_RejectsAnAudioDeviceWithAComma()
+    {
+        LaunchArguments options = LaunchArguments.Parse(["--audio-device", "sink,other"]);
+
+        Assert.True(options.HasErrors);
+        Assert.Contains("comma", options.Errors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Parse_AcceptsInlineValues()
     {
         LaunchArguments options = LaunchArguments.Parse(

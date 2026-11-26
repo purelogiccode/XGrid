@@ -104,6 +104,9 @@ public sealed record LaunchArguments
     /// <summary>Gets the host audio backend, or null for the configured one.</summary>
     public string? AudioBackend { get; init; }
 
+    /// <summary>Gets the backend-specific audio device, or null for the configured one.</summary>
+    public string? AudioDevice { get; init; }
+
     /// <summary>Gets the arguments Avalonia and the platform should still see.</summary>
     public IReadOnlyList<string> Remaining { get; init; } = [];
 
@@ -127,7 +130,8 @@ public sealed record LaunchArguments
         || AspectRatio is not null
         || Fit is not null
         || RamMb is not null
-        || AudioBackend is not null;
+        || AudioBackend is not null
+        || AudioDevice is not null;
 
     /// <summary>Gets the command-line help text.</summary>
     public static string Usage { get; } = """
@@ -155,7 +159,8 @@ public sealed record LaunchArguments
           --aspect <mode>             native, auto, 4x3 or 16x9.
           --fit <mode>                center, scale or stretch.
           --ram <64|128>              Guest RAM in megabytes.
-          --audio <backend>           auto, dsound, none or wav.
+          --audio <backend>           auto, dsound, pa, alsa, jack, pipewire, none or wav.
+          --audio-device <id>         Backend-specific output device (GUID for dsound).
 
         Headless:
           --headless                  Run without a shell window.
@@ -282,6 +287,11 @@ public sealed record LaunchArguments
             settings.Audio.Backend = AudioBackend;
         }
 
+        if (AudioDevice is not null)
+        {
+            settings.Audio.Device = AudioDevice;
+        }
+
         settings.Normalize();
     }
 
@@ -311,6 +321,7 @@ public sealed record LaunchArguments
         private string? _fit;
         private int? _ramMb;
         private string? _audioBackend;
+        private string? _audioDevice;
         private List<string>? _errors;
 
         private List<string> Errors => _errors ??= [];
@@ -391,6 +402,8 @@ public sealed record LaunchArguments
                     return ReadValue(args, ref index, inline, "--ram", SetRam);
                 case "--audio":
                     return ReadValue(args, ref index, inline, "--audio", SetAudioBackend);
+                case "--audio-device":
+                    return ReadValue(args, ref index, inline, "--audio-device", SetAudioDevice);
             }
 
             if (!argument.StartsWith('-') && GameLibraryService.IsGameCandidate(argument))
@@ -447,6 +460,7 @@ public sealed record LaunchArguments
                 Fit = _fit,
                 RamMb = _ramMb,
                 AudioBackend = _audioBackend,
+                AudioDevice = _audioDevice,
                 Remaining = remaining,
                 Errors = _errors ?? [],
             };
@@ -753,32 +767,32 @@ public sealed record LaunchArguments
 
         private void SetAudioBackend(string value)
         {
-            switch (value.ToLowerInvariant())
+            string backend = value.Trim().ToLowerInvariant();
+            if (!AudioBackends.IsKnown(backend))
             {
-                case AudioSettings.BackendAuto:
-                    _audioBackend = AudioSettings.BackendAuto;
-                    break;
-                case AudioSettings.BackendDirectSound:
-                    if (OperatingSystem.IsWindows())
-                    {
-                        _audioBackend = AudioSettings.BackendDirectSound;
-                    }
-                    else
-                    {
-                        Errors.Add("The dsound audio backend is only available on Windows.");
-                    }
-
-                    break;
-                case AudioSettings.BackendNone:
-                    _audioBackend = AudioSettings.BackendNone;
-                    break;
-                case AudioSettings.BackendWav:
-                    _audioBackend = AudioSettings.BackendWav;
-                    break;
-                default:
-                    Errors.Add($"Unknown audio backend '{value}'. Use auto, dsound, none or wav.");
-                    break;
+                Errors.Add($"Unknown audio backend '{value}'.");
+                return;
             }
+
+            if (!AudioBackends.IsAvailableOnThisHost(backend))
+            {
+                Errors.Add($"The {backend} audio backend is not available on this platform.");
+                return;
+            }
+
+            _audioBackend = backend;
+        }
+
+        private void SetAudioDevice(string value)
+        {
+            string device = value.Trim();
+            if (device.AsSpan().IndexOfAny(",\r\n") >= 0)
+            {
+                Errors.Add("The audio device name cannot contain a comma or a line break.");
+                return;
+            }
+
+            _audioDevice = device;
         }
     }
 }

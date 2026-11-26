@@ -979,6 +979,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             : Config.WithTitleOverride(game.Path, game.TitleId == 0 ? null : game.TitleId);
         // Command-line overrides are session-only and win over per-title values.
         _launchOptions.ApplyTo(effective);
+        if (string.Equals(effective.Audio.Backend, AudioBackends.DirectSound, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(effective.Audio.Device)
+            && !AudioDeviceService.Enumerate().Any(
+                device => string.Equals(device.Id, effective.Audio.Device, StringComparison.OrdinalIgnoreCase)))
+        {
+            AddLog(
+                LogLevel.Warning,
+                "The selected DirectSound device is not connected; using the system default.");
+            effective.Audio.Device = string.Empty;
+        }
+
         string? problem = XemuLaunchPlan.DescribeProblem(effective, game?.Path, workingDirectory);
         if (problem is not null)
         {
