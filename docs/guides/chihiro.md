@@ -200,6 +200,10 @@ it up again. Ghost Squad's second reader is not exposed by the shell yet.
   follow-ups.
 - **The second card reader** is present in the core but not exposed by the
   shell. Player 1's card insert works.
+- **Chihiro audio is incomplete.** Upstream xemu's Chihiro audio emulation can
+  produce silence or missing effects. The host audio backend and the Xbox path
+  work; the Chihiro APU stream is a known upstream limitation, not a shell
+  setting.
 - **Network titles stop at their network startup.** MJ2/MJ3/MJ3 Evolution boot
   past the firmware-version check with `ver1305.bin`, but they need their own
   server and do not reach a solo game.
@@ -220,6 +224,7 @@ it up again. Ghost Squad's second reader is not exposed by the shell yet.
 | Stuck on SEGABOOT or a black screen | Check the core log for the media-board flash and the game's `boot.id`; a bad or missing image leaves SEGABOOT waiting. |
 | "Error 14" / "Network firmware version" | Put `ver1305.bin` in the firmware folder. MJ2 needs 12.06, MJ3 13.05. |
 | "DNS failed" or a network wait screen | MJ2/MJ3 need their own network server; the cabinet link is not a substitute. |
+| No sound in a Chihiro game | Known upstream xemu Chihiro limitation; the host audio backend and the Xbox path work. |
 | Linked cabinets do not connect | Start cabinet 1 first, use its LAN address on the others, allow TCP 9102-9104 through the firewall, and use the same game and firmware on every instance. |
 | No input | The core window must have keyboard focus. See [Controls](#controls). |
 

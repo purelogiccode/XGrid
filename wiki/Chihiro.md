@@ -116,6 +116,8 @@ network-firmware check with `ver1305.bin` and then wait for their own server.
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
 - Per-game bindings are editable in Settings; Gundam-specific bindings, force
   feedback and the second card reader are not exposed yet.
+- Chihiro audio is incomplete in upstream xemu; some games are silent or have
+  missing effects. The host backend and Xbox audio path are not at fault.
 - Linked cabinets are exposed in Settings; save states are disabled while the
   link runs.
 - MJ2/MJ3/MJ3 Evolution boot to their network startup but need their own
