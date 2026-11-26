@@ -12,8 +12,9 @@ New files (whole files, not shown as hunks):
   hw/xbox/chihiro/*.c, *.h and meson.build
 
 The diff below covers the edits to the existing xemu tree, including the OHCI
-enumeration hooks, the keyboard/gamepad/pointer JVS mapping and the gun aim.
-It applies on top of the XGrid 0.8.139 tree with patches 0001-0017.
+enumeration hooks, the keyboard/gamepad/mouse JVS mapping, the gun aim and the
+player-1 card insert. It applies on top of the XGrid 0.8.139 tree with patches
+0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
 index 34b1b2a3..5f3be43e 100644
 --- a/xemu/block/meson.build
@@ -1224,7 +1225,7 @@ index 7900f869..8d5a18d0 100644
      for (int i = 1; i < argc; i++) {
          if (argv[i] != NULL) {
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 54595e1b..127b312a 100644
+index 54595e1b..5aaeb73d 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
 @@ -36,6 +36,8 @@
@@ -1236,7 +1237,7 @@ index 54595e1b..127b312a 100644
  
  // #define DEBUG_INPUT
  
-@@ -564,6 +566,289 @@ void xemu_input_update_controller(ControllerState *state)
+@@ -564,6 +566,326 @@ void xemu_input_update_controller(ControllerState *state)
      state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
  }
  
@@ -1268,6 +1269,13 @@ index 54595e1b..127b312a 100644
 +static bool chihiro_pad_down(ControllerState *pad, uint16_t mask)
 +{
 +    return pad && (pad->buttons & mask);
++}
++
++static bool chihiro_pressed(bool down, bool *was_down)
++{
++    bool pressed = down && !*was_down;
++    *was_down = down;
++    return pressed;
 +}
 +
 +static uint16_t chihiro_stick_u16(ControllerState *pad, int axis)
@@ -1388,6 +1396,17 @@ index 54595e1b..127b312a 100644
 +            chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) {
 +            sw1 |= 0x40;
 +        }
++        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_GS) {
++            static bool card_was_down;
++            bool card = chihiro_key_down(kbd, jvs_cfg->card_in) ||
++                        chihiro_pad_down(pad, CONTROLLER_BUTTON_X);
++            if (chihiro_pressed(card, &card_was_down)) {
++                chihiro_hw210_card_key(0);
++            }
++            if (chihiro_card_reader_present(0)) {
++                sw1 |= 0x20;
++            }
++        }
 +        chihiro_gun_aim(jvs);
 +        break;
 +    }
@@ -1443,6 +1462,14 @@ index 54595e1b..127b312a 100644
 +            chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_DOWN)) {
 +            sw1 |= 0x40;
 +        }
++        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_WMMT2) {
++            static bool card_was_down;
++            bool card = chihiro_key_down(kbd, jvs_cfg->card_in) ||
++                        chihiro_pad_down(pad, CONTROLLER_BUTTON_X);
++            if (chihiro_pressed(card, &card_was_down)) {
++                chihiro_crp1231_card_key();
++            }
++        }
 +        break;
 +    }
 +    case CONFIG_CHIHIRO_JVS_PROFILE_OK: {
@@ -1493,6 +1520,17 @@ index 54595e1b..127b312a 100644
 +            chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) sw1 |= 0x01;
 +        jvs->analog[1] = chihiro_key_down(kbd, jvs_cfg->gundam.pedal)
 +            ? 0xFFFF : chihiro_trigger_u16(pad, CONTROLLER_AXIS_LTRIG);
++        {
++            static bool card_was_down;
++            bool card = chihiro_key_down(kbd, jvs_cfg->card_in) ||
++                        chihiro_pad_down(pad, CONTROLLER_BUTTON_X);
++            if (chihiro_pressed(card, &card_was_down)) {
++                chihiro_hw210_card_key(0);
++            }
++            if (chihiro_card_reader_present(0)) {
++                sw1 |= 0x80;
++            }
++        }
 +        break;
 +    }
 +    default:
@@ -1526,7 +1564,7 @@ index 54595e1b..127b312a 100644
  void xemu_input_update_controllers(void)
  {
      ControllerState *iter;
-@@ -573,6 +858,7 @@ void xemu_input_update_controllers(void)
+@@ -573,6 +895,7 @@ void xemu_input_update_controllers(void)
      QTAILQ_FOREACH(iter, &available_controllers, entry) {
          xemu_input_update_rumble(iter);
      }

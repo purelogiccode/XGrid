@@ -57,7 +57,7 @@ launch it. XGrid bundles no keys, firmware or game data.
 | Steer | Left / Right | Left stick X |
 | Gas / brake | Up / Down | RT / LT |
 | Gear up / down | ] / [ | D-pad up / down |
-| Card in | C | X / Back |
+| Card in | C | X |
 | Gun trigger / body | game-specific | RT / A |
 | Gun change / reload | game-specific | B |
 
@@ -66,7 +66,9 @@ Ollie King and Gundam layouts are supported. The first detected gamepad drives
 the cabinet. In gun games, move the host cursor over the picture to aim;
 left-click fires, right-click is the body/action or reload button, and RT/A/B
 do the same on a gamepad. Leaving the picture reports the off-screen/reload
-position. Force feedback is not exposed yet.
+position. Press **C** (or X) to insert a card; Ghost Squad and Maximum Tune
+create a blank card when none is in hand, and the core keeps it for later
+sessions. Force feedback is not exposed yet.
 
 Click the game picture once after launch so the embedded core takes keyboard
 focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a
@@ -79,8 +81,8 @@ MJ2/MJ3 conversions also select their cabinet profiles.
 ## Limits
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
-- Gamepads, wheels, light-gun devices, force feedback, linked cabinets and the
-  card-reader UI are not exposed by the shell yet.
+- Per-game bindings, force feedback, linked cabinets and the second card reader
+  are not exposed by the shell yet.
 - The Chihiro BIOS must be MAME's `chihiro_xbox_bios.bin`; a retail Xbox BIOS
   will not boot it.
 - Shell save-state slots are Xbox-oriented; Chihiro cabinet saves live in the
