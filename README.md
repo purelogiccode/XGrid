@@ -88,8 +88,8 @@ and packaging.
 For Sega Chihiro, put its five firmware files in one folder, select it under
 **Settings → System → Sega Chihiro**, and add your netboot `.bin` images to a
 library folder. The `XBOXOG - Chihiro` Xbox ISOs convert in Settings or with
-`XGrid.Cli chihiro-netboot`; Redump cue/bin GD-ROMs convert with the game's
-MAME key ZIP in Settings or with `XGrid.Cli chihiro-redump`. See
+`XGrid.Cli chihiro-netboot`; Redump cue/bin sets and MAME `.chd` files convert
+with the game's key ZIP in Settings or with `XGrid.Cli chihiro-redump`. See
 [Sega Chihiro](docs/guides/chihiro.md).
 
 Full walkthrough: [First boot](docs/getting-started/first-boot.md).

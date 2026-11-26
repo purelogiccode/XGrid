@@ -131,10 +131,10 @@ public sealed class FileDialogService
         new FilePickerFileType("All files") { Patterns = ["*"] },
     ];
 
-    /// <summary>Redump cue sheets for a Chihiro GD-ROM.</summary>
-    public static IReadOnlyList<FilePickerFileType> CueTypes { get; } =
+    /// <summary>Chihiro GD-ROM images that can be converted with a key ZIP.</summary>
+    public static IReadOnlyList<FilePickerFileType> ChihiroDiscTypes { get; } =
     [
-        new FilePickerFileType("Cue sheets") { Patterns = ["*.cue"] },
+        new FilePickerFileType("Chihiro GD-ROM images") { Patterns = ["*.cue", "*.chd"] },
         new FilePickerFileType("All files") { Patterns = ["*"] },
     ];
 
