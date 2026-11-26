@@ -92,6 +92,7 @@ public static class XemuLaunchPlan
             ChihiroFfbStrength = settings.Chihiro.FfbStrength,
             ChihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone(),
             ChihiroJvsP2 = (settings.Chihiro.JvsP2 ?? new ChihiroJvsP2Settings()).Clone(),
+            ChihiroCardReader = (settings.Chihiro.CardReader ?? new ChihiroCardReaderSettings()).Clone(),
             ChihiroLinkEnabled = chihiro && link.Enabled,
             ChihiroLinkCabinets = link.Cabinets,
             ChihiroLinkCabinet = link.Cabinet,

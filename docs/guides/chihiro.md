@@ -241,6 +241,20 @@ pad) for player 2; with no card it creates a blank one. The core keeps the card
 with the cabinet's card files, so a later session picks it up again. Ghost
 Squad's two-player card screen uses both readers, one per player.
 
+The readers and their card files are under **Settings → System → Sega Chihiro →
+Card files**:
+
+| Slot | Reader |
+| --- | --- |
+| Ghost Squad player 1 / player 2 | HW210 slot 1 / slot 2 |
+| Gundam B.O.S. | The Gundam HW210 slot |
+| Maximum Tune 1 / 2 | CRP-1231 MT1 / MT2 |
+
+An empty slot creates a blank card in the core's `cards` folder the first time
+a game asks for one. Choose a `.bin` card to keep a specific card; the game
+writes its progress back to that file. **Card readers** turns both readers off
+for games that should not see them.
+
 ## Limits
 
 - **No direct GD-ROM boot.** The ported machine loads a FATX netboot image into

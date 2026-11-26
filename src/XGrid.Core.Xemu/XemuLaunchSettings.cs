@@ -99,6 +99,9 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the player-2 cabinet key, mouse and aim bindings.</summary>
     public ChihiroJvsP2Settings ChihiroJvsP2 { get; init; } = new();
 
+    /// <summary>Gets the card-reader files and the reader enable switch.</summary>
+    public ChihiroCardReaderSettings ChihiroCardReader { get; init; } = new();
+
     /// <summary>Gets a value indicating whether the linked-cabinet relay runs.</summary>
     public bool ChihiroLinkEnabled { get; init; }
 

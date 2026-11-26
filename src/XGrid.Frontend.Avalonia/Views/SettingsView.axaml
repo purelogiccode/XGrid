@@ -306,6 +306,102 @@
                   </Grid>
                 </StackPanel>
 
+                <Border Classes="divider" />
+
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Card files" Classes="label" />
+                    <TextBlock Text="Names the card image each reader uses. Empty creates a blank card on first insert; choose a .bin to keep a specific card. The readers answer Ghost Squad, Gundam B.O.S. and Maximum Tune."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Card readers" Classes="label" />
+                      <TextBlock Text="Answer the cabinet's HW210 and CRP-1231 readers." Classes="hint" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroCardsEnabled, Mode=TwoWay}"
+                                  OnContent="" OffContent="" VerticalAlignment="Center"
+                                  ToolTip.Tip="Answer the cabinet's card readers" />
+                  </Grid>
+                  <StackPanel Spacing="6" IsEnabled="{Binding ChihiroCardsEnabled}">
+                    <Grid ColumnDefinitions="170,*,Auto,Auto" ColumnSpacing="8">
+                      <TextBlock Text="Ghost Squad player 1" Classes="caption" VerticalAlignment="Center" />
+                      <TextBox Grid.Column="1" Classes="path"
+                               Text="{Binding ChihiroCardSlot1, Mode=TwoWay}"
+                               PlaceholderText="(create a blank card)"
+                               ToolTip.Tip="HW210 card for Ghost Squad's player 1" />
+                      <Button Grid.Column="2" Classes="ghost"
+                              Command="{Binding BrowseChihiroCardCommand}" CommandParameter="hw210-slot1"
+                              Content="Browse." ToolTip.Tip="Choose the player-1 card image" />
+                      <Button Grid.Column="3" Classes="subtle icon"
+                              Command="{Binding ClearFieldCommand}" CommandParameter="chihiro-card-hw210-slot1"
+                              ToolTip.Tip="Clear the player-1 card">
+                        <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                      </Button>
+                    </Grid>
+                    <Grid ColumnDefinitions="170,*,Auto,Auto" ColumnSpacing="8">
+                      <TextBlock Text="Ghost Squad player 2" Classes="caption" VerticalAlignment="Center" />
+                      <TextBox Grid.Column="1" Classes="path"
+                               Text="{Binding ChihiroCardSlot2, Mode=TwoWay}"
+                               PlaceholderText="(create a blank card)"
+                               ToolTip.Tip="HW210 card for Ghost Squad's player 2" />
+                      <Button Grid.Column="2" Classes="ghost"
+                              Command="{Binding BrowseChihiroCardCommand}" CommandParameter="hw210-slot2"
+                              Content="Browse." ToolTip.Tip="Choose the player-2 card image" />
+                      <Button Grid.Column="3" Classes="subtle icon"
+                              Command="{Binding ClearFieldCommand}" CommandParameter="chihiro-card-hw210-slot2"
+                              ToolTip.Tip="Clear the player-2 card">
+                        <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                      </Button>
+                    </Grid>
+                    <Grid ColumnDefinitions="170,*,Auto,Auto" ColumnSpacing="8">
+                      <TextBlock Text="Gundam B.O.S." Classes="caption" VerticalAlignment="Center" />
+                      <TextBox Grid.Column="1" Classes="path"
+                               Text="{Binding ChihiroCardGundam, Mode=TwoWay}"
+                               PlaceholderText="(create a blank card)"
+                               ToolTip.Tip="HW210 card for Gundam B.O.S." />
+                      <Button Grid.Column="2" Classes="ghost"
+                              Command="{Binding BrowseChihiroCardCommand}" CommandParameter="hw210-gundam"
+                              Content="Browse." ToolTip.Tip="Choose the Gundam card image" />
+                      <Button Grid.Column="3" Classes="subtle icon"
+                              Command="{Binding ClearFieldCommand}" CommandParameter="chihiro-card-hw210-gundam"
+                              ToolTip.Tip="Clear the Gundam card">
+                        <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                      </Button>
+                    </Grid>
+                    <Grid ColumnDefinitions="170,*,Auto,Auto" ColumnSpacing="8">
+                      <TextBlock Text="Maximum Tune 1" Classes="caption" VerticalAlignment="Center" />
+                      <TextBox Grid.Column="1" Classes="path"
+                               Text="{Binding ChihiroCardMt1, Mode=TwoWay}"
+                               PlaceholderText="(create a blank card)"
+                               ToolTip.Tip="CRP-1231 card for Maximum Tune 1" />
+                      <Button Grid.Column="2" Classes="ghost"
+                              Command="{Binding BrowseChihiroCardCommand}" CommandParameter="crp1231-mt1"
+                              Content="Browse." ToolTip.Tip="Choose the Maximum Tune 1 card image" />
+                      <Button Grid.Column="3" Classes="subtle icon"
+                              Command="{Binding ClearFieldCommand}" CommandParameter="chihiro-card-crp1231-mt1"
+                              ToolTip.Tip="Clear the Maximum Tune 1 card">
+                        <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                      </Button>
+                    </Grid>
+                    <Grid ColumnDefinitions="170,*,Auto,Auto" ColumnSpacing="8">
+                      <TextBlock Text="Maximum Tune 2" Classes="caption" VerticalAlignment="Center" />
+                      <TextBox Grid.Column="1" Classes="path"
+                               Text="{Binding ChihiroCardMt2, Mode=TwoWay}"
+                               PlaceholderText="(create a blank card)"
+                               ToolTip.Tip="CRP-1231 card for Maximum Tune 2" />
+                      <Button Grid.Column="2" Classes="ghost"
+                              Command="{Binding BrowseChihiroCardCommand}" CommandParameter="crp1231-mt2"
+                              Content="Browse." ToolTip.Tip="Choose the Maximum Tune 2 card image" />
+                      <Button Grid.Column="3" Classes="subtle icon"
+                              Command="{Binding ClearFieldCommand}" CommandParameter="chihiro-card-crp1231-mt2"
+                              ToolTip.Tip="Clear the Maximum Tune 2 card">
+                        <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+                      </Button>
+                    </Grid>
+                  </StackPanel>
+                </StackPanel>
+
                 <StackPanel Spacing="7">
                   <StackPanel Spacing="2">
                     <TextBlock Text="Netboot image from a Chihiro game" Classes="label" />

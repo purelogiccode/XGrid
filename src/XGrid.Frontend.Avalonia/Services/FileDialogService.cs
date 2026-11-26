@@ -131,6 +131,13 @@ public sealed class FileDialogService
         new FilePickerFileType("All files") { Patterns = ["*"] },
     ];
 
+    /// <summary>Chihiro card images.</summary>
+    public static IReadOnlyList<FilePickerFileType> CardTypes { get; } =
+    [
+        new FilePickerFileType("Chihiro card images") { Patterns = ["*.bin"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
+
     /// <summary>Chihiro GD-ROM images that can be converted with a key ZIP.</summary>
     public static IReadOnlyList<FilePickerFileType> ChihiroDiscTypes { get; } =
     [
