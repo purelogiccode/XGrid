@@ -119,7 +119,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Home = new HomeViewModel(this);
         Settings = new SettingsViewModel(this);
         Library = new LibraryViewModel(this);
-        Library.RefreshRecentGames();
         Logs = new LogsViewModel(this);
         About = new AboutViewModel(this);
 
@@ -672,8 +671,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             AddLog(LogLevel.Warning, "Could not save the recently played list: " + exception.Message);
         }
+    }
 
-        Library.RefreshRecentGames();
+    /// <summary>Persists favorites, play time and the library tile size.</summary>
+    public void SaveLibraryState()
+    {
+        try
+        {
+            _settingsStore.Save(Config);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Warning, "Could not save the library state: " + exception.Message);
+        }
     }
 
     /// <summary>Persists the library's tile or row presentation.</summary>
@@ -1146,7 +1156,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
             AddLog(LogLevel.Info, "Screenshot saved to " + path);
             ShowToast("Screenshot saved: " + Path.GetFileName(path));
-            Library.RefreshScreenshots();
         }
         catch (Exception exception) when (exception is IOException
                                               or UnauthorizedAccessException
@@ -1163,7 +1172,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         await Task.Delay(500).ConfigureAwait(false);
         Dispatcher.UIThread.Post(() =>
         {
-            Library.RefreshScreenshots();
             ShowToast("Screenshot saved to the screenshots folder.");
         });
     }
@@ -1189,7 +1197,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void OpenCoversFolder()
     {
-        OpenFolder(CoverArtIndex.DefaultDirectory(), "covers");
+        string directory = string.IsNullOrWhiteSpace(Config.Covers.Directory)
+            ? CoverDefaults.LocalDirectory
+            : Config.Covers.Directory;
+        OpenFolder(directory, "covers");
     }
 
     private void OpenFolder(string path, string description)
@@ -1464,6 +1475,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             if (game is not null)
             {
                 RememberRecentGame(game);
+                Library.RecordLaunch(game);
             }
 
             OnPropertyChanged(nameof(CurrentGameTitle));
@@ -1714,6 +1726,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         if (result.Succeeded && result.Operation == DiscChangeOperation.Load)
         {
             CurrentGame = GameEntry.FromFile(result.Path);
+            if (CurrentGame is not null)
+            {
+                Library.RecordLaunch(CurrentGame);
+            }
+
             detail = (CurrentGame?.Title ?? "Xbox dashboard") + " - disc changed";
         }
         else if (result.Succeeded)
@@ -1808,13 +1825,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         // it while another page is on top so it cannot cover the settings tabs.
         _core.SetDisplayVisible(value?.Kind == PageKind.Home);
 
-        // Captures can appear while the console page is open; refresh when the
-        // Library is shown. Unchanged files reuse their decoded thumbnails.
-        if (value?.Kind == PageKind.Library)
-        {
-            Library.RefreshScreenshots();
-        }
-
         OnPropertyChanged(nameof(IsHomePage));
         OnPropertyChanged(nameof(IsLibraryPage));
         OnPropertyChanged(nameof(IsSettingsPage));
@@ -1856,6 +1866,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
+            Library.CompletePlaySession();
             IsRunning = false;
             _saveStates = null;
             _saveStatesNeedRefresh = false;

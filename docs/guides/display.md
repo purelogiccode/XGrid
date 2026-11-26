@@ -90,9 +90,8 @@ without the shell reading frames. When no console runs, or with separate-process
 hosting, the shell captures the whole window instead
 (`screenshot-YYYYMMDD-HHMMSS.png`).
 
-The Library page shows the newest captures as a thumbnail strip. Click a picture
-to open it in the default viewer, use **Refresh** to re-read the folder after
-adding files, and **Open folder** to browse the PNGs directly.
+The Library no longer embeds a screenshot strip. Use **View → Open screenshots
+folder** to browse the PNGs in the file manager.
 
 ## Pause and frame step
 

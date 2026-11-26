@@ -7,7 +7,8 @@ images.
 
 Use either entry point:
 
-- **Library → Add folder**
+- **View → Add library folder…**
+- **Add folder** in the empty state
 - **Settings → Library → Add folder**
 
 Folders are scanned recursively. A scan:
@@ -16,37 +17,44 @@ Folders are scanned recursively. A scan:
 - skips inaccessible folders and reparse points;
 - stops at **4,096 entries**;
 - de-duplicates paths;
-- sorts by title;
 - reads only file metadata (name, size, format). It does **not** hash the
   images, open the disc, or decompress a CHD.
 
 Add as many roots as you need. Removing a folder from the list does not delete
 anything on disk.
 
-## Tile and list views
+## Toolbar
 
-XGrid opens the Library in **Tiles** mode: one card per game with its cover
-art, the title, format and size. Click a card to launch it.
+The library toolbar follows the 5DO layout:
 
-Use **Tiles** and **List** in the library toolbar to switch modes:
+- **Search games…** filters as you type by title, path, format, title id,
+  region, year, publisher or description.
+- **All games / Favorites / Played / Unplayed** filters the collection.
+- **Title / Recently played / Most played / Release year / Publisher** sorts
+  the collection. Recently played and Most played use the play time recorded by
+  XGrid.
+- **Icon size** changes the tile size from 128 to 384 pixels.
+- **Tiles** and **List** switch between the cover grid and the detailed rows.
 
-- **Tiles** shows the cover grid (the default).
-- **List** shows the detailed rows with folder, title id, format, size and a
-  **Play** button.
+Select a game and **double-click** it (or press **Enter**) to boot it. A single
+click only selects it. The chosen tile/list mode is saved in `settings.json`.
 
-The choice is saved in `settings.json` and restored on the next start. XGrid
-still opens on the Library page; use **Console** to see the emulated picture.
+## Favorites and play time
 
-## Recently played
+- Click the star on a card or row to add or remove a favorite.
+- XGrid records the accumulated play time, launch count and last-played time
+  when a game starts and when the console stops.
+- The **Recently played** and **Most played** sorts, and the **Played** and
+  **Unplayed** filters, use this state.
+- State is keyed by the XBE certificate title id when it is known, otherwise by
+  the image path. The first launch resolves the title id and migrates the
+  favorite/play-time entry, so renamed or moved images keep their state once
+  XGrid has seen them launch. The resolved id is cached in
+  `LibraryTitleIds` in `settings.json` so later scans do not open every disc.
 
-The **Recently played** strip above the game list shows the titles you launched
-most recently, newest first. It keeps up to ten entries in `settings.json`, even
-when the disc lives outside your configured folders. Click a card to launch the
-game again; **Clear** removes the list. If a file was moved or deleted, the
-entry is dropped the next time you try to launch it.
-
-The list records successful starts only. Changing discs while the console is
-running is a disc swap, not a new launch, so it does not change the order.
+The old recent strip is gone; use the **Recently played** sort. Screenshots are
+still saved with **F8** and can be opened from **View → Open screenshots
+folder**.
 
 ## What the scanner recognizes
 
@@ -65,51 +73,96 @@ across multiple roots if you need more.
 - For a **loose XBE**, XGrid reads the certificate title name when the title is
   resolved.
 - For a **disc image**, the display title comes from the file name.
+- Region, language and revision groups such as `(USA)`, `(Europe)` and
+  `(En,Fr,De)` are removed from the title shown on a card.
 - The **title ID** (`Title XXXXXXXX`) is resolved when the game is launched, not
   during the folder scan, so adding a large CHD collection does not decompress
   every image. The launch uses the resolved ID for per-title overrides.
-- Cover art named by title ID is matched when that ID has been resolved; naming
-  the cover after the game title always works.
 
 Homebrew images that never set a certificate ID share a placeholder ID, so their
 file names remain the distinguishing text.
 
 ## Cover art
 
-The Library shows a cover thumbnail for each game when one is available. Covers
-live in the user data folder, never beside the disc:
+The Library shows a cover thumbnail for each game when one is available.
+
+### Local covers
+
+Covers live in a folder you choose, never beside the disc. The default is:
 
 ```text
 <data>/covers/
 ```
 
-XGrid looks in that folder in this order:
+Set a different folder under **Settings → Library → Cover art → Local covers
+folder**, or use **Browse**. The library matches covers in this order:
 
 1. A file named with the XBE title ID: `4D530002.png`.
-2. A file named with the game title. Annotation groups are ignored for
-   matching, so `Halo - Combat Evolved (USA).jpg` matches
+2. An exact file base name: `Halo - Combat Evolved.png`.
+3. An annotation-stripped exact name: `Halo - Combat Evolved (USA).png` matches
    **Halo - Combat Evolved**.
+4. Token-order and compound-word forms.
+5. A fuzzy Jaro-Winkler match. The default threshold is **0.85**; raise it under
+   **Settings → Library → Cover art** to prefer a missing cover over a wrong
+   one.
+6. Subtitle aliases (`A - B - C` also matches `B - C` and `C`).
 
-PNG, JPEG, WebP and BMP are supported. Use **Library → Covers** (or
-**Settings → Library → Cover art → Open folder**) to open the folder. A missing
-or unreadable image is shown as the disc placeholder; it never hides the game.
-Press **Rescan** after adding covers.
+Sequel numbers are protected: `Halo` does not match `Halo 2`. Region and release
+year from the image file name break ties. Annotation stripping ignores `(USA)`,
+`(Europe)`, `(En,Fr,De)`, `[!]`, `(Rev 1)` and similar groups.
+
+PNG, JPEG, WebP and BMP are supported. A missing or unreadable image is shown as
+the disc placeholder; it never hides the game.
+
+### Online covers
+
+The optional online catalog uses the same content-addressed layout as 5DO on
+Cloudflare R2:
+
+```text
+https://assets.purelogiccode.com/xgrid/v1/catalog.json
+```
+
+This is the planned default endpoint. Until the Xbox catalog is published there,
+the request fails gracefully and local covers continue to work; a self-hosted or
+`file://` catalog can be used in the meantime.
+
+The catalog contains a JSON index plus immutable WebP images. XGrid:
+
+- caches the catalog under `<data>/covers-cache/` and revalidates it with
+  `If-None-Match`;
+- matches an exact XBE title id first, then exact and fuzzy titles/aliases;
+- downloads only covers matched to games in your library, at most four at a
+  time;
+- verifies every image against its SHA-256 id before publishing it to the
+  cache;
+- keeps local covers working when the network or catalog is unavailable.
+
+Set **Settings → Library → Cover art → Use the online cover catalog** to enable
+it, and **Download missing covers automatically** to fetch matches after a scan.
+The catalog URL is editable, so a self-hosted R2 bucket or a `file://` catalog
+works too.
+
+Use **Refresh** in Settings to fetch the catalog now; **Clear cache** removes the
+catalog and downloaded images.
 
 ## Searching
 
-The search box filters by title or format text as you type. Clearing it restores
-the full list.
+The search box filters by title, path, format, title id, region, year,
+publisher, developer, genre and description. Clearing it restores the current
+filter and sort.
 
 ## Launching
 
-Click a library row to launch it. XGrid powers on the core with:
+Double-click a library card or press **Enter** on the selection. XGrid powers on
+the core with:
 
 - the selected disc image;
 - the effective global settings;
 - any matching per-title override;
 - the library title in the status bar and session log.
 
-If the console is already running, clicking a library row **swaps the disc**
+If the console is already running, choosing another game **swaps the disc**
 instead of restarting it. Use **File → Eject Disc** (Ctrl+E) to leave the tray
 empty, or **Emulation → Power On / Off** (F5) to power off. Swapping needs
 in-process core hosting, like save states.
@@ -132,20 +185,8 @@ If a game does not appear:
 
 1. Check the extension is supported.
 2. Confirm the folder is in the list and still exists.
-3. Press **Rescan**.
+3. Press **Rescan** or **View → Rescan library**.
 4. Check **Activity** for scan errors.
 
 If a game appears but does not boot, see [Compatibility](../reference/compatibility.md)
 and [Troubleshooting](../reference/troubleshooting.md).
-
-## Screenshots
-
-The bottom of the library page shows the newest captures from
-`<data>/screenshots/` as thumbnails:
-
-- Click a picture to open it in the default image viewer.
-- **Refresh** re-reads the folder after captures are added or removed.
-- **Open folder** shows the PNGs in the file manager.
-
-**F8** saves the console picture; with separate-process hosting it captures the
-whole shell window. See [Display](display.md#captions-and-screenshots).

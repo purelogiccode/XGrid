@@ -8,6 +8,7 @@ advertising. The network features are small and can be turned off.
 | Usage hit | Once per launch | ApplicationStats | `XGRID_DISABLE_STATISTICS=1` |
 | Warning/error report | On a warning or error | Bug-report service | `XGRID_DISABLE_BUG_REPORTS=1` |
 | Donation email | When checking a donation or refreshing a saved address at startup | Donation API | Do not check |
+| Cover catalog and images | When online covers are enabled | Cloudflare R2 custom domain | Turn off **Use the online cover catalog** |
 | Update check | Once per launch | GitHub | `XGRID_DISABLE_UPDATE_CHECK=1` |
 | Logs | Continuously | Local data folder | Delete the files |
 | Settings | When changed | Local `settings.json` | Delete the file |
@@ -18,6 +19,8 @@ advertising. The network features are small and can be turned off.
 - **Bug reports:** environment (OS, architecture, bitness, processor count,
   base directory, temp path), the error message and the exception details.
 - **Donation:** the email you entered and the `xgrid` slug.
+- **Cover art:** only the configured catalog URL and content-addressed image
+  ids. Matching runs locally; titles, paths and library contents are not sent.
 - **Update check:** a user-agent built from the app name and version.
 
 No firmware, disc images, save states, screenshots or game-file contents are

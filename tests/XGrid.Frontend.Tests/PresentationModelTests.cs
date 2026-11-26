@@ -75,7 +75,8 @@ public sealed class PresentationModelTests : IDisposable
         File.WriteAllBytes(path, [0]);
         GameEntry game = Assert.IsType<GameEntry>(GameEntry.FromFile(path));
         GameEntry? launched = null;
-        var item = new GameListItem(game, entry => launched = entry);
+        using var covers = new CoverArtCache();
+        var item = new GameListItem(game, entry => launched = entry, _ => { }, covers);
 
         Assert.Equal("my game", item.Title);
         Assert.Equal("ISO", item.FormatText);
@@ -96,8 +97,11 @@ public sealed class PresentationModelTests : IDisposable
         File.WriteAllBytes(path, [0]);
         GameEntry game = Assert.IsType<GameEntry>(GameEntry.FromFile(path));
 
-        Assert.Throws<ArgumentNullException>(() => new GameListItem(null!, _ => { }));
-        Assert.Throws<ArgumentNullException>(() => new GameListItem(game, null!));
+        using var covers = new CoverArtCache();
+        Assert.Throws<ArgumentNullException>(() => new GameListItem(null!, _ => { }, _ => { }, covers));
+        Assert.Throws<ArgumentNullException>(() => new GameListItem(game, null!, _ => { }, covers));
+        Assert.Throws<ArgumentNullException>(() => new GameListItem(game, _ => { }, null!, covers));
+        Assert.Throws<ArgumentNullException>(() => new GameListItem(game, _ => { }, _ => { }, null!));
     }
 
     [Fact]

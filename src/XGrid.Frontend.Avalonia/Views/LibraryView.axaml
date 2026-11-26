@@ -4,378 +4,348 @@
              xmlns:local="using:XGrid.Frontend.Avalonia"
              x:Class="XGrid.Frontend.Avalonia.Views.LibraryView"
              x:DataType="vm:LibraryViewModel">
-  <Grid RowDefinitions="Auto,Auto,*,Auto">
-    <!-- ===================== Toolbar ===================== -->
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
-      <StackPanel Orientation="Horizontal" Spacing="10">
-        <TextBox Width="300"
-                 PlaceholderText="Search games…"
-                 Text="{Binding SearchText, Mode=TwoWay}"
-                 VerticalAlignment="Center"
-                 ToolTip.Tip="Search the library by title or folder" />
-        <Button Classes="primary" Command="{Binding AddFolderCommand}"
-                ToolTip.Tip="Add a folder to scan for games">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
-            <TextBlock Text="Add folder" />
-          </StackPanel>
-        </Button>
-        <Button Classes="ghost" Command="{Binding RescanCommand}"
-                ToolTip.Tip="Rescan library folders for new games">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Data="{x:Static local:AppIcons.Refresh}" Width="14" Height="14" />
-            <TextBlock Text="Rescan" />
-          </StackPanel>
-        </Button>
-        <Button Classes="ghost"
-                Command="{Binding Shell.OpenCoversFolderCommand}"
-                ToolTip.Tip="Add cover images here; name them after the title or title id.">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
-            <TextBlock Text="Covers" />
-          </StackPanel>
-        </Button>
-      </StackPanel>
+  <UserControl.Styles>
+    <Style Selector="Button.favorite">
+      <Setter Property="Background" Value="#B3120E12" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Padding" Value="5,2" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="Foreground" Value="#F2C94C" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="Button.favorite:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#D9222027" />
+    </Style>
+    <Style Selector="Button.favorite.small">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="3,0" />
+    </Style>
+    <Style Selector="TextBlock.libraryMeta">
+      <Setter Property="Foreground" Value="{DynamicResource XgTextMutedBrush}" />
+      <Setter Property="FontSize" Value="10.5" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+  </UserControl.Styles>
 
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <!-- ===================== Library toolbar ===================== -->
+    <Border Grid.Row="0"
+            Padding="14,8"
+            Margin="0,0,0,8"
+            Background="{DynamicResource XgSurfaceBrush}"
+            BorderBrush="{DynamicResource XgBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="12">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="Game List" Classes="h3" ToolTip.Tip="Games found in the configured library folders." />
+          <Border Classes="badge" VerticalAlignment="Center" ToolTip.Tip="Number of games in your library.">
+            <TextBlock Text="{Binding CountText}" />
+          </Border>
+        </StackPanel>
+
+        <Grid Grid.Column="1" MaxWidth="420" Margin="24,0" VerticalAlignment="Center">
+          <PathIcon Data="{x:Static local:AppIcons.Search}"
+                    Width="14"
+                    Height="14"
+                    Margin="10,0,0,0"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    IsHitTestVisible="False"
+                    Foreground="{DynamicResource XgTextMutedBrush}" />
+          <TextBox Classes="search"
+                   Padding="32,6,10,6"
+                   PlaceholderText="Search games…"
+                   Text="{Binding SearchText, Mode=TwoWay}"
+                   ToolTip.Tip="Filter by title, path, format, title id, year or publisher." />
+        </Grid>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <ComboBox Width="118"
+                    SelectedIndex="{Binding FilterIndex, Mode=TwoWay}"
+                    ToolTip.Tip="Show all games, favorites, played games or unplayed games.">
+            <ComboBoxItem Content="All games" />
+            <ComboBoxItem Content="Favorites" />
+            <ComboBoxItem Content="Played" />
+            <ComboBoxItem Content="Unplayed" />
+          </ComboBox>
+          <ComboBox Width="146"
+                    SelectedIndex="{Binding SortIndex, Mode=TwoWay}"
+                    ToolTip.Tip="Sort by title, recent play, play time, release year or publisher.">
+            <ComboBoxItem Content="Title" />
+            <ComboBoxItem Content="Recently played" />
+            <ComboBoxItem Content="Most played" />
+            <ComboBoxItem Content="Release year" />
+            <ComboBoxItem Content="Publisher" />
+          </ComboBox>
+          <TextBlock Text="Icon size"
+                     Classes="caption"
+                     VerticalAlignment="Center"
+                     ToolTip.Tip="Thumbnail size used by the tile grid." />
+          <Slider x:Name="IconSizeSlider"
+                  Width="132"
+                  Minimum="128"
+                  Maximum="384"
+                  TickFrequency="8"
+                  IsSnapToTickEnabled="True"
+                  Value="{Binding IconSize, Mode=TwoWay}"
+                  ValueChanged="OnIconSizeValueChanged"
+                  VerticalAlignment="Center"
+                  ToolTip.Tip="Adjust the size of game cards in the grid view." />
           <Button Classes="ghost"
                   Classes.active="{Binding IsGridView}"
                   Command="{Binding ShowGridCommand}"
-                  Padding="10,7"
+                  Padding="9,6"
                   ToolTip.Tip="Show games as thumbnail tiles">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <PathIcon Data="{x:Static local:AppIcons.Library}" Width="14" Height="14" />
-              <TextBlock Text="Tiles" />
-            </StackPanel>
+            <PathIcon Data="{x:Static local:AppIcons.Library}" Width="14" Height="14" />
           </Button>
           <Button Classes="ghost"
                   Classes.active="{Binding IsListView}"
                   Command="{Binding ShowListCommand}"
-                  Padding="10,7"
+                  Padding="9,6"
                   ToolTip.Tip="Show games as a detailed list">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <PathIcon Data="{x:Static local:AppIcons.List}" Width="14" Height="14" />
-              <TextBlock Text="List" />
-            </StackPanel>
+            <PathIcon Data="{x:Static local:AppIcons.List}" Width="14" Height="14" />
           </Button>
         </StackPanel>
-        <Border Width="1" Height="18"
-                Background="{DynamicResource XgBorderBrush}"
-                VerticalAlignment="Center" />
-        <ProgressBar Width="120"
-                     Height="3"
-                     IsIndeterminate="True"
-                     IsVisible="{Binding IsScanning}"
-                     VerticalAlignment="Center" />
-        <TextBlock Text="{Binding StatusText}"
-                   Classes="caption"
-                   MaxWidth="420"
-                   TextTrimming="CharacterEllipsis"
-                   VerticalAlignment="Center" />
-      </StackPanel>
-    </Grid>
-
-    <!-- ===================== Recently played ===================== -->
-    <Border Grid.Row="1" Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasRecentGames}">
-      <StackPanel Spacing="10">
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="2">
-            <TextBlock Text="Recently played" Classes="h3" />
-            <TextBlock Text="Your last launches, newest first." Classes="hint" />
-          </StackPanel>
-          <Button Grid.Column="1"
-                  Classes="ghost"
-                  Command="{Binding ClearRecentGamesCommand}"
-                  Content="Clear"
-                  ToolTip.Tip="Remove every recently played entry" />
-        </Grid>
-        <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Disabled">
-          <ItemsControl ItemsSource="{Binding RecentGames}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" Spacing="10" />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate DataType="vm:RecentGameItem">
-                <Button Classes="subtle"
-                        Padding="12,8"
-                        Command="{Binding LaunchCommand}"
-                        ToolTip.Tip="{Binding Path}">
-                  <StackPanel Spacing="2">
-                    <TextBlock Text="{Binding Title}"
-                               FontWeight="SemiBold"
-                               MaxWidth="220"
-                               TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding LastPlayedText}"
-                               Classes="caption"
-                               FontSize="10.5" />
-                  </StackPanel>
-                </Button>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
-      </StackPanel>
+      </Grid>
     </Border>
 
-    <!-- ===================== Empty state ===================== -->
-    <Border Grid.Row="2" Classes="card" IsVisible="{Binding ShowEmptyState}">
-      <StackPanel HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  Spacing="14"
-                  MaxWidth="440">
-        <Grid Width="72" Height="72">
-          <Ellipse Stroke="{DynamicResource XgBorderStrongBrush}" StrokeThickness="1.5" />
-          <PathIcon Data="{x:Static local:AppIcons.Library}"
-                    Width="28"
-                    Height="28"
-                    Foreground="{DynamicResource XgAccentBrush}" />
-        </Grid>
-        <TextBlock Text="{Binding EmptyTitle}" Classes="h2" HorizontalAlignment="Center" />
-        <TextBlock Classes="body"
-                   TextAlignment="Center"
-                   TextWrapping="Wrap"
-                   Text="{Binding EmptyDetail}" />
-        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-          <Button Classes="primary" Command="{Binding AddFolderCommand}"
-                  ToolTip.Tip="Add a folder to scan for games">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
-              <TextBlock Text="Add a folder" />
-            </StackPanel>
-          </Button>
-          <Button Classes="ghost" Command="{Binding RescanCommand}" Content="Rescan"
-                  ToolTip.Tip="Rescan library folders for new games" />
-        </StackPanel>
-      </StackPanel>
-    </Border>
-
-    <!-- ===================== Game tiles ===================== -->
-    <ScrollViewer Grid.Row="2"
-                  IsVisible="{Binding ShowGameTiles}"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto"
-                  ToolTip.Tip="Games found in your library folders">
-      <ItemsControl ItemsSource="{Binding Games}">
-        <ItemsControl.ItemsPanel>
+    <!-- ===================== Grid and list ===================== -->
+    <Grid Grid.Row="1">
+      <ListBox x:Name="GridLibraryList"
+               Classes="library libraryGrid"
+               IsVisible="{Binding ShowGameTiles}"
+               ItemsSource="{Binding Games}"
+               SelectedItem="{Binding SelectedGame, Mode=TwoWay}"
+               DoubleTapped="OnGameDoubleTapped"
+               KeyDown="OnGameKeyDown"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ToolTip.Tip="Select a game. Double-click or press Enter to boot it.">
+        <ListBox.ItemsPanel>
           <ItemsPanelTemplate>
             <WrapPanel Orientation="Horizontal" />
           </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="vm:GameListItem">
-            <Button Classes="subtle"
-                    Width="176"
-                    Margin="0,0,8,8"
-                    Padding="0"
-                    HorizontalContentAlignment="Stretch"
-                    Command="{Binding LaunchCommand}"
-                    IsEnabled="{Binding IsLaunchable}"
-                    ToolTip.Tip="{Binding Title}"
-                    ToolTip.ShowOnDisabled="True">
-              <Border Classes="card gameTile">
-                <StackPanel Spacing="6">
-                  <Border Classes="coverFrame" Height="208">
-                    <Panel>
-                      <PathIcon Data="{x:Static local:AppIcons.Disc}"
-                                Width="34"
-                                Height="34"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                IsVisible="{Binding !HasCover}"
-                                Foreground="{DynamicResource XgAccentBrush}" />
-                      <Image Source="{Binding Cover}"
-                             Stretch="Uniform"
-                             IsVisible="{Binding HasCover}"
-                             RenderOptions.BitmapInterpolationMode="HighQuality" />
-                      <Border Classes="pill"
-                              Padding="7,2"
-                              Margin="7"
-                              HorizontalAlignment="Left"
-                              VerticalAlignment="Bottom"
-                              IsVisible="{Binding IsLaunchable}">
-                        <TextBlock Text="{Binding FormatText}"
-                                   FontSize="9.5"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource XgAccentBrush}" />
-                      </Border>
-                    </Panel>
-                  </Border>
-                  <TextBlock Text="{Binding Title}"
-                             FontSize="12.5"
-                             FontWeight="SemiBold"
-                             Height="34"
-                             MaxLines="2"
-                             TextWrapping="Wrap"
-                             TextTrimming="CharacterEllipsis" />
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                    <TextBlock Text="{Binding FormatText}"
-                               Classes="caption"
-                               FontSize="10.5"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding SizeText}"
-                               Classes="muted"
-                               FontSize="10.5"
-                               VerticalAlignment="Center" />
-                  </Grid>
-                </StackPanel>
-              </Border>
-            </Button>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </ScrollViewer>
-
-    <!-- ===================== Game rows ===================== -->
-    <ListBox Grid.Row="2"
-             Classes="rows"
-             ItemsSource="{Binding Games}"
-             IsVisible="{Binding ShowGameRows}"
-             SelectionMode="Single"
-             ToolTip.Tip="Games found in your library folders">
-      <ListBox.ItemTemplate>
-        <DataTemplate DataType="vm:GameListItem">
-          <Border Classes="card tight" Padding="14">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-              <Border Width="54"
-                      Height="72"
-                      CornerRadius="8"
-                      ClipToBounds="True"
-                      Background="{DynamicResource XgAccentSoftBrush}"
-                      VerticalAlignment="Center">
-                <Grid>
-                  <PathIcon Data="{x:Static local:AppIcons.Disc}"
-                            Width="23"
-                            Height="23"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            IsVisible="{Binding !HasCover}"
-                            Foreground="{DynamicResource XgAccentBrush}" />
-                  <Image Source="{Binding Cover}"
-                         Stretch="UniformToFill"
-                         IsVisible="{Binding HasCover}"
-                         RenderOptions.BitmapInterpolationMode="HighQuality" />
-                </Grid>
-              </Border>
-
-              <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
-                <TextBlock Text="{Binding Title}"
-                           FontSize="14"
-                           FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Folder}"
-                           Classes="caption"
-                           FontSize="10.5"
-                           TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-
-              <StackPanel Grid.Column="2"
-                          Orientation="Horizontal"
-                          Spacing="10"
-                          VerticalAlignment="Center">
-                <Border Classes="pill" Padding="8,3" IsVisible="{Binding IsLaunchable}">
-                  <TextBlock Text="{Binding FormatText}"
-                             FontSize="10"
-                             FontWeight="SemiBold"
-                             Foreground="{DynamicResource XgAccentBrush}" />
-                </Border>
-                <Border Background="{DynamicResource XgSurfaceAltBrush}"
-                        CornerRadius="999"
-                        Padding="8,3"
-                        IsVisible="{Binding IsExecutable}">
-                  <TextBlock Text="XBE"
-                             FontSize="10"
-                             FontWeight="SemiBold"
-                             Classes="muted" />
-                </Border>
-                <TextBlock Text="{Binding TitleIdText}"
-                           IsVisible="{Binding HasDistinctTitleId}"
-                           Classes="muted"
-                           FontSize="10.5"
-                           VerticalAlignment="Center"
-                           ToolTip.Tip="Per-title settings key on this certificate title id." />
-                <TextBlock Text="{Binding SizeText}"
-                           Classes="muted"
-                           FontSize="12"
-                           Width="78"
-                           TextAlignment="Right"
-                           VerticalAlignment="Center" />
-                <Button Classes="primary"
-                        Command="{Binding LaunchCommand}"
-                        IsEnabled="{Binding IsLaunchable}"
-                        ToolTip.Tip="Launch this game; loose XBE files need an ISO or CHD wrapper to boot"
-                        ToolTip.ShowOnDisabled="True">
-                  <StackPanel Orientation="Horizontal" Spacing="7">
-                    <PathIcon Data="{x:Static local:AppIcons.Play}" Width="12" Height="12" />
-                    <TextBlock Text="Play" />
-                  </StackPanel>
-                </Button>
-              </StackPanel>
-            </Grid>
-          </Border>
-        </DataTemplate>
-      </ListBox.ItemTemplate>
-    </ListBox>
-
-    <!-- ===================== Screenshots ===================== -->
-    <Border Grid.Row="3" Classes="card" Margin="0,14,0,0" IsVisible="{Binding HasScreenshots}">
-      <StackPanel Spacing="10">
-        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-          <StackPanel Spacing="2">
-            <TextBlock Text="Screenshots" Classes="h3" />
-            <TextBlock Text="Recent captures (F8). Click a picture to open it."
-                       Classes="hint" />
-          </StackPanel>
-          <Button Grid.Column="1" Classes="ghost" Command="{Binding RefreshScreenshotsCommand}"
-                  Content="Refresh" ToolTip.Tip="Re-read the screenshots folder" />
-          <Button Grid.Column="2" Classes="ghost"
-                  Command="{Binding Shell.OpenScreenshotsFolderCommand}"
-                  Content="Open folder" ToolTip.Tip="Show the screenshots folder in the file manager" />
-        </Grid>
-
-        <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Disabled"
-                      MaxHeight="132">
-          <ItemsControl ItemsSource="{Binding Screenshots}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" Spacing="10" />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate DataType="vm:ScreenshotItem">
-                <Button Classes="subtle"
-                        Padding="0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Command="{Binding OpenCommand}"
-                        ToolTip.Tip="Open this screenshot in the default image viewer">
-                  <StackPanel Spacing="4">
-                    <Border Width="168"
-                            Height="94"
-                            CornerRadius="4"
-                            ClipToBounds="True"
-                            Background="#050608">
-                      <Image Source="{Binding Thumbnail}"
-                             Stretch="UniformToFill"
-                             RenderOptions.BitmapInterpolationMode="HighQuality" />
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:GameListItem">
+            <Border Classes="card libraryCard"
+                    Width="{DynamicResource LibraryCardWidth}"
+                    ToolTip.Tip="{Binding Tip}">
+              <StackPanel>
+                <Border Classes="coverFrame"
+                        Height="{DynamicResource LibraryCardImageHeight}">
+                  <Panel>
+                    <PathIcon Data="{x:Static local:AppIcons.Disc}"
+                              Width="36"
+                              Height="36"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              IsVisible="{Binding !HasCover}"
+                              Foreground="{DynamicResource XgAccentBrush}" />
+                    <Image Source="{Binding Cover}"
+                           Stretch="Uniform"
+                           IsVisible="{Binding HasCover}"
+                           RenderOptions.BitmapInterpolationMode="HighQuality" />
+                    <Button Classes="favorite"
+                            Content="{Binding FavoriteGlyph}"
+                            Command="{Binding ToggleFavoriteCommand}"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Margin="5"
+                            ToolTip.Tip="Add or remove this game from favorites." />
+                    <Border Classes="pill"
+                            Padding="7,2"
+                            Margin="7"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Bottom"
+                            IsVisible="{Binding IsLaunchable}">
+                      <TextBlock Text="{Binding FormatText}"
+                                 FontSize="9.5"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource XgAccentBrush}" />
                     </Border>
-                    <TextBlock Text="{Binding CapturedText}"
-                               Classes="mono"
-                               FontSize="10"
-                               HorizontalAlignment="Center" />
+                  </Panel>
+                </Border>
+                <TextBlock Text="{Binding Title}"
+                           FontWeight="SemiBold"
+                           FontSize="12.5"
+                           Margin="2,8,2,3"
+                           Height="34"
+                           MaxLines="2"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding MetadataText}"
+                           Classes="libraryMeta"
+                           Margin="2,0,2,2"
+                           ToolTip.Tip="{Binding DetailText}" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="2,0,2,1">
+                  <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding FormatText}" Classes="libraryMeta" />
+                    <TextBlock Text="{Binding ShortTitleIdText}"
+                               Classes="libraryMeta"
+                               IsVisible="{Binding HasDistinctTitleId}" />
+                    <TextBlock Text="{Binding PlaytimeText}" Classes="libraryMeta" />
                   </StackPanel>
-                </Button>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
-      </StackPanel>
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding SizeText}"
+                             Classes="libraryMeta"
+                             HorizontalAlignment="Right" />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <ListBox x:Name="ListLibraryList"
+               Classes="library libraryList"
+               IsVisible="{Binding ShowGameRows}"
+               ItemsSource="{Binding Games}"
+               SelectedItem="{Binding SelectedGame, Mode=TwoWay}"
+               DoubleTapped="OnGameDoubleTapped"
+               KeyDown="OnGameKeyDown"
+               ToolTip.Tip="Select a game. Double-click or press Enter to boot it.">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:GameListItem">
+            <Border Classes="card libraryCard" Padding="4" ToolTip.Tip="{Binding Tip}">
+              <Grid ColumnDefinitions="54,*,66,80,92,116" ColumnSpacing="8">
+                <Border Classes="coverFrame" Width="48" Height="48" VerticalAlignment="Center">
+                  <Panel>
+                    <PathIcon Data="{x:Static local:AppIcons.Disc}"
+                              Width="20"
+                              Height="20"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              IsVisible="{Binding !HasCover}"
+                              Foreground="{DynamicResource XgAccentBrush}" />
+                    <Image Source="{Binding Cover}"
+                           Stretch="Uniform"
+                           IsVisible="{Binding HasCover}"
+                           RenderOptions.BitmapInterpolationMode="HighQuality" />
+                    <Button Classes="favorite small"
+                            Content="{Binding FavoriteGlyph}"
+                            Command="{Binding ToggleFavoriteCommand}"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Margin="1"
+                            ToolTip.Tip="Add or remove this game from favorites." />
+                  </Panel>
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="4,0,6,0" Spacing="1">
+                  <TextBlock Text="{Binding Title}"
+                             FontWeight="SemiBold"
+                             FontSize="12.5"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding MetadataText}"
+                             Classes="libraryMeta"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Path}"
+                             Classes="libraryMeta"
+                             FontSize="10"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="2"
+                           Text="{Binding FormatText}"
+                           Classes="libraryMeta"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center" />
+                <TextBlock Grid.Column="3"
+                           Text="{Binding SizeText}"
+                           Classes="libraryMeta"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Right"
+                           Margin="0,0,8,0" />
+                <TextBlock Grid.Column="4"
+                           Text="{Binding PlaytimeText}"
+                           Classes="libraryMeta"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Right"
+                           Margin="0,0,8,0" />
+                <StackPanel Grid.Column="5"
+                            Orientation="Horizontal"
+                            Spacing="4"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right">
+                  <Border Classes="badge" IsVisible="{Binding IsExecutable}">
+                    <TextBlock Text="XBE" />
+                  </Border>
+                  <Border Classes="badge" IsVisible="{Binding HasDistinctTitleId}"
+                          ToolTip.Tip="{Binding TitleIdText}">
+                    <TextBlock Text="{Binding TitleIdText}" />
+                  </Border>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <!-- ===================== Empty state ===================== -->
+      <Border Classes="card" IsVisible="{Binding ShowEmptyState}">
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="12"
+                    MaxWidth="440">
+          <PathIcon Data="{x:Static local:AppIcons.Library}"
+                    Width="52"
+                    Height="52"
+                    HorizontalAlignment="Center"
+                    Foreground="{DynamicResource XgTextMutedBrush}" />
+          <TextBlock Text="{Binding EmptyTitle}"
+                     Classes="h2"
+                     HorizontalAlignment="Center" />
+          <TextBlock Text="{Binding EmptyDetail}"
+                     Classes="body"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+            <Button Classes="primary" Command="{Binding AddFolderCommand}"
+                    ToolTip.Tip="Add a folder to scan for games">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                <TextBlock Text="Add folder" />
+              </StackPanel>
+            </Button>
+            <Button Classes="ghost" Command="{Binding RescanCommand}" Content="Rescan"
+                    ToolTip.Tip="Rescan the configured folders" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- ===================== Status ===================== -->
+    <Border Grid.Row="2"
+            Margin="0,8,0,0"
+            Padding="2,0"
+            IsVisible="{Binding ShowStatus}"
+            Background="Transparent">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <ProgressBar Width="90"
+                       Height="3"
+                       IsIndeterminate="True"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsScanning}" />
+          <ProgressBar Width="90"
+                       Height="3"
+                       IsIndeterminate="True"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsResolvingCovers}" />
+          <TextBlock Text="{Binding StatusText}"
+                     Classes="caption"
+                     VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <TextBlock Grid.Column="2"
+                   Text="{Binding CoverStatusText}"
+                   Classes="caption"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis"
+                   MaxWidth="460"
+                   ToolTip.Tip="Online cover catalog and download status." />
+      </Grid>
     </Border>
   </Grid>
 </UserControl>

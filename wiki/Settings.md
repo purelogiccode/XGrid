@@ -57,7 +57,21 @@ image path. Unset values inherit the global configuration.
 
 ## Library
 
-Folders scanned by the Library. See [Game library](Game-Library).
+**Folders** are scanned by the Library. See [Game library](Game-Library).
+
+**Cover art** controls:
+
+- local covers folder (empty uses `<data>/covers`);
+- use the online R2 catalog;
+- download missing covers automatically;
+- catalog URL (full `catalog.json` or a base URL);
+- fuzzy title matching and annotation stripping;
+- fuzzy threshold (0.70-0.95, default 0.85);
+- refresh catalog and clear the cache.
+
+Matching checks the XBE title id, exact names, annotation-stripped names,
+token/no-space forms and then fuzzy scores. Local covers keep working offline.
+The cache lives in `<data>/covers-cache/`.
 
 ## Appearance
 

@@ -849,11 +849,11 @@
             </Border>
 
             <Border Classes="card">
-              <StackPanel Spacing="10">
+              <StackPanel Spacing="14">
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="3">
                     <TextBlock Text="Cover art" Classes="h3" />
-                    <TextBlock Text="Put PNG, JPEG, WebP or BMP images in the covers folder. Name each file after the game title or its title id (for example Halo.jpg or 4D530002.png). Images beside the disc are ignored."
+                    <TextBlock Text="Local covers are matched by title id, exact name, and fuzzy title matching. The online catalog is the same content-addressed layout as 5DO: a JSON index plus WebP images on Cloudflare R2."
                                Classes="hint"
                                TextWrapping="Wrap" />
                   </StackPanel>
@@ -865,8 +865,75 @@
                     </StackPanel>
                   </Button>
                 </Grid>
-                <TextBlock Text="Rescan the library after adding covers."
-                           Classes="hint" />
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <TextBlock Text="Local covers folder" Classes="label" VerticalAlignment="Center" />
+                  <TextBox Grid.Column="1"
+                           Text="{Binding CoverDirectory, Mode=TwoWay}"
+                           PlaceholderText="Empty uses the default covers folder"
+                           Classes="mono"
+                           ToolTip.Tip="Folder containing PNG, JPEG, WebP or BMP cover images." />
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                    <Button Classes="ghost" Command="{Binding BrowseCoverDirectoryCommand}" Content="Browse"
+                            ToolTip.Tip="Choose a folder containing cover images" />
+                    <Button Classes="ghost" Command="{Binding ResetCoverDirectoryCommand}" Content="Default"
+                            ToolTip.Tip="Use the shared covers folder under the XGrid data directory" />
+                  </StackPanel>
+                </Grid>
+                <TextBlock Text="Cover files may be named after the game, e.g. Halo - Combat Evolved (USA).png, or after the XBE title id, e.g. 4D530002.png. Annotation groups are ignored while matching."
+                           Classes="hint"
+                           TextWrapping="Wrap" />
+
+                <CheckBox IsChecked="{Binding UseOnlineCovers, Mode=TwoWay}"
+                          Content="Use the online cover catalog"
+                          ToolTip.Tip="Resolve missing covers from the R2 catalog. Local covers keep working offline." />
+                <CheckBox IsChecked="{Binding AutoDownloadCovers, Mode=TwoWay}"
+                          Content="Download missing covers automatically after a scan"
+                          ToolTip.Tip="Only covers matched to games in your library are downloaded." />
+
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <TextBlock Text="Catalog URL" Classes="label" VerticalAlignment="Center" />
+                  <TextBox Grid.Column="1"
+                           Text="{Binding CoverCatalogUrl, Mode=TwoWay}"
+                           Classes="mono"
+                           ToolTip.Tip="Catalog URL or base URL. It is normalized to catalog.json." />
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                    <Button Classes="ghost" Command="{Binding ResetCoverCatalogUrlCommand}" Content="Default"
+                            ToolTip.Tip="Restore the XGrid R2 catalog URL" />
+                    <Button Classes="ghost" Command="{Binding RefreshCoverCatalogCommand}" Content="Refresh"
+                            ToolTip.Tip="Fetch the catalog now and rescan covers" />
+                  </StackPanel>
+                </Grid>
+
+                <CheckBox IsChecked="{Binding CoverFuzzyMatching, Mode=TwoWay}"
+                          Content="Fuzzy title matching"
+                          ToolTip.Tip="Use Jaro-Winkler matching after the exact and annotation-stripped passes." />
+                <CheckBox IsChecked="{Binding CoverStripAnnotations, Mode=TwoWay}"
+                          Content="Ignore region, language and revision annotations"
+                          ToolTip.Tip="Strip (USA), (Europe), (En,Fr,De), Rev 1 and similar groups before matching." />
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                  <TextBlock Text="Fuzzy threshold" Classes="label" VerticalAlignment="Center" />
+                  <Slider Grid.Column="1"
+                          Minimum="0.70"
+                          Maximum="0.95"
+                          TickFrequency="0.01"
+                          Value="{Binding CoverFuzzyThreshold, Mode=TwoWay}"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="Higher values prefer a missing cover over a wrong one." />
+                  <TextBlock Grid.Column="2"
+                             Text="{Binding CoverFuzzyThreshold, StringFormat={}{0:P0}}"
+                             Classes="mono"
+                             VerticalAlignment="Center"
+                             MinWidth="48" />
+                </Grid>
+
+                <Border Classes="divider" />
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                  <TextBlock Text="{Binding CoverCacheText}" Classes="hint" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Classes="ghost" Command="{Binding ClearCoverCacheCommand}" Content="Clear cache"
+                          ToolTip.Tip="Delete the cached catalog and downloaded cover images" />
+                </Grid>
               </StackPanel>
             </Border>
           </StackPanel>

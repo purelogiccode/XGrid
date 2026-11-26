@@ -50,8 +50,8 @@ change it live through the core ABI.
 - **F8** saves the console picture as a PNG in `<data>/screenshots/`. With
   in-process hosting the core writes the capture; with separate-process hosting
   the shell captures the whole window instead.
-- The Library page shows a strip of recent captures; click one to open it,
-  **Refresh** to re-read the folder.
+- The Library no longer embeds a screenshot strip. Use **View → Open
+  screenshots folder** to browse the PNGs.
 
 ## Pause and frame step
 

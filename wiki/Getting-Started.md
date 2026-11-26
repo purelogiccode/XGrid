@@ -40,7 +40,8 @@ later** leaves everything for Settings. The same fields stay available in
    you want scanlines or a CRT mask.
 5. Click **Save settings**.
 6. Open **Settings → Library** and add your game folders.
-7. Open **Library** and click a game tile (or **Play** in list mode). XGrid
+7. Open **Library** and double-click a game tile (or press **Enter** on the
+   selection). XGrid
    powers on and switches to the **Console** page.
 8. To boot the dashboard without a disc, open **Home** and click **Power on**
    (or press **F5**).

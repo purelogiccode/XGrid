@@ -1,50 +1,49 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Serilog;
 
 namespace XGrid.Frontend.Avalonia.Services;
 
 /// <summary>
-/// Decodes cover images once per library scan. Filtering the library rebuilds
-/// the visible rows, so a per-row decode would re-read every cover on each
-/// keystroke.
+/// Decodes cover images once per file on background threads. Filtering the
+/// library reuses the same bitmaps instead of re-reading every cover.
 /// </summary>
 public sealed class CoverArtCache : IDisposable
 {
-    private const int CoverWidth = 160;
+    private const int CoverWidth = 192;
     private const long MaxCoverBytes = 32L * 1024 * 1024;
 
-    private readonly Dictionary<string, Bitmap?> _covers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Task<Bitmap?>> _covers =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private bool _disposed;
 
-    /// <summary>Gets the decoded cover for a path, or null when it cannot be read.</summary>
+    /// <summary>Loads the decoded cover for a path, or null when it cannot be read.</summary>
     /// <param name="path">Cover image path, or null.</param>
     /// <returns>The shared bitmap, or null.</returns>
-    public Bitmap? Get(string? path)
+    public Task<Bitmap?> LoadAsync(string? path)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(path))
         {
-            return null;
+            return Task.FromResult<Bitmap?>(null);
         }
 
-        if (!_covers.TryGetValue(path, out Bitmap? cover))
-        {
-            cover = Load(path);
-            _covers[path] = cover;
-        }
-
-        return cover;
+        return _covers.GetOrAdd(path, static value => Task.Run(() => Load(value)));
     }
 
     /// <summary>Releases every decoded cover.</summary>
     public void Clear()
     {
-        foreach (Bitmap? cover in _covers.Values)
+        foreach (Task<Bitmap?> task in _covers.Values)
         {
-            cover?.Dispose();
+            if (task.IsCompletedSuccessfully)
+            {
+                task.Result?.Dispose();
+            }
         }
 
         _covers.Clear();

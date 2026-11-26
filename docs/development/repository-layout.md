@@ -38,7 +38,8 @@ data/                         local firmware/media (git-ignored)
 
 ### Product
 
-- `src/XGrid.Frontend.Avalonia` — the shell.
+- `src/XGrid.Frontend.Avalonia` - the shell. Cover matching, the local index and
+  the online R2 catalog client live in `Services/Covers/`.
 - `src/XGrid.Core.Xemu` — launch planning, generated configuration, process and
   in-process hosting, display/input sinks, save-state wrapper.
 - `src/XGrid.Diagnostics` - Serilog configuration, the warning/error bug-report

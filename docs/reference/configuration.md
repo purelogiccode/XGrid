@@ -96,6 +96,7 @@ The console output and JSON report are documented in
   settings.json          shell configuration
   screenshots/           F8 captures
   covers/                local game cover art
+  covers-cache/          online catalog and downloaded covers (safe to delete)
   xemu/
     xemu.toml            generated core configuration
     xemu.log             core log (separate-process mode)
@@ -128,15 +129,30 @@ The shell writes indented JSON. The main fields are:
 | `Accent` | Accent palette key. |
 | `XemuCorePath` | Explicit core executable, or empty for auto-detect. |
 | `LibraryFolders` | Folders scanned by the Library. |
+| `LibraryGridView` | `true` for tiles, `false` for the detailed list. |
+| `LibraryIconSize` | Tile width in pixels (128-384). |
+| `LibraryFavorites` | Favorite keys: `title:XXXXXXXX` or image path. |
+| `LibraryPlayState` | Accumulated seconds, last-played UTC time and launch count per key. |
+| `LibraryTitleIds` | Cached XBE title ids keyed by image path, populated on launch. |
+| `Covers` | Local cover folder, online toggle, automatic download, catalog URL, fuzzy matching, annotation stripping and fuzzy threshold. |
 | `RecentGames` | Recently launched titles (path, title and UTC time), newest first, up to 10. |
 | `TitleOverrides` | Per-title overrides keyed by `title:XXXXXXXX` or image path: RAM, renderer, texture filtering and presentation filter. |
 | `DonationEmail` | Optional email used to recognize a donation; stored locally and sent only to the donation check. |
 | `HasDonated` | `true` after the donation service confirms a completed donation; hides the banner. |
 | `DonationLastCheckedUtc` | Last successful or attempted donation check, in UTC. |
 
-Invalid values are repaired on load: RAM is 64 or 128, scale is 1–8, unknown
+Invalid values are repaired on load: RAM is 64 or 128, scale is 1-8, unknown
 renderers fall back to OpenGL, unknown filters fall back to nearest, and empty
-override keys or rows are dropped.
+override keys or rows are dropped. Cover options are clamped to the supported
+fuzzy range and the catalog URL is normalized to a `catalog.json` URL. Favorite
+and play-state keys are canonicalized; title-id keys are rebuilt from their
+parsed value and path keys are made absolute.
+
+The online cover cache is content-addressed. Every downloaded image is verified
+against its SHA-256 id from the catalog before it is published under
+`<data>/covers-cache/images/`; the cached catalog sidecar stores the source URL,
+ETag and fetch time. Deleting `covers-cache/` only costs a catalog refresh and
+new downloads.
 
 A corrupt settings file is moved to `settings.json.bak` and defaults are used.
 

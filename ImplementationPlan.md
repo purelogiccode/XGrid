@@ -99,7 +99,10 @@ preview while parity, performance and packaging work continues; see
 
 ### Library
 
-- [ ] Optional online cover-art catalog for titles without local covers.
+- [x] Optional online cover-art catalog for titles without local covers.
+      Local and R2 covers share annotation stripping and Jaro-Winkler
+      matching; the catalog is content-addressed and cached under
+      `<data>/covers-cache/`.
 
 ### Platform
 
