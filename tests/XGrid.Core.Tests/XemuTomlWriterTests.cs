@@ -52,6 +52,7 @@ public sealed class XemuTomlWriterTests
             ChihiroWheelWeight = 70,
             ChihiroWheelAutocenter = false,
             ChihiroWheelAutocenterStrength = 80,
+            ChihiroPointerDevices = true,
         };
 
         string toml = XemuTomlWriter.Build(settings);
@@ -79,6 +80,7 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("wheel_weight = 70", toml, StringComparison.Ordinal);
         Assert.Contains("wheel_autocenter = false", toml, StringComparison.Ordinal);
         Assert.Contains("wheel_autocenter_strength = 80", toml, StringComparison.Ordinal);
+        Assert.Contains("pointer_devices = true", toml, StringComparison.Ordinal);
     }
 
     [Fact]

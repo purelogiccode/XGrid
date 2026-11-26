@@ -36,6 +36,10 @@
 #include <stdlib.h>
 #include <math.h>
 #include <SDL3/SDL_haptic.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <SDL3/SDL_system.h>
+#endif
 
 #include "system/blockdev.h"
 #include "hw/xbox/chihiro/chihiro.h"
@@ -682,8 +686,14 @@ static bool chihiro_mouse_button(int binding, uint32_t buttons)
 /* The gun games aim with the host pointer. The SDL window is the picture, so
  * the cursor position maps straight onto the JVS analog pair; leaving the
  * picture reports the off-screen position the games treat as a reload. */
-static void chihiro_gun_aim(ChihiroJVSState *jvs)
+static void chihiro_gun_aim(ChihiroJVSState *jvs, bool reload)
 {
+    if (reload) {
+        jvs->analog[0] = 0;
+        jvs->analog[1] = 0;
+        return;
+    }
+
     SDL_Window *window = SDL_GetMouseFocus();
     if (!window) {
         /* Outside the picture: the games read (0,0) as off-screen/reload. */
@@ -715,6 +725,391 @@ static void chihiro_gun_aim(ChihiroJVSState *jvs)
         jvs->analog[1] = (uint16_t)(ny * 0xFFFF);
     }
 }
+
+#ifdef _WIN32
+/* Per-device gun pointing. Raw Input gives each mouse or light gun its own
+ * motion and buttons; absolute devices (light guns) are preferred over
+ * relative mice. The first two devices aim players 1 and 2. */
+#define CHIHIRO_RAW_MAX 4
+
+typedef struct {
+    HANDLE   handle;
+    bool     used;
+    bool     absolute;
+    bool     virtual_desktop;
+    int      screen_x;
+    int      screen_y;
+    float    client_x;
+    float    client_y;
+    uint32_t buttons;
+    char     name[160];
+} ChihiroRawPointer;
+
+static ChihiroRawPointer chihiro_raw[CHIHIRO_RAW_MAX];
+static HWND chihiro_raw_hwnd;
+static SDL_Window *chihiro_raw_window;
+static bool chihiro_raw_registered;
+static bool chihiro_raw_hook_set;
+static bool chihiro_raw_logged_no_device;
+static int64_t chihiro_raw_next_try;
+static int chihiro_raw_last_player[2] = { -1, -1 };
+
+static int chihiro_raw_find(HANDLE handle)
+{
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used && chihiro_raw[i].handle == handle) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void chihiro_raw_set_name(ChihiroRawPointer *p)
+{
+    UINT size = 0;
+    if (GetRawInputDeviceInfoW(p->handle, RIDI_DEVICENAME, NULL, &size) == 0 &&
+        size > 0) {
+        wchar_t *wide = g_malloc(size * sizeof(wchar_t));
+        if (GetRawInputDeviceInfoW(p->handle, RIDI_DEVICENAME, wide, &size) > 0) {
+            WideCharToMultiByte(CP_UTF8, 0, wide, -1, p->name,
+                                sizeof(p->name), NULL, NULL);
+        }
+        g_free(wide);
+    }
+    if (!p->name[0]) {
+        snprintf(p->name, sizeof(p->name), "pointer");
+    }
+}
+
+static int chihiro_raw_alloc(HANDLE handle)
+{
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (!chihiro_raw[i].used) {
+            memset(&chihiro_raw[i], 0, sizeof(chihiro_raw[i]));
+            chihiro_raw[i].used = true;
+            chihiro_raw[i].handle = handle;
+            chihiro_raw_set_name(&chihiro_raw[i]);
+            RECT rect;
+            if (chihiro_raw_hwnd && GetClientRect(chihiro_raw_hwnd, &rect)) {
+                chihiro_raw[i].client_x = (rect.right - rect.left) / 2.0f;
+                chihiro_raw[i].client_y = (rect.bottom - rect.top) / 2.0f;
+            }
+            CHIHIRO_LOGF(JVS, "raw pointer %d: %s\n", i,
+                         chihiro_raw[i].name);
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void chihiro_raw_update(const RAWINPUT *raw)
+{
+    const RAWMOUSE *mouse = &raw->data.mouse;
+    int index = chihiro_raw_find(raw->header.hDevice);
+    if (index < 0) {
+        index = chihiro_raw_alloc(raw->header.hDevice);
+        if (index < 0) {
+            return;
+        }
+    }
+
+    ChihiroRawPointer *p = &chihiro_raw[index];
+    if (mouse->usFlags & MOUSE_MOVE_ABSOLUTE) {
+        p->absolute = true;
+        p->virtual_desktop = (mouse->usFlags & MOUSE_VIRTUAL_DESKTOP) != 0;
+        p->screen_x = mouse->lLastX;
+        p->screen_y = mouse->lLastY;
+    } else {
+        p->client_x += mouse->lLastX;
+        p->client_y += mouse->lLastY;
+    }
+
+    USHORT flags = mouse->usButtonFlags;
+    if (flags & RI_MOUSE_LEFT_BUTTON_DOWN) p->buttons |= 1u << 0;
+    if (flags & RI_MOUSE_LEFT_BUTTON_UP) p->buttons &= ~(1u << 0);
+    if (flags & RI_MOUSE_MIDDLE_BUTTON_DOWN) p->buttons |= 1u << 1;
+    if (flags & RI_MOUSE_MIDDLE_BUTTON_UP) p->buttons &= ~(1u << 1);
+    if (flags & RI_MOUSE_RIGHT_BUTTON_DOWN) p->buttons |= 1u << 2;
+    if (flags & RI_MOUSE_RIGHT_BUTTON_UP) p->buttons &= ~(1u << 2);
+    if (flags & RI_MOUSE_BUTTON_4_DOWN) p->buttons |= 1u << 3;
+    if (flags & RI_MOUSE_BUTTON_4_UP) p->buttons &= ~(1u << 3);
+    if (flags & RI_MOUSE_BUTTON_5_DOWN) p->buttons |= 1u << 4;
+    if (flags & RI_MOUSE_BUTTON_5_UP) p->buttons &= ~(1u << 4);
+}
+
+static bool chihiro_raw_message_hook(void *userdata, MSG *msg)
+{
+    (void)userdata;
+
+    if (msg->message == WM_INPUT_DEVICE_CHANGE) {
+        if (msg->wParam == GIDC_REMOVAL) {
+            int index = chihiro_raw_find((HANDLE)msg->lParam);
+            if (index >= 0) {
+                CHIHIRO_LOGF(JVS, "raw pointer removed: %s\n",
+                             chihiro_raw[index].name);
+                memset(&chihiro_raw[index], 0, sizeof(chihiro_raw[index]));
+            }
+        }
+        return true;
+    }
+
+    if (msg->message != WM_INPUT) {
+        return true;
+    }
+
+    RAWINPUT raw;
+    UINT size = sizeof(raw);
+    if (GetRawInputData((HRAWINPUT)msg->lParam, RID_INPUT, &raw, &size,
+                        sizeof(RAWINPUTHEADER)) != size) {
+        return true;
+    }
+    if (raw.header.dwType == RIM_TYPEMOUSE) {
+        chihiro_raw_update(&raw);
+    }
+    return true;
+}
+
+static void chihiro_raw_register(void)
+{
+    if (!chihiro_raw_hwnd) {
+        int count = 0;
+        SDL_Window **windows = SDL_GetWindows(&count);
+        if (windows && count > 0) {
+            SDL_Window *focus = SDL_GetKeyboardFocus();
+            chihiro_raw_window = focus ? focus : windows[0];
+            SDL_PropertiesID props = SDL_GetWindowProperties(chihiro_raw_window);
+            chihiro_raw_hwnd = (HWND)SDL_GetPointerProperty(
+                props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+        }
+        SDL_free(windows);
+    }
+
+    if (!chihiro_raw_hwnd) {
+        return;
+    }
+
+    if (!chihiro_raw_hook_set) {
+        SDL_SetWindowsMessageHook(chihiro_raw_message_hook, NULL);
+        chihiro_raw_hook_set = true;
+    }
+
+    RAWINPUTDEVICE device = {
+        .usUsagePage = 0x01,
+        .usUsage = 0x02,
+        .dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY,
+        .hwndTarget = chihiro_raw_hwnd,
+    };
+    if (!RegisterRawInputDevices(&device, 1, sizeof(device))) {
+        CHIHIRO_LOGF(JVS, "raw pointer: registration failed (%lu)\n",
+                     (unsigned long)GetLastError());
+        return;
+    }
+
+    chihiro_raw_registered = true;
+    CHIHIRO_LOGF(JVS, "raw pointer: registered on hwnd %p\n",
+                 (void *)chihiro_raw_hwnd);
+}
+
+static int chihiro_raw_absolute_count(void)
+{
+    int count = 0;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used && chihiro_raw[i].absolute) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static int chihiro_raw_choose(int player)
+{
+    int absolute = chihiro_raw_absolute_count();
+    int seen = 0;
+
+    if (player < 0 || player > 1) {
+        return -1;
+    }
+
+    if (player < absolute) {
+        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+            if (!chihiro_raw[i].used || !chihiro_raw[i].absolute) {
+                continue;
+            }
+            if (seen++ == player) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    int relative = player - absolute;
+    seen = 0;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (!chihiro_raw[i].used || chihiro_raw[i].absolute) {
+            continue;
+        }
+        if (seen++ == relative) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static bool chihiro_raw_has(int player)
+{
+    return g_config.chihiro.settings.pointer_devices &&
+           chihiro_raw_choose(player) >= 0;
+}
+
+static uint32_t chihiro_raw_buttons(int player)
+{
+    int index = chihiro_raw_choose(player);
+    return index >= 0 ? chihiro_raw[index].buttons : 0;
+}
+
+static void chihiro_raw_log_assignments(void)
+{
+    for (int player = 0; player < 2; player++) {
+        int index = chihiro_raw_choose(player);
+        if (index == chihiro_raw_last_player[player]) {
+            continue;
+        }
+        chihiro_raw_last_player[player] = index;
+        if (index >= 0) {
+            CHIHIRO_LOGF(JVS, "raw pointer P%d: %s (%s)\n", player + 1,
+                         chihiro_raw[index].name,
+                         chihiro_raw[index].absolute ? "absolute" : "relative");
+        } else {
+            CHIHIRO_LOGF(JVS, "raw pointer P%d: none\n", player + 1);
+        }
+    }
+}
+
+static void chihiro_raw_sync(void)
+{
+    if (!g_config.chihiro.settings.pointer_devices) {
+        return;
+    }
+
+    if (!chihiro_raw_registered) {
+        int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        if (now >= chihiro_raw_next_try) {
+            chihiro_raw_next_try = now + 2000;
+            chihiro_raw_register();
+        }
+    }
+
+    if (chihiro_raw_registered) {
+        chihiro_raw_log_assignments();
+        if (chihiro_raw_absolute_count() == 0 &&
+            chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
+            CHIHIRO_LOGF(JVS, "raw pointer: no pointer devices yet\n");
+            chihiro_raw_logged_no_device = true;
+        }
+    }
+}
+
+static bool chihiro_raw_aim(int player, ChihiroJVSState *jvs, int ax, int ay,
+                            bool reload)
+{
+    int index = chihiro_raw_choose(player);
+    if (index < 0) {
+        return false;
+    }
+
+    if (reload) {
+        jvs->analog[ax] = 0;
+        jvs->analog[ay] = 0;
+        return true;
+    }
+
+    if (!chihiro_raw_window) {
+        return false;
+    }
+
+    int width = 0, height = 0;
+    SDL_GetWindowSize(chihiro_raw_window, &width, &height);
+    if (width <= 0 || height <= 0) {
+        jvs->analog[ax] = 0x8000;
+        jvs->analog[ay] = 0x8000;
+        return true;
+    }
+
+    ChihiroRawPointer *p = &chihiro_raw[index];
+    float client_x, client_y;
+    if (p->absolute) {
+        int screen_x0 = 0, screen_y0 = 0;
+        int screen_w = GetSystemMetrics(SM_CXSCREEN);
+        int screen_h = GetSystemMetrics(SM_CYSCREEN);
+        if (p->virtual_desktop) {
+            screen_x0 = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            screen_y0 = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        }
+        int screen_x = screen_x0 + (int)((int64_t)p->screen_x * screen_w / 65535);
+        int screen_y = screen_y0 + (int)((int64_t)p->screen_y * screen_h / 65535);
+        POINT point = { screen_x, screen_y };
+        if (chihiro_raw_hwnd) {
+            ScreenToClient(chihiro_raw_hwnd, &point);
+        }
+        client_x = (float)point.x;
+        client_y = (float)point.y;
+    } else {
+        client_x = p->client_x;
+        client_y = p->client_y;
+        if (client_x < 0.0f) client_x = 0.0f;
+        if (client_y < 0.0f) client_y = 0.0f;
+        if (client_x > width - 1.0f) client_x = width - 1.0f;
+        if (client_y > height - 1.0f) client_y = height - 1.0f;
+    }
+
+    float vx, vy, vw, vh;
+    if (!xemu_input_get_display_viewport(&vx, &vy, &vw, &vh)) {
+        jvs->analog[ax] = 0x8000;
+        jvs->analog[ay] = 0x8000;
+        return true;
+    }
+
+    float nx = (client_x / (float)width - vx) / vw;
+    float ny = (client_y / (float)height - vy) / vh;
+    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
+        jvs->analog[ax] = 0;
+        jvs->analog[ay] = 0;
+    } else {
+        jvs->analog[ax] = (uint16_t)(nx * 0xFFFF);
+        jvs->analog[ay] = (uint16_t)(ny * 0xFFFF);
+    }
+    return true;
+}
+#else
+static void chihiro_raw_sync(void)
+{
+}
+
+static bool chihiro_raw_has(int player)
+{
+    (void)player;
+    return false;
+}
+
+static uint32_t chihiro_raw_buttons(int player)
+{
+    (void)player;
+    return 0;
+}
+
+static bool chihiro_raw_aim(int player, ChihiroJVSState *jvs, int ax, int ay,
+                            bool reload)
+{
+    (void)player;
+    (void)jvs;
+    (void)ax;
+    (void)ay;
+    (void)reload;
+    return false;
+}
+#endif
 
 /* Player 2's gun: the second pad's right stick or the aim keys move a
  * crosshair that stays where it is released. The stick is squared after its
@@ -1295,6 +1690,7 @@ static void xemu_input_update_chihiro(void)
     }
 
     chihiro_ffb_update(pad);
+    chihiro_raw_sync();
 
     uint8_t sw0 = 0;
     uint8_t sw1 = 0;
@@ -1310,6 +1706,13 @@ static void xemu_input_update_chihiro(void)
     case CONFIG_CHIHIRO_JVS_PROFILE_HOTD3:
     case CONFIG_CHIHIRO_JVS_PROFILE_VC3:
     case CONFIG_CHIHIRO_JVS_PROFILE_GS: {
+        bool p1_raw = chihiro_raw_has(0);
+        bool p2_raw = chihiro_raw_has(1);
+        uint32_t p1_buttons = p1_raw ? chihiro_raw_buttons(0) : mouse_buttons;
+        uint32_t p2_buttons = p2_raw ? chihiro_raw_buttons(1) : mouse_buttons;
+        bool p1_reload = p1_raw && (p1_buttons & 0x18) != 0;
+        bool p2_raw_reload = p2_raw && (p2_buttons & 0x18) != 0;
+
         int trigger = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
             ? jvs_cfg->hotd3.trigger
             : profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3
@@ -1322,18 +1725,19 @@ static void xemu_input_update_chihiro(void)
             ? jvs_cfg->vc3.pedal : jvs_cfg->gs.change;
 
         if (chihiro_key_down(kbd, trigger) ||
-            chihiro_mouse_button(trigger, mouse_buttons) ||
+            chihiro_mouse_button(trigger, p1_buttons) ||
             chihiro_trigger_u16(pad, CONTROLLER_AXIS_RTRIG) > 0x4000) {
             sw0 |= 0x02;
         }
         if (chihiro_key_down(kbd, body) ||
-            chihiro_mouse_button(body, mouse_buttons) ||
+            chihiro_mouse_button(body, p1_buttons) ||
             chihiro_pad_down(pad, CONTROLLER_BUTTON_A)) {
             sw1 |= 0x80;
         }
         if (chihiro_key_down(kbd, extra) ||
-            chihiro_mouse_button(extra, mouse_buttons) ||
-            chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) {
+            chihiro_mouse_button(extra, p1_buttons) ||
+            chihiro_pad_down(pad, CONTROLLER_BUTTON_B) ||
+            (p1_raw && (p1_buttons & 0x02) != 0)) {
             sw1 |= 0x40;
         }
         if (profile == CONFIG_CHIHIRO_JVS_PROFILE_GS) {
@@ -1347,7 +1751,9 @@ static void xemu_input_update_chihiro(void)
                 sw1 |= 0x20;
             }
         }
-        chihiro_gun_aim(jvs);
+        if (!chihiro_raw_aim(0, jvs, 0, 1, p1_reload)) {
+            chihiro_gun_aim(jvs, p1_reload);
+        }
 
         int p2_trigger = profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3
             ? p2_cfg->hotd3_trigger
@@ -1365,24 +1771,30 @@ static void xemu_input_update_chihiro(void)
                 ? p2_cfg->gs_reload : 0;
 
         if (chihiro_key_down(kbd, p2_trigger) ||
-            chihiro_mouse_button(p2_trigger, mouse_buttons) ||
-            chihiro_trigger_u16(pad2, CONTROLLER_AXIS_RTRIG) > 0x4000) {
+            chihiro_mouse_button(p2_trigger, p2_buttons) ||
+            chihiro_trigger_u16(pad2, CONTROLLER_AXIS_RTRIG) > 0x4000 ||
+            (p2_raw && (p2_buttons & 0x01) != 0)) {
             p2_sw0 |= 0x02;
         }
         if (chihiro_key_down(kbd, p2_body) ||
-            chihiro_mouse_button(p2_body, mouse_buttons) ||
-            chihiro_pad_down(pad2, CONTROLLER_BUTTON_A)) {
+            chihiro_mouse_button(p2_body, p2_buttons) ||
+            chihiro_pad_down(pad2, CONTROLLER_BUTTON_A) ||
+            (p2_raw && (p2_buttons & 0x04) != 0)) {
             p2_sw1 |= 0x80;
         }
         if (chihiro_key_down(kbd, p2_extra) ||
-            chihiro_mouse_button(p2_extra, mouse_buttons) ||
-            chihiro_pad_down(pad2, CONTROLLER_BUTTON_B)) {
+            chihiro_mouse_button(p2_extra, p2_buttons) ||
+            chihiro_pad_down(pad2, CONTROLLER_BUTTON_B) ||
+            (p2_raw && (p2_buttons & 0x02) != 0)) {
             p2_sw1 |= 0x40;
         }
 
-        bool p2_reload_down = chihiro_key_down(kbd, p2_reload) ||
+        bool p2_reload_down = p2_raw_reload ||
+            chihiro_key_down(kbd, p2_reload) ||
             chihiro_trigger_u16(pad2, CONTROLLER_AXIS_LTRIG) > 0x4000;
-        chihiro_gun_aim_p2(jvs, pad2, p2_cfg, p2_reload_down);
+        if (!chihiro_raw_aim(1, jvs, 2, 3, p2_reload_down)) {
+            chihiro_gun_aim_p2(jvs, pad2, p2_cfg, p2_reload_down);
+        }
 
         if (profile == CONFIG_CHIHIRO_JVS_PROFILE_GS) {
             static bool card_was_down_p2;

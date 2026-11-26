@@ -736,6 +736,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     private int _chihiroWheelAutocenterStrength = 50;
 
     [ObservableProperty]
+    private bool _chihiroPointerDevices;
+
+    [ObservableProperty]
     private int _chihiroP2AimSpeed = 100;
 
     [ObservableProperty]
@@ -991,6 +994,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroWheelWeight = settings.Chihiro.WheelWeight;
         ChihiroWheelAutocenter = settings.Chihiro.WheelAutocenter;
         ChihiroWheelAutocenterStrength = settings.Chihiro.WheelAutocenterStrength;
+        ChihiroPointerDevices = settings.Chihiro.PointerDevices;
         SelectedChihiroRegion = ChihiroRegionOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Chihiro.Region, StringComparison.Ordinal))
             ?? ChihiroRegionOptions.First(option => string.Equals(option.Key, "ex", StringComparison.Ordinal));
@@ -1145,6 +1149,7 @@ public sealed partial class SettingsViewModel : PageViewModel
                 WheelWeight = ChihiroWheelWeight,
                 WheelAutocenter = ChihiroWheelAutocenter,
                 WheelAutocenterStrength = ChihiroWheelAutocenterStrength,
+                PointerDevices = ChihiroPointerDevices,
             },
             RamMb = RamMb,
             Input = BuildInputSettings(),

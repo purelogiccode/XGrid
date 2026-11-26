@@ -245,6 +245,14 @@ large picture for the best aim. In gun games the mouse buttons belong to the
 gun, so the core's pop-up menu stays on **F2** (or the Guide button) and a
 double-click does not toggle fullscreen.
 
+On Windows, turn on **Separate gun pointers** in **Settings → System → Sega
+Chihiro** to read each light gun or mouse on its own. Absolute light guns are
+preferred: the first aims player 1 and the second player 2. Their left button
+fires, the right is body, the middle is change or pedal and the side buttons
+reload. Relative mice are tracked separately too, starting from the centre of
+the picture. With the setting off, the host cursor and second-gamepad paths
+above still apply.
+
 Ghost Squad and Maximum Tune use the emulated card readers. Press **C** (or X)
 to push player 1's card in hand into the reader, and **V** (or X on the second
 pad) for player 2; with no card it creates a blank one. The core keeps the card
@@ -289,9 +297,10 @@ force-feedback wheel, the event channel rumbles the first gamepad instead.
   the cabinet (stick, triggers, D-pad and face buttons); a second gamepad aims
   player 2's gun. The cabinet keys are editable in Settings, including the
   Gundam cockpit.
-- **Raw light guns are not exposed.** Player 1 aims with the host pointer and
-  player 2 with the second gamepad's right stick or the arrow keys; per-device
-  light-gun aiming is not mapped yet.
+- **Separate light guns are Windows-only for now.** Windows reads each mouse
+  or light gun through Raw Input when **Separate gun pointers** is on; other
+  platforms use the host pointer for player 1 and the second gamepad or arrow
+  keys for player 2.
 - **Chihiro audio is incomplete.** Upstream xemu's Chihiro audio emulation can
   produce silence or missing effects. The host audio backend and the Xbox path
   work; the Chihiro APU stream is a known upstream limitation, not a shell
