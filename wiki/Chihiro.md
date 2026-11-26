@@ -35,9 +35,16 @@ The converter writes a FATX netboot image and aliases a renamed executable
 
 Raw Redump/MAME GD-ROM sets need
 [chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot) with the
-game's MAME key `.zip` and its `.cue`/`.bin` or `.chd`. Put the resulting
-`.bin` in a library folder and launch it. XGrid bundles no keys, firmware or
-game data.
+game's MAME key `.zip` and its `.cue`/`.bin` or `.chd`:
+
+```text
+python chihiro-netboot.py "House of the Dead 3, The (World).cue" hotd3.zip -o output
+```
+
+Key sets: `hotd3.zip`, `outr2.zip`, `vcop3.zip`, `ghostsqu.zip`,
+`crtaxihr.zip`, `wangmid.zip`, `wangmid2.zip`, `ollie.zip`, `mj2.zip`,
+`mj3.zip`, `mj3evo.zip`. Put the resulting `.bin` in a library folder and
+launch it. XGrid bundles no keys, firmware or game data.
 
 ## Controls
 
@@ -62,6 +69,10 @@ yet.
 Click the game picture once after launch so the embedded core takes keyboard
 focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a
 shell page to return focus to XGrid.
+
+Boot-tested: Ghost Squad, OutRun 2, The House of the Dead III, Virtua Cop 3,
+Crazy Taxi High Roller, Ollie King and Wangan Midnight Maximum Tune 1/2. The
+MJ2/MJ3 conversions also select their cabinet profiles.
 
 ## Limits
 
