@@ -76,7 +76,9 @@ left-click fires, right-click is the body/action or reload button, and RT/A/B
 do the same on a gamepad. Leaving the picture reports the off-screen/reload
 position. Press **C** (or X) to insert a card; Ghost Squad and Maximum Tune
 create a blank card when none is in hand, and the core keeps it for later
-sessions. Force feedback is not exposed yet.
+sessions. In gun games the mouse buttons belong to the gun, so the core's
+pop-up menu stays on **F2** (or the Guide button) and a double-click does not
+toggle fullscreen. Force feedback is not exposed yet.
 
 Click the game picture once after launch so the embedded core takes keyboard
 focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a

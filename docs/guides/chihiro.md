@@ -152,7 +152,9 @@ In the gun games, move the host cursor over the picture to aim; the left mouse
 button fires, the right button is the body/action or reload button, and RT/A/B
 do the same on a gamepad. Moving off the picture reports the off-screen/reload
 position. The shell cursor is still visible, so use fullscreen or a large
-picture for the best aim.
+picture for the best aim. In gun games the mouse buttons belong to the gun, so
+the core's pop-up menu stays on **F2** (or the Guide button) and a double-click
+does not toggle fullscreen.
 
 Ghost Squad and Maximum Tune use the emulated card readers. Press **C** (or X)
 to push the card in hand into the reader; with no card it creates a blank one.

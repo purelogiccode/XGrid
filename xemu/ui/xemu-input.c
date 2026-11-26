@@ -623,11 +623,34 @@ static uint16_t chihiro_trigger_u16(ControllerState *pad, int axis)
     return (uint16_t)(value * 2);
 }
 
-/* A Chihiro binding in the 1000 range is a mouse button (1001 = left,
- * 1003 = right), the convention the Chihiro configuration uses. */
+/* The renderer publishes where the guest picture sits inside the window. */
+static float display_viewport_x;
+static float display_viewport_y;
+static float display_viewport_w;
+static float display_viewport_h;
+
+void xemu_input_set_display_viewport(float x, float y, float w, float h)
+{
+    display_viewport_x = x;
+    display_viewport_y = y;
+    display_viewport_w = w;
+    display_viewport_h = h;
+}
+
+bool xemu_input_get_display_viewport(float *x, float *y, float *w, float *h)
+{
+    *x = display_viewport_x;
+    *y = display_viewport_y;
+    *w = display_viewport_w;
+    *h = display_viewport_h;
+    return display_viewport_w > 0 && display_viewport_h > 0;
+}
+
+/* A Chihiro binding in the 1000 range is 1000 plus SDL's button number:
+ * 1001 = left, 1003 = right. SDL's button mask uses bit (button - 1). */
 static bool chihiro_mouse_button(int binding, uint32_t buttons)
 {
-    int index = binding - 1000;
+    int index = binding - 1001;
     return index >= 0 && index < 8 && (buttons & (1u << index)) != 0;
 }
 
@@ -638,30 +661,46 @@ static void chihiro_gun_aim(ChihiroJVSState *jvs)
 {
     SDL_Window *window = SDL_GetMouseFocus();
     if (!window) {
-        window = SDL_GetKeyboardFocus();
-    }
-    float mouse_x = 0.5f, mouse_y = 0.5f;
-    int width = 0, height = 0;
-    if (window) {
-        SDL_GetMouseState(&mouse_x, &mouse_y);
-        SDL_GetWindowSize(window, &width, &height);
+        /* Outside the picture: the games read (0,0) as off-screen/reload. */
+        jvs->analog[0] = 0;
+        jvs->analog[1] = 0;
+        return;
     }
 
-    if (width <= 0 || height <= 0) {
+    float mouse_x = 0.5f, mouse_y = 0.5f;
+    int width = 0, height = 0;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    SDL_GetWindowSize(window, &width, &height);
+
+    float vx, vy, vw, vh;
+    if (width <= 0 || height <= 0 ||
+        !xemu_input_get_display_viewport(&vx, &vy, &vw, &vh)) {
         jvs->analog[0] = 0x8000;
         jvs->analog[1] = 0x8000;
         return;
     }
 
-    float nx = mouse_x / (float)width;
-    float ny = mouse_y / (float)height;
-    if (nx < 0.01f || nx > 0.99f || ny < 0.01f || ny > 0.99f) {
+    float nx = (mouse_x / (float)width - vx) / vw;
+    float ny = (mouse_y / (float)height - vy) / vh;
+    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
         jvs->analog[0] = 0;
         jvs->analog[1] = 0;
     } else {
         jvs->analog[0] = (uint16_t)(nx * 0xFFFF);
         jvs->analog[1] = (uint16_t)(ny * 0xFFFF);
     }
+}
+
+bool xemu_input_chihiro_gun_active(void)
+{
+    if (!xemu_chihiro_mode()) {
+        return false;
+    }
+
+    int profile = chihiro_detected_game_profile();
+    return profile == CONFIG_CHIHIRO_JVS_PROFILE_HOTD3 ||
+           profile == CONFIG_CHIHIRO_JVS_PROFILE_VC3 ||
+           profile == CONFIG_CHIHIRO_JVS_PROFILE_GS;
 }
 
 /* Keyboard-only JVS state. Gamepads and wheels can be mapped later through the
