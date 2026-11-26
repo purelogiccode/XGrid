@@ -146,9 +146,9 @@ mahjong games and need a linked cabinet or server to go further.
 
 ## Controls
 
-The core's default Chihiro keyboard map is below. The shell does not expose a
-Chihiro key editor yet, and it regenerates `xemu.toml` on every launch, so the
-defaults below are what a shell launch uses.
+The cabinet's default keyboard map is below. Change it in **Settings → Input →
+Sega Chihiro cabinet keys**: click a binding, press the new key, and the shell
+writes it into `[chihiro.jvs]` at launch. The gamepad map is fixed.
 
 Click the game picture once after launch: the embedded core takes keyboard
 focus for the cabinet (the Xbox path keeps focus in the shell for its pad
@@ -195,8 +195,9 @@ it up again. Ghost Squad's second reader is not exposed by the shell yet.
   DIMM; it does not emulate the GD-ROM drive. Convert the disc first, in XGrid,
   using the game's key.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
-  the cabinet (stick, triggers, D-pad and face buttons). Per-game bindings and
-  force feedback are still follow-ups.
+  the cabinet (stick, triggers, D-pad and face buttons). The cabinet keys are
+  editable in Settings; Gundam-specific bindings and force feedback are still
+  follow-ups.
 - **The second card reader** is present in the core but not exposed by the
   shell. Player 1's card insert works.
 - **Cabinet-link save states are disabled.** The core refuses snapshots while

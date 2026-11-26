@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using XGrid.Core.Xemu;
 
 namespace XGrid.Frontend.Avalonia.Models;
 
@@ -35,6 +36,12 @@ public sealed class ChihiroSettings
     /// board's Ethernet between XGrid instances running the same game.
     /// </summary>
     public ChihiroLinkSettings Link { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the cabinet key bindings. Values are SDL scancodes; the
+    /// Settings input tab edits them.
+    /// </summary>
+    public ChihiroJvsSettings Jvs { get; set; } = new();
 
     /// <summary>The Chihiro flash ROM file name.</summary>
     public const string BiosFileName = "chihiro_xbox_bios.bin";
@@ -78,6 +85,7 @@ public sealed class ChihiroSettings
             Enabled = Enabled,
             FirmwareDirectory = FirmwareDirectory,
             Link = Link.Clone(),
+            Jvs = Jvs.Clone(),
         };
     }
 
@@ -87,6 +95,8 @@ public sealed class ChihiroSettings
         FirmwareDirectory = (FirmwareDirectory ?? string.Empty).Trim();
         Link ??= new ChihiroLinkSettings();
         Link.Normalize();
+        Jvs ??= new ChihiroJvsSettings();
+        Jvs.Normalize();
     }
 }
 

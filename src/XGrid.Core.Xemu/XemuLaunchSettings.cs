@@ -72,6 +72,9 @@ public sealed record XemuLaunchSettings
     /// </summary>
     public string ChihiroNetFirmwarePath { get; init; } = string.Empty;
 
+    /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
+    public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
+
     /// <summary>Gets a value indicating whether the linked-cabinet relay runs.</summary>
     public bool ChihiroLinkEnabled { get; init; }
 

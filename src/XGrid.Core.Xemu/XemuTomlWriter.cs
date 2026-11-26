@@ -116,6 +116,38 @@ public static class XemuTomlWriter
                 AppendPath(text, "net_firmware_path", settings.ChihiroNetFirmwarePath);
             }
 
+            ChihiroJvsSettings jvs = settings.ChihiroJvs;
+            text.Append('\n');
+            text.Append("[chihiro.jvs]\n");
+            AppendInt(text, "start", jvs.Start);
+            AppendInt(text, "service", jvs.Service);
+            AppendInt(text, "coin", jvs.Coin);
+            AppendInt(text, "test", jvs.Test);
+            AppendInt(text, "card_in", jvs.CardIn);
+            AppendInt(text, "steer_left", jvs.SteerLeft);
+            AppendInt(text, "steer_right", jvs.SteerRight);
+            AppendInt(text, "gas", jvs.Gas);
+            AppendInt(text, "brake", jvs.Brake);
+            AppendInt(text, "gear_up", jvs.GearUp);
+            AppendInt(text, "gear_down", jvs.GearDown);
+
+            text.Append('\n');
+            text.Append("[chihiro.jvs.hotd3]\n");
+            AppendInt(text, "trigger", jvs.Hotd3Trigger);
+            AppendInt(text, "body_button", jvs.Hotd3Body);
+
+            text.Append('\n');
+            text.Append("[chihiro.jvs.vc3]\n");
+            AppendInt(text, "trigger", jvs.Vc3Trigger);
+            AppendInt(text, "body_button", jvs.Vc3Body);
+            AppendInt(text, "pedal", jvs.Vc3Pedal);
+
+            text.Append('\n');
+            text.Append("[chihiro.jvs.gs]\n");
+            AppendInt(text, "trigger", jvs.GsTrigger);
+            AppendInt(text, "body_button", jvs.GsBody);
+            AppendInt(text, "change", jvs.GsChange);
+
             if (settings.ChihiroLinkEnabled)
             {
                 text.Append('\n');
@@ -204,6 +236,13 @@ public static class XemuTomlWriter
         }
 
         text.Append(key).Append(" = ").Append(String(value)).Append('\n');
+    }
+
+    private static void AppendInt(StringBuilder text, string key, int value)
+    {
+        text.Append(key).Append(" = ")
+            .Append(value.ToString(CultureInfo.InvariantCulture))
+            .Append('\n');
     }
 
     private static string Bool(bool value)

@@ -901,6 +901,82 @@
                         ToolTip.Tip="Restore the default keyboard and gamepad bindings" />
               </StackPanel>
             </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Sega Chihiro cabinet keys" Classes="h3" />
+                  <TextBlock Text="Keyboard and mouse bindings for the cabinet. Click a key button, then press the new key; Esc cancels. The gun actions show their mouse defaults until changed."
+                             Classes="hint" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Classes="divider" />
+
+                <TextBlock Text="System" Classes="label" />
+                <ItemsControl ItemsSource="{Binding ChihiroSystemBindings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ChihiroBindingItem">
+                      <Grid ColumnDefinitions="170,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding ActionName}" Classes="caption" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="ghost"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                Command="{Binding CaptureCommand}" Content="{Binding KeysDisplay}"
+                                ToolTip.Tip="Click, then press the new key; Esc cancels" />
+                        <Button Grid.Column="2" Classes="subtle icon" Width="32" Height="32"
+                                Command="{Binding ClearCommand}" ToolTip.Tip="Clear binding">
+                          <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border Classes="divider" />
+
+                <TextBlock Text="Driving" Classes="label" />
+                <ItemsControl ItemsSource="{Binding ChihiroDrivingBindings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ChihiroBindingItem">
+                      <Grid ColumnDefinitions="170,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding ActionName}" Classes="caption" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="ghost"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                Command="{Binding CaptureCommand}" Content="{Binding KeysDisplay}"
+                                ToolTip.Tip="Click, then press the new key; Esc cancels" />
+                        <Button Grid.Column="2" Classes="subtle icon" Width="32" Height="32"
+                                Command="{Binding ClearCommand}" ToolTip.Tip="Clear binding">
+                          <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border Classes="divider" />
+
+                <TextBlock Text="Gun games" Classes="label" />
+                <ItemsControl ItemsSource="{Binding ChihiroGunBindings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ChihiroBindingItem">
+                      <Grid ColumnDefinitions="170,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding ActionName}" Classes="caption" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="ghost"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                Command="{Binding CaptureCommand}" Content="{Binding KeysDisplay}"
+                                ToolTip.Tip="Click, then press the new key; Esc cancels" />
+                        <Button Grid.Column="2" Classes="subtle icon" Width="32" Height="32"
+                                Command="{Binding ClearCommand}" ToolTip.Tip="Clear binding">
+                          <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button Classes="ghost" Command="{Binding ResetChihiroKeysCommand}"
+                        HorizontalAlignment="Left" Content="Reset cabinet keys"
+                        ToolTip.Tip="Restore the default Chihiro cabinet bindings" />
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

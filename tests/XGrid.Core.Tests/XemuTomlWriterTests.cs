@@ -69,6 +69,30 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Build_WritesTheChihiroJvsBindings()
+    {
+        XemuLaunchSettings settings = CreateSettings(128) with
+        {
+            Machine = XemuLaunchSettings.MachineChihiro,
+            ChihiroJvs = new ChihiroJvsSettings
+            {
+                Coin = 35,
+                Hotd3Trigger = 1003,
+                GsChange = 15,
+            },
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains("[chihiro.jvs]", toml, StringComparison.Ordinal);
+        Assert.Contains("coin = 35", toml, StringComparison.Ordinal);
+        Assert.Contains("[chihiro.jvs.hotd3]", toml, StringComparison.Ordinal);
+        Assert.Contains("trigger = 1003", toml, StringComparison.Ordinal);
+        Assert.Contains("[chihiro.jvs.gs]", toml, StringComparison.Ordinal);
+        Assert.Contains("change = 15", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_WritesTheChihiroCabinetLink()
     {
         XemuLaunchSettings settings = CreateSettings(128) with

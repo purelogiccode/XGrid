@@ -140,6 +140,22 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_CopiesTheCabinetKeys()
+    {
+        EmulatorSettings settings = Settings();
+        settings.Chihiro.Jvs.Coin = 35;
+        settings.Chihiro.Jvs.GsTrigger = 1003;
+        string image = Path.Combine(_root, "media", "game.bin");
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, image, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(35, launch.ChihiroJvs.Coin);
+        Assert.Equal(1003, launch.ChihiroJvs.GsTrigger);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
     public void DescribeProblem_ReportsMissingChihiroFirmware()
     {
         string directory = Path.Combine(_root, "empty-chihiro");

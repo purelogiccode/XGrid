@@ -320,6 +320,84 @@ public sealed class KeyboardBindingItem : ObservableObject
     }
 }
 
+/// <summary>One Chihiro cabinet binding row: an action and its SDL scancode.</summary>
+public sealed class ChihiroBindingItem : ObservableObject
+{
+    private readonly Func<int> _get;
+    private readonly Action<int> _set;
+    private bool _isCapturing;
+
+    /// <summary>Creates a cabinet binding row.</summary>
+    /// <param name="actionName">Display label.</param>
+    /// <param name="get">Reads the current binding.</param>
+    /// <param name="set">Stores a new binding.</param>
+    /// <param name="capture">Starts key capture for this row.</param>
+    public ChihiroBindingItem(
+        string actionName,
+        Func<int> get,
+        Action<int> set,
+        Action<ChihiroBindingItem> capture)
+    {
+        ArgumentNullException.ThrowIfNull(capture);
+        ActionName = actionName;
+        _get = get;
+        _set = set;
+        CaptureCommand = new RelayCommand(() => capture(this));
+        ClearCommand = new RelayCommand(() => Reset(0));
+    }
+
+    /// <summary>Gets the display label.</summary>
+    public string ActionName { get; }
+
+    /// <summary>Gets the current binding.</summary>
+    public int Scancode => _get();
+
+    /// <summary>Gets the display text for the binding.</summary>
+    public string KeysDisplay => _isCapturing ? "Press a key..." : ChihiroKeys.Describe(_get());
+
+    /// <summary>Gets or sets a value indicating whether the next key press binds this row.</summary>
+    public bool IsCapturing
+    {
+        get => _isCapturing;
+        set
+        {
+            if (SetProperty(ref _isCapturing, value))
+            {
+                OnPropertyChanged(nameof(KeysDisplay));
+            }
+        }
+    }
+
+    /// <summary>Gets the command that starts key capture.</summary>
+    public IRelayCommand CaptureCommand { get; }
+
+    /// <summary>Gets the command that clears the binding.</summary>
+    public IRelayCommand ClearCommand { get; }
+
+    /// <summary>Stores a captured physical key.</summary>
+    /// <param name="key">Captured key.</param>
+    public void Capture(PhysicalKey key)
+    {
+        int scancode = ChihiroKeys.ToScancode(key);
+        if (scancode != 0)
+        {
+            _set(scancode);
+            OnPropertyChanged(nameof(KeysDisplay));
+        }
+
+        IsCapturing = false;
+    }
+
+    /// <summary>Sets a binding directly.</summary>
+    /// <param name="scancode">SDL scancode, mouse binding or 0.</param>
+    public void Reset(int scancode)
+    {
+        _set(scancode);
+        IsCapturing = false;
+        OnPropertyChanged(nameof(KeysDisplay));
+    }
+}
+
 /// <summary>One gamepad binding row: an action and its physical source.</summary>
 public sealed class GamepadBindingItem : ObservableObject
 {
@@ -650,6 +728,17 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the keyboard binding rows.</summary>
     public ObservableCollection<KeyboardBindingItem> KeyboardBindings { get; } = [];
 
+    private ChihiroJvsSettings _chihiroJvs = new();
+
+    /// <summary>Gets the Chihiro system-key rows.</summary>
+    public ObservableCollection<ChihiroBindingItem> ChihiroSystemBindings { get; } = [];
+
+    /// <summary>Gets the Chihiro driving-key rows.</summary>
+    public ObservableCollection<ChihiroBindingItem> ChihiroDrivingBindings { get; } = [];
+
+    /// <summary>Gets the Chihiro gun-key rows.</summary>
+    public ObservableCollection<ChihiroBindingItem> ChihiroGunBindings { get; } = [];
+
     /// <summary>Gets the gamepad binding rows.</summary>
     public ObservableCollection<GamepadBindingItem> GamepadBindings { get; } = [];
 
@@ -659,8 +748,14 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the row currently waiting for a key, or null.</summary>
     public KeyboardBindingItem? CapturingBinding => KeyboardBindings.FirstOrDefault(item => item.IsCapturing);
 
+    /// <summary>Gets the Chihiro row currently waiting for a key, or null.</summary>
+    public ChihiroBindingItem? CapturingChihiroBinding => ChihiroSystemBindings
+        .Concat(ChihiroDrivingBindings)
+        .Concat(ChihiroGunBindings)
+        .FirstOrDefault(item => item.IsCapturing);
+
     /// <summary>Gets a value indicating whether a key capture is in progress.</summary>
-    public bool IsCapturingKey => CapturingBinding is not null;
+    public bool IsCapturingKey => CapturingBinding is not null || CapturingChihiroBinding is not null;
 
     /// <summary>Gets the per-title overrides being edited.</summary>
     public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = [];
@@ -790,6 +885,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroLinkCabinet = link.Cabinet;
         ChihiroLinkHost = link.Host;
         ChihiroLinkPort = link.Port;
+        _chihiroJvs = (settings.Chihiro.Jvs ?? new ChihiroJvsSettings()).Clone();
+        RebuildChihiroBindings();
         RamMb = settings.RamMb;
         LoadInput(settings.Input);
 
@@ -910,6 +1007,7 @@ public sealed partial class SettingsViewModel : PageViewModel
                     Host = ChihiroLinkHost.Trim(),
                     Port = ChihiroLinkPort,
                 },
+                Jvs = _chihiroJvs.Clone(),
             },
             RamMb = RamMb,
             Input = BuildInputSettings(),
@@ -1202,6 +1300,96 @@ public sealed partial class SettingsViewModel : PageViewModel
         return input;
     }
 
+    private void RebuildChihiroBindings()
+    {
+        ChihiroSystemBindings.Clear();
+        ChihiroDrivingBindings.Clear();
+        ChihiroGunBindings.Clear();
+
+        AddChihiroBinding(ChihiroSystemBindings, "Start",
+            () => _chihiroJvs.Start, value => _chihiroJvs.Start = value);
+        AddChihiroBinding(ChihiroSystemBindings, "Service",
+            () => _chihiroJvs.Service, value => _chihiroJvs.Service = value);
+        AddChihiroBinding(ChihiroSystemBindings, "Coin",
+            () => _chihiroJvs.Coin, value => _chihiroJvs.Coin = value);
+        AddChihiroBinding(ChihiroSystemBindings, "Test",
+            () => _chihiroJvs.Test, value => _chihiroJvs.Test = value);
+        AddChihiroBinding(ChihiroSystemBindings, "Card in",
+            () => _chihiroJvs.CardIn, value => _chihiroJvs.CardIn = value);
+
+        AddChihiroBinding(ChihiroDrivingBindings, "Steer left",
+            () => _chihiroJvs.SteerLeft, value => _chihiroJvs.SteerLeft = value);
+        AddChihiroBinding(ChihiroDrivingBindings, "Steer right",
+            () => _chihiroJvs.SteerRight, value => _chihiroJvs.SteerRight = value);
+        AddChihiroBinding(ChihiroDrivingBindings, "Gas",
+            () => _chihiroJvs.Gas, value => _chihiroJvs.Gas = value);
+        AddChihiroBinding(ChihiroDrivingBindings, "Brake",
+            () => _chihiroJvs.Brake, value => _chihiroJvs.Brake = value);
+        AddChihiroBinding(ChihiroDrivingBindings, "Gear up",
+            () => _chihiroJvs.GearUp, value => _chihiroJvs.GearUp = value);
+        AddChihiroBinding(ChihiroDrivingBindings, "Gear down",
+            () => _chihiroJvs.GearDown, value => _chihiroJvs.GearDown = value);
+
+        AddChihiroBinding(ChihiroGunBindings, "HotD3 trigger",
+            () => _chihiroJvs.Hotd3Trigger, value => _chihiroJvs.Hotd3Trigger = value);
+        AddChihiroBinding(ChihiroGunBindings, "HotD3 body",
+            () => _chihiroJvs.Hotd3Body, value => _chihiroJvs.Hotd3Body = value);
+        AddChihiroBinding(ChihiroGunBindings, "Virtua Cop 3 trigger",
+            () => _chihiroJvs.Vc3Trigger, value => _chihiroJvs.Vc3Trigger = value);
+        AddChihiroBinding(ChihiroGunBindings, "Virtua Cop 3 body",
+            () => _chihiroJvs.Vc3Body, value => _chihiroJvs.Vc3Body = value);
+        AddChihiroBinding(ChihiroGunBindings, "Virtua Cop 3 pedal",
+            () => _chihiroJvs.Vc3Pedal, value => _chihiroJvs.Vc3Pedal = value);
+        AddChihiroBinding(ChihiroGunBindings, "Ghost Squad trigger",
+            () => _chihiroJvs.GsTrigger, value => _chihiroJvs.GsTrigger = value);
+        AddChihiroBinding(ChihiroGunBindings, "Ghost Squad body",
+            () => _chihiroJvs.GsBody, value => _chihiroJvs.GsBody = value);
+        AddChihiroBinding(ChihiroGunBindings, "Ghost Squad change",
+            () => _chihiroJvs.GsChange, value => _chihiroJvs.GsChange = value);
+
+        OnPropertyChanged(nameof(CapturingChihiroBinding));
+        OnPropertyChanged(nameof(IsCapturingKey));
+    }
+
+    private void AddChihiroBinding(
+        ObservableCollection<ChihiroBindingItem> rows,
+        string name,
+        Func<int> get,
+        Action<int> set)
+    {
+        rows.Add(new ChihiroBindingItem(name, get, set, BeginChihiroCapture));
+    }
+
+    private void BeginChihiroCapture(ChihiroBindingItem item)
+    {
+        foreach (KeyboardBindingItem binding in KeyboardBindings)
+        {
+            binding.IsCapturing = false;
+        }
+
+        foreach (ChihiroBindingItem binding in ChihiroSystemBindings
+                     .Concat(ChihiroDrivingBindings)
+                     .Concat(ChihiroGunBindings))
+        {
+            binding.IsCapturing = false;
+        }
+
+        item.IsCapturing = true;
+        OnPropertyChanged(nameof(CapturingBinding));
+        OnPropertyChanged(nameof(CapturingChihiroBinding));
+        OnPropertyChanged(nameof(IsCapturingKey));
+        Shell.ShowToast("Press a key for " + item.ActionName + ". Esc cancels.");
+    }
+
+    /// <summary>Public command: restores the cabinet keys to the core defaults.</summary>
+    [RelayCommand]
+    private void ResetChihiroKeys()
+    {
+        _chihiroJvs = new ChihiroJvsSettings();
+        RebuildChihiroBindings();
+        Shell.ShowToast("Chihiro cabinet keys reset.");
+    }
+
     private void BeginCapture(KeyboardBindingItem item)
     {
         foreach (KeyboardBindingItem binding in KeyboardBindings)
@@ -1209,17 +1397,43 @@ public sealed partial class SettingsViewModel : PageViewModel
             binding.IsCapturing = false;
         }
 
+        foreach (ChihiroBindingItem binding in ChihiroSystemBindings
+                     .Concat(ChihiroDrivingBindings)
+                     .Concat(ChihiroGunBindings))
+        {
+            binding.IsCapturing = false;
+        }
+
         item.IsCapturing = true;
         OnPropertyChanged(nameof(CapturingBinding));
+        OnPropertyChanged(nameof(CapturingChihiroBinding));
         OnPropertyChanged(nameof(IsCapturingKey));
         Shell.ShowToast("Press a key for " + item.ActionName + ". Esc cancels.");
     }
 
     /// <summary>Captures the next key while a binding row is armed.</summary>
     /// <param name="key">Pressed key.</param>
+    /// <param name="physicalKey">Physical key, used for cabinet scancodes.</param>
     /// <returns>True when the key was consumed by the capture.</returns>
-    public bool CaptureKey(Key key)
+    public bool CaptureKey(Key key, PhysicalKey physicalKey)
     {
+        ChihiroBindingItem? cabinet = CapturingChihiroBinding;
+        if (cabinet is not null)
+        {
+            if (key == Key.Escape)
+            {
+                cabinet.IsCapturing = false;
+            }
+            else
+            {
+                cabinet.Capture(physicalKey);
+            }
+
+            OnPropertyChanged(nameof(CapturingChihiroBinding));
+            OnPropertyChanged(nameof(IsCapturingKey));
+            return true;
+        }
+
         KeyboardBindingItem? item = CapturingBinding;
         if (item is null)
         {
