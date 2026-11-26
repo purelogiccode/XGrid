@@ -1149,7 +1149,7 @@ index 7900f869..8d5a18d0 100644
      for (int i = 1; i < argc; i++) {
          if (argv[i] != NULL) {
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 54595e1b..19b38058 100644
+index 54595e1b..e70d4b81 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
 @@ -36,6 +36,8 @@
@@ -1387,7 +1387,7 @@ index 54595e1b..19b38058 100644
 +        sw0 |= 0x80;
 +    }
 +    if (chihiro_key_down(kbd, jvs_cfg->service) ||
-+        chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_DOWN)) {
++        chihiro_pad_down(pad, CONTROLLER_BUTTON_LSTICK)) {
 +        sw0 |= 0x40;
 +    }
 +
@@ -1395,7 +1395,7 @@ index 54595e1b..19b38058 100644
 +    jvs->player_switches[0][1] = sw1;
 +    jvs->system_switches =
 +        (chihiro_key_down(kbd, jvs_cfg->test) ||
-+         chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_UP)) ? 0x80 : 0;
++         chihiro_pad_down(pad, CONTROLLER_BUTTON_RSTICK)) ? 0x80 : 0;
 +
 +    static bool coin_was_down;
 +    bool coin = chihiro_key_down(kbd, jvs_cfg->coin) ||
