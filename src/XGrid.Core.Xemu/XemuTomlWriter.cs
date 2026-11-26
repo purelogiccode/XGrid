@@ -150,6 +150,28 @@ public static class XemuTomlWriter
             AppendInt(text, "body_button", jvs.GsBody);
             AppendInt(text, "change", jvs.GsChange);
 
+            ChihiroJvsP2Settings p2 = settings.ChihiroJvsP2;
+            text.Append('\n');
+            text.Append("[chihiro.jvs_p2]\n");
+            AppendInt(text, "start", p2.Start);
+            AppendInt(text, "coin", p2.Coin);
+            AppendInt(text, "card_in", p2.CardIn);
+            AppendInt(text, "aim_left", p2.AimLeft);
+            AppendInt(text, "aim_right", p2.AimRight);
+            AppendInt(text, "aim_up", p2.AimUp);
+            AppendInt(text, "aim_down", p2.AimDown);
+            AppendInt(text, "aim_speed", p2.AimSpeed);
+            AppendInt(text, "hotd3_trigger", p2.Hotd3Trigger);
+            AppendInt(text, "hotd3_body_button", p2.Hotd3Body);
+            AppendInt(text, "vc3_trigger", p2.Vc3Trigger);
+            AppendInt(text, "vc3_body_button", p2.Vc3Body);
+            AppendInt(text, "vc3_pedal", p2.Vc3Pedal);
+            AppendInt(text, "vc3_reload", p2.Vc3Reload);
+            AppendInt(text, "gs_trigger", p2.GsTrigger);
+            AppendInt(text, "gs_body_button", p2.GsBody);
+            AppendInt(text, "gs_change", p2.GsChange);
+            AppendInt(text, "gs_reload", p2.GsReload);
+
             text.Append('\n');
             text.Append("[chihiro.settings]\n");
             text.Append("freeplay = ").Append(Bool(settings.ChihiroFreePlay)).Append('\n');

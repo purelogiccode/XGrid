@@ -97,14 +97,18 @@ The keys can be changed in **Settings -> Input -> Sega Chihiro cabinet keys**.
 
 The game's cabinet profile is detected from its executable; gun, driving,
 Ollie King and Gundam layouts are supported. The first detected gamepad drives
-the cabinet. In gun games, move the host cursor over the picture to aim;
-left-click fires, right-click is the body/action or reload button, and RT/A/B
-do the same on a gamepad. Leaving the picture reports the off-screen/reload
-position. Press **C** (or X) to insert a card; Ghost Squad and Maximum Tune
-create a blank card when none is in hand, and the core keeps it for later
+the cabinet, and a second gamepad aims player 2's gun in the gun games. In gun
+games, move the host cursor over the picture to aim player 1; left-click fires,
+right-click is the body/action or reload button, and RT/A/B do the same on a
+gamepad. Leaving the picture reports the off-screen/reload position. Player 2
+aims with the second pad's right stick or the arrow keys; RT fires, A is body,
+B is change or pedal and LT reloads. Press **C** (or X) to insert player 1's
+card and **V** (or X on the second pad) for player 2's; Ghost Squad and Maximum
+Tune create a blank card when none is in hand, and the core keeps it for later
 sessions. In gun games the mouse buttons belong to the gun, so the core's
 pop-up menu stays on **F2** (or the Guide button) and a double-click does not
-toggle fullscreen. Force feedback is not exposed yet.
+toggle fullscreen. Force feedback rumbles the first gamepad from the drive
+board and is scaled in Settings.
 
 Click the game picture once after launch so the embedded core takes keyboard
 focus. Press **5** for a coin and **Enter** to start. Click the toolbar or a
@@ -120,7 +124,7 @@ network-firmware check with `ver1305.bin` and then wait for their own server.
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
 - Per-game bindings are editable in Settings; Gundam-specific bindings,
-  steering-wheel haptics and the second card reader are not exposed yet.
+  steering-wheel haptics and raw light-gun aiming are not exposed yet.
 - Chihiro audio is incomplete in upstream xemu; some games are silent or have
   missing effects. The host backend and Xbox audio path are not at fault.
 - Linked cabinets are exposed in Settings; save states are disabled while the

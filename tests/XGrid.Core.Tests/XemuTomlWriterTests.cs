@@ -111,6 +111,34 @@ public sealed class XemuTomlWriterTests
     }
 
     [Fact]
+    public void Build_WritesTheChihiroPlayer2Bindings()
+    {
+        XemuLaunchSettings settings = CreateSettings(128) with
+        {
+            Machine = XemuLaunchSettings.MachineChihiro,
+            ChihiroJvsP2 = new ChihiroJvsP2Settings
+            {
+                Start = 89,
+                Coin = 91,
+                CardIn = 20,
+                AimSpeed = 125,
+                GsTrigger = 1003,
+                GsReload = 44,
+            },
+        };
+
+        string toml = XemuTomlWriter.Build(settings);
+
+        Assert.Contains("[chihiro.jvs_p2]", toml, StringComparison.Ordinal);
+        Assert.Contains("start = 89", toml, StringComparison.Ordinal);
+        Assert.Contains("coin = 91", toml, StringComparison.Ordinal);
+        Assert.Contains("card_in = 20", toml, StringComparison.Ordinal);
+        Assert.Contains("aim_speed = 125", toml, StringComparison.Ordinal);
+        Assert.Contains("gs_trigger = 1003", toml, StringComparison.Ordinal);
+        Assert.Contains("gs_reload = 44", toml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_WritesTheChihiroCabinetLink()
     {
         XemuLaunchSettings settings = CreateSettings(128) with

@@ -96,6 +96,9 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
     public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
 
+    /// <summary>Gets the player-2 cabinet key, mouse and aim bindings.</summary>
+    public ChihiroJvsP2Settings ChihiroJvsP2 { get; init; } = new();
+
     /// <summary>Gets a value indicating whether the linked-cabinet relay runs.</summary>
     public bool ChihiroLinkEnabled { get; init; }
 
@@ -313,6 +316,11 @@ public sealed record XemuLaunchSettings
             if (ChihiroFfbStrength is < 0 or > 200)
             {
                 errors.Add($"Chihiro force feedback must be 0 to 200%, not {ChihiroFfbStrength}%.");
+            }
+
+            if (ChihiroJvsP2.AimSpeed is < 0 or > 400)
+            {
+                errors.Add($"Player 2's aim speed must be 0 to 400%, not {ChihiroJvsP2.AimSpeed}%.");
             }
         }
         else
