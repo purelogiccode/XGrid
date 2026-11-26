@@ -12,8 +12,8 @@ New files (whole files, not shown as hunks):
   hw/xbox/chihiro/*.c, *.h and meson.build
 
 The diff below covers the edits to the existing xemu tree, including the OHCI
-enumeration hooks, the keyboard/gamepad JVS mapping and the pointer aim for the
-gun games. It applies on top of the XGrid 0.8.139 tree with patches 0001-0017.
+enumeration hooks, the keyboard/gamepad/pointer JVS mapping and the gun aim.
+It applies on top of the XGrid 0.8.139 tree with patches 0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
 index 34b1b2a3..5f3be43e 100644
 --- a/xemu/block/meson.build
@@ -1224,7 +1224,7 @@ index 7900f869..8d5a18d0 100644
      for (int i = 1; i < argc; i++) {
          if (argv[i] != NULL) {
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 54595e1b..760eac12 100644
+index 54595e1b..127b312a 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
 @@ -36,6 +36,8 @@
@@ -1236,7 +1236,7 @@ index 54595e1b..760eac12 100644
  
  // #define DEBUG_INPUT
  
-@@ -564,6 +566,277 @@ void xemu_input_update_controller(ControllerState *state)
+@@ -564,6 +566,289 @@ void xemu_input_update_controller(ControllerState *state)
      state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
  }
  
@@ -1290,6 +1290,14 @@ index 54595e1b..760eac12 100644
 +    return (uint16_t)(value * 2);
 +}
 +
++/* A Chihiro binding in the 1000 range is a mouse button (1001 = left,
++ * 1003 = right), the convention the Chihiro configuration uses. */
++static bool chihiro_mouse_button(int binding, uint32_t buttons)
++{
++    int index = binding - 1000;
++    return index >= 0 && index < 8 && (buttons & (1u << index)) != 0;
++}
++
 +/* The gun games aim with the host pointer. The SDL window is the picture, so
 + * the cursor position maps straight onto the JVS analog pair; leaving the
 + * picture reports the off-screen position the games treat as a reload. */
@@ -1334,6 +1342,7 @@ index 54595e1b..760eac12 100644
 +
 +    ChihiroJVSState *jvs = chihiro_jvs_global;
 +    const bool *kbd = SDL_GetKeyboardState(NULL);
++    uint32_t mouse_buttons = SDL_GetMouseState(NULL, NULL);
 +    ControllerState *pad = chihiro_gamepad();
 +    const __typeof__(g_config.chihiro.jvs) *jvs_cfg = &g_config.chihiro.jvs;
 +    int profile = chihiro_detected_game_profile();
@@ -1365,14 +1374,17 @@ index 54595e1b..760eac12 100644
 +            ? jvs_cfg->vc3.pedal : jvs_cfg->gs.change;
 +
 +        if (chihiro_key_down(kbd, trigger) ||
++            chihiro_mouse_button(trigger, mouse_buttons) ||
 +            chihiro_trigger_u16(pad, CONTROLLER_AXIS_RTRIG) > 0x4000) {
 +            sw0 |= 0x02;
 +        }
 +        if (chihiro_key_down(kbd, body) ||
++            chihiro_mouse_button(body, mouse_buttons) ||
 +            chihiro_pad_down(pad, CONTROLLER_BUTTON_A)) {
 +            sw1 |= 0x80;
 +        }
 +        if (chihiro_key_down(kbd, extra) ||
++            chihiro_mouse_button(extra, mouse_buttons) ||
 +            chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) {
 +            sw1 |= 0x40;
 +        }
@@ -1514,7 +1526,7 @@ index 54595e1b..760eac12 100644
  void xemu_input_update_controllers(void)
  {
      ControllerState *iter;
-@@ -573,6 +846,7 @@ void xemu_input_update_controllers(void)
+@@ -573,6 +858,7 @@ void xemu_input_update_controllers(void)
      QTAILQ_FOREACH(iter, &available_controllers, entry) {
          xemu_input_update_rumble(iter);
      }

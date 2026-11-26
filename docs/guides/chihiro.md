@@ -139,10 +139,11 @@ King and Gundam have their own layouts. The first detected gamepad drives the
 cabinet; a wheel that SDL exposes as a gamepad works through its stick and
 triggers.
 
-In the gun games, move the host cursor over the picture to aim; RT or the
-configured trigger fires and A is the body/action button. Moving off the
-picture reports the off-screen/reload position. The shell cursor is still
-visible, so use fullscreen or a large picture for the best aim.
+In the gun games, move the host cursor over the picture to aim; the left mouse
+button fires, the right button is the body/action or reload button, and RT/A/B
+do the same on a gamepad. Moving off the picture reports the off-screen/reload
+position. The shell cursor is still visible, so use fullscreen or a large
+picture for the best aim.
 
 ## Limits
 
