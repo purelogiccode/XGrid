@@ -228,6 +228,22 @@
                   </Grid>
                   <TextBlock Text="{Binding ChihiroStatusText}" Classes="hint" TextWrapping="Wrap" />
                 </StackPanel>
+                <StackPanel Spacing="7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Netboot image from an Xbox-format Chihiro ISO" Classes="label" />
+                    <TextBlock Text="Converts a homebrew Chihiro game whose files are already decrypted (the XBOXOG - Chihiro style ISO). A raw Redump GD-ROM needs chihiro-netboot and its key first."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="ghost"
+                            Command="{Binding ConvertChihiroIsoCommand}"
+                            Content="Convert Chihiro ISO..."
+                            IsEnabled="{Binding !ChihiroConverting}"
+                            ToolTip.Tip="Build a FATX netboot .bin from an Xbox-format Chihiro ISO" />
+                    <TextBlock Text="{Binding ChihiroConvertStatus}" Classes="hint"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </StackPanel>
+                </StackPanel>
               </StackPanel>
             </Border>
 

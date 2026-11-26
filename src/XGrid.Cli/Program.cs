@@ -59,6 +59,8 @@ internal static class Program
                     return Fatx(args);
                 case "xdvdfs":
                     return Xdvdfs(args);
+                case "chihiro-netboot":
+                    return ChihiroNetboot(args);
                 case "sector":
                     return Sector(args);
                 case "xbe":
@@ -2624,6 +2626,56 @@ internal static class Program
         }
     }
 
+    private static int ChihiroNetboot(string[] args)
+    {
+        string? image = null;
+        string? output = null;
+        for (int i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--image":
+                    image = NextValue(args, ref i);
+                    break;
+                case "--out":
+                    output = NextValue(args, ref i);
+                    break;
+                default:
+                    Console.Error.WriteLine($"Unknown chihiro-netboot option: {args[i]}");
+                    return 1;
+            }
+        }
+
+        if (image is null || output is null)
+        {
+            Console.Error.WriteLine(
+                "Usage: xgrid chihiro-netboot --image <xiso> --out <netboot.bin>");
+            return 1;
+        }
+
+        try
+        {
+            var progress = new Progress<double>(value =>
+                Console.Error.Write($"\rConverting: {value * 100,5:0.0}%"));
+            ChihiroNetbootBuilder.Result result =
+                ChihiroNetbootBuilder.Build(image, output, progress);
+            Console.Error.WriteLine();
+            Console.WriteLine(
+                $"Wrote {result.OutputPath} ({result.ImageBytes / (1024 * 1024)} MiB game area, " +
+                $"{result.DimmBytes / (1024 * 1024)} MiB DIMM, " +
+                $"{result.GameId} {result.Executable}, {result.FileCount} files)");
+            return 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException or FileNotFoundException
+                                              or DirectoryNotFoundException)
+        {
+            Console.Error.WriteLine();
+            Log.Error("{Message}", $"Chihiro netboot conversion failed: {exception.Message}");
+            return 4;
+        }
+    }
+
     private static int Xdvdfs(string[] args)
     {
         if (args.Length < 2 || (!string.Equals(args[1], "ls", StringComparison.Ordinal) &&
@@ -3028,6 +3080,8 @@ internal static class Program
         Console.WriteLine(
             "  xdvdfs <ls|cat> --image <path> [--path \\dir] [--out <file>]");
         Console.WriteLine("                   List or extract files from an XDVDFS (Xbox DVD) image");
+        Console.WriteLine("  chihiro-netboot --image <xiso> --out <netboot.bin>");
+        Console.WriteLine("                   Convert an Xbox-format Chihiro game to a FATX netboot image");
         Console.WriteLine("  sector --image <path> --lba <hex> [--count N] [--out <file>]");
         Console.WriteLine("                   Dump raw disk sectors as hex");
         Console.WriteLine(

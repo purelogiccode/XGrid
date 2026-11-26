@@ -8,8 +8,10 @@ drive.
 
 > **Netboot images only.** XGrid boots Chihiro **`.bin` netboot images** (raw
 > FATX images), not Redump `.cue`/`.bin` GD-ROM sets or MAME `.chd` files
-> directly. Convert a GD-ROM dump to a netboot image first; see
-> [Converting a GD-ROM](#converting-a-gd-rom).
+> directly. The `XBOXOG - Chihiro` style Xbox ISOs convert in Settings; raw
+> GD-ROM dumps need the external converter. See
+> [Converting an Xbox-format Chihiro ISO](#converting-an-xbox-format-chihiro-iso)
+> and [Converting a GD-ROM](#converting-a-gd-rom).
 
 ## Firmware
 
@@ -40,9 +42,28 @@ A Chihiro launch uses the Chihiro BIOS, 128 MB of guest RAM and no Xbox hard
 disk. The shell writes `default_machine = 'chihiro'` and the
 `[chihiro.roms]` paths into the generated `xemu.toml`.
 
+## Converting an Xbox-format Chihiro ISO
+
+Some homebrew Chihiro conversions (the `XBOXOG - Chihiro` style ISOs) are Xbox
+XISOs that already contain the decrypted Chihiro file tree: `boot.id`, the game
+executable and the `media` folder. XGrid can turn one into a netboot image
+without a key:
+
+- **Settings → System → Sega Chihiro → Convert Chihiro ISO...**, or
+- the CLI:
+
+```text
+XGrid.Cli.exe chihiro-netboot --image "Ghost Squad (XBOXOG).iso" --out "ghost-squad.bin"
+```
+
+The converter writes a 128/256/512/1024 MiB FATX image (the game area is the
+DIMM size less the 16 MiB media-board system area). It maps a `boot.id` name
+such as `\vsg.xbe` to the `vsg.xbe.bak` or `default.xbe` file when the patched
+ISO renamed the executable. The output `.bin` is ready for the Library.
+
 ## Converting a GD-ROM
 
-The Redump and MAME Chihiro sets are GD-ROM dumps. Convert one to the netboot
+The Redump and MAME Chihiro sets are raw GD-ROM dumps. Convert one to the netboot
 format with [chihiro-netboot](https://github.com/Tovarichtch/chihiro-netboot),
 an external MIT-licensed tool based on JayFoxRox's Chihiro-Tools:
 
@@ -81,7 +102,9 @@ picture with keyboard-only input.
 ## Limits
 
 - **No direct GD-ROM boot.** The ported machine loads a FATX netboot image into
-  DIMM; it does not emulate the GD-ROM drive. Convert the disc first.
+  DIMM; it does not emulate the GD-ROM drive. Convert the disc first. The
+  `XBOXOG - Chihiro` patched ISOs can be converted in XGrid itself; raw Redump
+  `.cue` sets still need the external `chihiro-netboot` and their key.
 - **Keyboard-only controls in this build.** The full Chihiro fork also maps
   gamepads, wheels, light guns and force feedback; XGrid currently exposes the
   keyboard defaults. Gamepad and wheel mapping is a follow-up.
