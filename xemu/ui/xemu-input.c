@@ -596,6 +596,13 @@ static bool chihiro_pad_down(ControllerState *pad, uint16_t mask)
     return pad && (pad->buttons & mask);
 }
 
+static bool chihiro_pressed(bool down, bool *was_down)
+{
+    bool pressed = down && !*was_down;
+    *was_down = down;
+    return pressed;
+}
+
 static uint16_t chihiro_stick_u16(ControllerState *pad, int axis)
 {
     if (!pad) {
@@ -714,6 +721,17 @@ static void xemu_input_update_chihiro(void)
             chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) {
             sw1 |= 0x40;
         }
+        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_GS) {
+            static bool card_was_down;
+            bool card = chihiro_key_down(kbd, jvs_cfg->card_in) ||
+                        chihiro_pad_down(pad, CONTROLLER_BUTTON_X);
+            if (chihiro_pressed(card, &card_was_down)) {
+                chihiro_hw210_card_key(0);
+            }
+            if (chihiro_card_reader_present(0)) {
+                sw1 |= 0x20;
+            }
+        }
         chihiro_gun_aim(jvs);
         break;
     }
@@ -769,6 +787,14 @@ static void xemu_input_update_chihiro(void)
             chihiro_pad_down(pad, CONTROLLER_BUTTON_DPAD_DOWN)) {
             sw1 |= 0x40;
         }
+        if (profile == CONFIG_CHIHIRO_JVS_PROFILE_WMMT2) {
+            static bool card_was_down;
+            bool card = chihiro_key_down(kbd, jvs_cfg->card_in) ||
+                        chihiro_pad_down(pad, CONTROLLER_BUTTON_X);
+            if (chihiro_pressed(card, &card_was_down)) {
+                chihiro_crp1231_card_key();
+            }
+        }
         break;
     }
     case CONFIG_CHIHIRO_JVS_PROFILE_OK: {
@@ -819,6 +845,17 @@ static void xemu_input_update_chihiro(void)
             chihiro_pad_down(pad, CONTROLLER_BUTTON_B)) sw1 |= 0x01;
         jvs->analog[1] = chihiro_key_down(kbd, jvs_cfg->gundam.pedal)
             ? 0xFFFF : chihiro_trigger_u16(pad, CONTROLLER_AXIS_LTRIG);
+        {
+            static bool card_was_down;
+            bool card = chihiro_key_down(kbd, jvs_cfg->card_in) ||
+                        chihiro_pad_down(pad, CONTROLLER_BUTTON_X);
+            if (chihiro_pressed(card, &card_was_down)) {
+                chihiro_hw210_card_key(0);
+            }
+            if (chihiro_card_reader_present(0)) {
+                sw1 |= 0x80;
+            }
+        }
         break;
     }
     default:

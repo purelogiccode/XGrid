@@ -128,7 +128,7 @@ sink). Click the toolbar or a shell page to return focus to XGrid. Then press
 | Gas / brake | `Up` / `Down` | RT / LT |
 | Gear up / down | `]` / `[` | D-pad up / down |
 | View change | (game-specific) | Y |
-| Card in | `C` | X / Back |
+| Card in | `C` | X |
 | Gun trigger / body | (game-specific) | RT / A |
 | Gun change / reload | (game-specific) | B |
 
@@ -145,6 +145,12 @@ do the same on a gamepad. Moving off the picture reports the off-screen/reload
 position. The shell cursor is still visible, so use fullscreen or a large
 picture for the best aim.
 
+Ghost Squad and Maximum Tune use the emulated card readers. Press **C** (or X)
+to push the card in hand into the reader; with no card it creates a blank one.
+The core keeps the card with the cabinet's card files, so a later session picks
+it up again. Ghost Squad's second reader and the linked-cabinet UI are not
+exposed by the shell yet.
+
 ## Limits
 
 - **No direct GD-ROM boot.** The ported machine loads a FATX netboot image into
@@ -152,10 +158,10 @@ picture for the best aim.
   `XBOXOG - Chihiro` patched ISOs can be converted in XGrid itself; raw Redump
   `.cue` sets still need the external `chihiro-netboot` and their key.
 - **Basic gamepad mapping in this build.** The first detected gamepad drives
-  the cabinet (stick, triggers, D-pad and face buttons). Per-game bindings,
-  force feedback, pointer devices and light-gun aim are still follow-ups.
-- **Linked cabinets and card-reader UI** are present in the core but not exposed
-  by the shell. They are for later work.
+  the cabinet (stick, triggers, D-pad and face buttons). Per-game bindings and
+  force feedback are still follow-ups.
+- **Linked cabinets and the second card reader** are present in the core but
+  not exposed by the shell. Player 1's card insert works.
 - **Shell save-state slots are Xbox-oriented.** The Chihiro core keeps its own
   cabinet saves in the baseboard EEPROM; the shell's HDD-backed snapshot slots
   are not a Chihiro feature yet.
