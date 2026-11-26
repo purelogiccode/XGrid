@@ -724,6 +724,18 @@ public sealed partial class SettingsViewModel : PageViewModel
     private int _chihiroFfbStrength = 100;
 
     [ObservableProperty]
+    private bool _chihiroFfbInvert;
+
+    [ObservableProperty]
+    private int _chihiroWheelWeight = 40;
+
+    [ObservableProperty]
+    private bool _chihiroWheelAutocenter = true;
+
+    [ObservableProperty]
+    private int _chihiroWheelAutocenterStrength = 50;
+
+    [ObservableProperty]
     private int _chihiroP2AimSpeed = 100;
 
     [ObservableProperty]
@@ -975,6 +987,10 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroFreePlay = settings.Chihiro.FreePlay;
         ChihiroForceFeedback = settings.Chihiro.ForceFeedback;
         ChihiroFfbStrength = settings.Chihiro.FfbStrength;
+        ChihiroFfbInvert = settings.Chihiro.FfbInvert;
+        ChihiroWheelWeight = settings.Chihiro.WheelWeight;
+        ChihiroWheelAutocenter = settings.Chihiro.WheelAutocenter;
+        ChihiroWheelAutocenterStrength = settings.Chihiro.WheelAutocenterStrength;
         SelectedChihiroRegion = ChihiroRegionOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Chihiro.Region, StringComparison.Ordinal))
             ?? ChihiroRegionOptions.First(option => string.Equals(option.Key, "ex", StringComparison.Ordinal));
@@ -1086,6 +1102,8 @@ public sealed partial class SettingsViewModel : PageViewModel
     private void Save()
     {
         ChihiroP2AimSpeed = Math.Clamp(ChihiroP2AimSpeed, 0, 400);
+        ChihiroWheelWeight = Math.Clamp(ChihiroWheelWeight, 0, 100);
+        ChihiroWheelAutocenterStrength = Math.Clamp(ChihiroWheelAutocenterStrength, 0, 100);
         _chihiroJvsP2.AimSpeed = ChihiroP2AimSpeed;
         var next = new EmulatorSettings
         {
@@ -1123,6 +1141,10 @@ public sealed partial class SettingsViewModel : PageViewModel
                 BoardType = SelectedChihiroBoardType?.Key ?? "auto",
                 ForceFeedback = ChihiroForceFeedback,
                 FfbStrength = ChihiroFfbStrength,
+                FfbInvert = ChihiroFfbInvert,
+                WheelWeight = ChihiroWheelWeight,
+                WheelAutocenter = ChihiroWheelAutocenter,
+                WheelAutocenterStrength = ChihiroWheelAutocenterStrength,
             },
             RamMb = RamMb,
             Input = BuildInputSettings(),

@@ -24,7 +24,8 @@ off. The machine uses 128 MB of RAM and no Xbox hard disk.
 The same page sets **Free play** (Start without a coin), **Region** (Auto,
 Japan, USA, Export; Error 05 may need another), **DIMM size** (Auto; Gundam
 needs 1024 MB), **Media board** (Auto, Type 1, Type 3) and **Force feedback**
-(gamepad rumble from the drive board, 0-200% strength).
+(a connected force-feedback wheel, or gamepad rumble when no wheel is found).
+The wheel also has strength, weight, autocenter and direction settings.
 
 ## Linked cabinets
 
@@ -108,8 +109,9 @@ Tune create a blank card when none is in hand, and the core keeps it for later
 sessions. The HW210 and CRP-1231 card files are assignable under **Card files**
 in Settings. In gun games the mouse buttons belong to the gun, so the core's
 pop-up menu stays on **F2** (or the Guide button) and a double-click does not
-toggle fullscreen. Force feedback rumbles the first gamepad from the drive
-board and is scaled in Settings. Gundam's twin-stick keys (WASD + Q/E, the
+toggle fullscreen. Force feedback drives a force-feedback wheel, or rumbles
+the first gamepad when no wheel is found; the wheel's weight, autocenter and
+direction are in Settings. Gundam's twin-stick keys (WASD + Q/E, the
 arrow keys + Right Shift/Ctrl, Space pedal) are editable under **Gundam
 cockpit**.
 
@@ -127,7 +129,7 @@ network-firmware check with `ver1305.bin` and then wait for their own server.
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
 - Per-game bindings are editable in Settings, including the Gundam cockpit;
-  steering-wheel haptics and raw light-gun aiming are not exposed yet.
+  raw light-gun aiming is not exposed yet.
 - Chihiro audio is incomplete in upstream xemu; some games are silent or have
   missing effects. The host backend and Xbox audio path are not at fault.
 - Linked cabinets are exposed in Settings; save states are disabled while the

@@ -93,6 +93,18 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the force-feedback strength, 0 to 200 percent.</summary>
     public int ChihiroFfbStrength { get; init; } = 100;
 
+    /// <summary>Gets a value indicating whether the wheel's force direction is inverted.</summary>
+    public bool ChihiroFfbInvert { get; init; }
+
+    /// <summary>Gets the wheel's damping share, 0 to 100 percent.</summary>
+    public int ChihiroWheelWeight { get; init; } = 40;
+
+    /// <summary>Gets a value indicating whether the wheel centers itself.</summary>
+    public bool ChihiroWheelAutocenter { get; init; } = true;
+
+    /// <summary>Gets the self-centering strength, 0 to 100 percent.</summary>
+    public int ChihiroWheelAutocenterStrength { get; init; } = 50;
+
     /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
     public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
 
@@ -319,6 +331,16 @@ public sealed record XemuLaunchSettings
             if (ChihiroFfbStrength is < 0 or > 200)
             {
                 errors.Add($"Chihiro force feedback must be 0 to 200%, not {ChihiroFfbStrength}%.");
+            }
+
+            if (ChihiroWheelWeight is < 0 or > 100)
+            {
+                errors.Add($"Chihiro wheel weight must be 0 to 100%, not {ChihiroWheelWeight}%.");
+            }
+
+            if (ChihiroWheelAutocenterStrength is < 0 or > 100)
+            {
+                errors.Add($"Chihiro wheel autocenter must be 0 to 100%, not {ChihiroWheelAutocenterStrength}%.");
             }
 
             if (ChihiroJvsP2.AimSpeed is < 0 or > 400)

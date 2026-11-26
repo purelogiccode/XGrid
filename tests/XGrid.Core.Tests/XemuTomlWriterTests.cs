@@ -48,6 +48,10 @@ public sealed class XemuTomlWriterTests
             ChihiroBoardType = "type3",
             ChihiroForceFeedback = true,
             ChihiroFfbStrength = 150,
+            ChihiroFfbInvert = true,
+            ChihiroWheelWeight = 70,
+            ChihiroWheelAutocenter = false,
+            ChihiroWheelAutocenterStrength = 80,
         };
 
         string toml = XemuTomlWriter.Build(settings);
@@ -71,6 +75,10 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("board_type = 'type3'", toml, StringComparison.Ordinal);
         Assert.Contains("force_feedback = true", toml, StringComparison.Ordinal);
         Assert.Contains("ffb_strength = 150", toml, StringComparison.Ordinal);
+        Assert.Contains("ffb_invert = true", toml, StringComparison.Ordinal);
+        Assert.Contains("wheel_weight = 70", toml, StringComparison.Ordinal);
+        Assert.Contains("wheel_autocenter = false", toml, StringComparison.Ordinal);
+        Assert.Contains("wheel_autocenter_strength = 80", toml, StringComparison.Ordinal);
     }
 
     [Fact]

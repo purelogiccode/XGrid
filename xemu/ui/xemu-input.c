@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <SDL3/SDL_haptic.h>
 
 #include "system/blockdev.h"
 #include "hw/xbox/chihiro/chihiro.h"
@@ -820,39 +821,455 @@ bool xemu_input_chihiro_gun_active(void)
            profile == CONFIG_CHIHIRO_JVS_PROFILE_GS;
 }
 
-/* A gamepad renders the drive board's event channel: the Sega 838 package and
- * vibration pulses, or the V257's short pushes. Continuous spring/damper
- * forces belong to a wheel and a pad cannot reproduce them. */
-static uint16_t chihiro_ffb_rumble(void)
+/* Steering-wheel force feedback. The drive boards describe a spring, a
+ * damper and a directional push; SDL renders them as condition, constant and
+ * periodic effects. A wheel that supports spring or damper forces is
+ * preferred; without one the event channel stays on the first gamepad's
+ * rumble motors. */
+typedef struct {
+    bool active;
+    int  spring;    /* 0-32767 */
+    int  damper;    /* 0-32767 */
+    int  constant;  /* -32767-32767 */
+    int  sine;      /* 0-32767 */
+} ChihiroForceState;
+
+typedef struct {
+    SDL_Haptic        *haptic;
+    SDL_HapticID       id;
+    SDL_HapticEffectID constant_id;
+    SDL_HapticEffectID spring_id;
+    SDL_HapticEffectID damper_id;
+    SDL_HapticEffectID sine_id;
+    int                last_constant;
+    int                last_spring;
+    int                last_damper;
+    int                last_sine;
+    int64_t            last_apply_ns;
+    int64_t            next_try_ms;
+    bool               no_wheel_logged;
+} ChihiroWheelFFB;
+
+static ChihiroWheelFFB chihiro_wheel = {
+    .constant_id = -1,
+    .spring_id = -1,
+    .damper_id = -1,
+    .sine_id = -1,
+};
+
+static int chihiro_wheel_score(Uint32 features)
+{
+    if (!(features & SDL_HAPTIC_SPRING) &&
+        !((features & SDL_HAPTIC_DAMPER) &&
+          (features & SDL_HAPTIC_CONSTANT))) {
+        return -1;
+    }
+
+    int score = 0;
+    if (features & SDL_HAPTIC_SPRING) score += 4;
+    if (features & SDL_HAPTIC_DAMPER) score += 2;
+    if (features & SDL_HAPTIC_CONSTANT) score += 1;
+    if (features & SDL_HAPTIC_SINE) score += 1;
+    return score;
+}
+
+static SDL_HapticEffectID chihiro_wheel_create(const SDL_HapticEffect *effect)
+{
+    if (!SDL_HapticEffectSupported(chihiro_wheel.haptic, effect)) {
+        return -1;
+    }
+
+    SDL_HapticEffectID id = SDL_CreateHapticEffect(chihiro_wheel.haptic, effect);
+    if (id < 0) {
+        return -1;
+    }
+    if (!SDL_RunHapticEffect(chihiro_wheel.haptic, id, 1)) {
+        SDL_DestroyHapticEffect(chihiro_wheel.haptic, id);
+        return -1;
+    }
+    return id;
+}
+
+static void chihiro_wheel_close(void)
+{
+    if (!chihiro_wheel.haptic) {
+        return;
+    }
+
+    if (chihiro_wheel.constant_id >= 0) {
+        SDL_DestroyHapticEffect(chihiro_wheel.haptic, chihiro_wheel.constant_id);
+    }
+    if (chihiro_wheel.spring_id >= 0) {
+        SDL_DestroyHapticEffect(chihiro_wheel.haptic, chihiro_wheel.spring_id);
+    }
+    if (chihiro_wheel.damper_id >= 0) {
+        SDL_DestroyHapticEffect(chihiro_wheel.haptic, chihiro_wheel.damper_id);
+    }
+    if (chihiro_wheel.sine_id >= 0) {
+        SDL_DestroyHapticEffect(chihiro_wheel.haptic, chihiro_wheel.sine_id);
+    }
+    SDL_CloseHaptic(chihiro_wheel.haptic);
+    memset(&chihiro_wheel, 0, sizeof(chihiro_wheel));
+    chihiro_wheel.constant_id = -1;
+    chihiro_wheel.spring_id = -1;
+    chihiro_wheel.damper_id = -1;
+    chihiro_wheel.sine_id = -1;
+}
+
+static void chihiro_wheel_open(void)
+{
+    int count = 0;
+    SDL_HapticID *ids = SDL_GetHaptics(&count);
+    SDL_Haptic *best = NULL;
+    SDL_HapticID best_id = 0;
+    int best_score = -1;
+
+    if (!ids) {
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        SDL_Haptic *haptic = SDL_OpenHaptic(ids[i]);
+        if (!haptic) {
+            continue;
+        }
+
+        int score = chihiro_wheel_score(SDL_GetHapticFeatures(haptic));
+        if (score > best_score) {
+            if (best) {
+                SDL_CloseHaptic(best);
+            }
+            best = haptic;
+            best_id = ids[i];
+            best_score = score;
+        } else {
+            SDL_CloseHaptic(haptic);
+        }
+    }
+    SDL_free(ids);
+
+    if (!best) {
+        if (!chihiro_wheel.no_wheel_logged) {
+            CHIHIRO_LOGF(FFB, "wheel haptics: no force-feedback wheel found\n");
+            chihiro_wheel.no_wheel_logged = true;
+        }
+        return;
+    }
+
+    chihiro_wheel.haptic = best;
+    chihiro_wheel.id = best_id;
+    chihiro_wheel.last_apply_ns = 0;
+    chihiro_wheel.no_wheel_logged = false;
+    const char *name = SDL_GetHapticName(best);
+
+    Uint32 features = SDL_GetHapticFeatures(best);
+    if (features & SDL_HAPTIC_GAIN) {
+        SDL_SetHapticGain(best, 100);
+    }
+
+    SDL_HapticEffect effect;
+
+    if (features & SDL_HAPTIC_CONSTANT) {
+        memset(&effect, 0, sizeof(effect));
+        effect.type = SDL_HAPTIC_CONSTANT;
+        effect.constant.direction.type = SDL_HAPTIC_CARTESIAN;
+        effect.constant.direction.dir[0] = 1;
+        effect.constant.length = SDL_HAPTIC_INFINITY;
+        chihiro_wheel.constant_id = chihiro_wheel_create(&effect);
+    }
+
+    if (features & SDL_HAPTIC_SPRING) {
+        memset(&effect, 0, sizeof(effect));
+        effect.type = SDL_HAPTIC_SPRING;
+        effect.condition.direction.type = SDL_HAPTIC_CARTESIAN;
+        effect.condition.direction.dir[0] = 1;
+        effect.condition.length = SDL_HAPTIC_INFINITY;
+        effect.condition.right_sat[0] = 0xFFFF;
+        effect.condition.left_sat[0] = 0xFFFF;
+        chihiro_wheel.spring_id = chihiro_wheel_create(&effect);
+    }
+
+    if (features & SDL_HAPTIC_DAMPER) {
+        memset(&effect, 0, sizeof(effect));
+        effect.type = SDL_HAPTIC_DAMPER;
+        effect.condition.direction.type = SDL_HAPTIC_CARTESIAN;
+        effect.condition.direction.dir[0] = 1;
+        effect.condition.length = SDL_HAPTIC_INFINITY;
+        effect.condition.right_sat[0] = 0xFFFF;
+        effect.condition.left_sat[0] = 0xFFFF;
+        chihiro_wheel.damper_id = chihiro_wheel_create(&effect);
+    }
+
+    if (features & SDL_HAPTIC_SINE) {
+        memset(&effect, 0, sizeof(effect));
+        effect.type = SDL_HAPTIC_SINE;
+        effect.periodic.direction.type = SDL_HAPTIC_CARTESIAN;
+        effect.periodic.direction.dir[0] = 1;
+        effect.periodic.length = SDL_HAPTIC_INFINITY;
+        effect.periodic.period = 25;
+        chihiro_wheel.sine_id = chihiro_wheel_create(&effect);
+    }
+
+    if (chihiro_wheel.constant_id < 0 && chihiro_wheel.spring_id < 0 &&
+        chihiro_wheel.damper_id < 0) {
+        CHIHIRO_LOGF(FFB, "wheel haptics: %s has no usable effect\n",
+                     name ? name : "unnamed");
+        chihiro_wheel_close();
+        return;
+    }
+
+    CHIHIRO_LOGF(FFB, "wheel haptics: %s (constant %d, spring %d, "
+                 "damper %d, sine %d)\n", name ? name : "unnamed",
+                 chihiro_wheel.constant_id, chihiro_wheel.spring_id,
+                 chihiro_wheel.damper_id, chihiro_wheel.sine_id);
+}
+
+static bool chihiro_wheel_ensure(void)
 {
     if (!g_config.chihiro.settings.force_feedback) {
+        chihiro_wheel_close();
+        return false;
+    }
+
+    if (chihiro_wheel.haptic) {
+        if (SDL_GetHapticName(chihiro_wheel.haptic)) {
+            return true;
+        }
+        chihiro_wheel_close();
+    }
+
+    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    if (now < chihiro_wheel.next_try_ms) {
+        return false;
+    }
+    chihiro_wheel.next_try_ms = now + 2000;
+    chihiro_wheel_open();
+    return chihiro_wheel.haptic != NULL;
+}
+
+static int chihiro_scale_force(int value, int max, int strength)
+{
+    if (value <= 0 || strength <= 0) {
         return 0;
     }
 
-    uint32_t value = 0;
-    if (chihiro_driveboard_global) {
-        DriveBoardFFB ffb;
-        driveboard_get_ffb(chihiro_driveboard_global, &ffb);
-        value = driveboard_get_rumble(chihiro_driveboard_global);
-    } else if (chihiro_v257_global) {
-        int target, spring, damping, torque;
-        if (v257_drive(chihiro_v257_global, &target, &spring, &damping,
-                       &torque)) {
-            int mag = torque < 0 ? -torque : torque;
-            value = (uint32_t)mag * 0xFFFFu / 0x7F;
+    int64_t scaled = (int64_t)value * 32767 / max;
+    scaled = scaled * strength / 100;
+    return scaled > 32767 ? 32767 : (int)scaled;
+}
+
+static int chihiro_wheel_weight(void)
+{
+    int weight = g_config.chihiro.settings.wheel_weight;
+    return weight < 0 ? 0 : weight > 100 ? 100 : weight;
+}
+
+static void chihiro_force_from_sega(const DriveBoardFFB *ffb,
+                                    uint16_t rumble, int strength,
+                                    ChihiroForceState *out)
+{
+    int spring = chihiro_scale_force(ffb->centering_power, 0xFF, strength);
+    if (spring == 0 && g_config.chihiro.settings.wheel_autocenter) {
+        spring = chihiro_scale_force(
+            g_config.chihiro.settings.wheel_autocenter_strength, 100, strength);
+    }
+
+    int damper = chihiro_scale_force(ffb->friction_power, 0xFF, strength);
+    damper = damper * chihiro_wheel_weight() / 100;
+
+    int move = chihiro_scale_force(ffb->event_power, 0x7F, strength);
+    int dir = ffb->event_dir;
+    int push = chihiro_scale_force(ffb->movement_power, 0x7F, strength);
+    if (push > move) {
+        move = push;
+        dir = ffb->movement_dir;
+    }
+    int constant = dir ? -move : move;
+    if (g_config.chihiro.settings.ffb_invert) {
+        constant = -constant;
+    }
+
+    out->active = ffb->active;
+    out->spring = spring;
+    out->damper = damper;
+    out->constant = constant;
+    out->sine = chihiro_scale_force(rumble, 0xFFFF, strength);
+}
+
+static void chihiro_force_from_v257(int spring, int damping, int torque,
+                                    int strength, ChihiroForceState *out)
+{
+    int auto_spring = chihiro_scale_force(spring, 0x7F, strength);
+    if (auto_spring == 0 && g_config.chihiro.settings.wheel_autocenter) {
+        auto_spring = chihiro_scale_force(
+            g_config.chihiro.settings.wheel_autocenter_strength, 100, strength);
+    }
+
+    int damper = chihiro_scale_force(damping, 0x7F, strength);
+    damper = damper * chihiro_wheel_weight() / 100;
+
+    int constant = chihiro_scale_force(abs(torque), 0x7F, strength);
+    if (torque < 0) {
+        constant = -constant;
+    }
+    if (g_config.chihiro.settings.ffb_invert) {
+        constant = -constant;
+    }
+
+    out->active = spring || damping || torque;
+    out->spring = auto_spring;
+    out->damper = damper;
+    out->constant = constant;
+    out->sine = 0;
+}
+
+static void chihiro_wheel_set_condition(SDL_HapticEffectID id,
+                                        SDL_HapticEffectType type,
+                                        int value, int *last)
+{
+    if (id < 0 || value == *last) {
+        return;
+    }
+
+    SDL_HapticEffect effect;
+    memset(&effect, 0, sizeof(effect));
+    effect.type = type;
+    effect.condition.direction.type = SDL_HAPTIC_CARTESIAN;
+    effect.condition.direction.dir[0] = 1;
+    effect.condition.length = SDL_HAPTIC_INFINITY;
+    effect.condition.right_sat[0] = 0xFFFF;
+    effect.condition.left_sat[0] = 0xFFFF;
+    effect.condition.right_coeff[0] = (Sint16)value;
+    effect.condition.left_coeff[0] = (Sint16)value;
+
+    if (SDL_UpdateHapticEffect(chihiro_wheel.haptic, id, &effect)) {
+        *last = value;
+    }
+}
+
+static void chihiro_wheel_set_constant(int value)
+{
+    if (chihiro_wheel.constant_id < 0 ||
+        value == chihiro_wheel.last_constant) {
+        return;
+    }
+
+    SDL_HapticEffect effect;
+    memset(&effect, 0, sizeof(effect));
+    effect.type = SDL_HAPTIC_CONSTANT;
+    effect.constant.direction.type = SDL_HAPTIC_CARTESIAN;
+    effect.constant.direction.dir[0] = value < 0 ? -1 : 1;
+    effect.constant.length = SDL_HAPTIC_INFINITY;
+    effect.constant.level = (Sint16)(value < 0 ? -value : value);
+
+    if (SDL_UpdateHapticEffect(chihiro_wheel.haptic, chihiro_wheel.constant_id,
+                               &effect)) {
+        chihiro_wheel.last_constant = value;
+    }
+}
+
+static void chihiro_wheel_set_sine(int value)
+{
+    if (chihiro_wheel.sine_id < 0 || value == chihiro_wheel.last_sine) {
+        return;
+    }
+
+    SDL_HapticEffect effect;
+    memset(&effect, 0, sizeof(effect));
+    effect.type = SDL_HAPTIC_SINE;
+    effect.periodic.direction.type = SDL_HAPTIC_CARTESIAN;
+    effect.periodic.direction.dir[0] = 1;
+    effect.periodic.length = SDL_HAPTIC_INFINITY;
+    effect.periodic.period = 25;
+    effect.periodic.magnitude = (Sint16)value;
+
+    if (SDL_UpdateHapticEffect(chihiro_wheel.haptic, chihiro_wheel.sine_id,
+                               &effect)) {
+        chihiro_wheel.last_sine = value;
+    }
+}
+
+static void chihiro_wheel_apply(const ChihiroForceState *forces)
+{
+    if (!chihiro_wheel.haptic) {
+        return;
+    }
+
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    if (chihiro_wheel.last_apply_ns &&
+        now - chihiro_wheel.last_apply_ns < 10000000) {
+        return;
+    }
+    chihiro_wheel.last_apply_ns = now;
+
+    chihiro_wheel_set_condition(chihiro_wheel.spring_id, SDL_HAPTIC_SPRING,
+                                forces->spring, &chihiro_wheel.last_spring);
+    chihiro_wheel_set_condition(chihiro_wheel.damper_id, SDL_HAPTIC_DAMPER,
+                                forces->damper, &chihiro_wheel.last_damper);
+    chihiro_wheel_set_constant(forces->constant);
+    chihiro_wheel_set_sine(forces->sine);
+}
+
+/* A wheel gets the drive board's persistent forces; a gamepad only renders
+ * the event channel, because it cannot reproduce centering or weight. */
+static void chihiro_ffb_update(ControllerState *pad)
+{
+    static uint16_t last_rumble;
+
+    if (!g_config.chihiro.settings.force_feedback) {
+        if (last_rumble && pad && pad->sdl_gamepad) {
+            SDL_RumbleGamepad(pad->sdl_gamepad, 0, 0, 0);
         }
+        last_rumble = 0;
+        chihiro_wheel_close();
+        return;
     }
 
     int strength = g_config.chihiro.settings.ffb_strength;
-    if (strength <= 0) {
-        return 0;
-    }
-    if (strength > 200) {
-        strength = 200;
+    strength = strength < 0 ? 0 : strength > 200 ? 200 : strength;
+
+    ChihiroForceState forces = { 0 };
+    uint16_t sega_rumble = 0;
+    bool v257 = false;
+    int v257_torque = 0;
+
+    if (chihiro_driveboard_global) {
+        DriveBoardFFB ffb;
+        driveboard_get_ffb(chihiro_driveboard_global, &ffb);
+        sega_rumble = driveboard_get_rumble(chihiro_driveboard_global);
+        chihiro_force_from_sega(&ffb, sega_rumble, strength, &forces);
+    } else if (chihiro_v257_global) {
+        int target, spring, damping, torque;
+        v257_drive(chihiro_v257_global, &target, &spring, &damping, &torque);
+        v257 = true;
+        v257_torque = torque;
+        chihiro_force_from_v257(spring, damping, torque, strength, &forces);
+    } else if (g_config.chihiro.settings.wheel_autocenter) {
+        forces.spring = chihiro_scale_force(
+            g_config.chihiro.settings.wheel_autocenter_strength, 100, strength);
     }
 
-    value = value * (uint32_t)strength / 100u;
-    return value > 0xFFFF ? 0xFFFF : (uint16_t)value;
+    if (chihiro_wheel_ensure()) {
+        last_rumble = 0;
+        chihiro_wheel_apply(&forces);
+        return;
+    }
+
+    uint16_t rumble = sega_rumble;
+    if (v257) {
+        int magnitude = v257_torque < 0 ? -v257_torque : v257_torque;
+        rumble = (uint16_t)((uint32_t)magnitude * 0xFFFFu / 0x7F);
+    }
+    rumble = (uint16_t)((uint32_t)rumble * strength / 100u);
+
+    if (rumble != last_rumble) {
+        CHIHIRO_LOGF(FFB, "gamepad rumble %04X (pad %s)\n", rumble,
+                     pad ? "yes" : "no");
+        if (pad && pad->sdl_gamepad) {
+            SDL_RumbleGamepad(pad->sdl_gamepad, rumble, rumble, 250);
+        }
+        last_rumble = rumble;
+    }
 }
 
 /* The cabinet's JVS state: player 1's keyboard, mouse, first pad and wheel,
@@ -860,6 +1277,7 @@ static uint16_t chihiro_ffb_rumble(void)
 static void xemu_input_update_chihiro(void)
 {
     if (!chihiro_jvs_global || !xemu_chihiro_mode()) {
+        chihiro_wheel_close();
         return;
     }
 
@@ -876,18 +1294,7 @@ static void xemu_input_update_chihiro(void)
         profile = jvs_cfg->profile;
     }
 
-    {
-        static uint16_t last_rumble;
-        uint16_t rumble = chihiro_ffb_rumble();
-        if (rumble != last_rumble) {
-            CHIHIRO_LOGF(FFB, "gamepad rumble %04X (pad %s)\n", rumble,
-                         pad ? "yes" : "no");
-            if (pad && pad->sdl_gamepad) {
-                SDL_RumbleGamepad(pad->sdl_gamepad, rumble, rumble, 250);
-            }
-            last_rumble = rumble;
-        }
-    }
+    chihiro_ffb_update(pad);
 
     uint8_t sw0 = 0;
     uint8_t sw1 = 0;
