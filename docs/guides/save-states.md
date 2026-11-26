@@ -24,6 +24,30 @@ using the core's own snapshot support.
 
 The selected slot is shown in the menu labels and on the Home page buttons.
 
+## Automatic session state
+
+Two session settings turn the four manual slots into a resume-where-you-left-off
+workflow:
+
+- **Save state before power off** writes a snapshot named `xgrid-session` when
+  you power off, press Stop, or close the XGrid window.
+- **Resume the saved session** restores that snapshot when the Power button
+  starts the dashboard.
+
+The automatic snapshot is separate from slots 1-4 and is overwritten on each
+save. It needs the same requirements as a manual state: in-process hosting on
+Windows and a writable HDD image.
+
+- The snapshot restores into a fresh machine. XGrid lets the console finish its
+  early boot first, so the dashboard or game may appear for about 12 seconds
+  before the saved state is restored. Loading during the first seconds of the
+  retail boot trips a DSP state assertion in the core.
+- Launching a title from the Library starts it fresh; only the Power button and
+  the dashboard path resume the snapshot.
+- If the snapshot is missing or cannot be read, the console continues booting
+  normally and the Activity log records why.
+- Use the same HDD image and core version that wrote the snapshot.
+
 ## Saving, loading and deleting
 
 Use any of:

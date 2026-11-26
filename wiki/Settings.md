@@ -1,7 +1,8 @@
 # Settings
 
 The Settings page is a draft editor. Change values, then click **Save settings**
-(or **Ctrl+S** while the page is open). Most changes apply on the next power-on.
+(or **Ctrl+S** while the page is open). The startup and emulator settings apply on
+the next power-on; the session stop/close choices apply immediately.
 
 ## System
 
@@ -18,10 +19,18 @@ The Settings page is a draft editor. Change values, then click **Save settings**
 
 **Emulator**
 
-- **Emulator binary** — optional explicit path.
-- **Guest memory** — 64 MB retail, 128 MB debug kit.
+- **Emulator binary** - optional explicit path.
+- **Guest memory** - 64 MB retail, 128 MB debug kit.
 - **Presentation filter** - applied by the core's final blit. In-process hosting can change it live; a separate process applies it on the next launch.
 - **Core hosting** - **In-process (recommended, Windows)** enables save states, pause and disc swap but hosts one machine per shell; **Separate process** can start a new machine every time.
+
+**Session**
+
+- **Power on when XGrid starts** - boot the configured disc or dashboard when the window opens. A first run still asks for firmware first.
+- **Keep XGrid open after power off** - leave the shell on the powered-off screen. Turn off to close XGrid after a normal shutdown.
+- **Show the powered-off screen** - logo and power hint while off; turn off for a plain black picture area.
+- **Save state before power off** - write the automatic `xgrid-session` snapshot before a Power off, Stop or window close. Needs in-process hosting.
+- **Resume the saved session** - restore that snapshot when the Power button starts the dashboard. Launching a game from the Library starts it fresh.
 
 ## Graphics
 

@@ -106,6 +106,51 @@ public sealed class SaveStateRunnerTests
     }
 
     [Fact]
+    public void TrySaveSession_QueuesTheAutomaticSnapshot()
+    {
+        var service = new FakeSaveStateService();
+        var runner = new SaveStateRunner(service, clock: () => 1000);
+
+        Assert.True(runner.TrySaveSession(out string problem));
+        Assert.Empty(problem);
+        Assert.True(runner.IsSession);
+        Assert.Equal(0, runner.Slot);
+        Assert.Equal(SaveStateRunner.SessionName, runner.Name);
+        Assert.Equal(["save:xgrid-session"], service.Calls);
+
+        service.Status = XemuSaveStateStatus.Completed;
+        SaveStateResult? result = runner.Poll();
+        Assert.NotNull(result);
+        Assert.True(result.Succeeded);
+        Assert.Equal("Saved the session state.", result.Message);
+    }
+
+    [Fact]
+    public void TryLoadSession_NamesTheSessionInItsCompletionMessage()
+    {
+        var service = new FakeSaveStateService();
+        var runner = new SaveStateRunner(service, clock: () => 1000);
+
+        Assert.True(runner.TryLoadSession(out _));
+        service.Status = XemuSaveStateStatus.Completed;
+
+        SaveStateResult? result = runner.Poll();
+
+        Assert.NotNull(result);
+        Assert.Equal("Loaded the saved session.", result.Message);
+        Assert.Equal(["load:xgrid-session"], service.Calls);
+    }
+
+    [Fact]
+    public void TrySaveSession_RefusesWhenTheHostingModeHasNoService()
+    {
+        var runner = new SaveStateRunner(service: null);
+
+        Assert.False(runner.TrySaveSession(out string problem));
+        Assert.Contains("in-process", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TrySave_RefusesASlotOutsideTheMenu()
     {
         var service = new FakeSaveStateService();

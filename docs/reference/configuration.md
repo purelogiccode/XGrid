@@ -31,7 +31,7 @@ the platform.
 | --- | --- |
 | `--autostart` | Power on the console as soon as the shell is ready. |
 | `-fullscreen`, `--fullscreen`, `-f` | Open the shell in fullscreen. |
-| `--disc <path>` | Insert this ISO/XISO, CHD or ZAR image and power on. |
+| `--disc <path>` | Insert this ISO/XISO, CHD, CCI or ZAR image and power on. |
 | `--core <path>` | Use this emulator binary for the session. |
 | `--data-dir <path>` | Use this shell data folder for the session. |
 | `--bios <path>` | Flash ROM image for the session. |
@@ -54,8 +54,8 @@ the platform.
 | `-h`, `--help`, `-?` | Print the command-line reference. |
 | `--version` | Print the application version. |
 
-A positional argument that ends in `.iso`, `.xiso`, `.chd` or `.zar` is treated
-as `--disc` and implies `--autostart`:
+A positional argument that ends in `.iso`, `.xiso`, `.chd`, `.cci` or `.zar` is
+treated as `--disc` and implies `--autostart`:
 
 ```text
 XGrid.Frontend.Avalonia.exe -f "D:\Games\Halo.iso"
@@ -121,6 +121,11 @@ The shell writes indented JSON. The main fields are:
 | `RamMb` | 64 or 128. |
 | `DisplaySink` | Removed. The core always owns the picture; the frame sink is only used by headless runs. |
 | `ShowFpsOverlay` | The core draws the frame-rate overlay over a running console. |
+| `PowerOnAtStartup` | Power on automatically when the shell opens. |
+| `StayOpenAfterPowerOff` | Keep the shell open on the powered-off screen after a normal shutdown. |
+| `SaveStateOnExit` | Write the `xgrid-session` snapshot before stopping the console. |
+| `ResumeStateOnStart` | Restore `xgrid-session` when the Power button starts the dashboard. |
+| `ShowPoweredOffScreen` | Show the powered-off panel instead of a plain black picture area. |
 | `CoreHosting` | `in-process` or `process`. |
 | `Filter` | `nearest`, `bilinear`, `scanline` or `crt`. |
 | `Graphics` | Renderer, scale, filtering, window, aspect, fit, AV pack. |

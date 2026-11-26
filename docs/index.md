@@ -20,7 +20,7 @@ diagnostics, packaging and the documentation you are reading.
 | **Media** | ISO/XISO (optimized or full Redump), compressed CHD, CCI, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
 | **Display** | Core-owned picture with nearest, bilinear, scanline and CRT filters; embedded core window; resolution scale, aspect and fit controls |
 | **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
-| **Quality of life** | Four save-state slots, multiple library roots, favorites, play time, per-title overrides, 4x fast-forward, local and online cover art, core-owned console screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
+| **Quality of life** | Four save-state slots, automatic session save/resume, powered-off screen, multiple library roots, favorites, play time, per-title overrides, 4x fast-forward, local and online cover art, core-owned console screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
 | **Performance** | Core-drawn FPS overlay with present rate and frame time; headless `--benchmark` runs with JSON reports |
 | **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
 | **Automation** | Command-line settings overrides and headless runs with a JSON report for scripts and benchmarks |
@@ -45,7 +45,7 @@ Read [Architecture](reference/architecture.md) for the full picture.
 ### A real desktop shell
 
 - **Home** — power, stop, the live display, current disc and renderer status.
-- **Library** - recursive scanning of ISO, CHD, ZAR and XBE files across several folders, search, filters, sorts, favorites, play time, local and online cover art and launch.
+- **Library** - recursive scanning of ISO, CHD, CCI, ZAR and XBE files across several folders, search, filters, sorts, favorites, play time, local and online cover art and launch.
 - **Settings** - System, Graphics, Audio, Input, Titles, Library and Appearance tabs.
 - **Playback** - pause, single-frame step, 4x fast-forward and fullscreen with a
   pause-then-close Escape sequence.
@@ -70,6 +70,18 @@ Read [Architecture](reference/architecture.md) for the full picture.
 XGrid does not invent a snapshot format. It exposes xemu/QEMU snapshots as four
 named slots (`xgrid-slot-1` … `xgrid-slot-4`), saved inside the hard-disk image.
 F6 saves, F7 loads, and the core performs the work on its own main loop.
+
+### Power and session lifecycle
+
+- **Powered-off screen** - a console-off panel with the XGrid logo and a power
+  button instead of a blank picture area.
+- **Stay-open mode** - the shell stays open after the console powers off by
+  default; turn it off to close XGrid after a normal shutdown.
+- **Power on when XGrid starts** - boot the configured disc or dashboard as soon
+  as the window opens.
+- **Automatic session save/resume** - optionally write `xgrid-session` before
+  power off or window close, then restore it from the Power button. It is
+  separate from the four manual slots and needs in-process hosting.
 
 ### Pause and frame step
 

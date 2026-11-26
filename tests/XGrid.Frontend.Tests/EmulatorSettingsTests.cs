@@ -23,6 +23,32 @@ public sealed class EmulatorSettingsTests
         Assert.Equal("nearest", settings.Filter);
         Assert.Empty(settings.TitleOverrides);
         Assert.False(settings.IsBiosReady);
+        Assert.False(settings.PowerOnAtStartup);
+        Assert.False(settings.SaveStateOnExit);
+        Assert.False(settings.ResumeStateOnStart);
+        Assert.True(settings.StayOpenAfterPowerOff);
+        Assert.True(settings.ShowPoweredOffScreen);
+    }
+
+    [Fact]
+    public void CloneCopiesTheSessionSettings()
+    {
+        var settings = new EmulatorSettings
+        {
+            PowerOnAtStartup = true,
+            StayOpenAfterPowerOff = false,
+            SaveStateOnExit = true,
+            ResumeStateOnStart = true,
+            ShowPoweredOffScreen = false,
+        };
+
+        EmulatorSettings copy = settings.Clone();
+
+        Assert.True(copy.PowerOnAtStartup);
+        Assert.False(copy.StayOpenAfterPowerOff);
+        Assert.True(copy.SaveStateOnExit);
+        Assert.True(copy.ResumeStateOnStart);
+        Assert.False(copy.ShowPoweredOffScreen);
     }
 
     [Fact]

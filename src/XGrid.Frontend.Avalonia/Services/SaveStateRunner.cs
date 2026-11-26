@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using XGrid.Core.Xemu;
 
@@ -34,6 +35,9 @@ public sealed class SaveStateRunner
     /// <summary>The number of quick slots the shell offers.</summary>
     public const int SlotCount = 4;
 
+    /// <summary>The snapshot name used for save-on-exit and resume-on-start.</summary>
+    public const string SessionName = "xgrid-session";
+
     private readonly ISaveStateService? _service;
     private readonly Func<long> _clock;
     private readonly long _timeoutMs;
@@ -41,6 +45,7 @@ public sealed class SaveStateRunner
     private long _deadline;
     private XemuSaveStateOperation _operation;
     private int _slot;
+    private string _name = string.Empty;
 
     /// <summary>Creates a runner over one core's save-state service.</summary>
     /// <param name="service">Core service, or null when the hosting mode has none.</param>
@@ -56,11 +61,20 @@ public sealed class SaveStateRunner
     /// <summary>Gets a value indicating whether the core can save states.</summary>
     public bool IsSupported => _service is not null;
 
+    /// <summary>Gets the snapshot names reported by the last refresh.</summary>
+    public IReadOnlyList<string> Names => _service?.Names ?? [];
+
     /// <summary>Gets a value indicating whether a request is still running.</summary>
     public bool IsBusy => _pending;
 
     /// <summary>Gets the slot the running (or last) request used, or 0.</summary>
     public int Slot => _slot;
+
+    /// <summary>Gets the snapshot name the running (or last) request used.</summary>
+    public string Name => _name;
+
+    /// <summary>Gets a value indicating whether the last request was for the session snapshot.</summary>
+    public bool IsSession => string.Equals(_name, SessionName, StringComparison.Ordinal);
 
     /// <summary>Gets the running (or last) request's operation.</summary>
     public XemuSaveStateOperation Operation => _operation;
@@ -84,7 +98,12 @@ public sealed class SaveStateRunner
     /// <param name="problem">Why the request was refused, if it was.</param>
     public bool TrySave(int slot, out string problem)
     {
-        return TryStart(XemuSaveStateOperation.Save, slot, out problem);
+        if (!ValidateSlot(slot, out problem))
+        {
+            return false;
+        }
+
+        return TryStart(XemuSaveStateOperation.Save, slot, SlotName(slot), out problem);
     }
 
     /// <summary>Queues a load of one slot.</summary>
@@ -92,7 +111,12 @@ public sealed class SaveStateRunner
     /// <param name="problem">Why the request was refused, if it was.</param>
     public bool TryLoad(int slot, out string problem)
     {
-        return TryStart(XemuSaveStateOperation.Load, slot, out problem);
+        if (!ValidateSlot(slot, out problem))
+        {
+            return false;
+        }
+
+        return TryStart(XemuSaveStateOperation.Load, slot, SlotName(slot), out problem);
     }
 
     /// <summary>Queues a delete of one slot.</summary>
@@ -100,14 +124,40 @@ public sealed class SaveStateRunner
     /// <param name="problem">Why the request was refused, if it was.</param>
     public bool TryDelete(int slot, out string problem)
     {
-        return TryStart(XemuSaveStateOperation.Delete, slot, out problem);
+        if (!ValidateSlot(slot, out problem))
+        {
+            return false;
+        }
+
+        return TryStart(XemuSaveStateOperation.Delete, slot, SlotName(slot), out problem);
+    }
+
+    /// <summary>Queues a save of the automatic session snapshot.</summary>
+    /// <param name="problem">Why the request was refused, if it was.</param>
+    public bool TrySaveSession(out string problem)
+    {
+        return TryStart(XemuSaveStateOperation.Save, 0, SessionName, out problem);
+    }
+
+    /// <summary>Queues a load of the automatic session snapshot.</summary>
+    /// <param name="problem">Why the request was refused, if it was.</param>
+    public bool TryLoadSession(out string problem)
+    {
+        return TryStart(XemuSaveStateOperation.Load, 0, SessionName, out problem);
+    }
+
+    /// <summary>Queues a delete of the automatic session snapshot.</summary>
+    /// <param name="problem">Why the request was refused, if it was.</param>
+    public bool TryDeleteSession(out string problem)
+    {
+        return TryStart(XemuSaveStateOperation.Delete, 0, SessionName, out problem);
     }
 
     /// <summary>Queues a re-read of the snapshot names.</summary>
     /// <param name="problem">Why the request was refused, if it was.</param>
     public bool TryRefresh(out string problem)
     {
-        return TryStart(XemuSaveStateOperation.Refresh, 0, out problem);
+        return TryStart(XemuSaveStateOperation.Refresh, 0, string.Empty, out problem);
     }
 
     /// <summary>
@@ -145,7 +195,25 @@ public sealed class SaveStateRunner
         return new SaveStateResult(true, DescribeSuccess());
     }
 
-    private bool TryStart(XemuSaveStateOperation operation, int slot, out string problem)
+    private static bool ValidateSlot(int slot, out string problem)
+    {
+        if (IsValidSlot(slot))
+        {
+            problem = string.Empty;
+            return true;
+        }
+
+        problem = "Save states use slots 1 to "
+                  + SlotCount.ToString(CultureInfo.InvariantCulture)
+                  + ".";
+        return false;
+    }
+
+    private bool TryStart(
+        XemuSaveStateOperation operation,
+        int slot,
+        string name,
+        out string problem)
     {
         problem = string.Empty;
         if (_service is null)
@@ -160,13 +228,12 @@ public sealed class SaveStateRunner
             return false;
         }
 
-        if (operation != XemuSaveStateOperation.Refresh && !IsValidSlot(slot))
+        if (operation != XemuSaveStateOperation.Refresh && slot != 0 && !IsValidSlot(slot))
         {
             problem = "Save states use slots 1 to " + SlotCount.ToString(CultureInfo.InvariantCulture) + ".";
             return false;
         }
 
-        string name = SlotName(slot);
         bool accepted = operation switch
         {
             XemuSaveStateOperation.Save => _service.TrySave(name, out problem),
@@ -182,12 +249,24 @@ public sealed class SaveStateRunner
         _pending = true;
         _operation = operation;
         _slot = slot;
+        _name = name;
         _deadline = _clock() + _timeoutMs;
         return true;
     }
 
     private string DescribeSuccess()
     {
+        if (_slot == 0)
+        {
+            return _operation switch
+            {
+                XemuSaveStateOperation.Save => "Saved the session state.",
+                XemuSaveStateOperation.Load => "Loaded the saved session.",
+                XemuSaveStateOperation.Delete => "Deleted the saved session.",
+                _ => "Save states: " + (_service?.Names.Count ?? 0).ToString(CultureInfo.InvariantCulture) + " found.",
+            };
+        }
+
         string number = _slot.ToString(CultureInfo.InvariantCulture);
         return _operation switch
         {

@@ -41,7 +41,7 @@
     <TabControl Grid.Row="1" Name="SettingsTabs" Classes="settings">
 
       <!-- ===================== System ===================== -->
-      <TabItem Header="System" ToolTip.Tip="Firmware, storage and emulator options">
+      <TabItem Header="System" ToolTip.Tip="Firmware, storage, session and emulator options">
         <ScrollViewer>
           <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
 
@@ -185,6 +185,72 @@
                     </Button>
                   </Grid>
                 </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Session" Classes="h3" />
+                  <TextBlock Text="Choose how XGrid starts, stops and saves the console."
+                             Classes="hint" />
+                </StackPanel>
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Power on when XGrid starts" Classes="label" />
+                    <TextBlock Text="Boots the configured disc or the dashboard as soon as the window opens. A first run still asks for firmware first."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding PowerOnAtStartup, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Power on the console when XGrid opens" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Keep XGrid open after power off" Classes="label" />
+                    <TextBlock Text="Leave the shell on the powered-off screen. Turn off to close XGrid after a normal console shutdown."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding StayOpenAfterPowerOff, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Keep the shell open when the console powers off" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Show the powered-off screen" Classes="label" />
+                    <TextBlock Text="Show the XGrid logo and a power hint while the console is off. Turn off for a plain black picture area."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowPoweredOffScreen, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Show a powered-off panel on the console page" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Save state before power off" Classes="label" />
+                    <TextBlock Text="Write the automatic session snapshot when you power off or close XGrid. Needs in-process core hosting."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding SaveStateOnExit, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Save the machine to the automatic session snapshot before stopping" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Resume the saved session" Classes="label" />
+                    <TextBlock Text="Load the automatic session snapshot when the Power button starts the dashboard. Launching a game from the library starts it fresh."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding ResumeStateOnStart, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Restore the automatic session snapshot on power-on" />
+                </Grid>
               </StackPanel>
             </Border>
 

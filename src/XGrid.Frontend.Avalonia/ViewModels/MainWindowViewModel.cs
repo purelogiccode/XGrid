@@ -35,6 +35,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>The pace Space holds the console at (four times real time).</summary>
     public const int FastForwardMultiplier = 4;
 
+    /// <summary>
+    /// How many refresh ticks to wait for the core to open its HDD and report
+    /// the session snapshot. The in-process machine is still initialising when
+    /// the first refresh is accepted.
+    /// </summary>
+    private const int MaxSessionLoadAttempts = 50;
+
+    /// <summary>
+    /// Wait before restoring a session snapshot. The guest must have initialized
+    /// the APU/DSP before the VM state can be loaded; loading during the first
+    /// seconds of the retail boot trips a DSP state assertion.
+    /// </summary>
+    private const int SessionResumeDelayMs = 12_000;
+
     private GamepadMappingOptions _gamepadOptions;
     private readonly XInputGamepadReader?[] _gamepads = new XInputGamepadReader?[XemuInputSink.PadCount];
     private readonly HostPad[] _gamepadPads = CreateNeutralPads();
@@ -44,6 +58,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private int _coreDisplayHeight = 480;
     private bool _shuttingDown;
     private bool _closeWhenStopped;
+    private bool _stopRequested;
+    private bool _sessionSavePending;
+    private bool _loadSessionWhenReady;
+    private bool _sessionResumeFound;
+    private long _sessionResumeNotBefore;
+    private int _sessionLoadAttempts;
+    private bool _windowReady;
     private SaveStateRunner? _saveStates;
     private PlaybackController? _playback;
     private DiscChangeRunner? _discs;
@@ -67,7 +88,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private int _selectedSaveSlot = 1;
 
     [ObservableProperty]
-    private string _statusText = "Idle";
+    private string _statusText = "Powered off";
 
     [ObservableProperty]
     private string _statusDetail = "No console powered on";
@@ -174,9 +195,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <summary>Gets a value indicating whether the native core display should be shown.</summary>
     public bool ShowCoreDisplay => IsRunning;
 
+    /// <summary>Gets a value indicating whether the powered-off console panel should be shown.</summary>
+    public bool ShowPoweredOffPanel => SessionPolicy.ShouldShowPoweredOffScreen(Config, IsRunning);
+
     /// <summary>
-    /// Gets a value indicating whether the core's window can be embedded in the
-    /// console page on this host.
+    /// Gets a value indicating whether the console page should explain that the
+    /// core window is outside XGrid on this host.
+    /// </summary>
+    public bool ShowExternalDisplayHint => IsRunning && !IsEmbeddedDisplaySupported;
+
+    /// <summary>
+    /// Gets a value indicating whether the native core window can be embedded in
+    /// the console page on this host.
     /// </summary>
     public bool IsEmbeddedDisplaySupported { get; } = XemuWindowEmbedder.IsSupported;
 
@@ -351,13 +381,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     };
 
     /// <summary>Gets the short run state shown in the status bar.</summary>
-    public string RunStateLabel => IsRunning
-        ? IsPaused
-            ? "Paused"
-            : IsFastForward
-                ? $"Running {FastForwardMultiplier}x"
-                : "Running"
-        : "Ready";
+    public string RunStateLabel => _sessionSavePending
+        ? "Saving state"
+        : _stopRequested
+            ? "Stopping"
+            : IsRunning
+                ? IsPaused
+                    ? "Paused"
+                    : IsFastForward
+                        ? $"Running {FastForwardMultiplier}x"
+                        : "Running"
+                : "Ready";
 
     /// <summary>Maps a keyboard key to the configured player-1 action.</summary>
     /// <param name="key">Pressed key.</param>
@@ -388,16 +422,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _uiTimer.Start();
         _ = Library.RefreshAsync();
 
-        if (_firstRunPending)
+        if (window.IsVisible)
         {
-            if (window.IsVisible)
-            {
-                _ = ShowFirstRunAsync(window);
-            }
-            else
-            {
-                window.Opened += OnMainWindowOpened;
-            }
+            _ = OnWindowReadyAsync(window);
+        }
+        else
+        {
+            window.Opened += OnMainWindowOpened;
         }
 
         // A saved donation email is refreshed silently so a donation completed
@@ -425,12 +456,48 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _ = RefreshDonationStatusAsync(showMessages: false);
     }
 
-    private void OnMainWindowOpened(object? sender, EventArgs e)
+    private async void OnMainWindowOpened(object? sender, EventArgs e)
     {
         if (sender is Window window)
         {
             window.Opened -= OnMainWindowOpened;
-            _ = ShowFirstRunAsync(window);
+            await OnWindowReadyAsync(window);
+        }
+    }
+
+    /// <summary>
+    /// Runs the once-per-window startup work: the first-run wizard, then the
+    /// saved power-on choice. A command-line autostart is posted by the app and
+    /// wins over <see cref="EmulatorSettings.PowerOnAtStartup"/>.
+    /// </summary>
+    private async Task OnWindowReadyAsync(Window window)
+    {
+        if (_windowReady)
+        {
+            return;
+        }
+
+        _windowReady = true;
+        try
+        {
+            if (_firstRunPending)
+            {
+                await ShowFirstRunAsync(window);
+            }
+
+            if (SessionPolicy.ShouldPowerOnAtStartup(
+                    Config,
+                    commandLineAutostart: App.Autostart,
+                    firstRunPending: _firstRunPending,
+                    isRunning: IsRunning))
+            {
+                Dispatcher.UIThread.Post(StartFromCommandLine, DispatcherPriority.Background);
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "The startup session work failed");
+            AddLog(LogLevel.Error, "The startup session work failed: " + exception.Message);
         }
     }
 
@@ -507,6 +574,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _shuttingDown = true;
         _closeWhenStopped = false;
+        _stopRequested = false;
+        _sessionSavePending = false;
+        _loadSessionWhenReady = false;
+        _sessionResumeFound = false;
+        _sessionLoadAttempts = 0;
         _uiTimer.Stop();
         _toastTimer.Stop();
         _core.Dispose();
@@ -1441,6 +1513,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             }
         }
 
+        if (_stopRequested)
+        {
+            ShowToast("The console is still stopping.");
+            return;
+        }
+
         if (game is not null && !game.IsLaunchable)
         {
             ShowToast("Loose XBE files must be wrapped in an ISO or CHD image.");
@@ -1489,6 +1567,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 : "Launching " + game.Title + ".");
 
             NavigateTo(PageKind.Home);
+
+            if (SessionPolicy.ShouldResumeAfterStart(
+                    Config,
+                    hasGame: game is not null,
+                    saveStatesSupported: _saveStates?.IsSupported == true))
+            {
+                _loadSessionWhenReady = true;
+                _sessionResumeFound = false;
+                _sessionLoadAttempts = 0;
+                _sessionResumeNotBefore = Environment.TickCount64 + SessionResumeDelayMs;
+                AddLog(LogLevel.Info, "Will resume the saved session when the core is ready.");
+            }
+            else if (Config.ResumeStateOnStart && game is null && _saveStates?.IsSupported != true)
+            {
+                AddLog(LogLevel.Info, "Resume needs the in-process emulator core; starting a fresh dashboard.");
+            }
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException
                                               or UnauthorizedAccessException or ArgumentException
@@ -1515,14 +1609,44 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void StopSession()
     {
-        if (!IsRunning)
+        if (!IsRunning || _stopRequested)
         {
             return;
+        }
+
+        _stopRequested = true;
+        OnPropertyChanged(nameof(RunStateLabel));
+
+        if (SessionPolicy.ShouldSaveBeforeStop(
+                Config,
+                saveStatesSupported: _saveStates?.IsSupported == true,
+                isRunning: IsRunning))
+        {
+            SaveStateRunner? runner = _saveStates;
+            string problem = "The save-state service is not available.";
+            if (runner is not null && runner.TrySaveSession(out problem))
+            {
+                _sessionSavePending = true;
+                StatusText = "Saving state";
+                StatusDetail = "Saving the console state before power off...";
+                OnPropertyChanged(nameof(RunStateLabel));
+                AddLog(LogLevel.Info, "Saving the session state before power off...");
+                return;
+            }
+
+            AddLog(LogLevel.Warning, "Could not save the session state: " + problem);
+        }
+        else if (Config.SaveStateOnExit && _saveStates?.IsSupported != true)
+        {
+            AddLog(
+                LogLevel.Info,
+                "Save-on-exit needs the in-process emulator core; powering off without a snapshot.");
         }
 
         AddLog(LogLevel.Info, "Stopping the console.");
         _core.Stop();
         StatusText = "Stopping";
+        OnPropertyChanged(nameof(RunStateLabel));
     }
 
     /// <summary>Public command: stays on the home page.</summary>
@@ -1574,6 +1698,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         int slot,
         SlotRequest request)
     {
+        CancelPendingSessionResume();
         if (!IsRunning)
         {
             ShowToast("Power on the console before using save states.");
@@ -1649,6 +1774,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanEjectDisc))]
     private void EjectDisc()
     {
+        CancelPendingSessionResume();
         DiscChangeRunner? discs = _discs;
         if (discs is null || !discs.IsSupported)
         {
@@ -1677,6 +1803,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     /// <param name="path">ISO/XISO, CHD or ZArchive image.</param>
     private void InsertDisc(string path)
     {
+        CancelPendingSessionResume();
         DiscChangeRunner? discs = _discs;
         if (discs is null || !discs.IsSupported)
         {
@@ -1758,6 +1885,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PowerButtonText));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(ShowCoreDisplay));
+        OnPropertyChanged(nameof(ShowPoweredOffPanel));
+        OnPropertyChanged(nameof(ShowExternalDisplayHint));
         OnPropertyChanged(nameof(RunStateLabel));
         OnPropertyChanged(nameof(OpenDiscHint));
         StopSessionCommand.NotifyCanExecuteChanged();
@@ -1868,6 +1997,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             Library.CompletePlaySession();
             IsRunning = false;
+            _stopRequested = false;
+            _sessionSavePending = false;
+            _loadSessionWhenReady = false;
+            _sessionResumeFound = false;
+            _sessionLoadAttempts = 0;
             _saveStates = null;
             _saveStatesNeedRefresh = false;
             _playback?.Reset();
@@ -1877,10 +2011,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(HasSaveStates));
             OnPropertyChanged(nameof(HasPlayback));
             OnPropertyChanged(nameof(HasDiscChange));
+            OnPropertyChanged(nameof(ShowPoweredOffPanel));
+            OnPropertyChanged(nameof(ShowExternalDisplayHint));
             OnPropertyChanged(nameof(OpenDiscHint));
             OnPropertyChanged(nameof(EjectDiscHint));
+            OnPropertyChanged(nameof(RunStateLabel));
             EjectDiscCommand.NotifyCanExecuteChanged();
-            StatusText = e.Faulted ? "Faulted" : "Off";
+            StatusText = e.Faulted ? "Faulted" : "Powered off";
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
 
@@ -1891,12 +2028,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 // destroy its window without waiting on this thread.
                 _window?.Close();
             }
+            else if (SessionPolicy.ShouldCloseAfterStop(Config, e.Faulted))
+            {
+                _closeWhenStopped = true;
+                _window?.Close();
+            }
         });
     }
 
     private void OnUiTick(object? sender, EventArgs e)
     {
         PollSaveStates();
+        ResumeSessionWhenReady();
         PollDiscChange();
 
         // The core owns the picture, its pacing, filtering and overlay; the
@@ -1905,6 +2048,41 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             IsRunning = false;
         }
+    }
+
+    /// <summary>
+    /// Restores the session snapshot once the guest has finished the early boot
+    /// and the save-state channel is idle. Loading during the first seconds of
+    /// the retail boot trips a DSP state assertion in the core.
+    /// </summary>
+    private void ResumeSessionWhenReady()
+    {
+        if (!_sessionResumeFound
+            || Environment.TickCount64 < _sessionResumeNotBefore
+            || _saveStates is not { IsSupported: true } runner
+            || runner.IsBusy)
+        {
+            return;
+        }
+
+        _sessionResumeFound = false;
+        if (runner.TryLoadSession(out string problem))
+        {
+            StatusDetail = "Resuming the saved session...";
+            AddLog(LogLevel.Info, "Resuming the saved session...");
+        }
+        else
+        {
+            AddLog(LogLevel.Warning, "Could not resume the saved session: " + problem);
+        }
+    }
+
+    /// <summary>Cancels an automatic resume that has not run yet after a manual machine action.</summary>
+    private void CancelPendingSessionResume()
+    {
+        _loadSessionWhenReady = false;
+        _sessionResumeFound = false;
+        _sessionLoadAttempts = 0;
     }
 
     /// <summary>
@@ -1933,14 +2111,54 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         XemuSaveStateOperation operation = runner.Operation;
+        bool session = runner.IsSession;
         AddLog(result.Succeeded ? LogLevel.Info : LogLevel.Error, result.Message);
         FrontendTrace.Write(
-            $"save state {operation} slot {runner.Slot}: {(result.Succeeded ? "ok" : "failed")} - {result.Message}");
+            $"save state {operation} {(session ? runner.Name : "slot " + runner.Slot.ToString(CultureInfo.InvariantCulture))}: "
+            + $"{(result.Succeeded ? "ok" : "failed")} - {result.Message}");
 
         // A refresh is bookkeeping; the player only asked for the slot change.
         if (operation != XemuSaveStateOperation.Refresh)
         {
             ShowToast(result.Message);
+        }
+
+        if (session
+            && operation == XemuSaveStateOperation.Save
+            && _sessionSavePending)
+        {
+            _sessionSavePending = false;
+            StatusText = "Stopping";
+            StatusDetail = result.Succeeded
+                ? "Session state saved. Powering off..."
+                : "Powering off without a saved session.";
+            OnPropertyChanged(nameof(RunStateLabel));
+            AddLog(LogLevel.Info, "Stopping the console.");
+            _core.Stop();
+            return;
+        }
+
+        if (operation == XemuSaveStateOperation.Refresh && _loadSessionWhenReady)
+        {
+            if (runner.Names.Contains(SaveStateRunner.SessionName, StringComparer.Ordinal))
+            {
+                _loadSessionWhenReady = false;
+                _sessionLoadAttempts = 0;
+                _sessionResumeFound = true;
+                AddLog(LogLevel.Info, "Saved session found; it will resume after the console boots.");
+            }
+            else if (_sessionLoadAttempts++ < MaxSessionLoadAttempts)
+            {
+                // The machine may still be opening the HDD; ask again next tick.
+                _saveStatesNeedRefresh = true;
+                return;
+            }
+            else
+            {
+                _loadSessionWhenReady = false;
+                _sessionLoadAttempts = 0;
+                AddLog(LogLevel.Info, "No saved session to resume.");
+            }
         }
 
         if (result.Succeeded
@@ -1958,6 +2176,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(RendererLabel));
         OnPropertyChanged(nameof(ShowCoreDisplay));
+        OnPropertyChanged(nameof(ShowPoweredOffPanel));
+        OnPropertyChanged(nameof(ShowExternalDisplayHint));
         OnPropertyChanged(nameof(ShowDonationBanner));
         OnPropertyChanged(nameof(ShowFpsOverlay));
         StopSessionCommand.NotifyCanExecuteChanged();
