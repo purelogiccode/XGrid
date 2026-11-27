@@ -2,8 +2,8 @@
 
 ## What is XGrid?
 
-An enhanced **xemu 0.8.139** core with a modern **Avalonia desktop shell**. It
-is not an independent emulator.
+A custom enhanced and patched core that began as **xemu 0.8.139**, now evolving
+separately, with a modern **Avalonia desktop shell**.
 
 ## Does it include BIOS files or games?
 

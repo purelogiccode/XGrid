@@ -9,10 +9,10 @@ XGrid's own source is **GPL-2.0-or-later**.
 
 ## Core
 
-The core is **xemu 0.8.139** on a **QEMU 10.2** base. Files keep their original
-GPL-2.0, LGPL-2.0/2.1-or-later and MIT notices. XGrid's additions in
-`xemu/xgrid-core/` are GPL-2.0-or-later; upstream edits are recorded in
-`xemu/xemu-patches/`.
+The core began as **xemu 0.8.139** on a **QEMU 10.2** base and is now maintained
+as part of XGrid. Files keep their original GPL-2.0, LGPL-2.0/2.1-or-later and
+MIT notices. XGrid's additions in `xemu/xgrid-core/` are GPL-2.0-or-later;
+original edit provenance is recorded in `xemu/xemu-patches/`.
 
 ## Third parties
 

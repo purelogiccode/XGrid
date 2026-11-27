@@ -24,7 +24,7 @@
 
 - **Reference**
   - [Architecture](reference/architecture.md)
-  - [Upstream differences](reference/upstream-differences.md)
+  - [xemu baseline differences](reference/upstream-differences.md)
   - [Configuration](reference/configuration.md)
   - [Keyboard shortcuts](reference/shortcuts.md)
   - [Compatibility](reference/compatibility.md)
@@ -38,7 +38,7 @@
   - [Building from source](development/building.md)
   - [Repository layout](development/repository-layout.md)
   - [The native core](development/core.md)
-  - [Maintaining the xemu tree](development/xemu-upstream.md)
+  - [Core lineage and upstream](development/xemu-upstream.md)
   - [Quality gates](development/quality-gates.md)
   - [Testing](development/testing.md)
   - [Code inspection](development/inspection.md)

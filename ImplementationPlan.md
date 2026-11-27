@@ -70,12 +70,6 @@ current product roadmap; user documentation lives in `docs/`.
 
 ## 2. Next
 
-### Compatibility
-
-- [ ] Expand the tested retail-title set.
-- [ ] Track title-level behavior regressions against xemu 0.8.139.
-- [ ] Keep the media drivers current with CHD/ZArchive format changes.
-
 ### Graphics
 
 The core has OpenGL, Vulkan, Direct3D 11 and NULL render backends plus DXGI
@@ -93,10 +87,6 @@ preview while parity, performance and packaging work continues; see
       The boot sequence and Halo main menu have been compared; gameplay and a
       benchmark run are still pending.
 
-### Media
-
-- [ ] Re-verify CHD/ZAR boot paths on each core rebase.
-
 ### Library
 
 - [x] Optional online cover-art catalog for titles without local covers.
@@ -108,8 +98,6 @@ preview while parity, performance and packaging work continues; see
 
 - [x] Standalone core build on Linux from the tracked tree.
 - [x] Package a core build in the Linux frontend archive.
-- [ ] Verify the packaged Linux core on a Linux host.
-- [ ] Package the core for macOS.
 - [ ] Native display embedding on Linux/macOS.
 - [ ] Verify save states on non-Windows hosts.
 
@@ -294,16 +282,6 @@ requests; use per-title overrides or an upstream patch.
   [#1391](https://github.com/xemu-project/xemu/issues/1391),
   [#1033](https://github.com/xemu-project/xemu/issues/1033)).
 
-### 3.7 Tracking
-
-- [ ] **Meta trackers** — use the subpixel, texture-sampling, timing and audio
-  trackers to plan compatibility and screenshot tests; do not duplicate them as
-  individual shell bugs
-  ([#3095](https://github.com/xemu-project/xemu/issues/3095),
-  [#979](https://github.com/xemu-project/xemu/issues/979),
-  [#1099](https://github.com/xemu-project/xemu/issues/1099),
-  [#904](https://github.com/xemu-project/xemu/issues/904)).
-
 ### 3.8 Pull requests to review
 
 61 of the 102 open xemu PRs at the 2026-11-24 snapshot are selected here. These
@@ -349,82 +327,6 @@ when XGrid needs the fix sooner.
   [#589](https://github.com/xemu-project/xemu/pull/589)).
 - [ ] **Networking** — flush queued nvnet packets when the NIC can receive again
   ([#3107](https://github.com/xemu-project/xemu/pull/3107)).
-
-#### CPU and chipset
-
-- [ ] **CPU accuracy** — x87 load precision and an rdpmc stub instead of #UD
-  ([#2951](https://github.com/xemu-project/xemu/pull/2951),
-  [#2987](https://github.com/xemu-project/xemu/pull/2987)).
-- [ ] **TCG performance** — store-to-code page invalidation, indirect-call
-  removal and unused-MMU TLB skipping
-  ([#3028](https://github.com/xemu-project/xemu/pull/3028),
-  [#3141](https://github.com/xemu-project/xemu/pull/3141),
-  [#3140](https://github.com/xemu-project/xemu/pull/3140)).
-- [ ] **Chipset** — GPIO IO ports and PBUS config mirroring
-  ([#2851](https://github.com/xemu-project/xemu/pull/2851),
-  [#3067](https://github.com/xemu-project/xemu/pull/3067)).
-
-#### NV2A and DirectX
-
-- [ ] **Renderer architecture** — shared blit refactor, client-side primitive
-  rewrite (draft), PRAMIN-backed unified VRAM and DMA through memory callbacks;
-  this is the closest upstream work to the DirectX backend
-  ([#2675](https://github.com/xemu-project/xemu/pull/2675),
-  [#2734](https://github.com/xemu-project/xemu/pull/2734),
-  [#2952](https://github.com/xemu-project/xemu/pull/2952),
-  [#2514](https://github.com/xemu-project/xemu/pull/2514)).
-- [ ] **NV2A synchronization and throughput** — lock-free D3D fence polling,
-  deferred PGRAPH IRQ, bulk inline-array consumption and LRU active-node walking
-  ([#2941](https://github.com/xemu-project/xemu/pull/2941),
-  [#2929](https://github.com/xemu-project/xemu/pull/2929),
-  [#2930](https://github.com/xemu-project/xemu/pull/2930),
-  [#2994](https://github.com/xemu-project/xemu/pull/2994)).
-- [ ] **Geometry and vertex** — render-to-vertex-buffer, dirty surfaces before
-  vertex fetch, D3D vertex color order, fog distance and zero-vector cubemap
-  ([#2984](https://github.com/xemu-project/xemu/pull/2984),
-  [#3189](https://github.com/xemu-project/xemu/pull/3189),
-  [#3182](https://github.com/xemu-project/xemu/pull/3182),
-  [#3181](https://github.com/xemu-project/xemu/pull/3181),
-  [#3168](https://github.com/xemu-project/xemu/pull/3168)).
-- [ ] **Surfaces and blending** — larger linear zeta surfaces, render-target
-  reinterpretation, subpixel offset correction, DstAlpha blending, signed image
-  formats and class 0x39 memory copies
-  ([#3096](https://github.com/xemu-project/xemu/pull/3096),
-  [#2802](https://github.com/xemu-project/xemu/pull/2802),
-  [#3065](https://github.com/xemu-project/xemu/pull/3065),
-  [#2478](https://github.com/xemu-project/xemu/pull/2478),
-  [#2982](https://github.com/xemu-project/xemu/pull/2982),
-  [#3052](https://github.com/xemu-project/xemu/pull/3052)).
-- [ ] **Video output** — framebuffer CPU blit/PVIDEO-only rendering (draft) and
-  overlapping VGA framebuffer surfaces (draft)
-  ([#1146](https://github.com/xemu-project/xemu/pull/1146),
-  [#2190](https://github.com/xemu-project/xemu/pull/2190)).
-
-#### Renderers, audio and packaging
-
-- [ ] **Vulkan compatibility** — persisted pipeline/SPIR-V caches, compute
-  workgroup fix, device-sized storage buffers, feature enablement, vertex
-  attribute conversion and occlusion-query batching
-  ([#2993](https://github.com/xemu-project/xemu/pull/2993),
-  [#2977](https://github.com/xemu-project/xemu/pull/2977),
-  [#2996](https://github.com/xemu-project/xemu/pull/2996),
-  [#2999](https://github.com/xemu-project/xemu/pull/2999),
-  [#3002](https://github.com/xemu-project/xemu/pull/3002),
-  [#2995](https://github.com/xemu-project/xemu/pull/2995)).
-- [ ] **OpenGL and macOS** — GL 3.1 fallback, limited-desktop-GL survival,
-  MoltenVK support and GL texture-streaming cost (draft)
-  ([#3003](https://github.com/xemu-project/xemu/pull/3003),
-  [#2979](https://github.com/xemu-project/xemu/pull/2979),
-  [#2799](https://github.com/xemu-project/xemu/pull/2799),
-  [#3010](https://github.com/xemu-project/xemu/pull/3010)).
-- [ ] **Audio** — APU DSP core/DMA accuracy (draft), HRTF and APU improvements,
-  surround-format handling and the segment-offset assertion workaround
-  ([#3047](https://github.com/xemu-project/xemu/pull/3047),
-  [#3105](https://github.com/xemu-project/xemu/pull/3105),
-  [#3074](https://github.com/xemu-project/xemu/pull/3074),
-  [#3072](https://github.com/xemu-project/xemu/pull/3072)).
-- [ ] **Packaging** — honour `SOURCE_DATE_EPOCH` for a reproducible build date
-  ([#3180](https://github.com/xemu-project/xemu/pull/3180)).
 
 ## 4. Non-goals
 

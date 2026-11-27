@@ -6,7 +6,7 @@
 | **AV pack** | The video output type the console reports to the guest (HDTV, composite, SCART, VGA, …). |
 | **CCI** | Cerbios/Repackinator compressed Xbox disc image; single or split parts. |
 | **CHD** | Compressed Hunks of Data, a compressed disc-image format. |
-| **Core** | The native xemu 0.8.139 emulator built from `xemu/`. |
+| **Core** | The native XGrid emulator core in `xemu/`, originally derived from xemu 0.8.139 and now evolving separately. |
 | **DIMM** | Chihiro game-memory board; the netboot image is loaded into it. |
 | **DSP** | The guest audio microcode executed by the APU. |
 | **EEPROM** | 256-byte console configuration storage. |

@@ -1,9 +1,8 @@
 # Architecture
 
 XGrid is two cooperating parts: a **native emulator core** and a **managed
-desktop shell**. The split is deliberate: the core keeps the mature xemu
-implementation and its performance, while the shell owns everything the user
-touches.
+desktop shell**. The core began as xemu 0.8.139 and now evolves as part of XGrid;
+the shell owns everything the user touches.
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -16,7 +15,7 @@ touches.
 └───────────────────────────┬──────────────────────────────────┘
                             │ in-process DLL or separate process
 ┌───────────────────────────▼──────────────────────────────────┐
-│ xemu core (xemu 0.8.139 + XGrid additions)                   │
+│ XGrid core (xemu 0.8.139 lineage + XGrid changes)            │
 │ QEMU TCG i386 · NV2A · MCPX · APU/ACI · IDE · USB · SMBus    │
 │ xgridiso · xgridcci · xgridchd · xgridzar · display/input/ABI│
 └──────────────────────────────────────────────────────────────┘
@@ -24,8 +23,10 @@ touches.
 
 ## The core
 
-The emulator is the tracked **xemu 0.8.139** tree in `xemu/`, with a QEMU 10.2
-base. It is the native emulator, not a managed port. It provides:
+The emulator is the **XGrid core** in `xemu/`. It began from **xemu 0.8.139**
+and its QEMU 10.2 base, but it is now a custom enhanced and patched core that
+evolves separately from the original xemu codebase. It is the native emulator,
+not a managed port. It provides:
 
 - the QEMU TCG i386 CPU core;
 - the NV2A GPU and its OpenGL/Vulkan/Direct3D 11/NULL renderers (Direct3D 11 is
@@ -51,17 +52,17 @@ XGrid's additions live in `xemu/xgrid-core/`:
 | `thirdparty/libchdr/` | Vendored libchdr 0.3.0 (BSD-3-Clause). |
 | `thirdparty/libcci/` | Vendored libCCI (GPL-2.0-or-later), built against the host LZ4. |
 
-Upstream edit provenance is recorded in `xemu/xemu-patches/`; XGrid-native
-additions live in `xemu/xgrid-core/`. A new xemu release is a rebase of the
-recorded changes, not a re-port. See
-[Maintaining the xemu tree](../development/xemu-upstream.md).
+Original edit provenance is recorded in `xemu/xemu-patches/`; XGrid-native
+additions live in `xemu/xgrid-core/`. The original xemu tree is a reference
+point, not a required merge target. See
+[Core lineage and upstream](../development/xemu-upstream.md).
 
 ## Why the core is native
 
-The native xemu/QEMU core is the product path because it provides mature device
-emulation and the performance a playable emulator needs. XGrid invests in the
-shell, the media drivers and the integration seams rather than replacing the
-emulator.
+The native XGrid core, built on the xemu/QEMU lineage, is the product path
+because it provides mature device emulation and the performance a playable
+emulator needs. XGrid invests in the shell, the media drivers and the core
+enhancements rather than replacing the emulator.
 
 The managed validation projects and their test suite remain in the repository as
 a **reference oracle** for validation. They are not the product path.
@@ -262,8 +263,8 @@ and only a successful verification response hides the banner.
 
 ## Related pages
 
-- [Upstream differences](upstream-differences.md) — the concrete delta from
-  pristine xemu 0.8.139.
+- [xemu baseline differences](upstream-differences.md) — the historical delta
+  from pristine xemu 0.8.139.
 - [Configuration](configuration.md) — files, paths and environment variables.
 - [Service endpoints](service-endpoints.md) — every outbound call and opt-out.
 - [The native core](../development/core.md) — building and extending the core.

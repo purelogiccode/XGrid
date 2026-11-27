@@ -78,7 +78,7 @@ one is best-effort and can be disabled. See
 ## Legal
 
 - XGrid's own code is GPL-2.0-or-later.
-- The emulator core is xemu 0.8.139 and QEMU, under their original licenses.
+- The core began from xemu 0.8.139 and QEMU and keeps their original notices; XGrid's core changes are GPL-2.0-or-later.
 - You are responsible for the firmware and game images you use. The GPL does not
   grant rights to Microsoft's firmware or game content.
 

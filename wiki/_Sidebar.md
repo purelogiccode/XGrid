@@ -21,7 +21,7 @@
   * [FAQ](FAQ)
 * **Development**
   * [Building from source](Building-from-Source)
-  * [Upstream differences](Upstream-Differences)
+  * [xemu baseline differences](Upstream-Differences)
   * [Testing](Testing)
   * [Licensing](Licensing)
 * **Repository**

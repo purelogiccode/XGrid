@@ -1,9 +1,11 @@
-# XGrid core vs upstream xemu
+# XGrid core vs the xemu 0.8.139 baseline
 
-This page documents the concrete difference between the tracked core in
+This page documents the historical starting delta between the XGrid core in
 `xemu/` and the pristine **xemu 0.8.139** baseline in
-`References2/xemu-0.8.139`. It is a developer and advanced-user reference; the
-user-facing behavior is described in the guides.
+`References2/xemu-0.8.139`. XGrid's core now evolves separately from xemu, so
+this is a baseline record rather than a commitment to track upstream releases.
+It is a developer and advanced-user reference; the user-facing behavior is
+described in the guides.
 
 > `References2/` is a read-only oracle. Compare against it, but never edit,
 > move or clean it. The product source is the tracked `xemu/` tree.
@@ -13,7 +15,7 @@ user-facing behavior is described in the guides.
 | Item | Value |
 | --- | --- |
 | Upstream baseline | xemu 0.8.139 in `References2/xemu-0.8.139` |
-| Tracked core | xemu 0.8.139 + XGrid additions in `xemu/` |
+| XGrid core | xemu 0.8.139 lineage + XGrid changes in `xemu/`, now evolving separately |
 | Recorded upstream commit | `aa54c34cae1c09410d74c69a44210a9867fe2d16` (`xemu/XEMU_COMMIT`) |
 | XGrid-native code | `xemu/xgrid-core/` |
 | Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`–`0019`; 13 files) |
@@ -364,7 +366,7 @@ git diff --no-index -- References2/xemu-0.8.139/hw/xbox/xbox.c xemu/hw/xbox/xbox
 
 The pristine tree is an oracle, not a working copy. The current upstream
 revision, dependency locks and weekly report are described in
-[Maintaining the xemu tree](../development/xemu-upstream.md).
+[Core lineage and upstream](../development/xemu-upstream.md).
 
 ## Related pages
 
@@ -372,5 +374,5 @@ revision, dependency locks and weekly report are described in
 - [The native core](../development/core.md) — build and extension rules.
 - [Compatibility](compatibility.md) — supported surface and limitations.
 - [Licensing](../legal/licensing.md) — GPL, LGPL and BSD notices.
-- [Maintaining the xemu tree](../development/xemu-upstream.md) — rebase and
-  dependency locks.
+- [Core lineage and upstream](../development/xemu-upstream.md) — lineage,
+  upstream reference and dependency locks.

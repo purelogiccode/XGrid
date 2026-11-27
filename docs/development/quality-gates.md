@@ -101,7 +101,7 @@ pwsh -File scripts/headless-check.ps1 -Seconds 20 -Disc 'D:\Games\Halo.iso'
 The script renders off-screen, writes a JSON report and fails when no frames were
 published.
 
-The core rebase baseline and disc boot checks are in
+The core baseline and disc boot checks are in
 [The native core](core.md#build-and-validation).
 
 ## Documentation gate

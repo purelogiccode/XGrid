@@ -1,8 +1,10 @@
-# Upstream differences
+# xemu baseline differences
 
-XGrid's core is **xemu 0.8.139** plus a recorded set of XGrid changes. The
-pristine baseline is `References2/xemu-0.8.139`; the product source is `xemu/`.
-`References2/` is read-only.
+XGrid's core began as **xemu 0.8.139** and is now a custom enhanced and patched
+core that evolves separately. The pristine baseline is
+`References2/xemu-0.8.139`; the product source is `xemu/`. `References2/` is
+read-only. This page is the historical baseline, not a commitment to track
+upstream.
 
 Full page: [XGrid core vs upstream xemu](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/upstream-differences.md)
 
@@ -67,12 +69,12 @@ gun, card and force-feedback input.
 - XBE, XDVDFS, FATX and the upstream snapshot format are unchanged.
 - The standalone `xemu` still exists and uses its own UI.
 
-## Rebase and verification
+## Baseline and verification
 
 - `pwsh -File scripts/core-baseline.ps1` checks the ABI export baseline.
 - `pwsh -File scripts/build-native-xemu.ps1` builds the Windows core and DLL.
 - `bash scripts/build-native-xemu.sh` builds the Linux core.
-- See [Maintaining the xemu tree](https://github.com/purelogiccode/XGrid/blob/master/docs/development/xemu-upstream.md).
+- See [Core lineage and upstream](https://github.com/purelogiccode/XGrid/blob/master/docs/development/xemu-upstream.md).
 
 Compare a file without touching either tree:
 

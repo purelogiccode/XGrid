@@ -10,8 +10,9 @@ or later** (GPL-2.0-or-later).
 
 ## The emulation core
 
-The core is the vendored **xemu 0.8.139** codebase and its **QEMU 10.2** base.
-Those files keep their original per-file notices:
+The core began from the **xemu 0.8.139** codebase and its **QEMU 10.2** base and
+is now maintained as part of XGrid. Those files keep their original per-file
+notices:
 
 - GPL-2.0 / GPL-2.0-or-later;
 - LGPL-2.0-or-later;

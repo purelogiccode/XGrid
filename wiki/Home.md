@@ -1,8 +1,9 @@
 # XGrid Wiki
 
-**XGrid** is an enhanced **xemu 0.8.139** core with a modern **Avalonia** desktop
-shell. It adds a library, settings, per-title overrides, real-time CHD/CCI/ZAR
-media, save states, display/input plumbing, screenshots and packaging.
+**XGrid** is a custom enhanced and patched core that began as **xemu 0.8.139**,
+now evolving separately with a modern **Avalonia** desktop shell. It adds a
+library, settings, per-title overrides, real-time CHD/CCI/ZAR media, save states,
+display/input plumbing, screenshots and packaging.
 
 > XGrid is not affiliated with Microsoft or xemu. It ships no BIOS, EEPROM, HDD
 > or game data. Supply your own legally obtained files.
@@ -30,15 +31,15 @@ media, save states, display/input plumbing, screenshots and packaging.
 | [Troubleshooting](Troubleshooting) | Common failures and fixes. |
 | [FAQ](FAQ) | Short answers. |
 | [Building from source](Building-from-Source) | Shell, native core and gates. |
-| [Upstream differences](Upstream-Differences) | The concrete delta from pristine xemu 0.8.139. |
+| [xemu baseline differences](Upstream-Differences) | The historical delta from pristine xemu 0.8.139. |
 | [Testing](Testing) | Test projects, commands and conventions. |
 | [Licensing](Licensing) | GPL, xemu/QEMU and third-party notices. |
 
 ## At a glance
 
-- **Core:** xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A
-  OpenGL/Vulkan/Direct3D 11 preview/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI,
-  USB/OHCI, SMBus.
+- **Core:** XGrid custom core, originally xemu 0.8.139 / QEMU 10.2 TCG i386;
+  NV2A OpenGL/Vulkan/Direct3D 11 preview/NULL, MCPX, APU/DSP, ACI,
+  IDE/ATAPI, USB/OHCI, SMBus.
 - **Shell:** Home, Library, Settings, Activity, About.
 - **Hosting:** in-process `xgrid_core.dll` on Windows; separate process on Linux
   and as the fallback.

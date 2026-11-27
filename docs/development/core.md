@@ -1,15 +1,15 @@
 # The native core
 
-The core is the tracked xemu 0.8.139 tree in `xemu/`. XGrid does not maintain a
-separate fork repository; the tree and its patch record travel with the shell.
-For a file-level comparison with pristine xemu, see
-[Upstream differences](../reference/upstream-differences.md).
+The XGrid core began from xemu 0.8.139 and is now maintained directly in
+`xemu/`. It is a custom enhanced and patched core that **evolves separately from
+the original xemu codebase**. For the historical comparison with pristine xemu,
+see [xemu baseline differences](../reference/upstream-differences.md).
 
 ## Tree structure
 
 ```text
 xemu/
-  <upstream xemu 0.8.139 and its QEMU base>
+  <xemu 0.8.139 lineage and its QEMU base, maintained as XGrid's core>
   xgrid-core/          XGrid-owned native code
   hw/xbox/chihiro/     ported Sega Chihiro machine and cabinet devices
   block/blkmemory.c    memory-backed block driver for the Chihiro DIMM
@@ -47,10 +47,10 @@ the `-audio-drivers` probe, and the Sega Chihiro machine and its Xbox
 integration.
 
 XGrid-native additions live in `xemu/xgrid-core/`; new changes are ordinary
-commits in this repository. A new xemu release is handled by rebasing the
-recorded changes and the `xgrid-core/` additions, not by re-porting the
-emulator. See [Maintaining the xemu tree](xemu-upstream.md) for the dependency
-locks, the upstream revision markers and the weekly report.
+commits in this repository. Upstream xemu is a reference and a source of
+selective fixes, not a release-for-release merge obligation. See
+[Core lineage and upstream](xemu-upstream.md) for the dependency locks, the
+upstream revision markers and the weekly report.
 
 ## Renderers
 
@@ -210,9 +210,9 @@ Output: `xemu/dist/xemu`, `xemu/dist/xgrid-core.json` and
 `xemu/dist/LICENSE.txt`. This is the standalone core; the in-process
 `xgrid_core` library and its save-state ABI are Windows-only.
 
-### Rebase baseline
+### Upstream baseline
 
-Each core rebase is checked against a tracked baseline:
+Each deliberate upstream re-base is checked against a tracked baseline:
 
 ```powershell
 pwsh -File scripts/core-baseline.ps1
@@ -220,9 +220,9 @@ pwsh -File scripts/core-baseline.ps1
 
 It compares `xemu/XEMU_VERSION`, `xemu/XEMU_COMMIT` and the exports in
 `xemu/xgrid-core/abi/xgrid-core.h` with `xemu/xgrid-core/abi-baseline.json`, and
-verifies the built `xgrid_core.dll` exports every ABI name. A deliberate rebase
-updates the baseline with `-Refresh`, then re-runs the media boot checks and the
-test suite.
+verifies the built `xgrid_core.dll` exports every ABI name. A deliberate upstream
+re-base updates the baseline with `-Refresh`, then re-runs the media boot checks
+and the test suite.
 
 ### Media boot checks
 

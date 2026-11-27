@@ -1,9 +1,10 @@
 # Compatibility
 
-XGrid is alpha software. Its emulator is **xemu 0.8.139**, so game compatibility
-broadly tracks that core, while XGrid adds real-time compressed media and a new
-shell. The file-level core delta is in
-[Upstream differences](upstream-differences.md). This page describes the
+XGrid is alpha software. Its core began as **xemu 0.8.139** but is now a custom
+enhanced and patched core that evolves separately. Game compatibility starts
+from that baseline, while XGrid adds real-time compressed media and its own
+shell. The file-level starting delta is in
+[xemu baseline differences](upstream-differences.md). This page describes the
 supported surface, not a guarantee for every disc.
 
 For core-level status, xemu's own compatibility database is a useful starting

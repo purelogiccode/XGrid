@@ -1,11 +1,13 @@
-# Maintaining the xemu tree
+# Core lineage and upstream
 
-XGrid owns its xemu source directly in this Git repository. `xemu/` is tracked
-like every other source folder; it is **not** a submodule and it has no separate
-repository.
+XGrid owns its core source directly in this Git repository. The core began as
+xemu 0.8.139, but it is now part of XGrid and **evolves separately from the
+original xemu codebase**. `xemu/` is tracked like every other source folder; it
+is **not** a submodule and it has no separate repository. The directory name is
+retained for provenance.
 
-- `xemu/XEMU_VERSION` and `xemu/XEMU_COMMIT` record the upstream xemu release
-  and commit the tree was last based on.
+- `xemu/XEMU_VERSION` and `xemu/XEMU_COMMIT` record the original xemu release
+  and commit the core began from.
 - `xemu/xemu-patches/` is the historical provenance record for earlier upstream
   edits. New XGrid changes are normal commits in this repository; do not apply
   those patches again.
@@ -26,17 +28,19 @@ runner and can be dispatched manually. It compares:
 - every git-backed `.wrap` dependency lock with its upstream repository.
 
 When something is newer it opens or updates one issue titled
-`[xemu-updates] ...`. The report is notification-only; it never edits the tree.
+`[xemu-updates] ...`. The report is notification-only; it never edits the tree
+and does not imply an obligation to adopt an upstream change.
 
-## Applying an upstream update
+## Using upstream as a reference
 
 1. Read the report and the upstream compare.
 2. Review the upstream changes against `xemu/`, especially the files XGrid has
    modified.
-3. Apply the changes in the XGrid working tree and run the quality gates.
-4. Update `xemu/XEMU_VERSION` and `xemu/XEMU_COMMIT` to the new upstream base.
-5. Update any `.wrap` `revision=` values you deliberately adopt.
-6. Run the native core build and the managed tests before committing.
+3. Adopt only the changes that fit the XGrid core; XGrid may diverge
+   deliberately.
+4. Run the native core build and the managed tests before committing.
+5. If the core lineage is deliberately re-based, update `xemu/XEMU_VERSION` and
+   `xemu/XEMU_COMMIT` and any `.wrap` revisions in the same change.
 
-See [Upstream differences](../reference/upstream-differences.md) for the current
-source-level delta from the pristine 0.8.139 tree.
+See [xemu baseline differences](../reference/upstream-differences.md) for the
+source-level delta from the pristine 0.8.139 tree that XGrid started from.

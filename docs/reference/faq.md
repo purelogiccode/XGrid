@@ -2,16 +2,16 @@
 
 ## What is XGrid?
 
-An enhanced distribution of **xemu 0.8.139** with a new **Avalonia desktop
-shell**. The emulator is the maintained xemu core; XGrid adds the application,
-media drivers, save states, display/input plumbing and packaging.
+A desktop Xbox emulator built around a **custom enhanced and patched core** with
+a modern **Avalonia shell**. The core began as xemu 0.8.139 but is now maintained
+as part of XGrid and evolves separately from the original xemu codebase.
 
 ## Is XGrid a fork of xemu?
 
-It is a **maintained in-tree distribution** of xemu 0.8.139: the xemu tree is
-tracked in `xemu/`, XGrid's core additions live in `xemu/xgrid-core/`, and edits
-to upstream files are recorded in `xemu/xemu-patches/`. It is not an independent
-emulator.
+It began as an in-tree xemu 0.8.139 core. It is now the **XGrid core**: maintained
+in `xemu/`, enhanced in `xemu/xgrid-core/`, with the original edit provenance in
+`xemu/xemu-patches/`. It is no longer a stock xemu checkout and is not obliged
+to follow upstream releases one-for-one.
 
 ## What language is the emulator written in?
 
@@ -21,8 +21,8 @@ path.
 
 ## Why is the emulator native?
 
-The native xemu/QEMU core gives mature device emulation and the performance the
-product needs. The shell is C#; the emulator is not.
+The native core inherited from xemu/QEMU provides mature device emulation and
+the performance the product needs. The shell is C#; the emulator is not.
 
 ## Does XGrid include BIOS files or games?
 

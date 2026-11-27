@@ -6,7 +6,7 @@ notes.
 
 | Version | Date | Summary |
 | --- | --- | --- |
-| [0.1.0](v0.1.0.md) | First alpha | Avalonia shell, xemu 0.8.139 core, real-time media, save states, Sega Chihiro |
+| [0.1.0](v0.1.0.md) | First alpha | Avalonia shell, XGrid core (xemu 0.8.139 lineage), real-time media, save states, Sega Chihiro |
 
 ## Reading the notes
 

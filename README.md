@@ -6,7 +6,8 @@
 
 <p align="center">
   <strong>Original Xbox emulation, with a desktop shell that feels at home.</strong><br>
-  A maintained <a href="https://xemu.app">xemu</a> core wrapped in a modern Avalonia application.
+  A custom enhanced and patched emulator core, originally derived from
+  <a href="https://xemu.app">xemu 0.8.139</a>, with a modern Avalonia application.
 </p>
 
 <p align="center">
@@ -19,7 +20,7 @@
 <p align="center">
   <img alt=".NET 11" src="https://img.shields.io/badge/.NET-11-512BD4">
   <img alt="Avalonia 12.2" src="https://img.shields.io/badge/Avalonia-12.2-8B44AC">
-  <a href="xemu/XEMU_VERSION"><img alt="Core: xemu 0.8.139" src="https://img.shields.io/badge/core-xemu%200.8.139-2E7D32"></a>
+  <a href="xemu/XEMU_VERSION"><img alt="Core: XGrid custom / xemu 0.8.139 lineage" src="https://img.shields.io/badge/core-XGrid%20custom%20%2F%20xemu%200.8.139%20lineage-2E7D32"></a>
   <img alt="Platforms: Windows, Linux, macOS" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey">
 </p>
 
@@ -32,30 +33,36 @@
 
 ---
 
-XGrid is an **in-tree distribution of xemu 0.8.139** with a first-class desktop
-application around it. The emulator itself — QEMU TCG, the NV2A and its
-renderers, MCPX, the APU/ACI, IDE, USB and the rest of the Xbox — is the xemu
-core tracked in [`xemu/`](xemu/). XGrid adds the library, settings, save states,
-real-time compressed media, diagnostics and packaging that turn a core into a
-comfortable application.
+XGrid is a desktop Xbox emulator built around a **custom, enhanced, and patched
+core**. The core began as **xemu 0.8.139**, but it now lives in this repository
+as part of XGrid and **will evolve separately from the original xemu codebase**.
+It is not a stock xemu build, and future XGrid core changes are not tied to
+upstream xemu releases.
+
+The emulator itself — QEMU TCG, the NV2A and its renderers, MCPX, the APU/ACI,
+IDE, USB and the rest of the Xbox — started from xemu and QEMU. XGrid adds the
+library, settings, save states, real-time compressed media, per-title
+configuration, diagnostics and packaging that turn a core into a comfortable
+application.
 
 > **XGrid is not affiliated with Microsoft or the xemu project.** It ships no
 > BIOS, EEPROM, hard-disk image or game data. You must supply your own legally
 > obtained files.
 
 **Contents:** [Why XGrid?](#why-xgrid) · [At a glance](#at-a-glance) ·
-[Core changes](#what-xgrid-changes-in-the-core) · [What you need](#what-you-need) ·
+[The XGrid core](#the-xgrid-core) · [What you need](#what-you-need) ·
 [Quick start](#quick-start) ·
 [Keyboard](#keyboard-essentials) · [Media](#supported-media) ·
 [Platforms](#platform-support) · [Documentation](#documentation) ·
-[Build](#build-from-source) · [License](#license)
+[Build](#build-from-source) · [Credits](#credits) · [License](#license)
 
 ## Why XGrid?
 
+- **A custom core, not a wrapper.** XGrid owns a patched and enhanced core that
+  began from xemu 0.8.139. It is maintained here and will diverge as the project
+  grows.
 - **A real desktop application.** Home, Library, Settings, Activity and About
   pages, folder scanning, search, favorites, play time and cover art.
-- **The proven core.** xemu 0.8.139 with a documented patch set — the same
-  emulator, not a separate implementation.
 - **Play compressed media directly.** ISO/XISO, CHD, CCI and ZArchive discs are
   read on demand. There is no extraction or conversion step.
 - **Retail images just work.** Optimized XISOs and full Redump images both boot;
@@ -75,7 +82,7 @@ comfortable application.
 
 | Area | What you get |
 | --- | --- |
-| **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/Direct3D 11 preview/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
+| **Core** | XGrid custom core, originally xemu 0.8.139 / QEMU 10.2 TCG i386; NV2A OpenGL/Vulkan/Direct3D 11 preview/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
 | **Shell** | Avalonia 12.2 desktop app: Home, Library, Settings, Activity, About |
 | **Hosting** | In-process `xgrid_core.dll` on Windows; separate process on Linux and as the Windows fallback |
 | **Media** | ISO/XISO, CHD, CCI, ZArchive (entry form or file tree), Chihiro netboot `.bin`, raw/qcow2 HDD |
@@ -87,10 +94,13 @@ comfortable application.
 | **Automation** | Session overrides and headless runs with JSON reports for CI and benchmarks |
 | **Platforms** | Windows 10/11 x64 (full integration), Linux x64 (bundled core in its own window), macOS (shell only) |
 
-## What XGrid changes in the core
+## The XGrid core
 
-The tracked core is **xemu 0.8.139 plus a recorded patch set**. The main deltas
-from the pristine upstream tree are:
+The core lives under [`xemu/`](xemu/), a directory name kept for provenance. It
+is **not a pristine upstream checkout**: it is the XGrid-maintained core, and it
+is free to evolve independently from xemu from this point forward.
+
+Starting from the xemu 0.8.139 baseline, XGrid has added:
 
 - an in-process **`xgrid_core.dll` ABI** for embedding, input, playback, disc and
   snapshots;
@@ -104,14 +114,16 @@ from the pristine upstream tree are:
 - a native **Direct3D 11 preview renderer** for Windows;
 - the ported **Sega Chihiro** machine and cabinet devices.
 
-The complete file-level comparison, patch list and behavior notes are in
-[Upstream differences](docs/reference/upstream-differences.md).
+The file-level comparison with pristine xemu 0.8.139 remains available in
+[xemu baseline differences](docs/reference/upstream-differences.md). It records
+where XGrid started; it is no longer a promise that XGrid will track upstream
+release-for-release.
 
 ## What you need
 
 XGrid is a portable application: download, extract and run. The Windows and
-Linux x64 frontend archives include the emulator. The macOS archives contain the
-shell only and need an external xemu 0.8.139 build.
+Linux x64 frontend archives include the XGrid core. The macOS archives contain
+the shell only and need an external xemu 0.8.139-compatible core.
 
 | Host | Requirement |
 | --- | --- |
@@ -137,7 +149,7 @@ releases do **not** include these files, so configure your own in
 ## Quick start
 
 1. **Download** the [latest release](https://github.com/purelogiccode/XGrid/releases).
-   Windows and Linux x64 frontend archives include the emulator under
+   Windows and Linux x64 frontend archives include the XGrid core under
    `core/xemu/`.
 2. **Extract** the archive anywhere you can write to. There is no installer.
 3. **Run** `XGrid.Frontend.Avalonia` (`XGrid.Frontend.Avalonia.exe` on Windows).
@@ -200,7 +212,7 @@ notes.
 | --- | --- |
 | **Windows 10/11 x64** | Full shell integration: in-process core, embedded picture, save states, pause/step, fast-forward, live disc swap, mapped pads |
 | **Linux x64** | Frontend archive bundles the standalone core. The core presents in its own window; shell save states, pause/step and disc swap are not available |
-| **macOS** | Shell only. Point **Settings → System → Emulator binary** at an xemu 0.8.139 build |
+| **macOS** | Shell only. Point **Settings → System → Emulator binary** at an xemu 0.8.139-compatible core |
 
 XGrid is **alpha software**. The core is mature; the shell, media drivers and
 compatibility work are still evolving. Read
@@ -220,8 +232,8 @@ The full manual is a multi-page Docsify site in [`docs/`](docs/index.md). Open
 | **Getting started** | [Quick start](docs/getting-started/quick-start.md) · [Requirements](docs/getting-started/requirements.md) · [Installation](docs/getting-started/installation.md) · [First boot](docs/getting-started/first-boot.md) |
 | **Using XGrid** | [Library](docs/guides/library.md) · [Playing games](docs/guides/playing-games.md) · [Settings](docs/guides/settings.md) · [Display](docs/guides/display.md) · [Input](docs/guides/input.md) · [Audio](docs/guides/audio.md) · [Save states](docs/guides/save-states.md) · [Media](docs/guides/media.md) |
 | **Advanced** | [Sega Chihiro](docs/guides/chihiro.md) · [Chihiro controls](docs/guides/chihiro-controls.md) · [Command line and headless](docs/guides/headless.md) · [Logs and diagnostics](docs/guides/diagnostics.md) · [Accessibility](docs/guides/accessibility.md) · [Supporting XGrid](docs/guides/donations.md) |
-| **Reference** | [Architecture](docs/reference/architecture.md) · [Upstream differences](docs/reference/upstream-differences.md) · [Configuration](docs/reference/configuration.md) · [Shortcuts](docs/reference/shortcuts.md) · [Compatibility](docs/reference/compatibility.md) · [Troubleshooting](docs/reference/troubleshooting.md) · [FAQ](docs/reference/faq.md) |
-| **Development** | [Building](docs/development/building.md) · [Repository layout](docs/development/repository-layout.md) · [Native core](docs/development/core.md) · [Maintaining the xemu tree](docs/development/xemu-upstream.md) · [Quality gates](docs/development/quality-gates.md) · [Contributing](docs/development/contributing.md) |
+| **Reference** | [Architecture](docs/reference/architecture.md) · [xemu baseline differences](docs/reference/upstream-differences.md) · [Configuration](docs/reference/configuration.md) · [Shortcuts](docs/reference/shortcuts.md) · [Compatibility](docs/reference/compatibility.md) · [Troubleshooting](docs/reference/troubleshooting.md) · [FAQ](docs/reference/faq.md) |
+| **Development** | [Building](docs/development/building.md) · [Repository layout](docs/development/repository-layout.md) · [Native core](docs/development/core.md) · [Core lineage and upstream](docs/development/xemu-upstream.md) · [Quality gates](docs/development/quality-gates.md) · [Contributing](docs/development/contributing.md) |
 | **Legal** | [Licensing](docs/legal/licensing.md) · [Privacy](docs/legal/privacy.md) · [Porting](docs/legal/porting-policy.md) |
 | **Project** | [Release notes](docs/release-notes/index.md) · [Security policy](SECURITY.md) · [Issues](https://github.com/purelogiccode/XGrid/issues) |
 
@@ -253,7 +265,8 @@ dotnet run --project src/XGrid.Frontend.Avalonia
 ```
 
 The Windows core build produces `xemu/dist/xemu.exe`, `xgrid_core.dll` and the
-runtime DLLs. Linux produces `xemu/dist/xemu` and `xgrid-core.json`. See
+runtime DLLs. Linux produces `xemu/dist/xemu` and `xgrid-core.json`. The `xemu/`
+path is retained for provenance; this is the XGrid-maintained core. See
 [Building from source](docs/development/building.md) for the toolchain and
 [Quality gates](docs/development/quality-gates.md) for the checks.
 
@@ -276,11 +289,65 @@ pwsh -File scripts/package-verify.ps1
 
 Please do not commit firmware, BIOS images, EEPROMs, HDD images or game data.
 
+## Credits
+
+XGrid's core began as **xemu 0.8.139**. We thank every developer who built the
+xemu tree that made XGrid possible, and the QEMU project beneath it.
+
+The following people contributed code to xemu's Xbox hardware, xemu-specific
+host/UI paths or its XBE support through the 0.8.139 release. Names are shown
+with GitHub handles where one is known; “Fabxx” also appears in the history as
+“Revix”:
+
+> 7oxicshadow · Alexandre Bouvier ([@abouvier](https://github.com/abouvier)) ·
+> Antonio Abbatangelo ([@antangelo](https://github.com/antangelo)) ·
+> CakeLancelot · Camden Smallwood ([@camden-smallwood](https://github.com/camden-smallwood)) ·
+> coldhex · Dalai ([@Dalai-](https://github.com/Dalai-)) ·
+> Daniel Cook ([@DCFUKSURMOM](https://github.com/DCFUKSURMOM)) ·
+> Darren ([@DiscoStarslayer](https://github.com/DiscoStarslayer)) ·
+> DaveX ([@0DaveX](https://github.com/0DaveX)) ·
+> Dustin Holden ([@LoveMHz](https://github.com/LoveMHz)) ·
+> Erik Abair ([@abaire](https://github.com/abaire)) · espes ·
+> Fabxx ([@Fabxx](https://github.com/Fabxx)) ·
+> Fred Hallock ([@faha223](https://github.com/faha223)) · haxar ·
+> Igor Leonovich ([@igorleonovich](https://github.com/igorleonovich)) ·
+> Jannik Vogel ([@JayFoxRox](https://github.com/JayFoxRox)) ·
+> Jason ([@theboy181](https://github.com/theboy181)) · jessedye ·
+> Josef Šimánek ([@simi](https://github.com/simi)) · jyetcv ·
+> Logan Stromberg ([@lostromb](https://github.com/lostromb)) ·
+> Lucas Eriksson ([@dracc](https://github.com/dracc)) ·
+> Luke Usher ([@LukeUsher](https://github.com/LukeUsher)) ·
+> Lynne ([@cyanreg](https://github.com/cyanreg)) ·
+> Mason Thompson ([@MasonT8198](https://github.com/MasonT8198)) ·
+> Matt Borgerson ([@mborgerson](https://github.com/mborgerson)) ·
+> Mike Davis ([@Ernegien](https://github.com/Ernegien)) · NZJenkins ·
+> octopoulos · oltolm · RageXbox · Reedzit ·
+> Ryan Wendland ([@Ryzee119](https://github.com/Ryzee119)) ·
+> Shiralyn ([@ShiralynDev](https://github.com/ShiralynDev)) ·
+> Silent ([@CookiePLMonster](https://github.com/CookiePLMonster)) ·
+> smx ([@smx-smx](https://github.com/smx-smx)) ·
+> Stanislav Motylkov ([@binarymaster](https://github.com/binarymaster)) ·
+> Stefan Schmidt ([@thrimbor](https://github.com/thrimbor)) ·
+> Stian Eklund ([@stianeklund](https://github.com/stianeklund)) ·
+> Trent Seed ([@TrentSeed](https://github.com/TrentSeed)) · Voxel9 ·
+> Wilhelm Kovatch ([@wilkovatch](https://github.com/wilkovatch)) ·
+> wutno ([@GXTX](https://github.com/GXTX)) ·
+> Yuvi ([@Yuvi-App](https://github.com/Yuvi-App)).
+
+We also thank the wider xemu community: the testers, compatibility reporters,
+documentation contributors and everyone who kept the project moving before the
+XGrid fork.
+
+Xemu itself is built on QEMU. We thank **Fabrice Bellard and the entire QEMU
+team**, past and present. The full QEMU contributor history is maintained at
+[github.com/qemu/qemu](https://github.com/qemu/qemu/graphs/contributors).
+
 ## License
 
-XGrid's own source is **GPL-2.0-or-later**. The vendored xemu/QEMU tree keeps
-its original GPL, LGPL and MIT notices. Third-party components and ported
-modules are recorded in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). See
+XGrid's own source is **GPL-2.0-or-later**. The XGrid core began from the
+xemu/QEMU tree and keeps those original GPL, LGPL and MIT notices. Third-party
+components and ported modules are recorded in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). See
 [Licensing](docs/legal/licensing.md).
 
 <p align="center">

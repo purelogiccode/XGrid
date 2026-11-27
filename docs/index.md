@@ -1,10 +1,11 @@
 # XGrid documentation
 
-**XGrid is an enhanced xemu 0.8.139 core with a modern Avalonia desktop shell.**
-The emulator is the maintained xemu/QEMU core tracked in `xemu/`. XGrid adds the
-application around it: a game library, tabbed settings, per-title overrides,
-real-time compressed media, save states, display and input plumbing,
-diagnostics and packaging.
+**XGrid is a custom enhanced and patched Xbox emulator core with a modern
+Avalonia desktop shell.** The core began as **xemu 0.8.139**, but it now lives in
+`xemu/` as part of XGrid and **will evolve separately from the original xemu
+codebase**. XGrid adds the application around it: a game library, tabbed
+settings, per-title overrides, real-time compressed media, save states, display
+and input plumbing, diagnostics and packaging.
 
 > XGrid is not affiliated with Microsoft or the xemu project. It ships no
 > firmware, BIOS images, EEPROMs, hard-disk images or game data. You must supply
@@ -27,7 +28,7 @@ change next.
 
 | Area | Details |
 | --- | --- |
-| **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/Direct3D 11 preview/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
+| **Core** | XGrid custom core, originally xemu 0.8.139 / QEMU 10.2 TCG i386; NV2A OpenGL/Vulkan/Direct3D 11 preview/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
 | **Shell** | Avalonia 12.2 application with Home, Library, Settings, Activity and About pages |
 | **Hosting** | In-process `xgrid_core.dll` on Windows; separate process on Linux and as the Windows fallback |
 | **Media** | ISO/XISO, CHD, CCI, ZArchive (entry form or file tree), Chihiro netboot `.bin`, raw/qcow2 HDD |
@@ -114,8 +115,8 @@ Known limitations:
 | **Getting started** | [Quick start](getting-started/quick-start.md) · [Requirements](getting-started/requirements.md) · [Installation](getting-started/installation.md) · [First boot](getting-started/first-boot.md) |
 | **Using XGrid** | [Library](guides/library.md) · [Playing games](guides/playing-games.md) · [Settings](guides/settings.md) · [Display](guides/display.md) · [Input](guides/input.md) · [Audio](guides/audio.md) · [Save states](guides/save-states.md) · [Media](guides/media.md) |
 | **Advanced use** | [Sega Chihiro](guides/chihiro.md) · [Chihiro controls](guides/chihiro-controls.md) · [Command line and headless](guides/headless.md) · [Logs and diagnostics](guides/diagnostics.md) · [Accessibility](guides/accessibility.md) · [Supporting XGrid](guides/donations.md) |
-| **Reference** | [Architecture](reference/architecture.md) · [Upstream differences](reference/upstream-differences.md) · [Configuration](reference/configuration.md) · [Shortcuts](reference/shortcuts.md) · [Compatibility](reference/compatibility.md) · [Troubleshooting](reference/troubleshooting.md) · [FAQ](reference/faq.md) · [Glossary](reference/glossary.md) · [Service endpoints](reference/service-endpoints.md) · [Donation API](reference/donation-api.md) |
-| **Development** | [Building](development/building.md) · [Repository layout](development/repository-layout.md) · [Native core](development/core.md) · [Maintaining the xemu tree](development/xemu-upstream.md) · [Quality gates](development/quality-gates.md) · [Testing](development/testing.md) · [Inspection](development/inspection.md) · [Covers](development/covers.md) · [Platform embedding](development/platform-embedding.md) · [Releasing](development/releasing.md) · [Contributing](development/contributing.md) |
+| **Reference** | [Architecture](reference/architecture.md) · [xemu baseline differences](reference/upstream-differences.md) · [Configuration](reference/configuration.md) · [Shortcuts](reference/shortcuts.md) · [Compatibility](reference/compatibility.md) · [Troubleshooting](reference/troubleshooting.md) · [FAQ](reference/faq.md) · [Glossary](reference/glossary.md) · [Service endpoints](reference/service-endpoints.md) · [Donation API](reference/donation-api.md) |
+| **Development** | [Building](development/building.md) · [Repository layout](development/repository-layout.md) · [Native core](development/core.md) · [Core lineage](development/xemu-upstream.md) · [Quality gates](development/quality-gates.md) · [Testing](development/testing.md) · [Inspection](development/inspection.md) · [Covers](development/covers.md) · [Platform embedding](development/platform-embedding.md) · [Releasing](development/releasing.md) · [Contributing](development/contributing.md) |
 | **Legal** | [Licensing](legal/licensing.md) · [Privacy](legal/privacy.md) · [Porting](legal/porting-policy.md) · [Release licensing](legal/release-licensing.md) · [Source availability](legal/source-availability.md) |
 | **Project** | [Release notes](release-notes/index.md) · [Security policy](https://github.com/purelogiccode/XGrid/blob/master/SECURITY.md) · [Issues](https://github.com/purelogiccode/XGrid/issues) · [Wiki](https://github.com/purelogiccode/XGrid/tree/master/wiki) |
 
