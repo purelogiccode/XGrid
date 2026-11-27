@@ -1,9 +1,8 @@
 name: CI
 
-# Runs on the organization self-hosted runners. Windows and Linux cover the
-# private-repository matrix; macOS coverage is skipped because there is no
-# macOS runner. The package job still cross-publishes osx-x64/osx-arm64 from
-# Linux.
+# Runs the Linux matrix on the organization LAN runner and Windows on a
+# GitHub-hosted runner. Public-repository Windows minutes are free; the
+# self-hosted Windows runner is not always online.
 on:
   push:
     branches: [master]
@@ -44,7 +43,7 @@ jobs:
           - os: ubuntu-latest
             runner: [self-hosted, Linux, X64, repofleet-ci]
           - os: windows-latest
-            runner: [self-hosted, Windows, X64, repofleet-ci]
+            runner: windows-latest
     steps:
       - uses: actions/checkout@v7
 
