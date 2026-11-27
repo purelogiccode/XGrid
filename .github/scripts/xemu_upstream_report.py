@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 XEMU = ROOT / "xemu"
 UPSTREAM = "xemu-project/xemu"
-ISSUE_TITLE = "[xemu-updates] Upstream and subproject report"
+ISSUE_TITLE = "[xemu-updates] Upstream xemu and dependency-lock report"
 USER_AGENT = "XGrid-upstream-report"
 
 
@@ -177,7 +177,7 @@ def upstream_report() -> tuple[list[str], bool]:
 
 
 def wrap_report() -> tuple[list[str], bool]:
-    lines = ["| Wrap | Pinned | Latest | Upstream |",
+    lines = ["| Wrap | Pinned dependency lock | Latest | State |",
              "| --- | --- | --- | --- |"]
     updated = False
     for item in read_wraps():
@@ -260,6 +260,12 @@ def main() -> int:
         *upstream_lines,
         "",
         "## Meson subprojects",
+        "",
+        "The `revision=` values below are **Meson dependency locks for third-party "
+        "libraries**. They are not commits in XGrid, are not stored in this Git "
+        "repository, and are not unpushed work. Meson downloads those upstream "
+        "commits while configuring the build.",
+        "",
         *wrap_lines,
         "",
         "Apply upstream changes manually; this report only notifies. "

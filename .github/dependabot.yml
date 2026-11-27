@@ -1,10 +1,8 @@
 version: 2
 
-# Dependabot is NOT part of GitHub Actions and does not consume Actions minutes,
-# so it stays active on the GitHub Free plan while CI is disabled
-# (.github/workflows/* are manual-only since 2026-10-22 - see docs/ci.md).
-# Its pull requests simply arrive without automated checks, and the
-# `github-actions` ecosystem updates are inert until the workflows run again.
+# Dependabot is NOT part of GitHub Actions and does not consume Actions minutes.
+# It covers NuGet and GitHub Actions; the xemu upstream/Meson wrap report is in
+# .github/workflows/xemu-upstream-report.yml.
 updates:
   - package-ecosystem: "nuget"
     directory: "/"
