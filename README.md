@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/xgrid-mark.svg" width="110" height="110" alt="XGrid">
+  <img src="assets/banner.jpg" width="100%" alt="XGrid — Original Xbox and Chihiro emulator">
 </p>
 
 <h1 align="center">XGrid</h1>
