@@ -289,11 +289,6 @@ requests; use per-title overrides or an upstream patch.
   ([#3083](https://github.com/xemu-project/xemu/issues/3083),
   [#2842](https://github.com/xemu-project/xemu/issues/2842),
   [#1400](https://github.com/xemu-project/xemu/issues/1400)).
-- [ ] **Startup and launch** — crash-on-start, distribution launch failures and
-  silent exits
-  ([#2540](https://github.com/xemu-project/xemu/issues/2540),
-  [#2336](https://github.com/xemu-project/xemu/issues/2336),
-  [#1692](https://github.com/xemu-project/xemu/issues/1692)).
 - [ ] **Exit and suspend** — hangs on close and crashes when the host sleeps
   ([#1431](https://github.com/xemu-project/xemu/issues/1431),
   [#1391](https://github.com/xemu-project/xemu/issues/1391),
