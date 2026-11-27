@@ -57,6 +57,10 @@ resolve without the full native build; those findings are handled in the core
 tree, not by the shell gate. Run the inspection from the solution so the shared
 project settings and naming rules apply consistently.
 
+InspectCode is a code-quality gate. Its SARIF report stays as a CI artifact; it
+is not uploaded to the security code-scanning page. CodeQL is the security
+scanner.
+
 ## Fix policy
 
 - **Errors** must be fixed; they usually indicate a real null-flow or API

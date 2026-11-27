@@ -41,26 +41,43 @@ manual dispatch:
 - Release build with warnings as errors.
 - Full test suite on Linux and Windows. Linux collects coverage and enforces a
   60% line / 50% branch floor.
+- Native core build on Linux from the tracked `xemu/` tree.
 - Deterministic build check: two clean builds must produce identical assemblies.
 - `dotnet format --verify-no-changes`.
-- InspectCode gate on warnings, uploaded to code scanning.
+- InspectCode gate on warnings. Accepted findings live in
+  `inspectcode-baseline.json`; style warnings are kept as a CI artifact and are
+  not published as code-scanning security alerts.
 - NuGet vulnerability audit, including transitive packages.
 
 Other workflows:
 
 | Workflow | Trigger | Purpose |
 | --- | --- | --- |
-| `codeql.yml` | manual | CodeQL analysis. |
-| `dependency-review.yml` | manual | Dependency review on pull requests. |
+| `codeql.yml` | push, pull request, weekly, manual | CodeQL C# security analysis (`security-extended`). |
+| `dependency-review.yml` | pull request, manual | Dependency review on pull requests. |
 | `release.yml` | manual | Release publish/attestation pipeline. |
 | `xemu-upstream-report.yml` | weekly, manual | Opens or updates one issue when upstream xemu or a Meson dependency lock is behind. |
+
+## Security settings
+
+The public repository uses GitHub's free security features:
+
+- Dependabot alerts and security updates.
+- Secret scanning with push protection.
+- Private vulnerability reporting.
+- CodeQL code scanning for the managed C# shell.
+- Dependency review on pull requests.
+
+The InspectCode warning gate is separate from security scanning; its accepted
+style findings do not appear on the security page.
 
 The release tree is produced locally with `scripts/package.ps1` and verified by
 `scripts/package-verify.ps1`.
 
 ## Core gates
 
-The native core is built separately:
+The native core is built locally, and the `native-core` CI job rebuilds it on
+Linux from the tracked tree:
 
 ```powershell
 pwsh -File scripts/build-native-xemu.ps1
