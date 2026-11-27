@@ -249,13 +249,14 @@ large picture for the best aim. In gun games the mouse buttons belong to the
 gun, so the core's pop-up menu stays on **F2** (or the Guide button) and a
 double-click does not toggle fullscreen.
 
-On Windows, turn on **Separate gun pointers** in **Settings → System → Sega
-Chihiro** to read each light gun or mouse on its own. Absolute light guns are
-preferred: the first aims player 1 and the second player 2. Their left button
-fires, the right is body, the middle is change or pedal and the side buttons
-reload. Relative mice are tracked separately too, starting from the centre of
-the picture. With the setting off, the host cursor and second-gamepad paths
-above still apply.
+On Windows, Linux and macOS, turn on **Separate gun pointers** in
+**Settings → System → Sega Chihiro** to read each light gun or mouse on its
+own. Absolute light guns are preferred: the first aims player 1 and the second
+player 2. Their left button fires, the right is body, the middle is change or
+pedal and the side buttons reload. Relative mice are tracked separately too,
+starting from the centre of the picture. Windows reads them through Raw Input,
+Linux through evdev (`/dev/input/event*`) and macOS through IOHID. With the
+setting off, the host cursor and second-gamepad paths above still apply.
 
 Ghost Squad and Maximum Tune use the emulated card readers. Press **C** (or X)
 to push player 1's card in hand into the reader, and **V** (or X on the second
@@ -302,10 +303,14 @@ force-feedback wheel, the event channel rumbles the first gamepad instead.
   the cabinet (stick, triggers, D-pad and face buttons); a second gamepad aims
   player 2's gun. The cabinet keys are editable in Settings, including the
   Gundam cockpit.
-- **Separate light guns are Windows-only for now.** Windows reads each mouse
-  or light gun through Raw Input when **Separate gun pointers** is on; other
-  platforms use the host pointer for player 1 and the second gamepad or arrow
-  keys for player 2.
+- **Separate light guns work on Windows, Linux and macOS.** With **Separate
+  gun pointers** on, the core reads each mouse or light gun through Raw Input
+  on Windows, evdev on Linux and IOHID on macOS. Absolute light guns aim
+  players 1 and 2 first; relative mice start at the centre. On Linux the user
+  must be able to read `/dev/input/event*` (usually the `input` group); on
+  macOS allow Input Monitoring if the system asks. macOS releases currently
+  ship the shell only, so use a core built from this tree or point **Emulator
+  binary** at one.
 - **Chihiro audio is incomplete.** Upstream xemu's Chihiro audio emulation can
   produce silence or missing effects. The host audio backend and the Xbox path
   work; the Chihiro APU stream is a known upstream limitation, not a shell

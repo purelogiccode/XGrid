@@ -357,7 +357,7 @@
                   <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Spacing="2">
                       <TextBlock Text="Separate gun pointers" Classes="label" />
-                      <TextBlock Text="Read each light gun or mouse on its own (Windows): player 1 gets the first light gun, player 2 the second. Off: the host cursor aims player 1." Classes="hint" TextWrapping="Wrap" />
+                      <TextBlock Text="Read each light gun or mouse on its own (Windows, Linux and macOS): absolute light guns aim players 1 and 2 first; relative mice start at the centre. Off: the host cursor aims player 1." Classes="hint" TextWrapping="Wrap" />
                     </StackPanel>
                     <ToggleSwitch Grid.Column="1" IsChecked="{Binding ChihiroPointerDevices, Mode=TwoWay}"
                                   OnContent="" OffContent="" VerticalAlignment="Center"

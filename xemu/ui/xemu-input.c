@@ -40,6 +40,22 @@
 #include <windows.h>
 #include <SDL3/SDL_system.h>
 #endif
+#if defined(__linux__)
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/input.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/hid/IOHIDElement.h>
+#include <IOKit/hid/IOHIDKeys.h>
+#include <IOKit/hid/IOHIDManager.h>
+#include <IOKit/hid/IOHIDUsageTables.h>
+#include <IOKit/hid/IOHIDValue.h>
+#endif
 
 #include "system/blockdev.h"
 #include "hw/xbox/chihiro/chihiro.h"
@@ -1073,6 +1089,1011 @@ static bool chihiro_raw_aim(int player, ChihiroJVSState *jvs, int ax, int ay,
 
     float nx = (client_x / (float)width - vx) / vw;
     float ny = (client_y / (float)height - vy) / vh;
+    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
+        jvs->analog[ax] = 0;
+        jvs->analog[ay] = 0;
+    } else {
+        jvs->analog[ax] = (uint16_t)(nx * 0xFFFF);
+        jvs->analog[ay] = (uint16_t)(ny * 0xFFFF);
+    }
+    return true;
+}
+#elif defined(__linux__)
+/* Linux per-device pointers through evdev. Relative mice and absolute light
+ * guns are both read; the first two devices aim players 1 and 2. */
+#define CHIHIRO_RAW_MAX      4
+#define CHIHIRO_RAW_SCAN_MS  3000
+
+typedef struct {
+    int      fd;
+    char     path[64];
+    char     name[128];
+    bool     absolute;
+    int      abs_min_x, abs_max_x;
+    int      abs_min_y, abs_max_y;
+    int      abs_x, abs_y;
+    int      rel_x, rel_y;
+    float    client_x, client_y;
+    bool     client_init;
+    uint32_t buttons;
+} ChihiroLinuxPointer;
+
+static ChihiroLinuxPointer chihiro_raw[CHIHIRO_RAW_MAX];
+static SDL_Window *chihiro_raw_window;
+static int64_t chihiro_raw_next_scan;
+static int chihiro_raw_last_player[2] = { -1, -1 };
+static bool chihiro_raw_initialized;
+static bool chihiro_raw_logged_no_device;
+static bool chihiro_raw_logged_permission;
+
+static bool chihiro_linux_bit(int bit, const unsigned long *bits)
+{
+    return (bits[bit / (8 * sizeof(unsigned long))] >>
+            (bit % (8 * sizeof(unsigned long)))) & 1;
+}
+
+static int chihiro_linux_find_path(const char *path)
+{
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].fd >= 0 &&
+            strcmp(chihiro_raw[i].path, path) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void chihiro_linux_close(int index)
+{
+    if (index < 0 || chihiro_raw[index].fd < 0) {
+        return;
+    }
+    CHIHIRO_LOGF(JVS, "linux pointer removed: %s\n", chihiro_raw[index].name);
+    close(chihiro_raw[index].fd);
+    memset(&chihiro_raw[index], 0, sizeof(chihiro_raw[index]));
+    chihiro_raw[index].fd = -1;
+}
+
+static int chihiro_linux_path_number(const char *path)
+{
+    const char *event = strstr(path, "event");
+    return event ? atoi(event + 5) : 0;
+}
+
+static int chihiro_linux_compare_paths(const void *a, const void *b)
+{
+    return chihiro_linux_path_number(a) - chihiro_linux_path_number(b);
+}
+
+static void chihiro_linux_add_path(const char *path)
+{
+    if (chihiro_linux_find_path(path) >= 0) {
+        return;
+    }
+
+    int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) {
+        if ((errno == EACCES || errno == EPERM) &&
+            !chihiro_raw_logged_permission) {
+            chihiro_raw_logged_permission = true;
+            CHIHIRO_LOGF(JVS, "linux pointer: cannot read %s; add the "
+                         "user to the input group\n", path);
+        }
+        return;
+    }
+
+    unsigned long evbit[(EV_MAX + 8 * sizeof(unsigned long)) /
+                        (8 * sizeof(unsigned long))] = { 0 };
+    unsigned long relbit[(REL_MAX + 8 * sizeof(unsigned long)) /
+                         (8 * sizeof(unsigned long))] = { 0 };
+    unsigned long absbit[(ABS_MAX + 8 * sizeof(unsigned long)) /
+                         (8 * sizeof(unsigned long))] = { 0 };
+    unsigned long keybit[(KEY_MAX + 8 * sizeof(unsigned long)) /
+                         (8 * sizeof(unsigned long))] = { 0 };
+
+    if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) < 0 ||
+        ioctl(fd, EVIOCGBIT(EV_REL, sizeof(relbit)), relbit) < 0 ||
+        ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbit)), absbit) < 0 ||
+        ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) < 0) {
+        close(fd);
+        return;
+    }
+
+    bool has_left = chihiro_linux_bit(BTN_LEFT, keybit) ||
+                    chihiro_linux_bit(BTN_TRIGGER, keybit);
+    if (!has_left) {
+        close(fd);
+        return;
+    }
+
+    bool has_rel = chihiro_linux_bit(REL_X, relbit) &&
+                   chihiro_linux_bit(REL_Y, relbit);
+    bool has_abs = chihiro_linux_bit(ABS_X, absbit) &&
+                   chihiro_linux_bit(ABS_Y, absbit);
+    if (!has_rel && !has_abs) {
+        close(fd);
+        return;
+    }
+
+    struct input_absinfo ax = { 0 }, ay = { 0 };
+    bool absolute = has_abs;
+    if (absolute) {
+        if (ioctl(fd, EVIOCGABS(ABS_X), &ax) < 0 ||
+            ioctl(fd, EVIOCGABS(ABS_Y), &ay) < 0 ||
+            ax.maximum <= ax.minimum || ay.maximum <= ay.minimum) {
+            absolute = false;
+        }
+    }
+    if (!absolute && !has_rel) {
+        close(fd);
+        return;
+    }
+
+    int slot = -1;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].fd < 0) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        close(fd);
+        return;
+    }
+
+    ChihiroLinuxPointer *p = &chihiro_raw[slot];
+    memset(p, 0, sizeof(*p));
+    p->fd = fd;
+    g_strlcpy(p->path, path, sizeof(p->path));
+    if (ioctl(fd, EVIOCGNAME(sizeof(p->name) - 1), p->name) < 0) {
+        g_strlcpy(p->name, "pointer", sizeof(p->name));
+    }
+    p->name[sizeof(p->name) - 1] = 0;
+    p->absolute = absolute;
+    p->abs_min_x = ax.minimum;
+    p->abs_max_x = ax.maximum;
+    p->abs_min_y = ay.minimum;
+    p->abs_max_y = ay.maximum;
+    p->abs_x = (ax.minimum + ax.maximum) / 2;
+    p->abs_y = (ay.minimum + ay.maximum) / 2;
+
+    CHIHIRO_LOGF(JVS, "linux pointer %d: %s (%s) %s\n", slot, p->name,
+                 p->path, absolute ? "absolute" : "relative");
+}
+
+static void chihiro_linux_scan(void)
+{
+    DIR *dir = opendir("/dev/input");
+    if (!dir) {
+        return;
+    }
+
+    char paths[32][64];
+    int count = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL && count < 32) {
+        if (strncmp(entry->d_name, "event", 5) != 0) {
+            continue;
+        }
+        snprintf(paths[count], sizeof(paths[count]), "/dev/input/%s",
+                 entry->d_name);
+        count++;
+    }
+    closedir(dir);
+
+    qsort(paths, count, sizeof(paths[0]), chihiro_linux_compare_paths);
+    for (int i = 0; i < count; i++) {
+        chihiro_linux_add_path(paths[i]);
+    }
+}
+
+static void chihiro_linux_read(int index)
+{
+    ChihiroLinuxPointer *p = &chihiro_raw[index];
+    struct input_event event;
+    ssize_t n;
+
+    while ((n = read(p->fd, &event, sizeof(event))) == sizeof(event)) {
+        if (event.type == EV_REL) {
+            if (event.code == REL_X) {
+                p->rel_x += event.value;
+            } else if (event.code == REL_Y) {
+                p->rel_y += event.value;
+            }
+            if (p->rel_x > 10000) p->rel_x = 10000;
+            if (p->rel_x < -10000) p->rel_x = -10000;
+            if (p->rel_y > 10000) p->rel_y = 10000;
+            if (p->rel_y < -10000) p->rel_y = -10000;
+        } else if (event.type == EV_ABS) {
+            if (event.code == ABS_X) {
+                p->abs_x = event.value;
+            } else if (event.code == ABS_Y) {
+                p->abs_y = event.value;
+            }
+        } else if (event.type == EV_KEY) {
+            int bit = -1;
+            switch (event.code) {
+            case BTN_LEFT:
+            case BTN_TRIGGER:
+            case BTN_0:
+                bit = 0;
+                break;
+            case BTN_MIDDLE:
+                bit = 1;
+                break;
+            case BTN_RIGHT:
+            case BTN_1:
+                bit = 2;
+                break;
+            case BTN_SIDE:
+                bit = 3;
+                break;
+            case BTN_EXTRA:
+                bit = 4;
+                break;
+            }
+            if (bit >= 0) {
+                if (event.value) {
+                    p->buttons |= 1u << bit;
+                } else {
+                    p->buttons &= ~(1u << bit);
+                }
+            }
+        }
+    }
+
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
+        errno != EINTR) {
+        chihiro_linux_close(index);
+    }
+}
+
+static int chihiro_linux_absolute_count(void)
+{
+    int count = 0;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].fd >= 0 && chihiro_raw[i].absolute) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static int chihiro_raw_choose(int player)
+{
+    int absolute = chihiro_linux_absolute_count();
+    int seen = 0;
+
+    if (player < 0 || player > 1) {
+        return -1;
+    }
+
+    if (player < absolute) {
+        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+            if (chihiro_raw[i].fd < 0 || !chihiro_raw[i].absolute) {
+                continue;
+            }
+            if (seen++ == player) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    int relative = player - absolute;
+    seen = 0;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].fd < 0 || chihiro_raw[i].absolute) {
+            continue;
+        }
+        if (seen++ == relative) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void chihiro_raw_log_assignments(void)
+{
+    for (int player = 0; player < 2; player++) {
+        int index = chihiro_raw_choose(player);
+        if (index == chihiro_raw_last_player[player]) {
+            continue;
+        }
+        chihiro_raw_last_player[player] = index;
+        if (index >= 0) {
+            CHIHIRO_LOGF(JVS, "linux pointer P%d: %s (%s)\n", player + 1,
+                         chihiro_raw[index].name,
+                         chihiro_raw[index].absolute ? "absolute" : "relative");
+        } else {
+            CHIHIRO_LOGF(JVS, "linux pointer P%d: none\n", player + 1);
+        }
+    }
+}
+
+static void chihiro_raw_sync(void)
+{
+    if (!g_config.chihiro.settings.pointer_devices) {
+        return;
+    }
+
+    if (!chihiro_raw_initialized) {
+        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+            chihiro_raw[i].fd = -1;
+        }
+        chihiro_raw_initialized = true;
+    }
+
+    if (!chihiro_raw_window) {
+        int count = 0;
+        SDL_Window **windows = SDL_GetWindows(&count);
+        if (windows && count > 0) {
+            chihiro_raw_window = windows[0];
+        }
+        SDL_free(windows);
+    }
+
+    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    if (now >= chihiro_raw_next_scan) {
+        chihiro_raw_next_scan = now + CHIHIRO_RAW_SCAN_MS;
+        chihiro_linux_scan();
+    }
+
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].fd >= 0) {
+            chihiro_linux_read(i);
+        }
+    }
+
+    chihiro_raw_log_assignments();
+
+    if (chihiro_linux_absolute_count() == 0 &&
+        chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
+        CHIHIRO_LOGF(JVS, "linux pointer: no pointer devices yet\n");
+        chihiro_raw_logged_no_device = true;
+    }
+}
+
+static bool chihiro_raw_has(int player)
+{
+    return g_config.chihiro.settings.pointer_devices &&
+           chihiro_raw_choose(player) >= 0;
+}
+
+static uint32_t chihiro_raw_buttons(int player)
+{
+    if (!g_config.chihiro.settings.pointer_devices) {
+        return 0;
+    }
+    int index = chihiro_raw_choose(player);
+    return index >= 0 ? chihiro_raw[index].buttons : 0;
+}
+
+static bool chihiro_raw_aim(int player, ChihiroJVSState *jvs, int ax, int ay,
+                            bool reload)
+{
+    int index = chihiro_raw_choose(player);
+    if (index < 0) {
+        return false;
+    }
+    ChihiroLinuxPointer *p = &chihiro_raw[index];
+
+    if (reload) {
+        jvs->analog[ax] = 0;
+        jvs->analog[ay] = 0;
+        return true;
+    }
+
+    if (!chihiro_raw_window) {
+        return false;
+    }
+
+    int width = 0, height = 0;
+    SDL_GetWindowSize(chihiro_raw_window, &width, &height);
+    if (width <= 0 || height <= 0) {
+        jvs->analog[ax] = 0x8000;
+        jvs->analog[ay] = 0x8000;
+        return true;
+    }
+
+    float window_x, window_y;
+    if (p->absolute) {
+        float nx = (p->abs_x - p->abs_min_x) /
+                   (float)(p->abs_max_x - p->abs_min_x);
+        float ny = (p->abs_y - p->abs_min_y) /
+                   (float)(p->abs_max_y - p->abs_min_y);
+        if (nx < 0.0f) nx = 0.0f;
+        if (nx > 1.0f) nx = 1.0f;
+        if (ny < 0.0f) ny = 0.0f;
+        if (ny > 1.0f) ny = 1.0f;
+
+        SDL_Rect bounds;
+        SDL_DisplayID display = SDL_GetDisplayForWindow(chihiro_raw_window);
+        int wx = 0, wy = 0;
+        SDL_GetWindowPosition(chihiro_raw_window, &wx, &wy);
+        if (SDL_GetDisplayBounds(display, &bounds)) {
+            window_x = ((bounds.x + nx * bounds.w) - wx) / (float)width;
+            window_y = ((bounds.y + ny * bounds.h) - wy) / (float)height;
+        } else {
+            window_x = nx;
+            window_y = ny;
+        }
+    } else {
+        if (!p->client_init) {
+            p->client_x = width / 2.0f;
+            p->client_y = height / 2.0f;
+            p->client_init = true;
+        }
+        p->client_x += p->rel_x;
+        p->client_y += p->rel_y;
+        p->rel_x = p->rel_y = 0;
+        if (p->client_x < 0.0f) p->client_x = 0.0f;
+        if (p->client_y < 0.0f) p->client_y = 0.0f;
+        if (p->client_x > width - 1.0f) p->client_x = width - 1.0f;
+        if (p->client_y > height - 1.0f) p->client_y = height - 1.0f;
+        window_x = p->client_x / width;
+        window_y = p->client_y / height;
+    }
+
+    float vx, vy, vw, vh;
+    if (!xemu_input_get_display_viewport(&vx, &vy, &vw, &vh)) {
+        jvs->analog[ax] = 0x8000;
+        jvs->analog[ay] = 0x8000;
+        return true;
+    }
+
+    float nx = (window_x - vx) / vw;
+    float ny = (window_y - vy) / vh;
+    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
+        jvs->analog[ax] = 0;
+        jvs->analog[ay] = 0;
+    } else {
+        jvs->analog[ax] = (uint16_t)(nx * 0xFFFF);
+        jvs->analog[ay] = (uint16_t)(ny * 0xFFFF);
+    }
+    return true;
+}
+#elif defined(__APPLE__)
+/* macOS per-device pointers through IOHIDManager. Absolute light guns and
+ * relative mice are read; the first two devices aim players 1 and 2. */
+#define CHIHIRO_RAW_MAX 4
+
+typedef struct {
+    IOHIDDeviceRef device;
+    char           name[160];
+    bool           used;
+    bool           absolute;
+    int            min_x, max_x;
+    int            min_y, max_y;
+    int            x, y;
+    int            rel_x, rel_y;
+    float          client_x, client_y;
+    bool           client_init;
+    uint32_t       buttons;
+    uint64_t       location;
+    uint64_t       unique;
+    int            seq;
+} ChihiroMacPointer;
+
+static ChihiroMacPointer chihiro_raw[CHIHIRO_RAW_MAX];
+static IOHIDManagerRef chihiro_hid_manager;
+static SDL_Window *chihiro_raw_window;
+static int chihiro_raw_last_player[2] = { -1, -1 };
+static bool chihiro_raw_logged_no_device;
+static bool chihiro_raw_start_tried;
+static int chihiro_mac_seq;
+
+static int chihiro_mac_find(IOHIDDeviceRef device)
+{
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used && chihiro_raw[i].device == device) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void chihiro_mac_set_name(ChihiroMacPointer *p)
+{
+    CFTypeRef product = IOHIDDeviceGetProperty(p->device,
+                                               CFSTR(kIOHIDProductKey));
+    p->name[0] = 0;
+    if (product && CFGetTypeID(product) == CFStringGetTypeID()) {
+        CFStringGetCString(product, p->name, sizeof(p->name),
+                           kCFStringEncodingUTF8);
+    }
+    if (!p->name[0]) {
+        snprintf(p->name, sizeof(p->name), "pointer");
+    }
+}
+
+static bool chihiro_mac_prop_u64(IOHIDDeviceRef device, CFStringRef key,
+                                 uint64_t *out)
+{
+    CFTypeRef value = IOHIDDeviceGetProperty(device, key);
+    if (!value || CFGetTypeID(value) != CFNumberGetTypeID()) {
+        return false;
+    }
+
+    int64_t number = 0;
+    if (!CFNumberGetValue(value, kCFNumberSInt64Type, &number)) {
+        return false;
+    }
+    *out = (uint64_t)number;
+    return true;
+}
+
+/* One physical pointer can be delivered as more than one IOHIDDevice (the
+ * virtual digitizer here does). Match them by unique ID, then by USB location
+ * and vendor/product, so one mouse cannot claim both players. */
+static bool chihiro_mac_same_device(IOHIDDeviceRef a, IOHIDDeviceRef b)
+{
+    uint64_t unique_a, unique_b;
+    if (chihiro_mac_prop_u64(a, CFSTR(kIOHIDUniqueIDKey), &unique_a) &&
+        chihiro_mac_prop_u64(b, CFSTR(kIOHIDUniqueIDKey), &unique_b)) {
+        return unique_a == unique_b;
+    }
+
+    uint64_t location_a, location_b, vendor_a, vendor_b, product_a, product_b;
+    if (chihiro_mac_prop_u64(a, CFSTR(kIOHIDLocationIDKey), &location_a) &&
+        chihiro_mac_prop_u64(b, CFSTR(kIOHIDLocationIDKey), &location_b) &&
+        chihiro_mac_prop_u64(a, CFSTR(kIOHIDVendorIDKey), &vendor_a) &&
+        chihiro_mac_prop_u64(b, CFSTR(kIOHIDVendorIDKey), &vendor_b) &&
+        chihiro_mac_prop_u64(a, CFSTR(kIOHIDProductIDKey), &product_a) &&
+        chihiro_mac_prop_u64(b, CFSTR(kIOHIDProductIDKey), &product_b)) {
+        return location_a == location_b && vendor_a == vendor_b &&
+               product_a == product_b;
+    }
+    return false;
+}
+
+static void chihiro_mac_device_added(void *context, IOReturn result,
+                                     void *sender, IOHIDDeviceRef device)
+{
+    (void)context;
+    (void)result;
+    (void)sender;
+
+    if (chihiro_mac_find(device) >= 0) {
+        return;
+    }
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used &&
+            chihiro_mac_same_device(device, chihiro_raw[i].device)) {
+            return;
+        }
+    }
+
+    CFArrayRef elements = IOHIDDeviceCopyMatchingElements(device, NULL, 0);
+    if (!elements) {
+        return;
+    }
+
+    bool has_x = false, has_y = false, absolute_x = false, absolute_y = false;
+    int min_x = 0, max_x = 0, min_y = 0, max_y = 0;
+    CFIndex count = CFArrayGetCount(elements);
+    for (CFIndex i = 0; i < count; i++) {
+        IOHIDElementRef element =
+            (IOHIDElementRef)CFArrayGetValueAtIndex(elements, i);
+        uint32_t page = IOHIDElementGetUsagePage(element);
+        uint32_t usage = IOHIDElementGetUsage(element);
+        if (page != kHIDPage_GenericDesktop) {
+            continue;
+        }
+        if (usage == kHIDUsage_GD_X) {
+            has_x = true;
+            absolute_x = !IOHIDElementIsRelative(element);
+            min_x = (int)IOHIDElementGetLogicalMin(element);
+            max_x = (int)IOHIDElementGetLogicalMax(element);
+        } else if (usage == kHIDUsage_GD_Y) {
+            has_y = true;
+            absolute_y = !IOHIDElementIsRelative(element);
+            min_y = (int)IOHIDElementGetLogicalMin(element);
+            max_y = (int)IOHIDElementGetLogicalMax(element);
+        }
+    }
+    CFRelease(elements);
+
+    if (!has_x || !has_y) {
+        return;
+    }
+
+    bool absolute = absolute_x && absolute_y;
+    if (absolute && (max_x <= min_x || max_y <= min_y)) {
+        absolute = false;
+    }
+
+    int slot = -1;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (!chihiro_raw[i].used) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        return;
+    }
+
+    ChihiroMacPointer *p = &chihiro_raw[slot];
+    memset(p, 0, sizeof(*p));
+    p->device = (IOHIDDeviceRef)CFRetain(device);
+    p->used = true;
+    p->absolute = absolute;
+    p->min_x = min_x;
+    p->max_x = max_x;
+    p->min_y = min_y;
+    p->max_y = max_y;
+    p->x = absolute ? (min_x + max_x) / 2 : 0;
+    p->y = absolute ? (min_y + max_y) / 2 : 0;
+    chihiro_mac_set_name(p);
+    chihiro_mac_prop_u64(p->device, CFSTR(kIOHIDLocationIDKey), &p->location);
+    chihiro_mac_prop_u64(p->device, CFSTR(kIOHIDUniqueIDKey), &p->unique);
+    p->seq = ++chihiro_mac_seq;
+
+    CHIHIRO_LOGF(JVS, "mac pointer %d: %s (%s)\n", slot, p->name,
+                 absolute ? "absolute" : "relative");
+}
+
+static void chihiro_mac_device_removed(void *context, IOReturn result,
+                                       void *sender, IOHIDDeviceRef device)
+{
+    (void)context;
+    (void)result;
+    (void)sender;
+
+    int index = chihiro_mac_find(device);
+    if (index < 0) {
+        return;
+    }
+    CHIHIRO_LOGF(JVS, "mac pointer removed: %s\n", chihiro_raw[index].name);
+    if (chihiro_raw[index].device) {
+        CFRelease(chihiro_raw[index].device);
+    }
+    memset(&chihiro_raw[index], 0, sizeof(chihiro_raw[index]));
+}
+
+static void chihiro_mac_input_value(void *context, IOReturn result,
+                                    void *sender, IOHIDValueRef value)
+{
+    (void)context;
+    (void)result;
+    (void)sender;
+
+    IOHIDElementRef element = IOHIDValueGetElement(value);
+    IOHIDDeviceRef device = IOHIDElementGetDevice(element);
+    int index = chihiro_mac_find(device);
+    if (index < 0) {
+        return;
+    }
+
+    ChihiroMacPointer *p = &chihiro_raw[index];
+    uint32_t page = IOHIDElementGetUsagePage(element);
+    uint32_t usage = IOHIDElementGetUsage(element);
+    CFIndex int_value = IOHIDValueGetIntegerValue(value);
+
+    if (page == kHIDPage_GenericDesktop) {
+        if (usage == kHIDUsage_GD_X) {
+            if (p->absolute) {
+                p->x = (int)int_value;
+            } else {
+                p->rel_x += (int)int_value;
+                if (p->rel_x > 10000) p->rel_x = 10000;
+                if (p->rel_x < -10000) p->rel_x = -10000;
+            }
+        } else if (usage == kHIDUsage_GD_Y) {
+            if (p->absolute) {
+                p->y = (int)int_value;
+            } else {
+                p->rel_y += (int)int_value;
+                if (p->rel_y > 10000) p->rel_y = 10000;
+                if (p->rel_y < -10000) p->rel_y = -10000;
+            }
+        }
+    } else if (page == kHIDPage_Button) {
+        int bit = -1;
+        switch (usage) {
+        case 1:
+            bit = 0;
+            break;
+        case 2:
+            bit = 1;
+            break;
+        case 3:
+            bit = 2;
+            break;
+        case 4:
+            bit = 3;
+            break;
+        case 5:
+            bit = 4;
+            break;
+        }
+        if (bit >= 0) {
+            if (int_value) {
+                p->buttons |= 1u << bit;
+            } else {
+                p->buttons &= ~(1u << bit);
+            }
+        }
+    }
+}
+
+static int chihiro_mac_compare_slots(const ChihiroMacPointer *a,
+                                     const ChihiroMacPointer *b)
+{
+    if (a->location != b->location) {
+        if (!a->location) {
+            return 1;
+        }
+        if (!b->location) {
+            return -1;
+        }
+        return a->location < b->location ? -1 : 1;
+    }
+    if (a->unique != b->unique) {
+        if (!a->unique) {
+            return 1;
+        }
+        if (!b->unique) {
+            return -1;
+        }
+        return a->unique < b->unique ? -1 : 1;
+    }
+    int name = strcmp(a->name, b->name);
+    if (name != 0) {
+        return name;
+    }
+    return a->seq - b->seq;
+}
+
+static int chihiro_mac_collect(int *slots, bool absolute)
+{
+    int count = 0;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used && chihiro_raw[i].absolute == absolute) {
+            slots[count++] = i;
+        }
+    }
+
+    for (int i = 1; i < count; i++) {
+        int value = slots[i];
+        int j = i - 1;
+        while (j >= 0 &&
+               chihiro_mac_compare_slots(&chihiro_raw[slots[j]],
+                                         &chihiro_raw[value]) > 0) {
+            slots[j + 1] = slots[j];
+            j--;
+        }
+        slots[j + 1] = value;
+    }
+    return count;
+}
+
+static int chihiro_raw_choose(int player)
+{
+    if (player < 0 || player > 1) {
+        return -1;
+    }
+
+    int slots[CHIHIRO_RAW_MAX];
+    int absolute = chihiro_mac_collect(slots, true);
+    if (player < absolute) {
+        return slots[player];
+    }
+
+    int relative = player - absolute;
+    int count = chihiro_mac_collect(slots, false);
+    return relative < count ? slots[relative] : -1;
+}
+
+static void chihiro_raw_log_assignments(void)
+{
+    for (int player = 0; player < 2; player++) {
+        int index = chihiro_raw_choose(player);
+        if (index == chihiro_raw_last_player[player]) {
+            continue;
+        }
+        chihiro_raw_last_player[player] = index;
+        if (index >= 0) {
+            CHIHIRO_LOGF(JVS, "mac pointer P%d: %s (%s)\n", player + 1,
+                         chihiro_raw[index].name,
+                         chihiro_raw[index].absolute ? "absolute" : "relative");
+        } else {
+            CHIHIRO_LOGF(JVS, "mac pointer P%d: none\n", player + 1);
+        }
+    }
+}
+
+static bool chihiro_mac_start(void)
+{
+    if (chihiro_hid_manager) {
+        return true;
+    }
+    if (chihiro_raw_start_tried) {
+        return false;
+    }
+    chihiro_raw_start_tried = true;
+
+    IOHIDManagerRef manager =
+        IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
+    if (!manager) {
+        CHIHIRO_LOGF(JVS, "mac pointer: IOHIDManagerCreate failed\n");
+        return false;
+    }
+
+    int page_value = kHIDPage_GenericDesktop;
+    int mouse_value = kHIDUsage_GD_Mouse;
+    int pointer_value = kHIDUsage_GD_Pointer;
+    CFNumberRef page = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType,
+                                      &page_value);
+    CFNumberRef mouse = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType,
+                                       &mouse_value);
+    CFNumberRef pointer = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType,
+                                         &pointer_value);
+
+    CFMutableDictionaryRef mouse_dict = CFDictionaryCreateMutable(
+        kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    CFMutableDictionaryRef pointer_dict = CFDictionaryCreateMutable(
+        kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    CFDictionarySetValue(mouse_dict, CFSTR(kIOHIDDeviceUsagePageKey), page);
+    CFDictionarySetValue(mouse_dict, CFSTR(kIOHIDDeviceUsageKey), mouse);
+    CFDictionarySetValue(pointer_dict, CFSTR(kIOHIDDeviceUsagePageKey), page);
+    CFDictionarySetValue(pointer_dict, CFSTR(kIOHIDDeviceUsageKey), pointer);
+
+    const void *match_values[2] = { mouse_dict, pointer_dict };
+    CFArrayRef matches = CFArrayCreate(kCFAllocatorDefault, match_values, 2,
+                                       &kCFTypeArrayCallBacks);
+    IOHIDManagerSetDeviceMatchingMultiple(manager, matches);
+
+    IOHIDManagerRegisterDeviceMatchingCallback(manager,
+                                               chihiro_mac_device_added, NULL);
+    IOHIDManagerRegisterDeviceRemovalCallback(manager,
+                                              chihiro_mac_device_removed, NULL);
+    IOHIDManagerRegisterInputValueCallback(manager,
+                                           chihiro_mac_input_value, NULL);
+    IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(),
+                                    kCFRunLoopDefaultMode);
+
+    IOReturn result = IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
+
+    CFRelease(matches);
+    CFRelease(mouse_dict);
+    CFRelease(pointer_dict);
+    CFRelease(page);
+    CFRelease(mouse);
+    CFRelease(pointer);
+
+    if (result != kIOReturnSuccess) {
+        CHIHIRO_LOGF(JVS, "mac pointer: IOHIDManagerOpen failed %#x\n",
+                     (unsigned)result);
+        CFRelease(manager);
+        return false;
+    }
+
+    chihiro_hid_manager = manager;
+    CHIHIRO_LOGF(JVS, "mac pointer: IOHIDManager open\n");
+    return true;
+}
+
+static void chihiro_raw_sync(void)
+{
+    if (!g_config.chihiro.settings.pointer_devices) {
+        return;
+    }
+
+    if (!chihiro_mac_start()) {
+        return;
+    }
+
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true);
+
+    if (!chihiro_raw_window) {
+        int count = 0;
+        SDL_Window **windows = SDL_GetWindows(&count);
+        if (windows && count > 0) {
+            chihiro_raw_window = windows[0];
+        }
+        SDL_free(windows);
+    }
+
+    chihiro_raw_log_assignments();
+
+    if (chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
+        CHIHIRO_LOGF(JVS, "mac pointer: no pointer devices yet\n");
+        chihiro_raw_logged_no_device = true;
+    }
+}
+
+static bool chihiro_raw_has(int player)
+{
+    return g_config.chihiro.settings.pointer_devices &&
+           chihiro_raw_choose(player) >= 0;
+}
+
+static uint32_t chihiro_raw_buttons(int player)
+{
+    if (!g_config.chihiro.settings.pointer_devices) {
+        return 0;
+    }
+    int index = chihiro_raw_choose(player);
+    return index >= 0 ? chihiro_raw[index].buttons : 0;
+}
+
+static bool chihiro_raw_aim(int player, ChihiroJVSState *jvs, int ax, int ay,
+                            bool reload)
+{
+    int index = chihiro_raw_choose(player);
+    if (index < 0) {
+        return false;
+    }
+    ChihiroMacPointer *p = &chihiro_raw[index];
+
+    if (reload) {
+        jvs->analog[ax] = 0;
+        jvs->analog[ay] = 0;
+        return true;
+    }
+
+    if (!chihiro_raw_window) {
+        return false;
+    }
+
+    int width = 0, height = 0;
+    SDL_GetWindowSize(chihiro_raw_window, &width, &height);
+    if (width <= 0 || height <= 0) {
+        jvs->analog[ax] = 0x8000;
+        jvs->analog[ay] = 0x8000;
+        return true;
+    }
+
+    float window_x, window_y;
+    if (p->absolute) {
+        float nx = (p->x - p->min_x) / (float)(p->max_x - p->min_x);
+        float ny = (p->y - p->min_y) / (float)(p->max_y - p->min_y);
+        if (nx < 0.0f) nx = 0.0f;
+        if (nx > 1.0f) nx = 1.0f;
+        if (ny < 0.0f) ny = 0.0f;
+        if (ny > 1.0f) ny = 1.0f;
+
+        SDL_Rect bounds;
+        SDL_DisplayID display = SDL_GetDisplayForWindow(chihiro_raw_window);
+        int wx = 0, wy = 0;
+        SDL_GetWindowPosition(chihiro_raw_window, &wx, &wy);
+        if (SDL_GetDisplayBounds(display, &bounds)) {
+            window_x = ((bounds.x + nx * bounds.w) - wx) / (float)width;
+            window_y = ((bounds.y + ny * bounds.h) - wy) / (float)height;
+        } else {
+            window_x = nx;
+            window_y = ny;
+        }
+    } else {
+        if (!p->client_init) {
+            p->client_x = width / 2.0f;
+            p->client_y = height / 2.0f;
+            p->client_init = true;
+        }
+        p->client_x += p->rel_x;
+        p->client_y += p->rel_y;
+        p->rel_x = p->rel_y = 0;
+        if (p->client_x < 0.0f) p->client_x = 0.0f;
+        if (p->client_y < 0.0f) p->client_y = 0.0f;
+        if (p->client_x > width - 1.0f) p->client_x = width - 1.0f;
+        if (p->client_y > height - 1.0f) p->client_y = height - 1.0f;
+        window_x = p->client_x / width;
+        window_y = p->client_y / height;
+    }
+
+    float vx, vy, vw, vh;
+    if (!xemu_input_get_display_viewport(&vx, &vy, &vw, &vh)) {
+        jvs->analog[ax] = 0x8000;
+        jvs->analog[ay] = 0x8000;
+        return true;
+    }
+
+    float nx = (window_x - vx) / vw;
+    float ny = (window_y - vy) / vh;
     if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
         jvs->analog[ax] = 0;
         jvs->analog[ay] = 0;

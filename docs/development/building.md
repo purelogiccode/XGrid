@@ -234,7 +234,26 @@ core on its own host or stage per-RID builds with `-CoreRoot`, or pass
   sink on Linux and macOS.
 - macOS has no XGrid core build script. The macOS archives contain the shell
   only; point the shell at an upstream xemu 0.8.139 build with the **Emulator
-  binary** setting.
+  binary** setting. For a local core with the XGrid additions, build the
+  tracked tree with Homebrew dependencies:
+
+  ```bash
+  brew install meson ninja pkg-config glib pixman zstd lz4 libepoxy libusb \
+      libpcap libsamplerate gmp sdl3
+  cd xemu
+  ./configure --extra-cflags="-DXBOX=1 -I$(brew --prefix)/include" \
+      --extra-ldflags="-L$(brew --prefix)/lib" \
+      --target-list=i386-softmmu --disable-werror --disable-docs \
+      --disable-guest-agent --disable-vnc --disable-spice --disable-gtk \
+      --disable-sdl-image --disable-libssh --disable-curses --disable-brlapi \
+      -Dzstd=enabled --enable-tools --disable-curl --disable-cocoa
+  make -j"$(sysctl -n hw.ncpu)" qemu-system-i386
+  cp build/qemu-system-i386 dist/xemu
+  xattr -cr dist/xemu && codesign -s - -f dist/xemu
+  ```
+
+  The Homebrew build is for local testing; a release core still needs its
+  libraries bundled with the archive.
 
 ## Troubleshooting the build
 

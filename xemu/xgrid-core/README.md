@@ -75,6 +75,11 @@ every port the keyboard did not take (recorded in
 `xemu-patches/0008-ui-shell-pads.patch`), so players 2-4 can be driven from the
 shell. The bindings are not saved to the core configuration.
 
+The Chihiro JVS input in the same file also reads per-device gun pointers from
+the host: Raw Input on Windows, evdev on Linux and IOHID on macOS. The first two
+absolute devices aim players 1 and 2, and relative mice start at the centre of
+the picture. This is recorded with the Chihiro patch.
+
 ### Save states
 
 `xgrid_core_snapshot_save/load/delete/refresh` queue one request at a time;
