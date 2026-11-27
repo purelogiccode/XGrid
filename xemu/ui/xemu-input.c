@@ -926,49 +926,101 @@ static void chihiro_raw_register(void)
                  (void *)chihiro_raw_hwnd);
 }
 
-static int chihiro_raw_absolute_count(void)
+static int chihiro_raw_pin(int player)
 {
-    int count = 0;
-    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-        if (chihiro_raw[i].used && chihiro_raw[i].absolute) {
-            count++;
-        }
+    const char *name = player == 0
+        ? g_config.chihiro.settings.pointer_p1
+        : g_config.chihiro.settings.pointer_p2;
+    if (!name[0]) {
+        return -1;
     }
-    return count;
-}
-
-static int chihiro_raw_choose(int player)
-{
-    int absolute = chihiro_raw_absolute_count();
-    int seen = 0;
-
-    if (player < 0 || player > 1) {
+    if (player == 1 &&
+        strcmp(name, g_config.chihiro.settings.pointer_p1) == 0) {
         return -1;
     }
 
-    if (player < absolute) {
-        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-            if (!chihiro_raw[i].used || !chihiro_raw[i].absolute) {
-                continue;
-            }
-            if (seen++ == player) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    int relative = player - absolute;
-    seen = 0;
     for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-        if (!chihiro_raw[i].used || chihiro_raw[i].absolute) {
-            continue;
-        }
-        if (seen++ == relative) {
+        if (chihiro_raw[i].used &&
+            strcmp(chihiro_raw[i].name, name) == 0) {
             return i;
         }
     }
     return -1;
+}
+
+static int chihiro_raw_compare_slots(int a, int b)
+{
+    int order = strcmp(chihiro_raw[a].name, chihiro_raw[b].name);
+    return order != 0 ? order : a - b;
+}
+
+static void chihiro_raw_sort_slots(int *slots, int start, int count)
+{
+    for (int i = start + 1; i < start + count; i++) {
+        int value = slots[i];
+        int j = i - 1;
+        while (j >= start &&
+               chihiro_raw_compare_slots(slots[j], value) > 0) {
+            slots[j + 1] = slots[j];
+            j--;
+        }
+        slots[j + 1] = value;
+    }
+}
+
+static int chihiro_raw_collect(int *slots)
+{
+    int count = 0;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used && chihiro_raw[i].absolute) {
+            slots[count++] = i;
+        }
+    }
+    chihiro_raw_sort_slots(slots, 0, count);
+
+    int start = count;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used && !chihiro_raw[i].absolute) {
+            slots[count++] = i;
+        }
+    }
+    chihiro_raw_sort_slots(slots, start, count - start);
+    return count;
+}
+
+static int chihiro_raw_choose_auto(int index, int exclude)
+{
+    int slots[CHIHIRO_RAW_MAX];
+    int count = chihiro_raw_collect(slots);
+    int seen = 0;
+
+    for (int i = 0; i < count; i++) {
+        if (slots[i] == exclude) {
+            continue;
+        }
+        if (seen++ == index) {
+            return slots[i];
+        }
+    }
+    return -1;
+}
+
+static int chihiro_raw_choose(int player)
+{
+    if (player < 0 || player > 1) {
+        return -1;
+    }
+
+    int pin = chihiro_raw_pin(player);
+    if (pin >= 0) {
+        return pin;
+    }
+
+    int other = chihiro_raw_pin(1 - player);
+    if (other >= 0) {
+        return chihiro_raw_choose_auto(0, other);
+    }
+    return chihiro_raw_choose_auto(player, -1);
 }
 
 static bool chihiro_raw_has(int player)
@@ -1017,8 +1069,7 @@ static void chihiro_raw_sync(void)
 
     if (chihiro_raw_registered) {
         chihiro_raw_log_assignments();
-        if (chihiro_raw_absolute_count() == 0 &&
-            chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
+        if (chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
             CHIHIRO_LOGF(JVS, "raw pointer: no pointer devices yet\n");
             chihiro_raw_logged_no_device = true;
         }
@@ -1348,49 +1399,106 @@ static void chihiro_linux_read(int index)
     }
 }
 
-static int chihiro_linux_absolute_count(void)
+static int chihiro_linux_pin(int player)
 {
-    int count = 0;
-    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-        if (chihiro_raw[i].fd >= 0 && chihiro_raw[i].absolute) {
-            count++;
-        }
+    const char *name = player == 0
+        ? g_config.chihiro.settings.pointer_p1
+        : g_config.chihiro.settings.pointer_p2;
+    if (!name[0]) {
+        return -1;
     }
-    return count;
-}
-
-static int chihiro_raw_choose(int player)
-{
-    int absolute = chihiro_linux_absolute_count();
-    int seen = 0;
-
-    if (player < 0 || player > 1) {
+    if (player == 1 &&
+        strcmp(name, g_config.chihiro.settings.pointer_p1) == 0) {
         return -1;
     }
 
-    if (player < absolute) {
-        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-            if (chihiro_raw[i].fd < 0 || !chihiro_raw[i].absolute) {
-                continue;
-            }
-            if (seen++ == player) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    int relative = player - absolute;
-    seen = 0;
     for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-        if (chihiro_raw[i].fd < 0 || chihiro_raw[i].absolute) {
-            continue;
-        }
-        if (seen++ == relative) {
+        if (chihiro_raw[i].fd >= 0 &&
+            strcmp(chihiro_raw[i].name, name) == 0) {
             return i;
         }
     }
     return -1;
+}
+
+static int chihiro_linux_compare_slots(int a, int b)
+{
+    int number_a = chihiro_linux_path_number(chihiro_raw[a].path);
+    int number_b = chihiro_linux_path_number(chihiro_raw[b].path);
+    if (number_a != number_b) {
+        return number_a - number_b;
+    }
+    int order = strcmp(chihiro_raw[a].name, chihiro_raw[b].name);
+    return order != 0 ? order : a - b;
+}
+
+static void chihiro_linux_sort_slots(int *slots, int start, int count)
+{
+    for (int i = start + 1; i < start + count; i++) {
+        int value = slots[i];
+        int j = i - 1;
+        while (j >= start &&
+               chihiro_linux_compare_slots(slots[j], value) > 0) {
+            slots[j + 1] = slots[j];
+            j--;
+        }
+        slots[j + 1] = value;
+    }
+}
+
+static int chihiro_linux_collect(int *slots)
+{
+    int count = 0;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].fd >= 0 && chihiro_raw[i].absolute) {
+            slots[count++] = i;
+        }
+    }
+    chihiro_linux_sort_slots(slots, 0, count);
+
+    int start = count;
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].fd >= 0 && !chihiro_raw[i].absolute) {
+            slots[count++] = i;
+        }
+    }
+    chihiro_linux_sort_slots(slots, start, count - start);
+    return count;
+}
+
+static int chihiro_linux_choose_auto(int index, int exclude)
+{
+    int slots[CHIHIRO_RAW_MAX];
+    int count = chihiro_linux_collect(slots);
+    int seen = 0;
+
+    for (int i = 0; i < count; i++) {
+        if (slots[i] == exclude) {
+            continue;
+        }
+        if (seen++ == index) {
+            return slots[i];
+        }
+    }
+    return -1;
+}
+
+static int chihiro_raw_choose(int player)
+{
+    if (player < 0 || player > 1) {
+        return -1;
+    }
+
+    int pin = chihiro_linux_pin(player);
+    if (pin >= 0) {
+        return pin;
+    }
+
+    int other = chihiro_linux_pin(1 - player);
+    if (other >= 0) {
+        return chihiro_linux_choose_auto(0, other);
+    }
+    return chihiro_linux_choose_auto(player, -1);
 }
 
 static void chihiro_raw_log_assignments(void)
@@ -1447,8 +1555,7 @@ static void chihiro_raw_sync(void)
 
     chihiro_raw_log_assignments();
 
-    if (chihiro_linux_absolute_count() == 0 &&
-        chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
+    if (chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
         CHIHIRO_LOGF(JVS, "linux pointer: no pointer devices yet\n");
         chihiro_raw_logged_no_device = true;
     }
@@ -1869,21 +1976,62 @@ static int chihiro_mac_collect(int *slots, bool absolute)
     return count;
 }
 
+static int chihiro_mac_pin(int player)
+{
+    const char *name = player == 0
+        ? g_config.chihiro.settings.pointer_p1
+        : g_config.chihiro.settings.pointer_p2;
+    if (!name[0]) {
+        return -1;
+    }
+    if (player == 1 &&
+        strcmp(name, g_config.chihiro.settings.pointer_p1) == 0) {
+        return -1;
+    }
+
+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
+        if (chihiro_raw[i].used &&
+            strcmp(chihiro_raw[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int chihiro_mac_choose_auto(int index, int exclude)
+{
+    int slots[CHIHIRO_RAW_MAX];
+    int count = chihiro_mac_collect(slots, true);
+    count += chihiro_mac_collect(slots + count, false);
+    int seen = 0;
+
+    for (int i = 0; i < count; i++) {
+        if (slots[i] == exclude) {
+            continue;
+        }
+        if (seen++ == index) {
+            return slots[i];
+        }
+    }
+    return -1;
+}
+
 static int chihiro_raw_choose(int player)
 {
     if (player < 0 || player > 1) {
         return -1;
     }
 
-    int slots[CHIHIRO_RAW_MAX];
-    int absolute = chihiro_mac_collect(slots, true);
-    if (player < absolute) {
-        return slots[player];
+    int pin = chihiro_mac_pin(player);
+    if (pin >= 0) {
+        return pin;
     }
 
-    int relative = player - absolute;
-    int count = chihiro_mac_collect(slots, false);
-    return relative < count ? slots[relative] : -1;
+    int other = chihiro_mac_pin(1 - player);
+    if (other >= 0) {
+        return chihiro_mac_choose_auto(0, other);
+    }
+    return chihiro_mac_choose_auto(player, -1);
 }
 
 static void chihiro_raw_log_assignments(void)

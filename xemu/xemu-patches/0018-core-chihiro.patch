@@ -16,7 +16,8 @@ enumeration hooks, the keyboard/gamepad/mouse JVS mapping, player 1's pointer
 aim, player 2's second-pad/arrow aim, both card readers, the gun-profile menu
 suppression, the gamepad force-feedback output, the steering-wheel SDL haptic
 effects, Windows Raw Input, Linux evdev and macOS IOHID per-device light-gun
-input, the IOKit/CoreFoundation link for macOS, and the JVS analog diagnostic.
+input, per-player pointer pinning, the IOKit/CoreFoundation link for macOS,
+and the JVS analog diagnostic.
 It applies on top of the XGrid 0.8.139 tree with patches 0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
 index 34b1b2a..5f3be43 100644
@@ -31,7 +32,7 @@ index 34b1b2a..5f3be43 100644
  if get_option('qcow1').allowed()
    block_ss.add(files('qcow.c'))
 diff --git a/xemu/config_spec.yml b/xemu/config_spec.yml
-index c933b54..29324dc 100644
+index c933b54..80e7661 100644
 --- a/xemu/config_spec.yml
 +++ b/xemu/config_spec.yml
 @@ -7,6 +7,7 @@ general:
@@ -69,7 +70,7 @@ index c933b54..29324dc 100644
    mem_limit:
      type: enum
      values: ['64', '128']
-@@ -366,6 +378,470 @@ sys:
+@@ -366,6 +378,479 @@ sys:
      hdd_path: string
      dvd_path: string
  
@@ -427,11 +428,20 @@ index c933b54..29324dc 100644
 +      type: integer
 +      default: 50
 +    # Read each mouse or light gun on its own (evdev on Linux, Raw Input on
-+    # Windows) so two players can aim with their own device. Off: the system
-+    # cursor aims.
++    # Windows, IOHID on macOS) so two players can aim with their own device.
++    # Off: the system cursor aims.
 +    pointer_devices:
 +      type: bool
 +      default: false
++    # Device names to pin to players 1 and 2. Empty = automatic (absolute
++    # devices first, then relative mice). The names are the ones the core logs
++    # in its pointer lines.
++    pointer_p1:
++      type: string
++      default: ""
++    pointer_p2:
++      type: string
++      default: ""
 +    # Exclusive grab of the devices aimed with while playing (Linux)
 +    pointer_grab:
 +      type: bool
@@ -1272,7 +1282,7 @@ index ea46bf0..ba7a43b 100644
  
  if host_os == 'linux'
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 4fbc863..8f860e3 100644
+index 4fbc863..0b7b9b0 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
 @@ -29,12 +29,40 @@
@@ -1372,7 +1382,7 @@ index 4fbc863..8f860e3 100644
      if (state->type == INPUT_DEVICE_SDL_KEYBOARD) {
          xemu_input_update_sdl_kbd_controller_state(state);
      } else if (state->type == INPUT_DEVICE_SDL_GAMEPAD) {
-@@ -521,6 +591,2423 @@ void xemu_input_update_controller(ControllerState *state)
+@@ -521,6 +591,2571 @@ void xemu_input_update_controller(ControllerState *state)
      state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
  }
  
@@ -1711,49 +1721,101 @@ index 4fbc863..8f860e3 100644
 +                 (void *)chihiro_raw_hwnd);
 +}
 +
-+static int chihiro_raw_absolute_count(void)
++static int chihiro_raw_pin(int player)
 +{
-+    int count = 0;
-+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-+        if (chihiro_raw[i].used && chihiro_raw[i].absolute) {
-+            count++;
-+        }
++    const char *name = player == 0
++        ? g_config.chihiro.settings.pointer_p1
++        : g_config.chihiro.settings.pointer_p2;
++    if (!name[0]) {
++        return -1;
 +    }
-+    return count;
-+}
-+
-+static int chihiro_raw_choose(int player)
-+{
-+    int absolute = chihiro_raw_absolute_count();
-+    int seen = 0;
-+
-+    if (player < 0 || player > 1) {
++    if (player == 1 &&
++        strcmp(name, g_config.chihiro.settings.pointer_p1) == 0) {
 +        return -1;
 +    }
 +
-+    if (player < absolute) {
-+        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-+            if (!chihiro_raw[i].used || !chihiro_raw[i].absolute) {
-+                continue;
-+            }
-+            if (seen++ == player) {
-+                return i;
-+            }
-+        }
-+        return -1;
-+    }
-+
-+    int relative = player - absolute;
-+    seen = 0;
 +    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-+        if (!chihiro_raw[i].used || chihiro_raw[i].absolute) {
-+            continue;
-+        }
-+        if (seen++ == relative) {
++        if (chihiro_raw[i].used &&
++            strcmp(chihiro_raw[i].name, name) == 0) {
 +            return i;
 +        }
 +    }
 +    return -1;
++}
++
++static int chihiro_raw_compare_slots(int a, int b)
++{
++    int order = strcmp(chihiro_raw[a].name, chihiro_raw[b].name);
++    return order != 0 ? order : a - b;
++}
++
++static void chihiro_raw_sort_slots(int *slots, int start, int count)
++{
++    for (int i = start + 1; i < start + count; i++) {
++        int value = slots[i];
++        int j = i - 1;
++        while (j >= start &&
++               chihiro_raw_compare_slots(slots[j], value) > 0) {
++            slots[j + 1] = slots[j];
++            j--;
++        }
++        slots[j + 1] = value;
++    }
++}
++
++static int chihiro_raw_collect(int *slots)
++{
++    int count = 0;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].used && chihiro_raw[i].absolute) {
++            slots[count++] = i;
++        }
++    }
++    chihiro_raw_sort_slots(slots, 0, count);
++
++    int start = count;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].used && !chihiro_raw[i].absolute) {
++            slots[count++] = i;
++        }
++    }
++    chihiro_raw_sort_slots(slots, start, count - start);
++    return count;
++}
++
++static int chihiro_raw_choose_auto(int index, int exclude)
++{
++    int slots[CHIHIRO_RAW_MAX];
++    int count = chihiro_raw_collect(slots);
++    int seen = 0;
++
++    for (int i = 0; i < count; i++) {
++        if (slots[i] == exclude) {
++            continue;
++        }
++        if (seen++ == index) {
++            return slots[i];
++        }
++    }
++    return -1;
++}
++
++static int chihiro_raw_choose(int player)
++{
++    if (player < 0 || player > 1) {
++        return -1;
++    }
++
++    int pin = chihiro_raw_pin(player);
++    if (pin >= 0) {
++        return pin;
++    }
++
++    int other = chihiro_raw_pin(1 - player);
++    if (other >= 0) {
++        return chihiro_raw_choose_auto(0, other);
++    }
++    return chihiro_raw_choose_auto(player, -1);
 +}
 +
 +static bool chihiro_raw_has(int player)
@@ -1802,8 +1864,7 @@ index 4fbc863..8f860e3 100644
 +
 +    if (chihiro_raw_registered) {
 +        chihiro_raw_log_assignments();
-+        if (chihiro_raw_absolute_count() == 0 &&
-+            chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
++        if (chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
 +            CHIHIRO_LOGF(JVS, "raw pointer: no pointer devices yet\n");
 +            chihiro_raw_logged_no_device = true;
 +        }
@@ -2133,49 +2194,106 @@ index 4fbc863..8f860e3 100644
 +    }
 +}
 +
-+static int chihiro_linux_absolute_count(void)
++static int chihiro_linux_pin(int player)
 +{
-+    int count = 0;
-+    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-+        if (chihiro_raw[i].fd >= 0 && chihiro_raw[i].absolute) {
-+            count++;
-+        }
++    const char *name = player == 0
++        ? g_config.chihiro.settings.pointer_p1
++        : g_config.chihiro.settings.pointer_p2;
++    if (!name[0]) {
++        return -1;
 +    }
-+    return count;
-+}
-+
-+static int chihiro_raw_choose(int player)
-+{
-+    int absolute = chihiro_linux_absolute_count();
-+    int seen = 0;
-+
-+    if (player < 0 || player > 1) {
++    if (player == 1 &&
++        strcmp(name, g_config.chihiro.settings.pointer_p1) == 0) {
 +        return -1;
 +    }
 +
-+    if (player < absolute) {
-+        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-+            if (chihiro_raw[i].fd < 0 || !chihiro_raw[i].absolute) {
-+                continue;
-+            }
-+            if (seen++ == player) {
-+                return i;
-+            }
-+        }
-+        return -1;
-+    }
-+
-+    int relative = player - absolute;
-+    seen = 0;
 +    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
-+        if (chihiro_raw[i].fd < 0 || chihiro_raw[i].absolute) {
-+            continue;
-+        }
-+        if (seen++ == relative) {
++        if (chihiro_raw[i].fd >= 0 &&
++            strcmp(chihiro_raw[i].name, name) == 0) {
 +            return i;
 +        }
 +    }
 +    return -1;
++}
++
++static int chihiro_linux_compare_slots(int a, int b)
++{
++    int number_a = chihiro_linux_path_number(chihiro_raw[a].path);
++    int number_b = chihiro_linux_path_number(chihiro_raw[b].path);
++    if (number_a != number_b) {
++        return number_a - number_b;
++    }
++    int order = strcmp(chihiro_raw[a].name, chihiro_raw[b].name);
++    return order != 0 ? order : a - b;
++}
++
++static void chihiro_linux_sort_slots(int *slots, int start, int count)
++{
++    for (int i = start + 1; i < start + count; i++) {
++        int value = slots[i];
++        int j = i - 1;
++        while (j >= start &&
++               chihiro_linux_compare_slots(slots[j], value) > 0) {
++            slots[j + 1] = slots[j];
++            j--;
++        }
++        slots[j + 1] = value;
++    }
++}
++
++static int chihiro_linux_collect(int *slots)
++{
++    int count = 0;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].fd >= 0 && chihiro_raw[i].absolute) {
++            slots[count++] = i;
++        }
++    }
++    chihiro_linux_sort_slots(slots, 0, count);
++
++    int start = count;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].fd >= 0 && !chihiro_raw[i].absolute) {
++            slots[count++] = i;
++        }
++    }
++    chihiro_linux_sort_slots(slots, start, count - start);
++    return count;
++}
++
++static int chihiro_linux_choose_auto(int index, int exclude)
++{
++    int slots[CHIHIRO_RAW_MAX];
++    int count = chihiro_linux_collect(slots);
++    int seen = 0;
++
++    for (int i = 0; i < count; i++) {
++        if (slots[i] == exclude) {
++            continue;
++        }
++        if (seen++ == index) {
++            return slots[i];
++        }
++    }
++    return -1;
++}
++
++static int chihiro_raw_choose(int player)
++{
++    if (player < 0 || player > 1) {
++        return -1;
++    }
++
++    int pin = chihiro_linux_pin(player);
++    if (pin >= 0) {
++        return pin;
++    }
++
++    int other = chihiro_linux_pin(1 - player);
++    if (other >= 0) {
++        return chihiro_linux_choose_auto(0, other);
++    }
++    return chihiro_linux_choose_auto(player, -1);
 +}
 +
 +static void chihiro_raw_log_assignments(void)
@@ -2232,8 +2350,7 @@ index 4fbc863..8f860e3 100644
 +
 +    chihiro_raw_log_assignments();
 +
-+    if (chihiro_linux_absolute_count() == 0 &&
-+        chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
++    if (chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
 +        CHIHIRO_LOGF(JVS, "linux pointer: no pointer devices yet\n");
 +        chihiro_raw_logged_no_device = true;
 +    }
@@ -2654,21 +2771,62 @@ index 4fbc863..8f860e3 100644
 +    return count;
 +}
 +
++static int chihiro_mac_pin(int player)
++{
++    const char *name = player == 0
++        ? g_config.chihiro.settings.pointer_p1
++        : g_config.chihiro.settings.pointer_p2;
++    if (!name[0]) {
++        return -1;
++    }
++    if (player == 1 &&
++        strcmp(name, g_config.chihiro.settings.pointer_p1) == 0) {
++        return -1;
++    }
++
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].used &&
++            strcmp(chihiro_raw[i].name, name) == 0) {
++            return i;
++        }
++    }
++    return -1;
++}
++
++static int chihiro_mac_choose_auto(int index, int exclude)
++{
++    int slots[CHIHIRO_RAW_MAX];
++    int count = chihiro_mac_collect(slots, true);
++    count += chihiro_mac_collect(slots + count, false);
++    int seen = 0;
++
++    for (int i = 0; i < count; i++) {
++        if (slots[i] == exclude) {
++            continue;
++        }
++        if (seen++ == index) {
++            return slots[i];
++        }
++    }
++    return -1;
++}
++
 +static int chihiro_raw_choose(int player)
 +{
 +    if (player < 0 || player > 1) {
 +        return -1;
 +    }
 +
-+    int slots[CHIHIRO_RAW_MAX];
-+    int absolute = chihiro_mac_collect(slots, true);
-+    if (player < absolute) {
-+        return slots[player];
++    int pin = chihiro_mac_pin(player);
++    if (pin >= 0) {
++        return pin;
 +    }
 +
-+    int relative = player - absolute;
-+    int count = chihiro_mac_collect(slots, false);
-+    return relative < count ? slots[relative] : -1;
++    int other = chihiro_mac_pin(1 - player);
++    if (other >= 0) {
++        return chihiro_mac_choose_auto(0, other);
++    }
++    return chihiro_mac_choose_auto(player, -1);
 +}
 +
 +static void chihiro_raw_log_assignments(void)
@@ -3796,7 +3954,7 @@ index 4fbc863..8f860e3 100644
  void xemu_input_update_controllers(void)
  {
      ControllerState *iter;
-@@ -530,6 +3017,7 @@ void xemu_input_update_controllers(void)
+@@ -530,6 +3165,7 @@ void xemu_input_update_controllers(void)
      QTAILQ_FOREACH(iter, &available_controllers, entry) {
          xemu_input_update_rumble(iter);
      }

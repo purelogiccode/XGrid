@@ -714,6 +714,9 @@ public sealed partial class SettingsViewModel : PageViewModel
         new KeyedOption("type3", "Type 3"),
     ];
 
+    /// <summary>Gets the pointer devices reported by the core, plus automatic.</summary>
+    public ObservableCollection<KeyedOption> ChihiroPointerOptions { get; } = [];
+
     /// <summary>Gets the fallback cabinet profiles for unrecognized games.</summary>
     public IReadOnlyList<KeyedOption> ChihiroProfileOptions { get; } =
     [
@@ -750,6 +753,12 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     [ObservableProperty]
     private bool _chihiroPointerDevices;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedChihiroPointerP1;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedChihiroPointerP2;
 
     [ObservableProperty]
     private int _chihiroP2AimSpeed = 100;
@@ -1019,6 +1028,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         ChihiroWheelAutocenter = settings.Chihiro.WheelAutocenter;
         ChihiroWheelAutocenterStrength = settings.Chihiro.WheelAutocenterStrength;
         ChihiroPointerDevices = settings.Chihiro.PointerDevices;
+        LoadChihiroPointers(settings.Chihiro.PointerP1, settings.Chihiro.PointerP2);
         SelectedChihiroRegion = ChihiroRegionOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.Chihiro.Region, StringComparison.Ordinal))
             ?? ChihiroRegionOptions.First(option => string.Equals(option.Key, "ex", StringComparison.Ordinal));
@@ -1175,6 +1185,8 @@ public sealed partial class SettingsViewModel : PageViewModel
                 WheelAutocenter = ChihiroWheelAutocenter,
                 WheelAutocenterStrength = ChihiroWheelAutocenterStrength,
                 PointerDevices = ChihiroPointerDevices,
+                PointerP1 = SelectedChihiroPointerP1?.Key ?? string.Empty,
+                PointerP2 = SelectedChihiroPointerP2?.Key ?? string.Empty,
             },
             RamMb = RamMb,
             Input = BuildInputSettings(),
@@ -2170,6 +2182,56 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
 
         SelectedAudioDevice = match ?? AudioDeviceOptions[0];
+    }
+
+    /// <summary>Public command: re-reads the pointer names from the last core log.</summary>
+    [RelayCommand]
+    private void RefreshChihiroPointers()
+    {
+        LoadChihiroPointers();
+    }
+
+    /// <summary>Rebuilds the P1/P2 pointer choices from the core's pointer log.</summary>
+    /// <param name="preferredP1">Saved player-1 name, or null to keep the current choice.</param>
+    /// <param name="preferredP2">Saved player-2 name, or null to keep the current choice.</param>
+    private void LoadChihiroPointers(string? preferredP1 = null, string? preferredP2 = null)
+    {
+        string keyP1 = preferredP1 ?? SelectedChihiroPointerP1?.Key ?? string.Empty;
+        string keyP2 = preferredP2 ?? SelectedChihiroPointerP2?.Key ?? string.Empty;
+
+        ChihiroPointerOptions.Clear();
+        ChihiroPointerOptions.Add(new KeyedOption(
+            string.Empty, "Automatic (absolute first, then mice)"));
+
+        string logPath = Path.Combine(SettingsFolder, "xemu", "xemu.log");
+        foreach (ChihiroPointerDevice device in ChihiroPointerLog.Read(logPath))
+        {
+            ChihiroPointerOptions.Add(new KeyedOption(device.Name, device.Label));
+        }
+
+        SelectedChihiroPointerP1 = FindChihiroPointer(keyP1);
+        SelectedChihiroPointerP2 = FindChihiroPointer(keyP2);
+    }
+
+    private KeyedOption FindChihiroPointer(string key)
+    {
+        KeyedOption? match = ChihiroPointerOptions.FirstOrDefault(
+            option => string.Equals(option.Key, key, StringComparison.Ordinal));
+        if (match is not null)
+        {
+            return match;
+        }
+
+        if (string.IsNullOrEmpty(key))
+        {
+            return ChihiroPointerOptions[0];
+        }
+
+        // Keep a pinned device visible after it is unplugged, so the user can
+        // see why the launch falls back to automatic.
+        match = new KeyedOption(key, key + " (not detected)");
+        ChihiroPointerOptions.Add(match);
+        return match;
     }
 
     partial void OnSelectedAudioBackendChanged(KeyedOption? value)

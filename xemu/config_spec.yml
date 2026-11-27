@@ -732,11 +732,20 @@ chihiro:
       type: integer
       default: 50
     # Read each mouse or light gun on its own (evdev on Linux, Raw Input on
-    # Windows) so two players can aim with their own device. Off: the system
-    # cursor aims.
+    # Windows, IOHID on macOS) so two players can aim with their own device.
+    # Off: the system cursor aims.
     pointer_devices:
       type: bool
       default: false
+    # Device names to pin to players 1 and 2. Empty = automatic (absolute
+    # devices first, then relative mice). The names are the ones the core logs
+    # in its pointer lines.
+    pointer_p1:
+      type: string
+      default: ""
+    pointer_p2:
+      type: string
+      default: ""
     # Exclusive grab of the devices aimed with while playing (Linux)
     pointer_grab:
       type: bool

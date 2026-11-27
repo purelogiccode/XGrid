@@ -258,6 +258,12 @@ starting from the centre of the picture. Windows reads them through Raw Input,
 Linux through evdev (`/dev/input/event*`) and macOS through IOHID. With the
 setting off, the host cursor and second-gamepad paths above still apply.
 
+Use **Player 1 pointer** and **Player 2 pointer** to pin a device by name when
+automatic order picks the wrong one. Launch a gun game once with the setting
+on, choose **Refresh** to read the core's pointer list, then select the gun for
+each player. Automatic keeps the absolute-first order; a pinned device wins
+over it.
+
 Ghost Squad and Maximum Tune use the emulated card readers. Press **C** (or X)
 to push player 1's card in hand into the reader, and **V** (or X on the second
 pad) for player 2; with no card it creates a blank one. The core keeps the card
