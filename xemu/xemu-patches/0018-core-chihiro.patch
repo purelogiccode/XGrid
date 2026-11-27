@@ -15,10 +15,11 @@ The diff below covers the edits to the existing xemu tree, including the OHCI
 enumeration hooks, the keyboard/gamepad/mouse JVS mapping, player 1's pointer
 aim, player 2's second-pad/arrow aim, both card readers, the gun-profile menu
 suppression, the gamepad force-feedback output, the steering-wheel SDL haptic
-effects, Windows per-device light-gun Raw Input and the JVS analog diagnostic.
+effects, Windows Raw Input, Linux evdev and macOS IOHID per-device light-gun
+input, the IOKit/CoreFoundation link for macOS, and the JVS analog diagnostic.
 It applies on top of the XGrid 0.8.139 tree with patches 0001-0017.
 diff --git a/xemu/block/meson.build b/xemu/block/meson.build
-index 34b1b2a3..5f3be43e 100644
+index 34b1b2a..5f3be43 100644
 --- a/xemu/block/meson.build
 +++ b/xemu/block/meson.build
 @@ -43,6 +43,7 @@ block_ss.add(files(
@@ -30,10 +31,27 @@ index 34b1b2a3..5f3be43e 100644
  if get_option('qcow1').allowed()
    block_ss.add(files('qcow.c'))
 diff --git a/xemu/config_spec.yml b/xemu/config_spec.yml
-index 4f3e0ccf..29324dc9 100644
+index c933b54..29324dc 100644
 --- a/xemu/config_spec.yml
 +++ b/xemu/config_spec.yml
-@@ -352,6 +352,17 @@ net:
+@@ -7,6 +7,7 @@ general:
+       type: bool
+       default: true
+   screenshot_dir: string
++  shader_cache_dir: string
+   games_dir: string
+   skip_boot_anim: bool
+   # throttle_io: bool
+@@ -226,7 +227,7 @@ input:
+ display:
+   renderer:
+     type: enum
+-    values: ["NULL", OPENGL, VULKAN]
++    values: ["NULL", OPENGL, VULKAN, D3D11]
+     default: OPENGL
+   vulkan:
+     validation_layers: bool
+@@ -351,6 +352,17 @@ net:
            default: tcp
  
  sys:
@@ -51,7 +69,7 @@ index 4f3e0ccf..29324dc9 100644
    mem_limit:
      type: enum
      values: ['64', '128']
-@@ -367,6 +378,470 @@ sys:
+@@ -366,6 +378,470 @@ sys:
      hdd_path: string
      dvd_path: string
  
@@ -523,7 +541,7 @@ index 4f3e0ccf..29324dc9 100644
    hard_fpu:
      type: bool
 diff --git a/xemu/hw/ide/core.c b/xemu/hw/ide/core.c
-index 26fb5a6e..8410e0ff 100644
+index 26fb5a6..8410e0f 100644
 --- a/xemu/hw/ide/core.c
 +++ b/xemu/hw/ide/core.c
 @@ -43,6 +43,7 @@
@@ -590,7 +608,7 @@ index 26fb5a6e..8410e0ff 100644
          ide_transfer_start(s, s->io_buffer, 512, ide_transfer_stop);
          ide_bus_set_irq(s->bus);
 diff --git a/xemu/hw/usb/hcd-ohci.c b/xemu/hw/usb/hcd-ohci.c
-index 7b3f120b..e9c49729 100644
+index 7b3f120..e9c4972 100644
 --- a/xemu/hw/usb/hcd-ohci.c
 +++ b/xemu/hw/usb/hcd-ohci.c
 @@ -37,6 +37,7 @@
@@ -665,7 +683,7 @@ index 7b3f120b..e9c49729 100644
      ohci_port_set_if_connected(ohci, portnum, val & OHCI_PORT_PES);
  
 diff --git a/xemu/hw/xbox/meson.build b/xemu/hw/xbox/meson.build
-index 8cf1ea0b..58e208ff 100644
+index 8cf1ea0..58e208f 100644
 --- a/xemu/hw/xbox/meson.build
 +++ b/xemu/hw/xbox/meson.build
 @@ -17,5 +17,6 @@ specific_ss.add(files(
@@ -676,10 +694,20 @@ index 8cf1ea0b..58e208ff 100644
  subdir('nv2a')
  subdir('mcpx')
 diff --git a/xemu/hw/xbox/nv2a/nv2a.c b/xemu/hw/xbox/nv2a/nv2a.c
-index db4a5896..7221e941 100644
+index d6a2c2d..7221e94 100644
 --- a/xemu/hw/xbox/nv2a/nv2a.c
 +++ b/xemu/hw/xbox/nv2a/nv2a.c
-@@ -637,6 +637,12 @@ static void nv2a_register(void)
+@@ -447,6 +447,9 @@ static int nv2a_post_load(void *opaque, int version_id)
+         d->pgraph.vsh_carry_fog[3] = 1.0f;
+     }
+     d->pgraph.vsh_carry_cache_dirty = true;
++    if (d->pgraph.renderer && d->pgraph.renderer->ops.post_load) {
++        d->pgraph.renderer->ops.post_load(d);
++    }
+     qatomic_set(&d->pgraph.flush_pending, true);
+     nv2a_unlock_fifo(d);
+     return 0;
+@@ -634,6 +637,12 @@ static void nv2a_register(void)
  }
  type_init(nv2a_register);
  
@@ -693,7 +721,7 @@ index db4a5896..7221e941 100644
  {
      PCIDevice *dev = pci_create_simple(bus, devfn, "nv2a");
 diff --git a/xemu/hw/xbox/nv2a/nv2a.h b/xemu/hw/xbox/nv2a/nv2a.h
-index 2a9b7312..edf65ab1 100644
+index 2a9b731..edf65ab 100644
 --- a/xemu/hw/xbox/nv2a/nv2a.h
 +++ b/xemu/hw/xbox/nv2a/nv2a.h
 @@ -22,6 +22,9 @@
@@ -707,7 +735,7 @@ index 2a9b7312..edf65ab1 100644
  int nv2a_get_framebuffer_surface(void);
  void nv2a_release_framebuffer_surface(void);
 diff --git a/xemu/hw/xbox/smbus_xbox_smc.c b/xemu/hw/xbox/smbus_xbox_smc.c
-index 4e987cf0..84323116 100644
+index 4e987cf..8432311 100644
 --- a/xemu/hw/xbox/smbus_xbox_smc.c
 +++ b/xemu/hw/xbox/smbus_xbox_smc.c
 @@ -32,6 +32,7 @@
@@ -757,7 +785,7 @@ index 4e987cf0..84323116 100644
  
      if (blk_dev_is_tray_open(blk)) {
 diff --git a/xemu/hw/xbox/xbox.c b/xemu/hw/xbox/xbox.c
-index 779a41bd..30aad70e 100644
+index 779a41b..30aad70 100644
 --- a/xemu/hw/xbox/xbox.c
 +++ b/xemu/hw/xbox/xbox.c
 @@ -31,6 +31,7 @@
@@ -960,7 +988,7 @@ index 779a41bd..30aad70e 100644
                                    machine_set_avpack);
      object_class_property_set_description(
 diff --git a/xemu/hw/xbox/xbox.h b/xemu/hw/xbox/xbox.h
-index 8e602d69..59134de2 100644
+index 8e602d6..59134de 100644
 --- a/xemu/hw/xbox/xbox.h
 +++ b/xemu/hw/xbox/xbox.h
 @@ -44,6 +44,7 @@ typedef struct XboxMachineState {
@@ -972,7 +1000,7 @@ index 8e602d69..59134de2 100644
      char *smc_version;
      char *video_encoder;
 diff --git a/xemu/system/vl.c b/xemu/system/vl.c
-index 7900f869..8d5a18d0 100644
+index f45bdc3..8d5a18d 100644
 --- a/xemu/system/vl.c
 +++ b/xemu/system/vl.c
 @@ -148,6 +148,7 @@
@@ -1165,7 +1193,7 @@ index 7900f869..8d5a18d0 100644
          if (xemu_check_file(hdd_path)) {
              char *msg = g_strdup_printf("Failed to open hard disk image file '%s'. Please check machine settings.", hdd_path);
              xemu_queue_error_message(msg);
-@@ -3073,49 +3186,43 @@ void qemu_init(int argc, char **argv)
+@@ -3073,33 +3186,43 @@ void qemu_init(int argc, char **argv)
          }
      }
  
@@ -1210,24 +1238,8 @@ index 7900f869..8d5a18d0 100644
 -    // connected but no media present.
 -    fake_argv[fake_argc++] = strdup("-drive");
 -    char *escaped_dvd_path = strdup_double_commas(dvd_path);
--    /* XGrid: pick the driver the core needs; a .zar keeps its magic at the
--     * end and an ISO needs the XDVDFS partition offset detected. */
--    const char *dvd_format = "";
--    const char *dvd_extension = strrchr(dvd_path, '.');
--    if (dvd_extension != NULL) {
--        if (g_ascii_strcasecmp(dvd_extension, ".zar") == 0) {
--            dvd_format = ",format=xgridzar";
--        } else if (g_ascii_strcasecmp(dvd_extension, ".chd") == 0) {
--            dvd_format = ",format=xgridchd";
--        } else if (g_ascii_strcasecmp(dvd_extension, ".iso") == 0 ||
--                   g_ascii_strcasecmp(dvd_extension, ".xiso") == 0) {
--            dvd_format = ",format=xgridiso";
--        } else if (g_ascii_strcasecmp(dvd_extension, ".cci") == 0) {
--            dvd_format = ",format=xgridcci";
--        }
--    }
--    fake_argv[fake_argc++] = g_strdup_printf("index=1,media=cdrom,file=%s%s",
--        escaped_dvd_path, dvd_format);
+-    fake_argv[fake_argc++] = g_strdup_printf("index=1,media=cdrom,file=%s",
+-        escaped_dvd_path);
 -    free(escaped_dvd_path);
 -
      fake_argv[fake_argc++] = strdup("-display");
@@ -1244,11 +1256,31 @@ index 7900f869..8d5a18d0 100644
  
      for (int i = 1; i < argc; i++) {
          if (argv[i] != NULL) {
+diff --git a/xemu/ui/meson.build b/xemu/ui/meson.build
+index ea46bf0..ba7a43b 100644
+--- a/xemu/ui/meson.build
++++ b/xemu/ui/meson.build
+@@ -45,6 +45,10 @@ subdir('xui')
+ if host_os == 'darwin'
+   xemu_cocoa = dependency('appleframeworks', modules: 'Cocoa')
+   xemu_ss.add(xemu_cocoa)
++  xemu_ss.add(coref)
++  if iokit.found()
++    xemu_ss.add(iokit)
++  endif
+ endif
+ 
+ if host_os == 'linux'
 diff --git a/xemu/ui/xemu-input.c b/xemu/ui/xemu-input.c
-index 54595e1b..7b37748c 100644
+index 4fbc863..8f860e3 100644
 --- a/xemu/ui/xemu-input.c
 +++ b/xemu/ui/xemu-input.c
-@@ -34,8 +34,19 @@
+@@ -29,12 +29,40 @@
+ #include "qemu/config-file.h"
+ 
+ #include "xemu-input.h"
++#include "../xgrid-core/input/xgrid-input.h"
+ #include "xemu-notifications.h"
  #include "xemu-settings.h"
  #include <stdio.h>
  #include <stdlib.h>
@@ -1257,6 +1289,22 @@ index 54595e1b..7b37748c 100644
 +#ifdef _WIN32
 +#include <windows.h>
 +#include <SDL3/SDL_system.h>
++#endif
++#if defined(__linux__)
++#include <dirent.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <linux/input.h>
++#include <sys/ioctl.h>
++#include <unistd.h>
++#endif
++#if defined(__APPLE__)
++#include <CoreFoundation/CoreFoundation.h>
++#include <IOKit/hid/IOHIDElement.h>
++#include <IOKit/hid/IOHIDKeys.h>
++#include <IOKit/hid/IOHIDManager.h>
++#include <IOKit/hid/IOHIDUsageTables.h>
++#include <IOKit/hid/IOHIDValue.h>
 +#endif
  
  #include "system/blockdev.h"
@@ -1268,7 +1316,63 @@ index 54595e1b..7b37748c 100644
  
  // #define DEBUG_INPUT
  
-@@ -564,6 +575,1418 @@ void xemu_input_update_controller(ControllerState *state)
+@@ -319,6 +347,29 @@ void xemu_input_init(void)
+     }
+ 
+     QTAILQ_INSERT_TAIL(&available_controllers, new_con, entry);
++
++    /*
++     * XGrid: the shell supplies up to four pads through the input sink. Bind a
++     * controller to every port the keyboard did not take, so the sink can feed
++     * players 2-4. The bindings are not saved: a launch without the shell
++     * keeps the configured controller layout.
++     */
++    if (xgrid_input_enabled()) {
++        for (int i = 0; i < 4; i++) {
++            if (bound_controllers[i] != NULL) {
++                continue;
++            }
++
++            ControllerState *shell_con = calloc(1, sizeof(ControllerState));
++            shell_con->type = INPUT_DEVICE_XGRID;
++            shell_con->name = "XGrid pad";
++            shell_con->bound = -1;
++            shell_con->peripheral_types[0] = PERIPHERAL_NONE;
++            shell_con->peripheral_types[1] = PERIPHERAL_NONE;
++            QTAILQ_INSERT_TAIL(&available_controllers, shell_con, entry);
++            xemu_input_bind(i, shell_con, 0);
++        }
++    }
+ }
+ 
+ int xemu_input_get_controller_default_bind_port(ControllerState *state, int start)
+@@ -512,6 +563,25 @@ void xemu_input_update_controller(ControllerState *state)
+         return;
+     }
+ 
++    /* XGrid: the shell supplies every bound pad when the input sink is on. */
++    if (xgrid_input_enabled() && state->bound >= 0) {
++        uint32_t xg_buttons = 0;
++        int32_t xg_lx = 0, xg_ly = 0, xg_rx = 0, xg_ry = 0, xg_lt = 0, xg_rt = 0;
++        if (xgrid_input_read(state->bound, &xg_buttons, &xg_lx, &xg_ly, &xg_rx,
++                             &xg_ry, &xg_lt, &xg_rt)) {
++            state->buttons = xg_buttons;
++            memset(state->axis, 0, sizeof(state->axis));
++            state->axis[CONTROLLER_AXIS_LSTICK_X] = xg_lx;
++            state->axis[CONTROLLER_AXIS_LSTICK_Y] = xg_ly;
++            state->axis[CONTROLLER_AXIS_RSTICK_X] = xg_rx;
++            state->axis[CONTROLLER_AXIS_RSTICK_Y] = xg_ry;
++            state->axis[CONTROLLER_AXIS_LTRIG] = xg_lt;
++            state->axis[CONTROLLER_AXIS_RTRIG] = xg_rt;
++            state->last_input_updated_ts = now;
++            return;
++        }
++    }
++
+     if (state->type == INPUT_DEVICE_SDL_KEYBOARD) {
+         xemu_input_update_sdl_kbd_controller_state(state);
+     } else if (state->type == INPUT_DEVICE_SDL_GAMEPAD) {
+@@ -521,6 +591,2423 @@ void xemu_input_update_controller(ControllerState *state)
      state->last_input_updated_ts = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
  }
  
@@ -1770,6 +1874,1011 @@ index 54595e1b..7b37748c 100644
 +
 +    float nx = (client_x / (float)width - vx) / vw;
 +    float ny = (client_y / (float)height - vy) / vh;
++    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
++        jvs->analog[ax] = 0;
++        jvs->analog[ay] = 0;
++    } else {
++        jvs->analog[ax] = (uint16_t)(nx * 0xFFFF);
++        jvs->analog[ay] = (uint16_t)(ny * 0xFFFF);
++    }
++    return true;
++}
++#elif defined(__linux__)
++/* Linux per-device pointers through evdev. Relative mice and absolute light
++ * guns are both read; the first two devices aim players 1 and 2. */
++#define CHIHIRO_RAW_MAX      4
++#define CHIHIRO_RAW_SCAN_MS  3000
++
++typedef struct {
++    int      fd;
++    char     path[64];
++    char     name[128];
++    bool     absolute;
++    int      abs_min_x, abs_max_x;
++    int      abs_min_y, abs_max_y;
++    int      abs_x, abs_y;
++    int      rel_x, rel_y;
++    float    client_x, client_y;
++    bool     client_init;
++    uint32_t buttons;
++} ChihiroLinuxPointer;
++
++static ChihiroLinuxPointer chihiro_raw[CHIHIRO_RAW_MAX];
++static SDL_Window *chihiro_raw_window;
++static int64_t chihiro_raw_next_scan;
++static int chihiro_raw_last_player[2] = { -1, -1 };
++static bool chihiro_raw_initialized;
++static bool chihiro_raw_logged_no_device;
++static bool chihiro_raw_logged_permission;
++
++static bool chihiro_linux_bit(int bit, const unsigned long *bits)
++{
++    return (bits[bit / (8 * sizeof(unsigned long))] >>
++            (bit % (8 * sizeof(unsigned long)))) & 1;
++}
++
++static int chihiro_linux_find_path(const char *path)
++{
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].fd >= 0 &&
++            strcmp(chihiro_raw[i].path, path) == 0) {
++            return i;
++        }
++    }
++    return -1;
++}
++
++static void chihiro_linux_close(int index)
++{
++    if (index < 0 || chihiro_raw[index].fd < 0) {
++        return;
++    }
++    CHIHIRO_LOGF(JVS, "linux pointer removed: %s\n", chihiro_raw[index].name);
++    close(chihiro_raw[index].fd);
++    memset(&chihiro_raw[index], 0, sizeof(chihiro_raw[index]));
++    chihiro_raw[index].fd = -1;
++}
++
++static int chihiro_linux_path_number(const char *path)
++{
++    const char *event = strstr(path, "event");
++    return event ? atoi(event + 5) : 0;
++}
++
++static int chihiro_linux_compare_paths(const void *a, const void *b)
++{
++    return chihiro_linux_path_number(a) - chihiro_linux_path_number(b);
++}
++
++static void chihiro_linux_add_path(const char *path)
++{
++    if (chihiro_linux_find_path(path) >= 0) {
++        return;
++    }
++
++    int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
++    if (fd < 0) {
++        if ((errno == EACCES || errno == EPERM) &&
++            !chihiro_raw_logged_permission) {
++            chihiro_raw_logged_permission = true;
++            CHIHIRO_LOGF(JVS, "linux pointer: cannot read %s; add the "
++                         "user to the input group\n", path);
++        }
++        return;
++    }
++
++    unsigned long evbit[(EV_MAX + 8 * sizeof(unsigned long)) /
++                        (8 * sizeof(unsigned long))] = { 0 };
++    unsigned long relbit[(REL_MAX + 8 * sizeof(unsigned long)) /
++                         (8 * sizeof(unsigned long))] = { 0 };
++    unsigned long absbit[(ABS_MAX + 8 * sizeof(unsigned long)) /
++                         (8 * sizeof(unsigned long))] = { 0 };
++    unsigned long keybit[(KEY_MAX + 8 * sizeof(unsigned long)) /
++                         (8 * sizeof(unsigned long))] = { 0 };
++
++    if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) < 0 ||
++        ioctl(fd, EVIOCGBIT(EV_REL, sizeof(relbit)), relbit) < 0 ||
++        ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbit)), absbit) < 0 ||
++        ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) < 0) {
++        close(fd);
++        return;
++    }
++
++    bool has_left = chihiro_linux_bit(BTN_LEFT, keybit) ||
++                    chihiro_linux_bit(BTN_TRIGGER, keybit);
++    if (!has_left) {
++        close(fd);
++        return;
++    }
++
++    bool has_rel = chihiro_linux_bit(REL_X, relbit) &&
++                   chihiro_linux_bit(REL_Y, relbit);
++    bool has_abs = chihiro_linux_bit(ABS_X, absbit) &&
++                   chihiro_linux_bit(ABS_Y, absbit);
++    if (!has_rel && !has_abs) {
++        close(fd);
++        return;
++    }
++
++    struct input_absinfo ax = { 0 }, ay = { 0 };
++    bool absolute = has_abs;
++    if (absolute) {
++        if (ioctl(fd, EVIOCGABS(ABS_X), &ax) < 0 ||
++            ioctl(fd, EVIOCGABS(ABS_Y), &ay) < 0 ||
++            ax.maximum <= ax.minimum || ay.maximum <= ay.minimum) {
++            absolute = false;
++        }
++    }
++    if (!absolute && !has_rel) {
++        close(fd);
++        return;
++    }
++
++    int slot = -1;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].fd < 0) {
++            slot = i;
++            break;
++        }
++    }
++    if (slot < 0) {
++        close(fd);
++        return;
++    }
++
++    ChihiroLinuxPointer *p = &chihiro_raw[slot];
++    memset(p, 0, sizeof(*p));
++    p->fd = fd;
++    g_strlcpy(p->path, path, sizeof(p->path));
++    if (ioctl(fd, EVIOCGNAME(sizeof(p->name) - 1), p->name) < 0) {
++        g_strlcpy(p->name, "pointer", sizeof(p->name));
++    }
++    p->name[sizeof(p->name) - 1] = 0;
++    p->absolute = absolute;
++    p->abs_min_x = ax.minimum;
++    p->abs_max_x = ax.maximum;
++    p->abs_min_y = ay.minimum;
++    p->abs_max_y = ay.maximum;
++    p->abs_x = (ax.minimum + ax.maximum) / 2;
++    p->abs_y = (ay.minimum + ay.maximum) / 2;
++
++    CHIHIRO_LOGF(JVS, "linux pointer %d: %s (%s) %s\n", slot, p->name,
++                 p->path, absolute ? "absolute" : "relative");
++}
++
++static void chihiro_linux_scan(void)
++{
++    DIR *dir = opendir("/dev/input");
++    if (!dir) {
++        return;
++    }
++
++    char paths[32][64];
++    int count = 0;
++    struct dirent *entry;
++    while ((entry = readdir(dir)) != NULL && count < 32) {
++        if (strncmp(entry->d_name, "event", 5) != 0) {
++            continue;
++        }
++        snprintf(paths[count], sizeof(paths[count]), "/dev/input/%s",
++                 entry->d_name);
++        count++;
++    }
++    closedir(dir);
++
++    qsort(paths, count, sizeof(paths[0]), chihiro_linux_compare_paths);
++    for (int i = 0; i < count; i++) {
++        chihiro_linux_add_path(paths[i]);
++    }
++}
++
++static void chihiro_linux_read(int index)
++{
++    ChihiroLinuxPointer *p = &chihiro_raw[index];
++    struct input_event event;
++    ssize_t n;
++
++    while ((n = read(p->fd, &event, sizeof(event))) == sizeof(event)) {
++        if (event.type == EV_REL) {
++            if (event.code == REL_X) {
++                p->rel_x += event.value;
++            } else if (event.code == REL_Y) {
++                p->rel_y += event.value;
++            }
++            if (p->rel_x > 10000) p->rel_x = 10000;
++            if (p->rel_x < -10000) p->rel_x = -10000;
++            if (p->rel_y > 10000) p->rel_y = 10000;
++            if (p->rel_y < -10000) p->rel_y = -10000;
++        } else if (event.type == EV_ABS) {
++            if (event.code == ABS_X) {
++                p->abs_x = event.value;
++            } else if (event.code == ABS_Y) {
++                p->abs_y = event.value;
++            }
++        } else if (event.type == EV_KEY) {
++            int bit = -1;
++            switch (event.code) {
++            case BTN_LEFT:
++            case BTN_TRIGGER:
++            case BTN_0:
++                bit = 0;
++                break;
++            case BTN_MIDDLE:
++                bit = 1;
++                break;
++            case BTN_RIGHT:
++            case BTN_1:
++                bit = 2;
++                break;
++            case BTN_SIDE:
++                bit = 3;
++                break;
++            case BTN_EXTRA:
++                bit = 4;
++                break;
++            }
++            if (bit >= 0) {
++                if (event.value) {
++                    p->buttons |= 1u << bit;
++                } else {
++                    p->buttons &= ~(1u << bit);
++                }
++            }
++        }
++    }
++
++    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
++        errno != EINTR) {
++        chihiro_linux_close(index);
++    }
++}
++
++static int chihiro_linux_absolute_count(void)
++{
++    int count = 0;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].fd >= 0 && chihiro_raw[i].absolute) {
++            count++;
++        }
++    }
++    return count;
++}
++
++static int chihiro_raw_choose(int player)
++{
++    int absolute = chihiro_linux_absolute_count();
++    int seen = 0;
++
++    if (player < 0 || player > 1) {
++        return -1;
++    }
++
++    if (player < absolute) {
++        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++            if (chihiro_raw[i].fd < 0 || !chihiro_raw[i].absolute) {
++                continue;
++            }
++            if (seen++ == player) {
++                return i;
++            }
++        }
++        return -1;
++    }
++
++    int relative = player - absolute;
++    seen = 0;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].fd < 0 || chihiro_raw[i].absolute) {
++            continue;
++        }
++        if (seen++ == relative) {
++            return i;
++        }
++    }
++    return -1;
++}
++
++static void chihiro_raw_log_assignments(void)
++{
++    for (int player = 0; player < 2; player++) {
++        int index = chihiro_raw_choose(player);
++        if (index == chihiro_raw_last_player[player]) {
++            continue;
++        }
++        chihiro_raw_last_player[player] = index;
++        if (index >= 0) {
++            CHIHIRO_LOGF(JVS, "linux pointer P%d: %s (%s)\n", player + 1,
++                         chihiro_raw[index].name,
++                         chihiro_raw[index].absolute ? "absolute" : "relative");
++        } else {
++            CHIHIRO_LOGF(JVS, "linux pointer P%d: none\n", player + 1);
++        }
++    }
++}
++
++static void chihiro_raw_sync(void)
++{
++    if (!g_config.chihiro.settings.pointer_devices) {
++        return;
++    }
++
++    if (!chihiro_raw_initialized) {
++        for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++            chihiro_raw[i].fd = -1;
++        }
++        chihiro_raw_initialized = true;
++    }
++
++    if (!chihiro_raw_window) {
++        int count = 0;
++        SDL_Window **windows = SDL_GetWindows(&count);
++        if (windows && count > 0) {
++            chihiro_raw_window = windows[0];
++        }
++        SDL_free(windows);
++    }
++
++    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++    if (now >= chihiro_raw_next_scan) {
++        chihiro_raw_next_scan = now + CHIHIRO_RAW_SCAN_MS;
++        chihiro_linux_scan();
++    }
++
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].fd >= 0) {
++            chihiro_linux_read(i);
++        }
++    }
++
++    chihiro_raw_log_assignments();
++
++    if (chihiro_linux_absolute_count() == 0 &&
++        chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
++        CHIHIRO_LOGF(JVS, "linux pointer: no pointer devices yet\n");
++        chihiro_raw_logged_no_device = true;
++    }
++}
++
++static bool chihiro_raw_has(int player)
++{
++    return g_config.chihiro.settings.pointer_devices &&
++           chihiro_raw_choose(player) >= 0;
++}
++
++static uint32_t chihiro_raw_buttons(int player)
++{
++    if (!g_config.chihiro.settings.pointer_devices) {
++        return 0;
++    }
++    int index = chihiro_raw_choose(player);
++    return index >= 0 ? chihiro_raw[index].buttons : 0;
++}
++
++static bool chihiro_raw_aim(int player, ChihiroJVSState *jvs, int ax, int ay,
++                            bool reload)
++{
++    int index = chihiro_raw_choose(player);
++    if (index < 0) {
++        return false;
++    }
++    ChihiroLinuxPointer *p = &chihiro_raw[index];
++
++    if (reload) {
++        jvs->analog[ax] = 0;
++        jvs->analog[ay] = 0;
++        return true;
++    }
++
++    if (!chihiro_raw_window) {
++        return false;
++    }
++
++    int width = 0, height = 0;
++    SDL_GetWindowSize(chihiro_raw_window, &width, &height);
++    if (width <= 0 || height <= 0) {
++        jvs->analog[ax] = 0x8000;
++        jvs->analog[ay] = 0x8000;
++        return true;
++    }
++
++    float window_x, window_y;
++    if (p->absolute) {
++        float nx = (p->abs_x - p->abs_min_x) /
++                   (float)(p->abs_max_x - p->abs_min_x);
++        float ny = (p->abs_y - p->abs_min_y) /
++                   (float)(p->abs_max_y - p->abs_min_y);
++        if (nx < 0.0f) nx = 0.0f;
++        if (nx > 1.0f) nx = 1.0f;
++        if (ny < 0.0f) ny = 0.0f;
++        if (ny > 1.0f) ny = 1.0f;
++
++        SDL_Rect bounds;
++        SDL_DisplayID display = SDL_GetDisplayForWindow(chihiro_raw_window);
++        int wx = 0, wy = 0;
++        SDL_GetWindowPosition(chihiro_raw_window, &wx, &wy);
++        if (SDL_GetDisplayBounds(display, &bounds)) {
++            window_x = ((bounds.x + nx * bounds.w) - wx) / (float)width;
++            window_y = ((bounds.y + ny * bounds.h) - wy) / (float)height;
++        } else {
++            window_x = nx;
++            window_y = ny;
++        }
++    } else {
++        if (!p->client_init) {
++            p->client_x = width / 2.0f;
++            p->client_y = height / 2.0f;
++            p->client_init = true;
++        }
++        p->client_x += p->rel_x;
++        p->client_y += p->rel_y;
++        p->rel_x = p->rel_y = 0;
++        if (p->client_x < 0.0f) p->client_x = 0.0f;
++        if (p->client_y < 0.0f) p->client_y = 0.0f;
++        if (p->client_x > width - 1.0f) p->client_x = width - 1.0f;
++        if (p->client_y > height - 1.0f) p->client_y = height - 1.0f;
++        window_x = p->client_x / width;
++        window_y = p->client_y / height;
++    }
++
++    float vx, vy, vw, vh;
++    if (!xemu_input_get_display_viewport(&vx, &vy, &vw, &vh)) {
++        jvs->analog[ax] = 0x8000;
++        jvs->analog[ay] = 0x8000;
++        return true;
++    }
++
++    float nx = (window_x - vx) / vw;
++    float ny = (window_y - vy) / vh;
++    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
++        jvs->analog[ax] = 0;
++        jvs->analog[ay] = 0;
++    } else {
++        jvs->analog[ax] = (uint16_t)(nx * 0xFFFF);
++        jvs->analog[ay] = (uint16_t)(ny * 0xFFFF);
++    }
++    return true;
++}
++#elif defined(__APPLE__)
++/* macOS per-device pointers through IOHIDManager. Absolute light guns and
++ * relative mice are read; the first two devices aim players 1 and 2. */
++#define CHIHIRO_RAW_MAX 4
++
++typedef struct {
++    IOHIDDeviceRef device;
++    char           name[160];
++    bool           used;
++    bool           absolute;
++    int            min_x, max_x;
++    int            min_y, max_y;
++    int            x, y;
++    int            rel_x, rel_y;
++    float          client_x, client_y;
++    bool           client_init;
++    uint32_t       buttons;
++    uint64_t       location;
++    uint64_t       unique;
++    int            seq;
++} ChihiroMacPointer;
++
++static ChihiroMacPointer chihiro_raw[CHIHIRO_RAW_MAX];
++static IOHIDManagerRef chihiro_hid_manager;
++static SDL_Window *chihiro_raw_window;
++static int chihiro_raw_last_player[2] = { -1, -1 };
++static bool chihiro_raw_logged_no_device;
++static bool chihiro_raw_start_tried;
++static int chihiro_mac_seq;
++
++static int chihiro_mac_find(IOHIDDeviceRef device)
++{
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].used && chihiro_raw[i].device == device) {
++            return i;
++        }
++    }
++    return -1;
++}
++
++static void chihiro_mac_set_name(ChihiroMacPointer *p)
++{
++    CFTypeRef product = IOHIDDeviceGetProperty(p->device,
++                                               CFSTR(kIOHIDProductKey));
++    p->name[0] = 0;
++    if (product && CFGetTypeID(product) == CFStringGetTypeID()) {
++        CFStringGetCString(product, p->name, sizeof(p->name),
++                           kCFStringEncodingUTF8);
++    }
++    if (!p->name[0]) {
++        snprintf(p->name, sizeof(p->name), "pointer");
++    }
++}
++
++static bool chihiro_mac_prop_u64(IOHIDDeviceRef device, CFStringRef key,
++                                 uint64_t *out)
++{
++    CFTypeRef value = IOHIDDeviceGetProperty(device, key);
++    if (!value || CFGetTypeID(value) != CFNumberGetTypeID()) {
++        return false;
++    }
++
++    int64_t number = 0;
++    if (!CFNumberGetValue(value, kCFNumberSInt64Type, &number)) {
++        return false;
++    }
++    *out = (uint64_t)number;
++    return true;
++}
++
++/* One physical pointer can be delivered as more than one IOHIDDevice (the
++ * virtual digitizer here does). Match them by unique ID, then by USB location
++ * and vendor/product, so one mouse cannot claim both players. */
++static bool chihiro_mac_same_device(IOHIDDeviceRef a, IOHIDDeviceRef b)
++{
++    uint64_t unique_a, unique_b;
++    if (chihiro_mac_prop_u64(a, CFSTR(kIOHIDUniqueIDKey), &unique_a) &&
++        chihiro_mac_prop_u64(b, CFSTR(kIOHIDUniqueIDKey), &unique_b)) {
++        return unique_a == unique_b;
++    }
++
++    uint64_t location_a, location_b, vendor_a, vendor_b, product_a, product_b;
++    if (chihiro_mac_prop_u64(a, CFSTR(kIOHIDLocationIDKey), &location_a) &&
++        chihiro_mac_prop_u64(b, CFSTR(kIOHIDLocationIDKey), &location_b) &&
++        chihiro_mac_prop_u64(a, CFSTR(kIOHIDVendorIDKey), &vendor_a) &&
++        chihiro_mac_prop_u64(b, CFSTR(kIOHIDVendorIDKey), &vendor_b) &&
++        chihiro_mac_prop_u64(a, CFSTR(kIOHIDProductIDKey), &product_a) &&
++        chihiro_mac_prop_u64(b, CFSTR(kIOHIDProductIDKey), &product_b)) {
++        return location_a == location_b && vendor_a == vendor_b &&
++               product_a == product_b;
++    }
++    return false;
++}
++
++static void chihiro_mac_device_added(void *context, IOReturn result,
++                                     void *sender, IOHIDDeviceRef device)
++{
++    (void)context;
++    (void)result;
++    (void)sender;
++
++    if (chihiro_mac_find(device) >= 0) {
++        return;
++    }
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].used &&
++            chihiro_mac_same_device(device, chihiro_raw[i].device)) {
++            return;
++        }
++    }
++
++    CFArrayRef elements = IOHIDDeviceCopyMatchingElements(device, NULL, 0);
++    if (!elements) {
++        return;
++    }
++
++    bool has_x = false, has_y = false, absolute_x = false, absolute_y = false;
++    int min_x = 0, max_x = 0, min_y = 0, max_y = 0;
++    CFIndex count = CFArrayGetCount(elements);
++    for (CFIndex i = 0; i < count; i++) {
++        IOHIDElementRef element =
++            (IOHIDElementRef)CFArrayGetValueAtIndex(elements, i);
++        uint32_t page = IOHIDElementGetUsagePage(element);
++        uint32_t usage = IOHIDElementGetUsage(element);
++        if (page != kHIDPage_GenericDesktop) {
++            continue;
++        }
++        if (usage == kHIDUsage_GD_X) {
++            has_x = true;
++            absolute_x = !IOHIDElementIsRelative(element);
++            min_x = (int)IOHIDElementGetLogicalMin(element);
++            max_x = (int)IOHIDElementGetLogicalMax(element);
++        } else if (usage == kHIDUsage_GD_Y) {
++            has_y = true;
++            absolute_y = !IOHIDElementIsRelative(element);
++            min_y = (int)IOHIDElementGetLogicalMin(element);
++            max_y = (int)IOHIDElementGetLogicalMax(element);
++        }
++    }
++    CFRelease(elements);
++
++    if (!has_x || !has_y) {
++        return;
++    }
++
++    bool absolute = absolute_x && absolute_y;
++    if (absolute && (max_x <= min_x || max_y <= min_y)) {
++        absolute = false;
++    }
++
++    int slot = -1;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (!chihiro_raw[i].used) {
++            slot = i;
++            break;
++        }
++    }
++    if (slot < 0) {
++        return;
++    }
++
++    ChihiroMacPointer *p = &chihiro_raw[slot];
++    memset(p, 0, sizeof(*p));
++    p->device = (IOHIDDeviceRef)CFRetain(device);
++    p->used = true;
++    p->absolute = absolute;
++    p->min_x = min_x;
++    p->max_x = max_x;
++    p->min_y = min_y;
++    p->max_y = max_y;
++    p->x = absolute ? (min_x + max_x) / 2 : 0;
++    p->y = absolute ? (min_y + max_y) / 2 : 0;
++    chihiro_mac_set_name(p);
++    chihiro_mac_prop_u64(p->device, CFSTR(kIOHIDLocationIDKey), &p->location);
++    chihiro_mac_prop_u64(p->device, CFSTR(kIOHIDUniqueIDKey), &p->unique);
++    p->seq = ++chihiro_mac_seq;
++
++    CHIHIRO_LOGF(JVS, "mac pointer %d: %s (%s)\n", slot, p->name,
++                 absolute ? "absolute" : "relative");
++}
++
++static void chihiro_mac_device_removed(void *context, IOReturn result,
++                                       void *sender, IOHIDDeviceRef device)
++{
++    (void)context;
++    (void)result;
++    (void)sender;
++
++    int index = chihiro_mac_find(device);
++    if (index < 0) {
++        return;
++    }
++    CHIHIRO_LOGF(JVS, "mac pointer removed: %s\n", chihiro_raw[index].name);
++    if (chihiro_raw[index].device) {
++        CFRelease(chihiro_raw[index].device);
++    }
++    memset(&chihiro_raw[index], 0, sizeof(chihiro_raw[index]));
++}
++
++static void chihiro_mac_input_value(void *context, IOReturn result,
++                                    void *sender, IOHIDValueRef value)
++{
++    (void)context;
++    (void)result;
++    (void)sender;
++
++    IOHIDElementRef element = IOHIDValueGetElement(value);
++    IOHIDDeviceRef device = IOHIDElementGetDevice(element);
++    int index = chihiro_mac_find(device);
++    if (index < 0) {
++        return;
++    }
++
++    ChihiroMacPointer *p = &chihiro_raw[index];
++    uint32_t page = IOHIDElementGetUsagePage(element);
++    uint32_t usage = IOHIDElementGetUsage(element);
++    CFIndex int_value = IOHIDValueGetIntegerValue(value);
++
++    if (page == kHIDPage_GenericDesktop) {
++        if (usage == kHIDUsage_GD_X) {
++            if (p->absolute) {
++                p->x = (int)int_value;
++            } else {
++                p->rel_x += (int)int_value;
++                if (p->rel_x > 10000) p->rel_x = 10000;
++                if (p->rel_x < -10000) p->rel_x = -10000;
++            }
++        } else if (usage == kHIDUsage_GD_Y) {
++            if (p->absolute) {
++                p->y = (int)int_value;
++            } else {
++                p->rel_y += (int)int_value;
++                if (p->rel_y > 10000) p->rel_y = 10000;
++                if (p->rel_y < -10000) p->rel_y = -10000;
++            }
++        }
++    } else if (page == kHIDPage_Button) {
++        int bit = -1;
++        switch (usage) {
++        case 1:
++            bit = 0;
++            break;
++        case 2:
++            bit = 1;
++            break;
++        case 3:
++            bit = 2;
++            break;
++        case 4:
++            bit = 3;
++            break;
++        case 5:
++            bit = 4;
++            break;
++        }
++        if (bit >= 0) {
++            if (int_value) {
++                p->buttons |= 1u << bit;
++            } else {
++                p->buttons &= ~(1u << bit);
++            }
++        }
++    }
++}
++
++static int chihiro_mac_compare_slots(const ChihiroMacPointer *a,
++                                     const ChihiroMacPointer *b)
++{
++    if (a->location != b->location) {
++        if (!a->location) {
++            return 1;
++        }
++        if (!b->location) {
++            return -1;
++        }
++        return a->location < b->location ? -1 : 1;
++    }
++    if (a->unique != b->unique) {
++        if (!a->unique) {
++            return 1;
++        }
++        if (!b->unique) {
++            return -1;
++        }
++        return a->unique < b->unique ? -1 : 1;
++    }
++    int name = strcmp(a->name, b->name);
++    if (name != 0) {
++        return name;
++    }
++    return a->seq - b->seq;
++}
++
++static int chihiro_mac_collect(int *slots, bool absolute)
++{
++    int count = 0;
++    for (int i = 0; i < CHIHIRO_RAW_MAX; i++) {
++        if (chihiro_raw[i].used && chihiro_raw[i].absolute == absolute) {
++            slots[count++] = i;
++        }
++    }
++
++    for (int i = 1; i < count; i++) {
++        int value = slots[i];
++        int j = i - 1;
++        while (j >= 0 &&
++               chihiro_mac_compare_slots(&chihiro_raw[slots[j]],
++                                         &chihiro_raw[value]) > 0) {
++            slots[j + 1] = slots[j];
++            j--;
++        }
++        slots[j + 1] = value;
++    }
++    return count;
++}
++
++static int chihiro_raw_choose(int player)
++{
++    if (player < 0 || player > 1) {
++        return -1;
++    }
++
++    int slots[CHIHIRO_RAW_MAX];
++    int absolute = chihiro_mac_collect(slots, true);
++    if (player < absolute) {
++        return slots[player];
++    }
++
++    int relative = player - absolute;
++    int count = chihiro_mac_collect(slots, false);
++    return relative < count ? slots[relative] : -1;
++}
++
++static void chihiro_raw_log_assignments(void)
++{
++    for (int player = 0; player < 2; player++) {
++        int index = chihiro_raw_choose(player);
++        if (index == chihiro_raw_last_player[player]) {
++            continue;
++        }
++        chihiro_raw_last_player[player] = index;
++        if (index >= 0) {
++            CHIHIRO_LOGF(JVS, "mac pointer P%d: %s (%s)\n", player + 1,
++                         chihiro_raw[index].name,
++                         chihiro_raw[index].absolute ? "absolute" : "relative");
++        } else {
++            CHIHIRO_LOGF(JVS, "mac pointer P%d: none\n", player + 1);
++        }
++    }
++}
++
++static bool chihiro_mac_start(void)
++{
++    if (chihiro_hid_manager) {
++        return true;
++    }
++    if (chihiro_raw_start_tried) {
++        return false;
++    }
++    chihiro_raw_start_tried = true;
++
++    IOHIDManagerRef manager =
++        IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
++    if (!manager) {
++        CHIHIRO_LOGF(JVS, "mac pointer: IOHIDManagerCreate failed\n");
++        return false;
++    }
++
++    int page_value = kHIDPage_GenericDesktop;
++    int mouse_value = kHIDUsage_GD_Mouse;
++    int pointer_value = kHIDUsage_GD_Pointer;
++    CFNumberRef page = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType,
++                                      &page_value);
++    CFNumberRef mouse = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType,
++                                       &mouse_value);
++    CFNumberRef pointer = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType,
++                                         &pointer_value);
++
++    CFMutableDictionaryRef mouse_dict = CFDictionaryCreateMutable(
++        kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
++        &kCFTypeDictionaryValueCallBacks);
++    CFMutableDictionaryRef pointer_dict = CFDictionaryCreateMutable(
++        kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
++        &kCFTypeDictionaryValueCallBacks);
++    CFDictionarySetValue(mouse_dict, CFSTR(kIOHIDDeviceUsagePageKey), page);
++    CFDictionarySetValue(mouse_dict, CFSTR(kIOHIDDeviceUsageKey), mouse);
++    CFDictionarySetValue(pointer_dict, CFSTR(kIOHIDDeviceUsagePageKey), page);
++    CFDictionarySetValue(pointer_dict, CFSTR(kIOHIDDeviceUsageKey), pointer);
++
++    const void *match_values[2] = { mouse_dict, pointer_dict };
++    CFArrayRef matches = CFArrayCreate(kCFAllocatorDefault, match_values, 2,
++                                       &kCFTypeArrayCallBacks);
++    IOHIDManagerSetDeviceMatchingMultiple(manager, matches);
++
++    IOHIDManagerRegisterDeviceMatchingCallback(manager,
++                                               chihiro_mac_device_added, NULL);
++    IOHIDManagerRegisterDeviceRemovalCallback(manager,
++                                              chihiro_mac_device_removed, NULL);
++    IOHIDManagerRegisterInputValueCallback(manager,
++                                           chihiro_mac_input_value, NULL);
++    IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(),
++                                    kCFRunLoopDefaultMode);
++
++    IOReturn result = IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
++
++    CFRelease(matches);
++    CFRelease(mouse_dict);
++    CFRelease(pointer_dict);
++    CFRelease(page);
++    CFRelease(mouse);
++    CFRelease(pointer);
++
++    if (result != kIOReturnSuccess) {
++        CHIHIRO_LOGF(JVS, "mac pointer: IOHIDManagerOpen failed %#x\n",
++                     (unsigned)result);
++        CFRelease(manager);
++        return false;
++    }
++
++    chihiro_hid_manager = manager;
++    CHIHIRO_LOGF(JVS, "mac pointer: IOHIDManager open\n");
++    return true;
++}
++
++static void chihiro_raw_sync(void)
++{
++    if (!g_config.chihiro.settings.pointer_devices) {
++        return;
++    }
++
++    if (!chihiro_mac_start()) {
++        return;
++    }
++
++    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true);
++
++    if (!chihiro_raw_window) {
++        int count = 0;
++        SDL_Window **windows = SDL_GetWindows(&count);
++        if (windows && count > 0) {
++            chihiro_raw_window = windows[0];
++        }
++        SDL_free(windows);
++    }
++
++    chihiro_raw_log_assignments();
++
++    if (chihiro_raw_choose(0) < 0 && !chihiro_raw_logged_no_device) {
++        CHIHIRO_LOGF(JVS, "mac pointer: no pointer devices yet\n");
++        chihiro_raw_logged_no_device = true;
++    }
++}
++
++static bool chihiro_raw_has(int player)
++{
++    return g_config.chihiro.settings.pointer_devices &&
++           chihiro_raw_choose(player) >= 0;
++}
++
++static uint32_t chihiro_raw_buttons(int player)
++{
++    if (!g_config.chihiro.settings.pointer_devices) {
++        return 0;
++    }
++    int index = chihiro_raw_choose(player);
++    return index >= 0 ? chihiro_raw[index].buttons : 0;
++}
++
++static bool chihiro_raw_aim(int player, ChihiroJVSState *jvs, int ax, int ay,
++                            bool reload)
++{
++    int index = chihiro_raw_choose(player);
++    if (index < 0) {
++        return false;
++    }
++    ChihiroMacPointer *p = &chihiro_raw[index];
++
++    if (reload) {
++        jvs->analog[ax] = 0;
++        jvs->analog[ay] = 0;
++        return true;
++    }
++
++    if (!chihiro_raw_window) {
++        return false;
++    }
++
++    int width = 0, height = 0;
++    SDL_GetWindowSize(chihiro_raw_window, &width, &height);
++    if (width <= 0 || height <= 0) {
++        jvs->analog[ax] = 0x8000;
++        jvs->analog[ay] = 0x8000;
++        return true;
++    }
++
++    float window_x, window_y;
++    if (p->absolute) {
++        float nx = (p->x - p->min_x) / (float)(p->max_x - p->min_x);
++        float ny = (p->y - p->min_y) / (float)(p->max_y - p->min_y);
++        if (nx < 0.0f) nx = 0.0f;
++        if (nx > 1.0f) nx = 1.0f;
++        if (ny < 0.0f) ny = 0.0f;
++        if (ny > 1.0f) ny = 1.0f;
++
++        SDL_Rect bounds;
++        SDL_DisplayID display = SDL_GetDisplayForWindow(chihiro_raw_window);
++        int wx = 0, wy = 0;
++        SDL_GetWindowPosition(chihiro_raw_window, &wx, &wy);
++        if (SDL_GetDisplayBounds(display, &bounds)) {
++            window_x = ((bounds.x + nx * bounds.w) - wx) / (float)width;
++            window_y = ((bounds.y + ny * bounds.h) - wy) / (float)height;
++        } else {
++            window_x = nx;
++            window_y = ny;
++        }
++    } else {
++        if (!p->client_init) {
++            p->client_x = width / 2.0f;
++            p->client_y = height / 2.0f;
++            p->client_init = true;
++        }
++        p->client_x += p->rel_x;
++        p->client_y += p->rel_y;
++        p->rel_x = p->rel_y = 0;
++        if (p->client_x < 0.0f) p->client_x = 0.0f;
++        if (p->client_y < 0.0f) p->client_y = 0.0f;
++        if (p->client_x > width - 1.0f) p->client_x = width - 1.0f;
++        if (p->client_y > height - 1.0f) p->client_y = height - 1.0f;
++        window_x = p->client_x / width;
++        window_y = p->client_y / height;
++    }
++
++    float vx, vy, vw, vh;
++    if (!xemu_input_get_display_viewport(&vx, &vy, &vw, &vh)) {
++        jvs->analog[ax] = 0x8000;
++        jvs->analog[ay] = 0x8000;
++        return true;
++    }
++
++    float nx = (window_x - vx) / vw;
++    float ny = (window_y - vy) / vh;
 +    if (nx < 0.0f || nx > 1.0f || ny < 0.0f || ny > 1.0f) {
 +        jvs->analog[ax] = 0;
 +        jvs->analog[ay] = 0;
@@ -2687,7 +3796,7 @@ index 54595e1b..7b37748c 100644
  void xemu_input_update_controllers(void)
  {
      ControllerState *iter;
-@@ -573,6 +1996,7 @@ void xemu_input_update_controllers(void)
+@@ -530,6 +3017,7 @@ void xemu_input_update_controllers(void)
      QTAILQ_FOREACH(iter, &available_controllers, entry) {
          xemu_input_update_rumble(iter);
      }
@@ -2696,10 +3805,18 @@ index 54595e1b..7b37748c 100644
  
  void xemu_input_update_sdl_kbd_controller_state(ControllerState *state)
 diff --git a/xemu/ui/xemu-input.h b/xemu/ui/xemu-input.h
-index 168a0ae4..03be91ec 100644
+index 7023e30..03be91e 100644
 --- a/xemu/ui/xemu-input.h
 +++ b/xemu/ui/xemu-input.h
-@@ -147,6 +147,13 @@ void xemu_input_set_test_mode(int enabled);
+@@ -71,6 +71,7 @@ enum controller_state_axis_index {
+ enum controller_input_device_type {
+     INPUT_DEVICE_SDL_KEYBOARD,
+     INPUT_DEVICE_SDL_GAMEPAD,
++    INPUT_DEVICE_XGRID,
+ };
+ 
+ enum peripheral_type { PERIPHERAL_NONE, PERIPHERAL_XMU, PERIPHERAL_TYPE_COUNT };
+@@ -146,6 +147,13 @@ void xemu_input_set_test_mode(int enabled);
  int xemu_input_get_test_mode(void);
  void xemu_input_reset_input_mapping(ControllerState *state);
  
@@ -2714,7 +3831,7 @@ index 168a0ae4..03be91ec 100644
  }
  #endif
 diff --git a/xemu/ui/xemu-notifications.h b/xemu/ui/xemu-notifications.h
-index f023eb35..c3617b21 100644
+index f023eb3..c3617b2 100644
 --- a/xemu/ui/xemu-notifications.h
 +++ b/xemu/ui/xemu-notifications.h
 @@ -29,6 +29,7 @@ extern "C" {
@@ -2726,7 +3843,7 @@ index f023eb35..c3617b21 100644
  
  #ifdef __cplusplus
 diff --git a/xemu/ui/xemu-settings.cc b/xemu/ui/xemu-settings.cc
-index 5f9148af..4e6c5351 100644
+index 5f9148a..4e6c535 100644
 --- a/xemu/ui/xemu-settings.cc
 +++ b/xemu/ui/xemu-settings.cc
 @@ -343,3 +343,83 @@ void xemu_settings_reset_keyboard_mapping(void)
@@ -2814,7 +3931,7 @@ index 5f9148af..4e6c5351 100644
 +    return mode;
 +}
 diff --git a/xemu/ui/xemu-settings.h b/xemu/ui/xemu-settings.h
-index 880b62f2..43a0b47a 100644
+index 880b62f..43a0b47 100644
 --- a/xemu/ui/xemu-settings.h
 +++ b/xemu/ui/xemu-settings.h
 @@ -70,6 +70,23 @@ static inline void xemu_settings_set_string(const char **str, const char *new_st
@@ -2842,10 +3959,82 @@ index 880b62f2..43a0b47a 100644
  void remove_net_nat_forward_ports(unsigned int index);
  
 diff --git a/xemu/ui/xui/gl-helpers.cc b/xemu/ui/xui/gl-helpers.cc
-index 0a1497a8..83f86be0 100644
+index cdef858..83f86be 100644
 --- a/xemu/ui/xui/gl-helpers.cc
 +++ b/xemu/ui/xui/gl-helpers.cc
-@@ -918,6 +918,14 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
+@@ -32,6 +32,7 @@
+ #include <vector>
+ 
+ #include "ui/shader/xemu-logo-frag.h"
++#include "../../xgrid-core/display/xgrid-display.h"
+ 
+ Fbo *controller_fbo, *xmu_fbo, *logo_fbo;
+ GLuint g_controller_duke_tex, g_controller_s_tex, g_logo_tex, g_icon_tex, g_xmu_tex;
+@@ -58,6 +59,8 @@ typedef struct DecalShader_
+     GLint color_fill_loc;
+     GLint time_loc;
+     GLint scale_loc;
++    GLint present_filter_loc;
++    GLint frame_size_loc;
+     GLint palette_loc[256];
+ } DecalShader;
+ 
+@@ -238,6 +241,10 @@ void main() {
+ #version 400 core
+ uniform sampler2D tex;
+ uniform uint palette[256];
++uniform int in_PresentFilter;
++uniform vec2 in_FrameSize;
++in  vec2 Texcoord;
++out vec4 out_Color;
+ float gamma_ch(int ch, float col)
+ {
+     return float(bitfieldExtract(palette[uint(col * 255.0)], ch*8, 8)) / 255.0;
+@@ -247,10 +254,31 @@ vec4 gamma(vec4 col)
+ {
+     return vec4(gamma_ch(0, col.r), gamma_ch(1, col.g), gamma_ch(2, col.b), col.a);
+ }
+-in  vec2 Texcoord;
+-out vec4 out_Color;
++vec4 present_filter(vec4 col)
++{
++    if (in_PresentFilter == 2 || in_PresentFilter == 3) {
++        int y = int(Texcoord.y * in_FrameSize.y);
++        if ((y & 1) != 0) {
++            col.rgb *= 0.6;
++        }
++    }
++
++    if (in_PresentFilter == 3) {
++        int x = int(Texcoord.x * in_FrameSize.x);
++        int column = x % 3;
++        if (column == 0) {
++            col.b *= 0.8;
++        } else if (column == 1) {
++            col.g *= 0.8;
++        } else {
++            col.r *= 0.8;
++        }
++    }
++
++    return col;
++}
+ void main() {
+-    out_Color.rgba = gamma(texture(tex, Texcoord));
++    out_Color.rgba = present_filter(gamma(texture(tex, Texcoord)));
+ }
+ )";
+ 
+@@ -309,6 +337,8 @@ void main() {
+     s->color_fill_loc = glGetUniformLocation(s->prog, "in_ColorFill");
+     s->time_loc = glGetUniformLocation(s->prog, "iTime");
+     s->scale_loc = glGetUniformLocation(s->prog, "scale");
++    s->present_filter_loc = glGetUniformLocation(s->prog, "in_PresentFilter");
++    s->frame_size_loc = glGetUniformLocation(s->prog, "in_FrameSize");
+     for (int i = 0; i < 256; i++) {
+         char name[64];
+         snprintf(name, sizeof(name), "palette[%d]", i);
+@@ -888,18 +918,41 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
  {
      glActiveTexture(GL_TEXTURE0);
      glBindTexture(GL_TEXTURE_2D, tex);
@@ -2858,21 +4047,131 @@ index 0a1497a8..83f86be0 100644
 +                                        vp_w / width, vp_h / height);
 +    }
      
-     /*
-      * The shell selects the presentation filter. A standalone launch has no
+-    switch (g_config.display.filtering) {
+-    case CONFIG_DISPLAY_FILTERING_LINEAR:
++    /*
++     * The shell selects the presentation filter. A standalone launch has no
++     * selection (-1) and keeps the core's configured filter method.
++     */
++    int filter = xgrid_present_filter();
++    if (filter < 0) {
++        filter = g_config.display.filtering == CONFIG_DISPLAY_FILTERING_LINEAR
++                     ? XGRID_FILTER_BILINEAR
++                     : XGRID_FILTER_NEAREST;
++    }
++
++    switch (filter) {
++    case XGRID_FILTER_BILINEAR:
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+     break;
+-    case CONFIG_DISPLAY_FILTERING_NEAREST:
++    default:
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+     break;
+     }
+ 
++    int tw, th;
++    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
++    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
++
+     DecalShader *s = g_framebuffer_shader;
+     s->flip = flip;
+     glViewport(0, 0, width, height);
+@@ -909,6 +962,8 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
+     glUniform4f(s->scale_offset_loc, scale[0], scale[1], 0, 0);
+     glUniform4f(s->tex_scale_offset_loc, 1.0, 1.0, 0, 0);
+     glUniform1i(s->tex_loc, 0);
++    glUniform1i(s->present_filter_loc, filter);
++    glUniform2f(s->frame_size_loc, (float)tw, (float)th);
+ 
+     const uint8_t *palette = nv2a_get_dac_palette();
+     for (int i = 0; i < 256; i++) {
 diff --git a/xemu/ui/xui/main.cc b/xemu/ui/xui/main.cc
-index 81305e1e..805f9b0d 100644
+index ace02bc..805f9b0 100644
 --- a/xemu/ui/xui/main.cc
 +++ b/xemu/ui/xui/main.cc
-@@ -43,6 +43,7 @@
+@@ -30,6 +30,7 @@
+ #include <vector>
+ #include <string>
+ #include <memory>
++#include <atomic>
+ 
+ #include "actions.hh"
+ #include "common.hh"
+@@ -42,7 +43,9 @@
  #include "font-manager.hh"
  #include "scene.hh"
  #include "scene-manager.hh"
 +#include "../xemu-input.h"
  #include "main-menu.hh"
- #include "../../xgrid-core/display/xgrid-display.h"
++#include "../../xgrid-core/display/xgrid-display.h"
  #include "popup-menu.hh"
-@@ -339,10 +340,12 @@ void xemu_hud_update(void)
+ #include "notifications.hh"
+ #include "monitor.hh"
+@@ -57,6 +60,13 @@
+ bool g_screenshot_pending;
+ const char *g_snapshot_pending_load_name;
+ 
++static std::atomic<bool> g_screenshot_request;
++
++extern "C" void xemu_request_screenshot(void)
++{
++    g_screenshot_request.store(true, std::memory_order_relaxed);
++}
++
+ float g_main_menu_height;
+ 
+ static ImGuiStyle g_base_style;
+@@ -189,6 +199,46 @@ void xemu_hud_set_framebuffer_texture(GLuint tex, bool flip)
+     g_flip_req = flip;
+ }
+ 
++static uint32_t g_xgrid_overlay_last_ms;
++static uint32_t g_xgrid_overlay_frames;
++static float g_xgrid_overlay_fps;
++static float g_xgrid_overlay_frame_ms;
++
++static void xgrid_overlay_update_stats(uint32_t now)
++{
++    if (g_xgrid_overlay_last_ms == 0) {
++        g_xgrid_overlay_last_ms = now;
++    }
++
++    g_xgrid_overlay_frames++;
++
++    uint32_t elapsed = now - g_xgrid_overlay_last_ms;
++    if (elapsed >= 1000) {
++        g_xgrid_overlay_fps = g_xgrid_overlay_frames * 1000.0f / elapsed;
++        g_xgrid_overlay_frame_ms = g_xgrid_overlay_fps > 0
++                                       ? 1000.0f / g_xgrid_overlay_fps
++                                       : 0;
++        g_xgrid_overlay_frames = 0;
++        g_xgrid_overlay_last_ms = now;
++    }
++}
++
++static void xgrid_overlay_draw(void)
++{
++    char text[64];
++
++    snprintf(text, sizeof(text), "%.0f FPS  %.1f ms", g_xgrid_overlay_fps,
++             g_xgrid_overlay_frame_ms);
++
++    ImDrawList *draw = ImGui::GetForegroundDrawList();
++    ImVec2 pos(12.0f, 12.0f);
++    ImVec2 size = ImGui::CalcTextSize(text);
++    draw->AddRectFilled(ImVec2(pos.x - 6.0f, pos.y - 4.0f),
++                        ImVec2(pos.x + size.x + 6.0f, pos.y + size.y + 4.0f),
++                        IM_COL32(0, 0, 0, 180), 3.0f);
++    draw->AddText(pos, IM_COL32(255, 255, 255, 255), text);
++}
++
+ void xemu_hud_update(void)
+ {
+     ImGuiIO& io = ImGui::GetIO();
+@@ -290,10 +340,12 @@ void xemu_hud_update(void)
          } else if (ImGui::IsKeyPressed(ImGuiKey_F2)) {
              g_scene_mgr.PushScene(g_popup_menu);
          } else if (menu_button ||
@@ -2887,8 +4186,31 @@ index 81305e1e..805f9b0d 100644
              xemu_toggle_fullscreen();
          }
  
+@@ -318,6 +370,11 @@ void xemu_hud_update(void)
+     if (!first_boot_window.is_open) notification_manager.Draw();
+     g_snapshot_mgr.Draw();
+ 
++    xgrid_overlay_update_stats(now);
++    if (xgrid_present_overlay()) {
++        xgrid_overlay_draw();
++    }
++
+     // static bool show_demo = true;
+     // if (show_demo) ImGui::ShowDemoWindow(&show_demo);
+ }
+@@ -332,6 +389,10 @@ void xemu_hud_render()
+         SDL_GL_SetSwapInterval(g_vsync ? 1 : 0);
+     }
+ 
++    if (g_screenshot_request.exchange(false, std::memory_order_relaxed)) {
++        g_screenshot_pending = true;
++    }
++
+     if (g_screenshot_pending) {
+         SaveScreenshot(g_tex, g_flip_req);
+         g_screenshot_pending = false;
 diff --git a/xemu/ui/xui/notifications.cc b/xemu/ui/xui/notifications.cc
-index f4c5179e..21a13b5e 100644
+index f4c5179..21a13b5 100644
 --- a/xemu/ui/xui/notifications.cc
 +++ b/xemu/ui/xui/notifications.cc
 @@ -153,6 +153,11 @@ void xemu_queue_notification(const char *msg)

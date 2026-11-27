@@ -105,9 +105,13 @@ games, move the host cursor over the picture to aim player 1; left-click fires,
 right-click is the body/action or reload button, and RT/A/B do the same on a
 gamepad. Leaving the picture reports the off-screen/reload position. Player 2
 aims with the second pad's right stick or the arrow keys; RT fires, A is body,
-B is change or pedal and LT reloads. On Windows, **Separate gun pointers**
-reads each light gun or mouse on its own: absolute light guns aim players 1
-and 2 in order, with fire, body, change/pedal and reload on their buttons.
+B is change or pedal and LT reloads. On Windows, Linux and macOS,
+**Separate gun pointers** reads each light gun or mouse on its own: absolute
+light guns aim players 1 and 2 in order, with fire, body, change/pedal and
+reload on their buttons. Windows uses Raw Input, Linux evdev and macOS IOHID.
+On Linux the user must be able to read `/dev/input/event*`; on macOS allow
+Input Monitoring if asked. macOS releases currently ship the shell only, so
+use a core built from this tree or point **Emulator binary** at one.
 Press **C** (or X) to insert player 1's card and **V** (or X on the second pad)
 for player 2's; Ghost Squad and Maximum Tune create a blank card when none is
 in hand, and the core keeps it for later sessions. The HW210 and CRP-1231 card
@@ -136,7 +140,7 @@ wait for their own server.
 
 - Direct GD-ROM boot is not supported; convert to `.bin` first.
 - Per-game bindings are editable in Settings, including the Gundam cockpit;
-  separate light-gun aiming is Windows-only for now.
+  separate light-gun aiming works on Windows, Linux and macOS.
 - Chihiro audio is incomplete in upstream xemu; some games are silent or have
   missing effects. The host backend and Xbox audio path are not at fault.
 - Linked cabinets are exposed in Settings; save states are disabled while the

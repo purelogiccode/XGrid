@@ -45,6 +45,10 @@ subdir('xui')
 if host_os == 'darwin'
   xemu_cocoa = dependency('appleframeworks', modules: 'Cocoa')
   xemu_ss.add(xemu_cocoa)
+  xemu_ss.add(coref)
+  if iokit.found()
+    xemu_ss.add(iokit)
+  endif
 endif
 
 if host_os == 'linux'
