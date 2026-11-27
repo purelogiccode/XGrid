@@ -565,6 +565,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private bool _graphicsVSync;
 
     [ObservableProperty]
+    private KeyedOption? _selectedFrameRateLimit;
+
+    [ObservableProperty]
+    private bool _frameSkip;
+
+    [ObservableProperty]
     private bool _fullscreenOnStartup;
 
     [ObservableProperty]
@@ -621,6 +627,14 @@ public sealed partial class SettingsViewModel : PageViewModel
         [
             .. GraphicsSettings.StartupSizes.Select(size => new KeyedOption(size, size)),
         ];
+        FrameRateLimitOptions =
+        [
+            .. GraphicsSettings.FrameRateLimits.Select(limit => new KeyedOption(
+                limit.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                limit == 0
+                    ? "Unlimited"
+                    : limit.ToString(System.Globalization.CultureInfo.InvariantCulture) + " fps")),
+        ];
         AspectRatioOptions =
         [
             new KeyedOption("auto", "Auto"),
@@ -674,6 +688,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the selectable core texture filters.</summary>
     public IReadOnlyList<KeyedOption> FilteringOptions { get; }
+
+    /// <summary>Gets the selectable presentation frame-rate limits.</summary>
+    public IReadOnlyList<KeyedOption> FrameRateLimitOptions { get; }
 
     /// <summary>Gets the selectable core window sizes.</summary>
     public IReadOnlyList<KeyedOption> StartupSizeOptions { get; }
@@ -1057,6 +1074,13 @@ public sealed partial class SettingsViewModel : PageViewModel
             ?? StartupSizeOptions.FirstOrDefault(option => string.Equals(option.Key, "1280x960", StringComparison.Ordinal))
             ?? StartupSizeOptions[0];
         GraphicsVSync = settings.Graphics.VSync;
+        SelectedFrameRateLimit = FrameRateLimitOptions.FirstOrDefault(
+            option => string.Equals(
+                option.Key,
+                settings.Graphics.FrameRateLimit.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+            ?? FrameRateLimitOptions[0];
+        FrameSkip = settings.Graphics.FrameSkip;
         FullscreenOnStartup = settings.Graphics.FullscreenOnStartup;
         FullscreenExclusive = settings.Graphics.FullscreenExclusive;
         SelectedAspectRatio = AspectRatioOptions.FirstOrDefault(
@@ -1206,6 +1230,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         };
         CopyDonationState(next, Shell.Config);
         CopyRecentGames(next, Shell.Config);
+        // The overlay toggle edits the live shell property directly so it can
+        // apply while the settings page is open; preserve that value here.
         next.ShowFpsOverlay = Shell.Config.ShowFpsOverlay;
         next.LibraryGridView = Shell.Config.LibraryGridView;
         next.LibraryIconSize = Shell.Config.LibraryIconSize;
@@ -1372,6 +1398,14 @@ public sealed partial class SettingsViewModel : PageViewModel
             Filtering = SelectedFiltering?.Key ?? GraphicsSettings.FilterLinear,
             StartupSize = SelectedStartupSize?.Key ?? "1280x960",
             VSync = GraphicsVSync,
+            FrameRateLimit = int.TryParse(
+                SelectedFrameRateLimit?.Key,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out int frameRateLimit)
+                ? frameRateLimit
+                : 0,
+            FrameSkip = FrameSkip,
             FullscreenOnStartup = FullscreenOnStartup,
             FullscreenExclusive = FullscreenExclusive,
             AspectRatio = SelectedAspectRatio?.Key ?? "auto",

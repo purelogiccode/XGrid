@@ -8,7 +8,7 @@ This page lists what XGrid needs to run. For building XGrid itself, see
 | Item | Requirement |
 | --- | --- |
 | **Windows** | Windows 10 or 11, x64. This is the fully integrated target. |
-| **Linux** | Linux x64. The frontend archive bundles the standalone core, which presents in its own SDL window. Shell save states, pause/step, fast-forward and live disc swap need the Windows in-process core. |
+| **Linux** | Linux x64. The frontend archive bundles the standalone core, which presents in its own SDL window. Shell save states, pause/step and live disc swap need the Windows in-process core; the core's own window handles Space fast-forward. |
 | **macOS** | The archives contain the shell only. Point it at an upstream xemu 0.8.139 build with **Settings → System → Emulator binary** or `XGRID_XEMU_CORE`. |
 | **CPU** | A modern x64 processor. QEMU TCG is CPU-intensive; faster single-core performance matters most. |
 | **GPU** | An OpenGL-capable GPU with current drivers. Vulkan is offered only when the core build includes it; Direct3D 11 is a Windows preview backend. |

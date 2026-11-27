@@ -58,8 +58,11 @@ Press `Space` or click **4×** in the toolbar to toggle 4× fast-forward. Press 
 again to return to 1×. The status bar shows **Running 4x** while it is active.
 
 The core scales the guest clock and the vblank pace together, so guest timers,
-the Xbox TSC and the picture all run four times faster. Fast-forward needs
-in-process core hosting.
+the Xbox TSC and the picture all run four times faster. Fast-forward works in
+both hosting modes: in-process through the core ABI, and a separate process
+through the registered speed message on the core window. The embedded Xbox
+picture does not take keyboard focus, so `Space` reaches the shell even after
+you click the game.
 
 > `Space` is reserved for fast-forward. It is never stored as a pad binding.
 

@@ -189,6 +189,11 @@ complete file, so two launches cannot inherit each other's state.
 `mem_limit` is the core's string enum (`'64'` or `'128'`). `default_machine` is
 `'xbox'` or `'chihiro'`; a Chihiro launch also writes the `[chihiro.*]` sections.
 
+The presentation filter, FPS overlay, frame-rate limit and frame-skip choice are
+selected outside the TOML: through the in-process ABI, or through the
+`XGRID_PRESENT_FILTER`, `XGRID_FPS_OVERLAY`, `XGRID_FPS_LIMIT` and
+`XGRID_FRAME_SKIP` environment variables for a separate core process.
+
 ### Core capability manifest
 
 `xgrid-core.json` beside the core reports the compiled backends:
@@ -214,6 +219,10 @@ fall back.
 | `XGRID_XEMU_CORE` | Override the core executable path. |
 | `XGRID_DISPLAY_SHM` | Display sink name (set by the shell for a separate core process; named file mapping on Windows, POSIX shared memory on Unix). |
 | `XGRID_INPUT_SHM` | Input sink name (set by the shell for the separate process on Windows). |
+| `XGRID_PRESENT_FILTER` | Initial presentation filter for a separate core process (`nearest`, `bilinear`, `scanline`, `crt`). |
+| `XGRID_FPS_OVERLAY` | `1` draws the core FPS/frame-time overlay. |
+| `XGRID_FPS_LIMIT` | Presented frame-rate limit in frames per second; `0` or unset is unlimited. |
+| `XGRID_FRAME_SKIP` | `1` drops missed presentation deadlines when a frame-rate limit is set. |
 | `XGRID_LOG_DIRECTORY` | Log folder (default: `XGrid/logs` under the per-user local application data). |
 | `XGRID_LOG_LEVEL` | Minimum Serilog level: `Verbose`, `Debug`, `Information`, `Warning`, `Error`, `Fatal`. |
 | `XGRID_FRONTEND_TRACE` | `1` enables debug-level frontend and native-surface diagnostics. |

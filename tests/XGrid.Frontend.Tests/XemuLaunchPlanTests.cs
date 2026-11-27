@@ -425,6 +425,45 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_CopiesThePresentationPacingAndOverlay()
+    {
+        EmulatorSettings settings = Settings();
+        settings.ShowFpsOverlay = true;
+        settings.Graphics.FrameRateLimit = 60;
+        settings.Graphics.FrameSkip = true;
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.True(launch.FpsOverlay);
+        Assert.Equal(60, launch.FrameRateLimit);
+        Assert.True(launch.FrameSkip);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
+    public void Validate_RejectsAnOutOfRangeFrameRateLimit()
+    {
+        EmulatorSettings settings = Settings();
+        settings.Graphics.FrameRateLimit = 1001;
+
+        // The launch-plan layer normalizes unknown persisted values, so create
+        // the settings directly to pin the core contract itself.
+        var launch = new XemuLaunchSettings
+        {
+            CorePath = settings.XemuCorePath,
+            BootRomPath = settings.McpxRomPath,
+            FlashRomPath = settings.BiosPath,
+            EepromPath = settings.EepromPath,
+            HddPath = settings.HddPath,
+            FrameRateLimit = 1001,
+            WorkingDirectory = Path.Combine(_root, "work"),
+        };
+
+        Assert.Contains(launch.Validate(), message => message.Contains("frame-rate", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void DescribeProblem_ReportsTheFirstBlockingReason()
     {
         string work = Path.Combine(_root, "work");

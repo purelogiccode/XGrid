@@ -19,8 +19,9 @@ Both need in-process core hosting.
 ## Fast-forward
 
 Press **Space** or click **4×** to toggle 4× speed. Press again to return to 1×.
-The core scales the guest clock and vblank together. Needs in-process hosting.
-Space is reserved for this shortcut.
+The core scales the guest clock and vblank together. Works in both hosting
+modes (ABI or the core window's speed message), and the embedded picture does
+not take keyboard focus. Space is reserved for this shortcut.
 
 ## Discs
 

@@ -677,6 +677,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         ArgumentNullException.ThrowIfNull(settings);
         string previousFilter = Config.Filter;
+        bool previousOverlay = Config.ShowFpsOverlay;
+        int previousFrameRateLimit = Config.Graphics.FrameRateLimit;
+        bool previousFrameSkip = Config.Graphics.FrameSkip;
         settings.Normalize();
         Config = settings;
         RefreshCoreCapabilities();
@@ -686,6 +689,24 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             && !_core.TrySetPresentationFilter(Config.Filter))
         {
             AddLog(LogLevel.Info, "The presentation filter applies on the next launch for a separate core process.");
+        }
+
+        if (IsRunning && previousOverlay != Config.ShowFpsOverlay
+            && !_core.TrySetFpsOverlay(Config.ShowFpsOverlay))
+        {
+            AddLog(LogLevel.Info, "The FPS overlay applies on the next launch for a separate core process.");
+        }
+
+        if (IsRunning && previousFrameRateLimit != Config.Graphics.FrameRateLimit
+            && !_core.TrySetFrameRateLimit(Config.Graphics.FrameRateLimit))
+        {
+            AddLog(LogLevel.Info, "The frame-rate limit applies on the next launch for a separate core process.");
+        }
+
+        if (IsRunning && previousFrameSkip != Config.Graphics.FrameSkip
+            && !_core.TrySetFrameSkip(Config.Graphics.FrameSkip))
+        {
+            AddLog(LogLevel.Info, "Frame skipping applies on the next launch for a separate core process.");
         }
         try
         {
@@ -1105,7 +1126,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private bool CanToggleFastForward()
     {
-        return IsRunning && !IsPaused && _playback?.IsSupported == true;
+        // Keep the control live even when the hosting mode cannot change the
+        // pace: a press then explains why instead of the button silently doing
+        // nothing (the old in-process-only state was easy to miss).
+        return IsRunning && !IsPaused;
     }
 
     /// <summary>
@@ -1125,22 +1149,24 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        int multiplier = enabled ? FastForwardMultiplier : 1;
         PlaybackController? playback = _playback;
-        if (playback is null || !playback.IsSupported)
+        bool accepted = playback is not null
+                        && playback.IsSupported
+                        && playback.TrySetSpeed(multiplier, out _);
+        if (!accepted)
         {
-            if (enabled)
-            {
-                ShowToast("Fast forward needs the in-process emulator core.");
-            }
-
-            return;
+            // A separate core process exposes no pause/step ABI, but it does
+            // accept the speed message on its own window. This keeps Space and
+            // the 4x button working in both hosting modes.
+            accepted = _core.TrySetSpeed(multiplier);
         }
 
-        int multiplier = enabled ? FastForwardMultiplier : 1;
-        if (!playback.TrySetSpeed(multiplier, out string problem))
+        if (!accepted)
         {
             if (enabled)
             {
+                const string problem = "Fast forward needs the in-process emulator core, or the core window must be visible.";
                 AddLog(LogLevel.Warning, "Fast forward refused: " + problem);
                 ShowToast(problem);
             }

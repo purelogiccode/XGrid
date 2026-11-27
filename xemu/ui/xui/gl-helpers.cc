@@ -949,6 +949,16 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
     break;
     }
 
+    /*
+     * The display texture defaults to GL_REPEAT. A guest that renders fewer
+     * rows than its declared VGA height, or an interlace/line-offset change,
+     * can push the bottom sample outside 0..1 and wrap in stale rows. Clamp
+     * instead: a presentation edge may repeat the last valid row, but it can
+     * never sample the opposite edge of the frame.
+     */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
     int tw, th;
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
@@ -972,7 +982,9 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
         glUniform1ui(s->palette_loc[i], e);
     }
 
-    glClearColor(0, 0, 0, 0);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (!nv2a_get_screen_off()) {

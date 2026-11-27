@@ -143,6 +143,28 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
     }
 
     /// <inheritdoc />
+    public bool TrySetSpeed(int multiplier)
+    {
+        if (!XemuWindowEmbedder.IsSupported || multiplier is < 1 or > 8)
+        {
+            return false;
+        }
+
+        IntPtr window = TryFindWindow();
+        if (window == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        // The core registers this message and updates its vblank/virtual-clock
+        // pace on its own window thread. A window message is the only channel
+        // into a separate process that needs no extra shared section.
+        uint message = Win32Window.RegisterWindowMessageW("XGrid.SetSpeed");
+        return message != 0
+               && Win32Window.PostMessageW(window, message, (IntPtr)multiplier, IntPtr.Zero);
+    }
+
+    /// <inheritdoc />
     public bool TrySetPresentationFilter(string filter)
     {
         // The separate process receives the filter at launch; there is no live
@@ -152,6 +174,18 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
 
     /// <inheritdoc />
     public bool TrySetFpsOverlay(bool enabled)
+    {
+        return false;
+    }
+
+    /// <inheritdoc />
+    public bool TrySetFrameRateLimit(int fps)
+    {
+        return false;
+    }
+
+    /// <inheritdoc />
+    public bool TrySetFrameSkip(bool enabled)
     {
         return false;
     }
@@ -300,6 +334,9 @@ public sealed partial class XemuCoreProcess : IXemuCoreRuntime
         // needs the in-process ABI.
         startInfo.Environment["XGRID_PRESENT_FILTER"] = _settings.PresentationFilter;
         startInfo.Environment["XGRID_FPS_OVERLAY"] = _settings.FpsOverlay ? "1" : "0";
+        startInfo.Environment["XGRID_FPS_LIMIT"] =
+            _settings.FrameRateLimit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        startInfo.Environment["XGRID_FRAME_SKIP"] = _settings.FrameSkip ? "1" : "0";
 
         // Tell the core the shell will reparent its window: create it hidden
         // and give it the title the locator matches, so it never flashes as a

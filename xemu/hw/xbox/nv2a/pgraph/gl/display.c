@@ -318,6 +318,8 @@ static void render_display(NV2AState *d, SurfaceBinding *surface)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         r->gl_display_buffer_internal_format = surface->fmt.gl_internal_format;
         r->gl_display_buffer_width = width;
         r->gl_display_buffer_height = height;
@@ -340,6 +342,14 @@ static void render_display(NV2AState *d, SurfaceBinding *surface)
     ASSERT_FRAMEBUFFER_COMPLETE();
 
     glBindTexture(GL_TEXTURE_2D, surface->gl_buffer);
+    /*
+     * The display shader maps VGA rows into the surface and can reach just
+     * past the last row when the line offset or interlace height changes.
+     * Clamp so an edge sample repeats the nearest valid row instead of
+     * wrapping into unrelated texture memory.
+     */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindVertexArray(r->disp_rndr.vao);
     glBindBuffer(GL_ARRAY_BUFFER, r->disp_rndr.vbo);
     glUseProgram(r->disp_rndr.prog);

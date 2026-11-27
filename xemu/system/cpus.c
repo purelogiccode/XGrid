@@ -38,6 +38,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/plugin.h"
 #include "qemu/atomic.h"
+#include "qemu/seqlock.h"
 #include "system/cpus.h"
 #include "qemu/guest-random.h"
 #include "hw/nmi.h"
@@ -211,9 +212,27 @@ void cpu_exec_reset_hold(CPUState *cpu)
     }
 }
 
+/*
+ * Fast-forward scales QEMU_CLOCK_VIRTUAL. The vCPU, timer and display threads
+ * read it concurrently, and the shell changes it while the guest runs, so the
+ * (scale, base, anchor) triple needs a consistent snapshot. Without it a reader
+ * could pair the new base with the old anchor and warp guest timers by seconds.
+ * A seqlock keeps the hot read path lock-free.
+ */
+static QemuSeqLock virtual_clock_scale_lock;
 static int virtual_clock_scale = 1;
 static int64_t virtual_clock_scale_base;
 static int64_t virtual_clock_scale_anchor;
+
+static int64_t virtual_clock_apply_scale(int64_t raw, int scale,
+                                         int64_t base, int64_t anchor)
+{
+    if (scale == 1) {
+        return raw;
+    }
+
+    return base + (raw - anchor) * scale;
+}
 
 int64_t cpus_get_virtual_clock(void)
 {
@@ -234,13 +253,19 @@ int64_t cpus_get_virtual_clock(void)
     }
 
     int64_t raw = cpu_get_clock();
-    int scale = qatomic_read(&virtual_clock_scale);
-    if (scale == 1) {
-        return raw;
-    }
+    unsigned start;
+    int scale;
+    int64_t base;
+    int64_t anchor;
 
-    return qatomic_read(&virtual_clock_scale_base)
-        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * scale;
+    do {
+        start = seqlock_read_begin(&virtual_clock_scale_lock);
+        scale = virtual_clock_scale;
+        base = virtual_clock_scale_base;
+        anchor = virtual_clock_scale_anchor;
+    } while (seqlock_read_retry(&virtual_clock_scale_lock, start));
+
+    return virtual_clock_apply_scale(raw, scale, base, anchor);
 }
 
 void cpus_set_virtual_clock_scale(int scale)
@@ -249,23 +274,27 @@ void cpus_set_virtual_clock_scale(int scale)
         scale = 1;
     }
 
-    int old_scale = qatomic_read(&virtual_clock_scale);
-    if (scale == old_scale) {
-        return;
+    seqlock_write_begin(&virtual_clock_scale_lock);
+
+    int old_scale = virtual_clock_scale;
+    if (scale != old_scale) {
+        /*
+         * Keep the virtual clock continuous across the change: anchor the new
+         * scale at the current scaled time. Guest timers use this clock, so a
+         * larger scale makes the whole machine run faster, not just the display.
+         */
+        int64_t raw = cpu_get_clock();
+        int64_t current =
+            virtual_clock_apply_scale(raw, old_scale,
+                                      virtual_clock_scale_base,
+                                      virtual_clock_scale_anchor);
+
+        virtual_clock_scale_anchor = raw;
+        virtual_clock_scale_base = current;
+        virtual_clock_scale = scale;
     }
 
-    /*
-     * Keep the virtual clock continuous across the change: anchor the new
-     * scale at the current scaled time. Guest timers use this clock, so a
-     * larger scale makes the whole machine run faster, not just the display.
-     */
-    int64_t raw = cpu_get_clock();
-    int64_t current = qatomic_read(&virtual_clock_scale_base)
-        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * old_scale;
-
-    qatomic_set(&virtual_clock_scale_anchor, raw);
-    qatomic_set(&virtual_clock_scale_base, current);
-    qatomic_set(&virtual_clock_scale, scale);
+    seqlock_write_end(&virtual_clock_scale_lock);
 }
 
 /*

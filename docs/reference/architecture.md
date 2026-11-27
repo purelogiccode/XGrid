@@ -76,9 +76,11 @@ a **reference oracle** for validation. They are not the product path.
 - The core's own window is embedded in the Home page and paints with its own
   swapchain. The shell copies no frames.
 - The shell publishes pad records to a named shared section.
-- Presentation filters and the FPS overlay are core features selected through the
-  ABI (`xgrid_core_set_present_filter`, `xgrid_core_set_fps_overlay`); the shell
-  never touches a pixel.
+- Presentation filters, the FPS overlay, the presented frame-rate limit and
+  frame skipping are core features selected through the ABI
+  (`xgrid_core_set_present_filter`, `xgrid_core_set_fps_overlay`,
+  `xgrid_core_set_fps_limit`, `xgrid_core_set_frame_skip`); the shell never
+  touches a pixel.
 - Save states, pause/resume, frame step, fast-forward and disc swap use the same
   ABI.
 - QEMU's global state is single-use: the in-process core hosts one machine per
@@ -94,8 +96,9 @@ a **reference oracle** for validation. They are not the product path.
 - On Windows the process gets the input sink name through `XGRID_INPUT_SHM`.
 - `XGRID_EMBED=1` asks the core to create its window hidden and titled
   `XGridCore`, ready for the shell to reparent without a flash.
-- `XGRID_PRESENT_FILTER` and `XGRID_FPS_OVERLAY` carry the initial presentation
-  selection. A live change needs the in-process ABI.
+- `XGRID_PRESENT_FILTER`, `XGRID_FPS_OVERLAY`, `XGRID_FPS_LIMIT` and
+  `XGRID_FRAME_SKIP` carry the initial presentation selection. A live change
+  needs the in-process ABI.
 - The core writes `xemu.log` in its working directory.
 - Save states, pause/step, fast-forward and live disc swap are not exposed,
   because the shell has no ABI to call.
@@ -116,11 +119,24 @@ so the core flushes storage instead of being killed.
 
 ## Picture ownership
 
-The core owns every emulated pixel. It renders, filters, overlays and presents
-with its own window and swapchain. The Avalonia shell owns chrome, layout and
-controls only. It must not receive frames, keep a frame bitmap, apply a filter or
-draw an overlay over the picture; doing so reintroduces a per-frame copy and a
-shell redraw into the hot path.
+The core owns every emulated pixel. It renders, filters, overlays, paces and
+presents with its own window and swapchain. The Avalonia shell owns chrome,
+layout and controls only. It must not receive frames, keep a frame bitmap, apply
+a filter or draw an overlay over the picture; doing so reintroduces a
+per-frame copy and a shell redraw into the hot path.
+
+Presentation pacing is a core decision. The guest's vblank thread decides when
+new guest frames exist; the render loop decides how often the latest one is
+presented. A frame-rate limit and frame skipping therefore live in the core next
+to the filter and overlay, and the shell only selects them. The guest clock is
+not touched, so a 60 fps limit changes the presentation rate, not the game
+speed. Fast-forward scales the limit with the speed multiplier.
+
+The presentation target is fully cleared and initialized before every blit. A
+clear only covers the scissor rectangle and writes enabled color channels, so
+the core resets scissor/color-mask state and clamps edge sampling; this keeps a
+stale or uninitialized band from appearing at the bottom of a resized embedded
+window.
 
 The only shell-side picture work is native window hosting (Windows). In-process
 screenshots are written by the core on request; the shell never reads the frame.
@@ -171,7 +187,9 @@ shell polls the status and reports completion.
 
 ## Playback control
 
-Pause, resume, frame step and fast-forward use the in-process ABI:
+Pause, resume and frame step use the in-process ABI. Fast-forward uses the same
+ABI in-process and the registered `XGrid.SetSpeed` window message for a separate
+process:
 
 ```text
 xgrid_core_set_paused(bool)   xgrid_core_is_paused()   xgrid_core_frame_step()
@@ -188,7 +206,9 @@ toolbar and a badge over the picture.
 Fast-forward scales the guest's `QEMU_CLOCK_VIRTUAL` and the vblank interval
 together, so the vCPU timers, the Xbox TSC and the presented frame rate all run
 at 4×. The shell toggles it with Space or the **4×** toolbar button and restores
-1× on the next press, pause or session end.
+1× on the next press, pause or session end. In-process hosting sends the change
+through the ABI; a separate process receives it as the registered
+`XGrid.SetSpeed` window message, so the shortcut works in both modes.
 
 ## Disc change
 

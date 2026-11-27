@@ -792,6 +792,47 @@
 
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="2">
+                    <TextBlock Text="Frame-rate overlay" Classes="label" />
+                    <TextBlock Text="The core draws the presented frame rate and average frame time over the picture."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding Shell.ShowFpsOverlay, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Show the core-drawn frame rate overlay" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="Frame-rate limit" Classes="label" />
+                    <TextBlock Text="Caps how often the core presents the latest frame. Unlimited keeps the historical behavior; fast-forward scales the chosen limit."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" Width="180"
+                            ItemsSource="{Binding FrameRateLimitOptions}"
+                            SelectedItem="{Binding SelectedFrameRateLimit, Mode=TwoWay}"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Choose the presented frame-rate limit">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Skip missed frames" Classes="label" />
+                    <TextBlock Text="When the host cannot keep up with the limit, drop the missed presentations instead of showing them in a burst. Applies only with a limit."
+                               Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding FrameSkip, Mode=TwoWay}"
+                                OnContent="" OffContent="" VerticalAlignment="Center"
+                                ToolTip.Tip="Drop missed presentation deadlines" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
                     <TextBlock Text="Start fullscreen" Classes="label" />
                     <TextBlock Text="The embedded window follows the core's own mode." Classes="hint" />
                   </StackPanel>

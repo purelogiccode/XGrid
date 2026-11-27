@@ -15,8 +15,11 @@ page, whether the core is in-process or a separate process.
   per-frame work.
 - The core window is created hidden and shown only after the reparent, so it does
   not flash as a second top-level window.
-- The embedded child is created `WS_EX_NOACTIVATE`, so the shell window keeps
-  keyboard focus and mapped pad input stays live.
+- The embedded Xbox child is created `WS_EX_NOACTIVATE | WS_EX_TRANSPARENT`, so
+  the shell window keeps keyboard focus, mapped pad input stays live and clicking
+  the picture cannot swallow the Space fast-forward shortcut. A Chihiro picture
+  keeps direct focus because the cabinet reads its keyboard, mouse and gamepad
+  from the core itself.
 
 ### Linux and macOS
 
@@ -62,6 +65,11 @@ These belong to the emulator and affect the picture before the final blit:
 - **Texture filtering** — linear or nearest.
 - **Window startup size** — the core's window size before embedding.
 - **Vertical sync** — off by default for low latency.
+- **Frame-rate limit** — how often the core presents the latest guest frame.
+  **Unlimited** is the historical pace; **60 fps** is a fixed real-time target.
+  The guest clock is unchanged.
+- **Skip missed frames** — when a frame-rate limit is set and the host is late,
+  drop the missed presentations instead of showing them in a burst.
 - **Start fullscreen** and **Exclusive fullscreen**.
 - **Aspect ratio** — auto, native, 4:3 or 16:9.
 - **Fit mode** — scale, center or stretch.
@@ -104,20 +112,38 @@ Open the folder with **View → Open screenshots folder**.
 - **P** (or **Emulation → Pause / Resume**) stops the machine on the next frame
   boundary and keeps the last picture on screen with a **Paused** badge.
 - **F10** advances exactly one frame while paused.
-- **Space** toggles 4× fast-forward while a game runs.
+- **Space** toggles 4× fast-forward while a game runs. It works in both hosting
+  modes: in-process through the core ABI, and a separate process through the
+  core window's registered speed message. The embedded Xbox picture does not
+  take keyboard focus, so Space always reaches the shell.
 
-All three need in-process core hosting, like save states. See
+Pause and frame step need in-process core hosting, like save states. See
 [Playing games](playing-games.md).
 
-## Frame-rate overlay
+## Frame-rate overlay and pacing
 
-Turn on **View → FPS Overlay** to draw the core's present rate and average frame
-time over the console picture. The core draws the overlay in its own HUD, so it
-needs no shell frame path and works at game performance. The choice is remembered
-in `settings.json`.
+Turn on **Settings → Graphics → Frame-rate overlay** (or **View → FPS Overlay**)
+to draw the core's present rate and average frame time over the console picture.
+The core draws the overlay in its own HUD, so it needs no shell frame path and
+works at game performance. The choice is remembered in `settings.json`.
 
-In-process hosting applies a change live. With a separate core process, the
-setting takes effect on the next launch.
+**Frame-rate limit** caps presented frames per second. **Unlimited** keeps the
+core's historical behavior of presenting as often as the host allows; the fixed
+choices (30, 60, 90, 120, 144 and 240 fps) limit presentation only. The emulated
+machine keeps its own clock, so game speed and audio are unchanged. Fast-forward
+scales the limit with the speed multiplier, so a 60 fps choice presents up to
+240 fps at 4×.
+
+**Skip missed frames** changes what happens when the host cannot keep up with
+the chosen limit. With skipping off, the core catches up by presenting the late
+frames back-to-back. With skipping on, it drops the missed deadlines and resumes
+at the next interval, trading smoothness for a lighter, more even render load.
+The option has no effect while the limit is **Unlimited**.
+
+The shell only selects these values; pacing and skipping run in the core's
+render loop. In-process hosting applies a change live. With a separate core
+process, the initial values come from the launch environment, so a change takes
+effect on the next launch.
 
 ## Performance notes
 
@@ -125,6 +151,8 @@ setting takes effect on the next launch.
 - Prefer **OpenGL** unless your build reports Vulkan or Direct3D 11 and that
   backend is stable for your titles.
 - Lower **Internal resolution scale** first when frames are slow.
+- Set a **Frame-rate limit** of 60 and turn on **Skip missed frames** when a title
+  cannot hold its full speed and the extra presentations only add load.
 - Leave **Vertical sync** off unless you see tearing.
 - Keep filters and the overlay in the core.
 - Use an SSD for the HDD image if save states or dashboard loads feel slow.

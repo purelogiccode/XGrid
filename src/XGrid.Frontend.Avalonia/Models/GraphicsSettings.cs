@@ -44,6 +44,19 @@ public sealed class GraphicsSettings
     /// <summary>Gets or sets a value indicating whether the core waits for vertical sync.</summary>
     public bool VSync { get; set; }
 
+    /// <summary>
+    /// Gets or sets the presented frame-rate limit. 0 is unlimited; the core
+    /// caps how often it presents the latest guest frame. The guest keeps its
+    /// own clock, so this is a presentation setting, not a speed setting.
+    /// </summary>
+    public int FrameRateLimit { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the core drops missed
+    /// presentation deadlines instead of presenting them in a burst.
+    /// </summary>
+    public bool FrameSkip { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the core starts fullscreen.</summary>
     public bool FullscreenOnStartup { get; set; }
 
@@ -69,6 +82,8 @@ public sealed class GraphicsSettings
             Filtering = Filtering,
             StartupSize = StartupSize,
             VSync = VSync,
+            FrameRateLimit = FrameRateLimit,
+            FrameSkip = FrameSkip,
             FullscreenOnStartup = FullscreenOnStartup,
             FullscreenExclusive = FullscreenExclusive,
             AspectRatio = AspectRatio,
@@ -91,6 +106,7 @@ public sealed class GraphicsSettings
         Filtering = string.Equals(Filtering, FilterNearest, StringComparison.OrdinalIgnoreCase)
             ? FilterNearest
             : FilterLinear;
+        FrameRateLimit = FrameRateLimits.Contains(FrameRateLimit) ? FrameRateLimit : 0;
         StartupSize = StartupSizes.Contains(StartupSize, StringComparer.Ordinal) ? StartupSize : "1280x960";
         AspectRatio = NullSafe.Text(AspectRatio).ToLowerInvariant() switch
         {
@@ -107,6 +123,12 @@ public sealed class GraphicsSettings
         };
         AvPack = AvPacks.Contains(AvPack, StringComparer.Ordinal) ? AvPack : "hdtv";
     }
+
+    /// <summary>
+    /// Gets the presented frame-rate limits the shell offers. 0 is unlimited
+    /// (the core's historical behavior); 60 is the fixed-rate choice.
+    /// </summary>
+    public static IReadOnlyList<int> FrameRateLimits { get; } = [0, 30, 60, 90, 120, 144, 240];
 
     /// <summary>Gets the startup-size keys xemu accepts.</summary>
     public static IReadOnlyList<string> StartupSizes { get; } =

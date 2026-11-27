@@ -58,7 +58,7 @@ See [Sega Chihiro](chihiro.md) and [Chihiro controls](chihiro-controls.md).
 | --- | --- |
 | **Emulator binary** | Optional explicit path to the core executable. Empty uses the packaged core under `core/xemu/`, then the in-tree build. |
 | **Guest memory** | 64 MB (retail) or 128 MB (debug kit). A Chihiro launch is forced to 128 MB. |
-| **Core hosting** | **In-process (recommended)** loads the core library into the shell and enables save states, pause, frame step, fast-forward, disc swap and core-side screenshots. It hosts one machine per shell; later launches fall back to a separate process until XGrid restarts. **Separate process** can start a new machine every time and isolates a core crash. The in-process library is Windows-only. |
+| **Core hosting** | **In-process (recommended)** loads the core library into the shell and enables save states, pause, frame step, disc swap and core-side screenshots. It hosts one machine per shell; later launches fall back to a separate process until XGrid restarts. **Separate process** can start a new machine every time and isolates a core crash; fast-forward still works through the core window. The in-process library is Windows-only. |
 
 > Save states and the live playback controls require in-process hosting. On
 > Linux the core always runs as a separate process with its own window.
@@ -74,6 +74,9 @@ See [Sega Chihiro](chihiro.md) and [Chihiro controls](chihiro-controls.md).
 | **Texture filtering** | Linear, Nearest | Applied by the core to guest textures. |
 | **Window startup size** | various | Used when the core starts in a window; the shell still embeds it. |
 | **Vertical sync** | on/off | Waits for display refresh. Off is the low-latency default. |
+| **Frame-rate overlay** | on/off | Draws the present rate and average frame time over the picture. |
+| **Frame-rate limit** | Unlimited, 30, 60, 90, 120, 144, 240 fps | Caps presented frames without changing the guest clock. Unlimited is the historical pace; 60 is a fixed real-time target. Fast-forward scales the chosen limit. |
+| **Skip missed frames** | on/off | Drops late presentations instead of showing a catch-up burst. Applies only with a frame-rate limit. |
 | **Start fullscreen** | on/off | The embedded core follows the core's own mode. |
 | **Exclusive fullscreen** | on/off | Only used when fullscreen starts. |
 | **Aspect ratio** | Auto, Native, 4:3, 16:9 | How the core fits the picture inside its window. |
@@ -176,7 +179,9 @@ platforms. **Save settings** persists the choice.
 - `Ctrl+S` saves while the Settings page is open.
 - Failed writes are reported in the Activity log.
 - Settings apply on the next power-on; a running core keeps its generated
-  configuration.
+  configuration. The presentation filter, FPS overlay, frame-rate limit and
+  frame-skip choice are the exceptions: in-process hosting applies them live, and
+  a separate core process picks them up on the next launch.
 - Invalid values are repaired on load: RAM is 64 or 128, scale is clamped to
   1–8, unknown renderers fall back to OpenGL, unknown filters fall back to
   nearest, and empty override rows are dropped.

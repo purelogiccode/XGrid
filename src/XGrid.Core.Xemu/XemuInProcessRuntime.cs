@@ -136,6 +136,14 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
         _ = _core.SetPresentationFilter(
             XemuPresentationFilter.ToCoreValue(_settings.PresentationFilter));
         _ = _core.SetFpsOverlay(_settings.FpsOverlay);
+        _ = _core.SetFrameRateLimit(_settings.FrameRateLimit);
+        _ = _core.SetFrameSkip(_settings.FrameSkip);
+    }
+
+    /// <inheritdoc />
+    public bool TrySetSpeed(int multiplier)
+    {
+        return _core.SetSpeed(multiplier) == 0;
     }
 
     /// <inheritdoc />
@@ -148,6 +156,18 @@ public sealed class XemuInProcessRuntime : IXemuCoreRuntime
     public bool TrySetFpsOverlay(bool enabled)
     {
         return _core.SetFpsOverlay(enabled);
+    }
+
+    /// <inheritdoc />
+    public bool TrySetFrameRateLimit(int fps)
+    {
+        return _core.SetFrameRateLimit(fps);
+    }
+
+    /// <inheritdoc />
+    public bool TrySetFrameSkip(bool enabled)
+    {
+        return _core.SetFrameSkip(enabled);
     }
 
     /// <inheritdoc />

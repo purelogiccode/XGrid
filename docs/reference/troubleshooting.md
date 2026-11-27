@@ -43,7 +43,8 @@ per-user local application-data folder elsewhere). See
 | No filters | A separate process has not relaunched since the filter changed. | Relaunch; in-process hosting applies filters live. |
 | Vulkan missing | The core build has no Vulkan. | Use OpenGL; the Settings hint explains why. |
 | Direct3D 11 missing | The Windows core build did not compile the preview backend. | Use OpenGL. |
-| Low frame rate | High internal resolution, heavy title, CPU/GPU load. | Set scale to 1, try OpenGL, close background work. |
+| Colored or stale band at the bottom after a resize | The presentation target was cleared while scissor/color-mask state or a stale size was active. | Update the core; the current window reconciles its size, resets the clear state and fully initializes the target every frame. |
+| Low frame rate | High internal resolution, heavy title, CPU/GPU load. | Set scale to 1, try OpenGL, close background work. Set a 60 fps limit with **Skip missed frames** to keep presentation even. |
 | Headless run publishes no frames | The binary is not the XGrid core, or the renderer cannot render. | Point `--core` at the XGrid build; try `--renderer OPENGL`. |
 
 ## Input problems
@@ -56,7 +57,7 @@ per-user local application-data folder elsewhere). See
 | Sticks drift | Dead zone too low. | Raise the radial dead zone. |
 | Player 2–4 does nothing | No XInput slot assigned to that port. | Assign a slot in **Settings → Input → Players**. |
 | No input on Linux or macOS | The mapped-pad sink is Windows-only. | Use the core's own SDL input in its window. |
-| Space types instead of fast-forwarding | A text field has focus. | Click the game picture first. |
+| Space does not fast-forward | A text field has focus, the game is paused, or the core window has not appeared yet. | Leave the text field and resume the game; the embedded Xbox picture no longer takes keyboard focus. |
 
 ## Audio problems
 

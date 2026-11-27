@@ -259,6 +259,18 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets a value indicating whether the core draws the frame-rate overlay.</summary>
     public bool FpsOverlay { get; init; }
 
+    /// <summary>
+    /// Gets the presented frame-rate limit. 0 is unlimited (the historical
+    /// behavior); 1..1000 caps how often the core presents the latest frame.
+    /// </summary>
+    public int FrameRateLimit { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the core drops missed presentation
+    /// deadlines instead of presenting them in a burst. Applies with a limit.
+    /// </summary>
+    public bool FrameSkip { get; init; }
+
     private static readonly HashSet<string> StartupSizes = new(StringComparer.Ordinal)
     {
         "last_used",
@@ -456,6 +468,11 @@ public sealed record XemuLaunchSettings
             && !string.Equals(PresentationFilter, XemuPresentationFilter.Crt, StringComparison.Ordinal))
         {
             errors.Add($"Unknown presentation filter '{PresentationFilter}'.");
+        }
+
+        if (FrameRateLimit is < 0 or > 1000)
+        {
+            errors.Add($"The frame-rate limit must be 0 (unlimited) or 1 to 1000, not {FrameRateLimit}.");
         }
 
         if (string.Equals(AudioBackend, AudioBackends.Wav, StringComparison.Ordinal)

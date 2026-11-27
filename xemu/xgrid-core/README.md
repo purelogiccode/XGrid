@@ -34,17 +34,24 @@ window paints with its own swapchain, so the shell never receives a frame. The
 ABI is `xgrid_core_start(config, display_sink, input_sink, argv, argc)`,
 `xgrid_core_request_stop`, `xgrid_core_is_running`, `xgrid_core_exit_code`,
 `xgrid_core_join`, `xgrid_core_version`,
-`xgrid_core_set_present_filter` and `xgrid_core_set_fps_overlay`.
+`xgrid_core_set_present_filter`, `xgrid_core_set_fps_overlay`,
+`xgrid_core_set_fps_limit` and `xgrid_core_set_frame_skip`.
 
-### Presentation filter and overlay
+### Presentation filter, overlay and pacing
 
 The shell selects one of nearest, bilinear, scanline or CRT. The final blit
 shader in `ui/xui/gl-helpers.cc` applies it at source resolution; the shell never
 processes pixels. The frame-rate overlay is drawn by the core's ImGui HUD in
 `ui/xui/main.cc`. Both are patch-recorded in
-`xemu-patches/0010-ui-presentation-filter-overlay.patch`. The separate-process
-path passes the initial values through `XGRID_PRESENT_FILTER` and
-`XGRID_FPS_OVERLAY`.
+`xemu-patches/0010-ui-presentation-filter-overlay.patch`.
+
+The render loop in `ui/xemu.c` owns presentation pacing. `xgrid_present_frame_limit`
+returns 0 for the historical unlimited pace or a 1..1000 fps cap;
+`xgrid_present_frame_skip` chooses whether a late render drops its missed
+deadlines or catches up with a burst. The guest clock is untouched. Fast-forward
+multiplies the limit by the speed multiplier. The separate-process path passes
+the initial values through `XGRID_PRESENT_FILTER`, `XGRID_FPS_OVERLAY`,
+`XGRID_FPS_LIMIT` and `XGRID_FRAME_SKIP`.
 
 ### Playback control
 
@@ -55,6 +62,16 @@ loop, where the run-state transition is allowed. A pause stops the machine on
 the next frame the display path publishes, and a step resumes from that boundary
 and stops after the next frame. A 50 ms timer does the same when the sink is off,
 because then no frame is published.
+
+`xgrid_core_set_speed(1..8)` applies its virtual-clock scale through the same
+bottom-half path. `system/cpus.c` stores the scale, anchor and base in a seqlock,
+so timer and vCPU readers always see one consistent snapshot while the shell
+changes the pace. `xemu_set_speed_multiplier` also scales the vblank interval, so
+the guest timers, the Xbox TSC and the presented frame rate move together.
+
+A separate core process has no ABI. It handles the registered `XGrid.SetSpeed`
+window message in `ui/xemu.c` and applies the same multiplier, so the shell's
+Space/4× control works in both hosting modes.
 
 ### Disc change
 

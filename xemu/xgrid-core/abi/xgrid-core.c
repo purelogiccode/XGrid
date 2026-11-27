@@ -41,6 +41,7 @@ static bool g_thread_created;
 static bool g_started;
 static bool g_running;
 static int g_exit_code;
+static int g_requested_speed = 1;
 static char **g_argv;
 static int g_argc;
 
@@ -611,6 +612,7 @@ XGRID_CORE_EXPORT int xgrid_core_start(const char *config_path,
     qatomic_set(&g_pause_pending, 0);
     qatomic_set(&g_step_pending, 0);
     qatomic_set(&g_step_armed, 0);
+    qatomic_set(&g_requested_speed, 1);
     xemu_set_speed_multiplier(1);
     xgrid_display_set_frame_callback(xgrid_core_display_frame, NULL);
     xgrid_display_set_sink(display_sink);
@@ -648,6 +650,18 @@ XGRID_CORE_EXPORT int xgrid_core_set_present_filter(int filter)
 XGRID_CORE_EXPORT void xgrid_core_set_fps_overlay(int enabled)
 {
     xgrid_present_set_overlay(enabled != 0);
+}
+
+/** Caps presented frames per second (0 is unlimited). */
+XGRID_CORE_EXPORT int xgrid_core_set_fps_limit(int fps)
+{
+    return xgrid_present_set_frame_limit(fps);
+}
+
+/** Enables or disables dropping missed presentation deadlines. */
+XGRID_CORE_EXPORT void xgrid_core_set_frame_skip(int enabled)
+{
+    xgrid_present_set_frame_skip(enabled != 0);
 }
 
 /** Selects embedding before the core creates its window. */
@@ -775,6 +789,19 @@ XGRID_CORE_EXPORT int xgrid_core_frame_step(void)
     return 0;
 }
 
+/*
+ * Fast-forward changes QEMU's virtual clock scaling, which timer and vCPU
+ * threads read while the guest runs. Apply it on the core's main loop so the
+ * scale is updated with the same locking discipline as every other guest-time
+ * change instead of racing the vCPU from the shell's thread. The request is
+ * atomic, so a rapid toggle still ends at the last value the shell chose.
+ */
+static void xgrid_core_apply_speed(void *opaque)
+{
+    (void)opaque;
+    xemu_set_speed_multiplier(qatomic_read(&g_requested_speed));
+}
+
 /** Sets the presentation pace used for fast-forward. */
 XGRID_CORE_EXPORT int xgrid_core_set_speed(int multiplier)
 {
@@ -785,7 +812,14 @@ XGRID_CORE_EXPORT int xgrid_core_set_speed(int multiplier)
         return -1;
     }
 
-    xemu_set_speed_multiplier(multiplier);
+    qatomic_set(&g_requested_speed, multiplier);
+
+    AioContext *context = qemu_get_aio_context();
+    if (context != NULL) {
+        aio_bh_schedule_oneshot(context, xgrid_core_apply_speed, NULL);
+    } else {
+        xemu_set_speed_multiplier(multiplier);
+    }
     return 0;
 }
 

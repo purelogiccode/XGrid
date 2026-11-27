@@ -32,7 +32,7 @@ change next.
 | **Shell** | Avalonia 12.2 application with Home, Library, Settings, Activity and About pages |
 | **Hosting** | In-process `xgrid_core.dll` on Windows; separate process on Linux and as the Windows fallback |
 | **Media** | ISO/XISO, CHD, CCI, ZArchive (entry form or file tree), Chihiro netboot `.bin`, raw/qcow2 HDD |
-| **Display** | Core-owned picture, nearest/bilinear/scanline/CRT filters, resolution scale, aspect/fit, fullscreen, FPS overlay |
+| **Display** | Core-owned picture, nearest/bilinear/scanline/CRT filters, resolution scale, aspect/fit, fullscreen, FPS overlay, frame-rate limit and frame skip |
 | **Input** | Keyboard and XInput mapping for players 1–4, dead zones, trigger threshold, stick options |
 | **Session** | Four save-state slots, automatic session save/resume, powered-off screen, stay-open mode |
 | **Library** | Recursive folder scan, search, filters, sorts, favorites, play time, local and online cover art |
@@ -101,8 +101,8 @@ promise that every Xbox disc will boot.
 
 Known limitations:
 
-- Save states, pause/step, fast-forward and live disc swap need in-process
-  hosting.
+- Save states, pause/step and live disc swap need in-process hosting.
+  Fast-forward works in both hosting modes on Windows.
 - The shell does not expose netplay.
 - CHD and CCI are read-only. Keep the HDD image writable if you use save states.
 - Chihiro audio and network titles have upstream limitations.

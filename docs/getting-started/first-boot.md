@@ -33,10 +33,10 @@ boot.
 Click **Save settings** at the top of the page (or press `Ctrl+S` while the
 Settings page is open).
 
-> **In-process hosting is required for save states, pause/step, fast-forward,
-> live disc swap and core-side screenshots.** The separate-process fallback
-> still boots and plays. On Linux the core always runs as a separate process with
-> its own window.
+> **In-process hosting is required for save states, pause/step, live disc swap
+> and core-side screenshots.** The separate-process fallback still boots and
+> plays, and fast-forward works there through the core window. On Linux the core
+> always runs as a separate process with its own window.
 
 ## 3. Add your games
 

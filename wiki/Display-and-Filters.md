@@ -34,6 +34,10 @@ separate from the core's **Texture filtering** setting.
 - **Fit mode** — scale, center, stretch.
 - **AV pack** — reported video output.
 - **Vertical sync**, **Start fullscreen**, **Exclusive fullscreen**.
+- **Frame-rate limit** — Unlimited or a fixed 30/60/90/120/144/240 fps cap on
+  presentation. The guest clock is unchanged; fast-forward scales the limit.
+- **Skip missed frames** — drop late presentations instead of showing a catch-up
+  burst. Applies only with a limit.
 
 A renderer the core was not built with is hidden; a saved choice falls back to
 OpenGL.
@@ -48,8 +52,10 @@ XGrid. With no game running, **Esc** leaves fullscreen.
 **F8** saves a PNG to `<data>/screenshots/`. With in-process hosting the core
 captures its own picture; otherwise the shell captures the whole window.
 
-**View → FPS Overlay** draws present rate and average frame time. In-process
-hosting applies it live; a separate process applies it on the next launch.
+**Settings → Graphics → Frame-rate overlay** (also **View → FPS Overlay**) draws
+present rate and average frame time. The same tab sets the presented frame-rate
+limit and whether missed frames are skipped. In-process hosting applies them
+live; a separate process applies them on the next launch.
 
 ## Performance
 

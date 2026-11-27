@@ -43,7 +43,11 @@ static uint64_t g_frame;
 /* -1 means "not selected yet": the environment or the core config decides. */
 static atomic_int g_present_filter = ATOMIC_VAR_INIT(-1);
 static atomic_int g_present_overlay = ATOMIC_VAR_INIT(-1);
+static atomic_int g_frame_limit = ATOMIC_VAR_INIT(-1);
+static atomic_int g_frame_skip = ATOMIC_VAR_INIT(-1);
 static atomic_int g_embed = ATOMIC_VAR_INIT(-1);
+
+#define XGRID_FRAME_LIMIT_MAX 1000
 
 static int filter_from_environment(void)
 {
@@ -111,6 +115,68 @@ bool xgrid_present_overlay(void)
     const char *enabled = getenv("XGRID_FPS_OVERLAY");
     value = enabled != NULL && enabled[0] == '1' ? 1 : 0;
     atomic_store_explicit(&g_present_overlay, value, memory_order_release);
+    return value != 0;
+}
+
+static int frame_limit_from_environment(void)
+{
+    const char *value = getenv("XGRID_FPS_LIMIT");
+    char *end = NULL;
+    long limit;
+
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+
+    limit = strtol(value, &end, 10);
+    if (end == value || *end != '\0' || limit < 0 ||
+        limit > XGRID_FRAME_LIMIT_MAX) {
+        return 0;
+    }
+
+    return (int)limit;
+}
+
+int xgrid_present_set_frame_limit(int fps)
+{
+    if (fps < 0 || fps > XGRID_FRAME_LIMIT_MAX) {
+        return -1;
+    }
+
+    atomic_store_explicit(&g_frame_limit, fps, memory_order_release);
+    return 0;
+}
+
+int xgrid_present_frame_limit(void)
+{
+    int value = atomic_load_explicit(&g_frame_limit, memory_order_acquire);
+
+    if (value >= 0) {
+        return value;
+    }
+
+    value = frame_limit_from_environment();
+    atomic_store_explicit(&g_frame_limit, value, memory_order_release);
+    return value;
+}
+
+void xgrid_present_set_frame_skip(bool enabled)
+{
+    atomic_store_explicit(&g_frame_skip, enabled ? 1 : 0,
+                          memory_order_release);
+}
+
+bool xgrid_present_frame_skip(void)
+{
+    int value = atomic_load_explicit(&g_frame_skip, memory_order_acquire);
+
+    if (value >= 0) {
+        return value != 0;
+    }
+
+    const char *enabled = getenv("XGRID_FRAME_SKIP");
+    value = enabled != NULL && enabled[0] == '1' ? 1 : 0;
+    atomic_store_explicit(&g_frame_skip, value, memory_order_release);
     return value != 0;
 }
 

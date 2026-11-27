@@ -1,0 +1,540 @@
+diff --git a/xemu/hw/xbox/nv2a/pgraph/gl/display.c b/xemu/hw/xbox/nv2a/pgraph/gl/display.c
+index 0e966d57..32e4f317 100644
+--- a/xemu/hw/xbox/nv2a/pgraph/gl/display.c
++++ b/xemu/hw/xbox/nv2a/pgraph/gl/display.c
+@@ -318,6 +318,8 @@ static void render_display(NV2AState *d, SurfaceBinding *surface)
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+         r->gl_display_buffer_internal_format = surface->fmt.gl_internal_format;
+         r->gl_display_buffer_width = width;
+         r->gl_display_buffer_height = height;
+@@ -340,6 +342,14 @@ static void render_display(NV2AState *d, SurfaceBinding *surface)
+     ASSERT_FRAMEBUFFER_COMPLETE();
+ 
+     glBindTexture(GL_TEXTURE_2D, surface->gl_buffer);
++    /*
++     * The display shader maps VGA rows into the surface and can reach just
++     * past the last row when the line offset or interlace height changes.
++     * Clamp so an edge sample repeats the nearest valid row instead of
++     * wrapping into unrelated texture memory.
++     */
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+     glBindVertexArray(r->disp_rndr.vao);
+     glBindBuffer(GL_ARRAY_BUFFER, r->disp_rndr.vbo);
+     glUseProgram(r->disp_rndr.prog);
+diff --git a/xemu/system/cpus.c b/xemu/system/cpus.c
+index d6d63323..5ac537d4 100644
+--- a/xemu/system/cpus.c
++++ b/xemu/system/cpus.c
+@@ -38,6 +38,7 @@
+ #include "qemu/main-loop.h"
+ #include "qemu/plugin.h"
+ #include "qemu/atomic.h"
++#include "qemu/seqlock.h"
+ #include "system/cpus.h"
+ #include "qemu/guest-random.h"
+ #include "hw/nmi.h"
+@@ -211,10 +212,28 @@ void cpu_exec_reset_hold(CPUState *cpu)
+     }
+ }
+ 
++/*
++ * Fast-forward scales QEMU_CLOCK_VIRTUAL. The vCPU, timer and display threads
++ * read it concurrently, and the shell changes it while the guest runs, so the
++ * (scale, base, anchor) triple needs a consistent snapshot. Without it a reader
++ * could pair the new base with the old anchor and warp guest timers by seconds.
++ * A seqlock keeps the hot read path lock-free.
++ */
++static QemuSeqLock virtual_clock_scale_lock;
+ static int virtual_clock_scale = 1;
+ static int64_t virtual_clock_scale_base;
+ static int64_t virtual_clock_scale_anchor;
+ 
++static int64_t virtual_clock_apply_scale(int64_t raw, int scale,
++                                         int64_t base, int64_t anchor)
++{
++    if (scale == 1) {
++        return raw;
++    }
++
++    return base + (raw - anchor) * scale;
++}
++
+ int64_t cpus_get_virtual_clock(void)
+ {
+     /*
+@@ -234,13 +253,19 @@ int64_t cpus_get_virtual_clock(void)
+     }
+ 
+     int64_t raw = cpu_get_clock();
+-    int scale = qatomic_read(&virtual_clock_scale);
+-    if (scale == 1) {
+-        return raw;
+-    }
++    unsigned start;
++    int scale;
++    int64_t base;
++    int64_t anchor;
++
++    do {
++        start = seqlock_read_begin(&virtual_clock_scale_lock);
++        scale = virtual_clock_scale;
++        base = virtual_clock_scale_base;
++        anchor = virtual_clock_scale_anchor;
++    } while (seqlock_read_retry(&virtual_clock_scale_lock, start));
+ 
+-    return qatomic_read(&virtual_clock_scale_base)
+-        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * scale;
++    return virtual_clock_apply_scale(raw, scale, base, anchor);
+ }
+ 
+ void cpus_set_virtual_clock_scale(int scale)
+@@ -249,23 +274,27 @@ void cpus_set_virtual_clock_scale(int scale)
+         scale = 1;
+     }
+ 
+-    int old_scale = qatomic_read(&virtual_clock_scale);
+-    if (scale == old_scale) {
+-        return;
+-    }
++    seqlock_write_begin(&virtual_clock_scale_lock);
+ 
+-    /*
+-     * Keep the virtual clock continuous across the change: anchor the new
+-     * scale at the current scaled time. Guest timers use this clock, so a
+-     * larger scale makes the whole machine run faster, not just the display.
+-     */
+-    int64_t raw = cpu_get_clock();
+-    int64_t current = qatomic_read(&virtual_clock_scale_base)
+-        + (raw - qatomic_read(&virtual_clock_scale_anchor)) * old_scale;
++    int old_scale = virtual_clock_scale;
++    if (scale != old_scale) {
++        /*
++         * Keep the virtual clock continuous across the change: anchor the new
++         * scale at the current scaled time. Guest timers use this clock, so a
++         * larger scale makes the whole machine run faster, not just the display.
++         */
++        int64_t raw = cpu_get_clock();
++        int64_t current =
++            virtual_clock_apply_scale(raw, old_scale,
++                                      virtual_clock_scale_base,
++                                      virtual_clock_scale_anchor);
++
++        virtual_clock_scale_anchor = raw;
++        virtual_clock_scale_base = current;
++        virtual_clock_scale = scale;
++    }
+ 
+-    qatomic_set(&virtual_clock_scale_anchor, raw);
+-    qatomic_set(&virtual_clock_scale_base, current);
+-    qatomic_set(&virtual_clock_scale, scale);
++    seqlock_write_end(&virtual_clock_scale_lock);
+ }
+ 
+ /*
+diff --git a/xemu/ui/xemu.c b/xemu/ui/xemu.c
+index 078606c7..58804700 100644
+--- a/xemu/ui/xemu.c
++++ b/xemu/ui/xemu.c
+@@ -65,6 +65,7 @@
+ #include <SDL3/SDL.h>
+ 
+ #ifdef _WIN32
++#include <windows.h>
+ #include "xui/win32-dxgi-present.h"
+ #endif
+ 
+@@ -119,6 +120,40 @@ static int64_t vblank_interval_current_ns(void)
+     return vblank_interval_ns / qatomic_read(&xemu_speed_multiplier);
+ }
+ 
++#ifdef _WIN32
++/*
++ * The shell has no ABI into a separate core process. It powers the same
++ * fast-forward control by posting this registered message to the core window;
++ * a window message needs no shared section and survives reparenting.
++ */
++#define XGRID_SPEED_MESSAGE_NAME L"XGrid.SetSpeed"
++
++static UINT xgrid_speed_message;
++
++static bool xgrid_speed_message_hook(void *userdata, MSG *msg)
++{
++    (void)userdata;
++
++    if (xgrid_speed_message != 0 && msg->message == xgrid_speed_message) {
++        int multiplier = (int)msg->wParam;
++        if (multiplier >= 1 && multiplier <= XEMU_MAX_SPEED_MULTIPLIER) {
++            xemu_set_speed_multiplier(multiplier);
++        }
++        return false;
++    }
++
++    return true;
++}
++
++static void xgrid_speed_message_register(void)
++{
++    xgrid_speed_message = RegisterWindowMessageW(XGRID_SPEED_MESSAGE_NAME);
++    if (xgrid_speed_message != 0) {
++        SDL_SetWindowsMessageHook(xgrid_speed_message_hook, NULL);
++    }
++}
++#endif
++
+ struct xemu_console {
+     DisplayChangeListener dcl;
+     DisplaySurface *surface;
+@@ -410,6 +445,8 @@ static void process_key(struct xemu_console *scon, SDL_KeyboardEvent *ev)
+     qkbd_state_key_event(scon->kbd, qcode, ev->type == SDL_EVENT_KEY_DOWN);
+ }
+ 
++static bool xgrid_speed_key_down;
++
+ static void handle_keydown(SDL_Event *ev)
+ {
+     int win;
+@@ -418,6 +455,22 @@ static void handle_keydown(SDL_Event *ev)
+     int gui_key_modifier_pressed = get_mod_state();
+     int gui_keysym = 0;
+ 
++    /*
++     * XGrid: Space is reserved for fast-forward. The shell normally receives
++     * it, but the core's own window also gets it when it has focus (standalone
++     * launches, Linux/macOS and a focusable Chihiro picture). Toggle the same
++     * 1x/4x pace and consume the key so the guest never sees it.
++     */
++    if (!gui_key_modifier_pressed && ev->key.scancode == SDL_SCANCODE_SPACE) {
++        if (!ev->key.repeat) {
++            xemu_set_speed_multiplier(xemu_get_speed_multiplier() > 1
++                                          ? 1
++                                          : 4);
++            xgrid_speed_key_down = true;
++        }
++        return;
++    }
++
+     if (!scon->ignore_hotkeys && gui_key_modifier_pressed && !ev->key.repeat) {
+         switch (ev->key.scancode) {
+         case SDL_SCANCODE_2:
+@@ -475,6 +528,11 @@ static void handle_keyup(SDL_Event *ev)
+     struct xemu_console *scon = get_scon_from_window(ev->key.windowID);
+     if (!scon) return;
+ 
++    if (xgrid_speed_key_down && ev->key.scancode == SDL_SCANCODE_SPACE) {
++        xgrid_speed_key_down = false;
++        return;
++    }
++
+     scon->ignore_hotkeys = false;
+     process_key(scon, &ev->key);
+ }
+@@ -864,15 +922,109 @@ static void report_stats(void)
+ }
+ #endif
+ 
++/*
++ * XGrid presentation pacing.
++ *
++ * The guest's vblank thread decides when new guest frames exist; this loop
++ * decides how often the core presents the latest one. Without a limit the
++ * historical behavior is kept: every loop iteration presents. With a limit the
++ * loop waits for the next deadline, and frame skipping can drop a missed
++ * backlog so a slow host is not presented a burst of stale frames.
++ *
++ * The limit scales with fast-forward: a 60 fps choice presents up to 240 fps at
++ * 4x so fast-forward still looks like fast-forward instead of a 60 fps slideshow.
++ */
++static int64_t present_next_ns;
++static int64_t present_interval_ns;
++
++static int64_t present_target_interval_ns(int limit)
++{
++    int speed = qatomic_read(&xemu_speed_multiplier);
++    int64_t effective = (int64_t)limit * (speed > 0 ? speed : 1);
++
++    if (effective <= 0) {
++        return 0;
++    }
++    if (effective > 1000) {
++        effective = 1000;
++    }
++
++    return 1000000000LL / effective;
++}
++
++static void present_reconfigure(int64_t interval_ns)
++{
++    if (interval_ns == present_interval_ns) {
++        return;
++    }
++
++    present_interval_ns = interval_ns;
++    present_next_ns = 0;
++}
++
++static int64_t present_delay_ns(int64_t now)
++{
++    if (present_interval_ns <= 0) {
++        return 0;
++    }
++    if (present_next_ns == 0) {
++        present_next_ns = now;
++    }
++
++    return present_next_ns > now ? present_next_ns - now : 0;
++}
++
++static bool present_due(int64_t now)
++{
++    if (present_interval_ns <= 0) {
++        return true;
++    }
++    if (present_next_ns == 0) {
++        present_next_ns = now;
++    }
++    if (now < present_next_ns) {
++        return false;
++    }
++
++    /*
++     * More than one whole interval late means the host missed a frame. With
++     * skipping on, move the deadline to now and drop the backlog; otherwise
++     * leave it in the past so the next iterations catch up immediately.
++     */
++    if (xgrid_present_frame_skip() &&
++        now - present_next_ns >= present_interval_ns) {
++        present_next_ns = now;
++    }
++
++    return true;
++}
++
++static void present_advance(int64_t now)
++{
++    if (present_interval_ns <= 0) {
++        present_next_ns = 0;
++        return;
++    }
++
++    present_next_ns += present_interval_ns;
++
++    if (xgrid_present_frame_skip() && present_next_ns < now) {
++        present_next_ns = now + present_interval_ns;
++    }
++}
++
+ /**
+  * Renders the main interface. Usually called from the main thread,
+  * but may sometimes be called from another thread.
++ *
++ * Returns true when the picture was presented. A concurrent render (the
++ * resize/expose watch) reports false so the pacer still owns the deadline.
+  */
+-static void gl_render_frame(struct xemu_console *scon)
++static bool gl_render_frame(struct xemu_console *scon)
+ {
+     static bool rendering;
+     if (qatomic_xchg(&rendering, true) || qatomic_read(&qemu_exiting)) {
+-        return;
++        return false;
+     }
+ 
+     SDL_GL_MakeCurrent(scon->real_window, scon->winctx);
+@@ -905,13 +1057,23 @@ static void gl_render_frame(struct xemu_console *scon)
+         xemu_main_loop_unlock();
+     }
+ 
++    /*
++     * A clear only covers the scissor rectangle and only writes enabled color
++     * channels. The HUD and guest paths leave both in arbitrary states, and a
++     * native presentation target that is only partly cleared shows whatever
++     * the driver left in it. Reset the full-target state before the clear so
++     * every presented frame starts from a known opaque black surface.
++     */
++    glDisable(GL_SCISSOR_TEST);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++
+ #ifdef _WIN32
+     if (win32_dxgi_present_is_active()) {
+         win32_dxgi_present_begin_frame();
+     }
+ #endif
+ 
+-    glClearColor(0, 0, 0, 0);
++    glClearColor(0, 0, 0, 1);
+     glClear(GL_COLOR_BUFFER_BIT);
+     xemu_snapshots_set_framebuffer_texture(tex, flip_required);
+     xemu_hud_set_framebuffer_texture(tex, flip_required);
+@@ -970,6 +1132,7 @@ static void gl_render_frame(struct xemu_console *scon)
+ #if DEBUG_XEMU_C
+     report_stats();
+ #endif
++    return true;
+ }
+ 
+ static bool event_watch_callback(void *userdata, SDL_Event *event)
+@@ -1078,6 +1241,10 @@ static bool display_very_early_init(DisplayOptions *o)
+         return false;
+     }
+ 
++#ifdef _WIN32
++    xgrid_speed_message_register();
++#endif
++
+ #ifdef SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR /* only available since SDL 2.0.8 */
+     SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
+ #endif
+@@ -1552,7 +1719,26 @@ int xemu_run(int argc, char **argv, bool library_mode)
+             qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
+         }
+         poll_events(scon);
+-        gl_render_frame(scon);
++
++        /*
++         * Pace presentation from the core, never from the frontend. The
++         * guest keeps running at its own pace; the limit only decides how
++         * often the latest guest picture is sampled and presented.
++         */
++        int frame_limit = xgrid_present_frame_limit();
++        present_reconfigure(frame_limit > 0
++                                ? present_target_interval_ns(frame_limit)
++                                : 0);
++        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
++        int64_t delay = present_delay_ns(now);
++        if (delay > 0) {
++            SDL_DelayPrecise(delay);
++            now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
++        }
++
++        if (present_due(now) && gl_render_frame(scon)) {
++            present_advance(now);
++        }
+     }
+     qemu_sem_post(&display_shutdown_sem);
+     qemu_thread_join(&thread);
+diff --git a/xemu/ui/xui/gl-helpers.cc b/xemu/ui/xui/gl-helpers.cc
+index 83f86be0..887daeeb 100644
+--- a/xemu/ui/xui/gl-helpers.cc
++++ b/xemu/ui/xui/gl-helpers.cc
+@@ -949,6 +949,16 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
+     break;
+     }
+ 
++    /*
++     * The display texture defaults to GL_REPEAT. A guest that renders fewer
++     * rows than its declared VGA height, or an interlace/line-offset change,
++     * can push the bottom sample outside 0..1 and wrap in stale rows. Clamp
++     * instead: a presentation edge may repeat the last valid row, but it can
++     * never sample the opposite edge of the frame.
++     */
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++
+     int tw, th;
+     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+@@ -972,7 +982,9 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip, float scale[
+         glUniform1ui(s->palette_loc[i], e);
+     }
+ 
+-    glClearColor(0, 0, 0, 0);
++    glDisable(GL_SCISSOR_TEST);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++    glClearColor(0, 0, 0, 1);
+     glClear(GL_COLOR_BUFFER_BIT);
+ 
+     if (!nv2a_get_screen_off()) {
+diff --git a/xemu/ui/xui/win32-dxgi-present.cc b/xemu/ui/xui/win32-dxgi-present.cc
+index df6139be..6137754d 100644
+--- a/xemu/ui/xui/win32-dxgi-present.cc
++++ b/xemu/ui/xui/win32-dxgi-present.cc
+@@ -131,6 +131,7 @@ private:
+     ComPtr<ID3D11DeviceContext> m_d3d_context;
+     ComPtr<IDXGISwapChain1> m_swap_chain;
+     ComPtr<ID3D11Texture2D> m_shared_texture;
++    ComPtr<ID3D11RenderTargetView> m_shared_rtv;
+ 
+     HANDLE m_wgl_device = nullptr;
+     HANDLE m_wgl_object = nullptr;
+@@ -187,6 +188,7 @@ void Win32DxgiPresenter::ReleaseSharedResources()
+         m_interop_fbo = 0;
+         m_interop_rbo = 0;
+         m_wgl_object = nullptr;
++        m_shared_rtv.Reset();
+         m_shared_texture.Reset();
+         return;
+     }
+@@ -217,6 +219,7 @@ void Win32DxgiPresenter::ReleaseSharedResources()
+         m_interop_rbo = 0;
+     }
+ 
++    m_shared_rtv.Reset();
+     m_shared_texture.Reset();
+ }
+ 
+@@ -293,6 +296,22 @@ bool Win32DxgiPresenter::CreateSharedResources(int width, int height)
+         return false;
+     }
+ 
++    res = m_d3d_device->CreateRenderTargetView(m_shared_texture.Get(), nullptr,
++                                               &m_shared_rtv);
++    if (FAILED(res)) {
++        fprintf(stderr,
++                "win32_dxgi_present: Failed to create the shared-texture "
++                "render target view (hr=0x%08lX)\n",
++                (unsigned long)res);
++        ReleaseSharedResources();
++        return false;
++    }
++
++    /* A resize allocates a new texture; initialize the whole surface so a
++     * failed or partial first blit can never present driver garbage. */
++    const float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
++    m_d3d_context->ClearRenderTargetView(m_shared_rtv.Get(), black);
++
+     /* NVIDIA's interop2 sample registers the D3D11 render target as a
+      * renderbuffer: newer drivers reject an interop texture as an FBO
+      * attachment with GL_FRAMEBUFFER_UNSUPPORTED. The object must also be
+@@ -586,6 +605,22 @@ void Win32DxgiPresenter::BeginFrame()
+         return;
+     }
+ 
++    /*
++     * The shell reparents and resizes the core window asynchronously. An SDL
++     * resize event can be missed or arrive after the render loop already has
++     * the new client size, which used to leave the FBO and the swap chain at
++     * different sizes and expose an uninitialized band at the bottom of the
++     * picture. Reconcile against SDL's authoritative pixel size every frame.
++     */
++    int window_width = 0;
++    int window_height = 0;
++    if (m_window &&
++        SDL_GetWindowSizeInPixels(m_window, &window_width, &window_height) &&
++        window_width > 0 && window_height > 0 &&
++        (window_width != m_width || window_height != m_height)) {
++        PerformResize(window_width, window_height);
++    }
++
+     uint64_t packed_size =
+         m_pending_size.exchange(0, std::memory_order_acq_rel);
+     if (packed_size) {
+@@ -603,6 +638,14 @@ void Win32DxgiPresenter::BeginFrame()
+ 
+     glBindFramebuffer(GL_FRAMEBUFFER, m_render_fbo);
+     glViewport(0, 0, m_width, m_height);
++
++    /* Scissor and color-mask state belong to the previous frame's guest/HUD
++     * draw. Clear the entire render target so a partly covered frame cannot
++     * leave stale or uninitialized pixels anywhere in the window. */
++    glDisable(GL_SCISSOR_TEST);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
++    glClear(GL_COLOR_BUFFER_BIT);
+ }
+ 
+ void Win32DxgiPresenter::EndFrame(bool vsync)

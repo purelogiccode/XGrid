@@ -73,6 +73,21 @@ XGRID_CORE_EXPORT int xgrid_core_set_present_filter(int filter);
 /** Enables (non-zero) or disables the core-drawn frame-rate overlay. */
 XGRID_CORE_EXPORT void xgrid_core_set_fps_overlay(int enabled);
 
+/**
+ * Caps presented frames per second. 0 keeps the historical unlimited pace;
+ * 1..1000 limits how often the core presents the latest guest picture.
+ *
+ * @return 0 when accepted, -1 for a value outside 0..1000.
+ */
+XGRID_CORE_EXPORT int xgrid_core_set_fps_limit(int fps);
+
+/**
+ * Enables (non-zero) or disables frame skipping. When on, a presenter that
+ * missed a deadline drops the missed frames instead of presenting them in a
+ * burst. It only applies while a frame-rate limit is set.
+ */
+XGRID_CORE_EXPORT void xgrid_core_set_frame_skip(int enabled);
+
 /** Selects embedding before the core creates its window. */
 XGRID_CORE_EXPORT void xgrid_core_set_embed(int enabled);
 

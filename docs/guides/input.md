@@ -88,8 +88,9 @@ These are shell shortcuts, not gamepad bindings:
 | `Ctrl+E` | Eject the inserted disc |
 | `Ctrl+S` | Save settings (Settings page) |
 
-Pause, frame step and fast-forward need in-process core hosting, like save
-states.
+Pause and frame step need in-process core hosting, like save states. Fast-forward
+works in both hosting modes; when the core's own window has focus, it also
+handles Space itself.
 
 See [Keyboard shortcuts](../reference/shortcuts.md) for the full list.
 

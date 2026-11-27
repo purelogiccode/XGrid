@@ -99,7 +99,7 @@ public sealed class XemuWindowEmbedder : IDisposable
         {
             // A Chihiro reads SDL input directly; clicking the picture must
             // focus the core so the cabinet keys and gamepad reach it.
-            exStyle &= ~Win32Window.WsExNoActivate;
+            exStyle &= ~(Win32Window.WsExNoActivate | Win32Window.WsExTransparent);
         }
         else
         {
@@ -107,7 +107,13 @@ public sealed class XemuWindowEmbedder : IDisposable
             // pad poll are what publish Xbox input; if a click on the picture
             // activated the core window, the shell would see the main window as
             // inactive and publish neutral pads.
-            exStyle |= Win32Window.WsExNoActivate;
+            //
+            // Transparent hit-testing is required as well: a child window can
+            // still take keyboard focus on a click without activating, which
+            // would send Space straight to the guest and hide the shell's
+            // fast-forward shortcut. Mouse clicks now reach the Avalonia host,
+            // and focus stays on the shell.
+            exStyle |= Win32Window.WsExNoActivate | Win32Window.WsExTransparent;
         }
         _ = Win32Window.SetWindowLongW(child, Win32Window.GwlExStyle, unchecked((int)exStyle));
 

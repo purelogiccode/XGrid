@@ -209,6 +209,14 @@ public sealed class XemuCoreSession : IDisposable
         TryEmbed();
     }
 
+    /// <summary>Sets the presentation pace for a running core (1 is real time).</summary>
+    /// <param name="multiplier">Speed multiplier from 1 to 8.</param>
+    /// <returns>True when the running core accepted the change.</returns>
+    public bool TrySetSpeed(int multiplier)
+    {
+        return _runtime?.TrySetSpeed(multiplier) == true;
+    }
+
     /// <summary>Selects the core-side presentation filter for a running core.</summary>
     /// <param name="filter">Filter key (nearest, bilinear, scanline, crt).</param>
     /// <returns>True when the running core accepted the change.</returns>
@@ -223,6 +231,22 @@ public sealed class XemuCoreSession : IDisposable
     public bool TrySetFpsOverlay(bool enabled)
     {
         return _runtime?.TrySetFpsOverlay(enabled) == true;
+    }
+
+    /// <summary>Caps presented frames per second (0 is unlimited).</summary>
+    /// <param name="fps">Frame-rate limit.</param>
+    /// <returns>True when the running core accepted the change.</returns>
+    public bool TrySetFrameRateLimit(int fps)
+    {
+        return _runtime?.TrySetFrameRateLimit(fps) == true;
+    }
+
+    /// <summary>Enables or disables dropping missed presentation deadlines.</summary>
+    /// <param name="enabled">True to skip missed frames.</param>
+    /// <returns>True when the running core accepted the change.</returns>
+    public bool TrySetFrameSkip(bool enabled)
+    {
+        return _runtime?.TrySetFrameSkip(enabled) == true;
     }
 
     /// <summary>Queues a core-side screenshot of the running picture.</summary>

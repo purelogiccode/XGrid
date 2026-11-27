@@ -106,8 +106,8 @@ Starting from the xemu 0.8.139 baseline, XGrid has added:
   snapshots;
 - real-time **ISO/XISO, CHD, CCI and ZArchive** block drivers with XGD partition
   detection;
-- core-side **presentation filters, FPS overlay, screenshots and a headless
-  display sink**;
+- core-side **presentation filters, FPS overlay, frame-rate limit, frame skip,
+  screenshots and a headless display sink**;
 - **pause, frame step and 1–8× fast-forward** driven from the shell (the UI
   exposes 4×);
 - four **save-state slots** and the automatic session state;

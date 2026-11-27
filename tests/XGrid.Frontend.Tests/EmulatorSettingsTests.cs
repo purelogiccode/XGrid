@@ -109,6 +109,51 @@ public sealed class EmulatorSettingsTests
     }
 
     [Fact]
+    public void GraphicsNormalizeKeepsSupportedFrameRateLimits()
+    {
+        var graphics = new GraphicsSettings
+        {
+            FrameRateLimit = 60,
+            FrameSkip = true,
+        };
+
+        graphics.Normalize();
+
+        Assert.Equal(60, graphics.FrameRateLimit);
+        Assert.True(graphics.FrameSkip);
+    }
+
+    [Fact]
+    public void GraphicsNormalizeRepairsAnUnsupportedFrameRateLimit()
+    {
+        var graphics = new GraphicsSettings { FrameRateLimit = 75 };
+
+        graphics.Normalize();
+
+        Assert.Equal(0, graphics.FrameRateLimit);
+    }
+
+    [Fact]
+    public void GraphicsCloneCopiesThePresentationPacing()
+    {
+        var graphics = new GraphicsSettings
+        {
+            FrameRateLimit = 120,
+            FrameSkip = true,
+        };
+
+        GraphicsSettings copy = graphics.Clone();
+
+        Assert.Equal(120, copy.FrameRateLimit);
+        Assert.True(copy.FrameSkip);
+
+        graphics.FrameRateLimit = 30;
+        graphics.FrameSkip = false;
+        Assert.Equal(120, copy.FrameRateLimit);
+        Assert.True(copy.FrameSkip);
+    }
+
+    [Fact]
     public void WithTitleOverrideInheritsEverythingWhenThereIsNoRow()
     {
         var settings = new EmulatorSettings { RamMb = 128 };

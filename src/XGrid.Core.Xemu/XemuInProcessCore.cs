@@ -78,6 +78,8 @@ public sealed class XemuInProcessCore : IDisposable
     private readonly NoArgIntDelegate? _getSpeed;
     private readonly IntValueDelegate? _setPresentFilter;
     private readonly VoidIntDelegate? _setFpsOverlay;
+    private readonly IntValueDelegate? _setFpsLimit;
+    private readonly VoidIntDelegate? _setFrameSkip;
     private readonly VoidIntDelegate? _setEmbed;
     private readonly NoArgIntDelegate? _requestScreenshot;
     private readonly NameRequestDelegate? _discLoad;
@@ -124,6 +126,8 @@ public sealed class XemuInProcessCore : IDisposable
             // cores simply ignore the selection.
             _setPresentFilter = TryGet<IntValueDelegate>("xgrid_core_set_present_filter");
             _setFpsOverlay = TryGet<VoidIntDelegate>("xgrid_core_set_fps_overlay");
+            _setFpsLimit = TryGet<IntValueDelegate>("xgrid_core_set_fps_limit");
+            _setFrameSkip = TryGet<VoidIntDelegate>("xgrid_core_set_frame_skip");
             _setEmbed = TryGet<VoidIntDelegate>("xgrid_core_set_embed");
             _requestScreenshot = TryGet<NoArgIntDelegate>("xgrid_core_request_screenshot");
 
@@ -175,6 +179,12 @@ public sealed class XemuInProcessCore : IDisposable
     /// <summary>Gets a value indicating whether the core draws the frame-rate overlay.</summary>
     public bool SupportsFpsOverlay => _setFpsOverlay is not null;
 
+    /// <summary>Gets a value indicating whether the core can cap presented frames.</summary>
+    public bool SupportsFrameRateLimit => _setFpsLimit is not null;
+
+    /// <summary>Gets a value indicating whether the core can drop missed frames.</summary>
+    public bool SupportsFrameSkip => _setFrameSkip is not null;
+
     /// <summary>Gets a value indicating whether the core can capture its picture.</summary>
     public bool SupportsScreenshot => _requestScreenshot is not null;
 
@@ -215,6 +225,28 @@ public sealed class XemuInProcessCore : IDisposable
         }
 
         _setFpsOverlay(enabled ? 1 : 0);
+        return true;
+    }
+
+    /// <summary>Caps presented frames per second (0 is unlimited).</summary>
+    /// <param name="fps">Frame-rate limit.</param>
+    /// <returns>True when the running core accepted the value.</returns>
+    public bool SetFrameRateLimit(int fps)
+    {
+        return _setFpsLimit is not null && _setFpsLimit(fps) == 0;
+    }
+
+    /// <summary>Enables or disables dropping missed presentation deadlines.</summary>
+    /// <param name="enabled">True to skip missed frames.</param>
+    /// <returns>True when the running core supports frame skipping.</returns>
+    public bool SetFrameSkip(bool enabled)
+    {
+        if (_setFrameSkip is null)
+        {
+            return false;
+        }
+
+        _setFrameSkip(enabled ? 1 : 0);
         return true;
     }
 

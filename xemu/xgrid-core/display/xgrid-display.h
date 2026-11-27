@@ -55,6 +55,34 @@ void xgrid_present_set_overlay(bool enabled);
 bool xgrid_present_overlay(void);
 
 /**
+ * Selects the presentation frame-rate limit. 0 means unlimited (the render
+ * thread presents as often as the host allows); 1..1000 caps presented frames
+ * per second. The guest's own clock and vblank pace are unchanged: the limit
+ * only decides how often the core samples and presents the latest picture.
+ *
+ * Returns -1 for a value outside 0..1000.
+ */
+int xgrid_present_set_frame_limit(int fps);
+
+/**
+ * Returns the active frame-rate limit (0 is unlimited). The in-process ABI or
+ * XGRID_FPS_LIMIT selects it; an unconfigured launch is unlimited so the core
+ * keeps its historical behavior.
+ */
+int xgrid_present_frame_limit(void);
+
+/**
+ * Enables or disables frame skipping. With skipping on, a presenter that
+ * missed a deadline drops the backlog and resumes at the next interval instead
+ * of presenting the missed frames in a burst. It has no effect while the frame
+ * limit is unlimited.
+ */
+void xgrid_present_set_frame_skip(bool enabled);
+
+/** Returns true when missed presentations may be dropped. */
+bool xgrid_present_frame_skip(void);
+
+/**
  * Returns true when the shell will embed the core window (XGRID_EMBED) or the
  * in-process ABI selected embedding before the machine started.
  */

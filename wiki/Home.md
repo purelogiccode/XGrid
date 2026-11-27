@@ -16,7 +16,7 @@ display/input plumbing, screenshots and packaging.
 | [Game library](Game-Library) | Scan folders, search, favorites, play time and covers. |
 | [Playing games](Playing-Games) | Power, pause, fast-forward, disc swap and screenshots. |
 | [Settings](Settings) | Every tab and option. |
-| [Display and filters](Display-and-Filters) | Embedded window, core filters, FPS overlay, fullscreen. |
+| [Display and filters](Display-and-Filters) | Embedded window, core filters, FPS overlay, frame-rate limit/skip, fullscreen. |
 | [Input](Input) | Keyboard defaults, XInput players 1–4, dead zones. |
 | [Audio](Audio) | Backends, DSP, HRTF and WAV capture. |
 | [Save states](Save-States) | Four slots, F6/F7 and the in-process requirement. |

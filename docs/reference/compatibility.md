@@ -48,9 +48,9 @@ point, but XGrid's patches and media drivers can change the result.
 
 | Limitation | Detail |
 | --- | --- |
-| **Windows is the integrated emulation host** | In-process hosting, embedded picture, save states, pause/step, fast-forward, live disc swap and shell-mapped pads are Windows-only. The `linux-x64` archive bundles the standalone core, which presents and reads input through its own window; headless runs use the shared-memory sink there too. macOS archives contain the shell only. |
+| **Windows is the integrated emulation host** | In-process hosting, embedded picture, save states, pause/step, live disc swap and shell-mapped pads are Windows-only. The `linux-x64` archive bundles the standalone core, which presents and reads input through its own window; headless runs use the shared-memory sink there too. macOS archives contain the shell only. |
 | **Save states are in-process only** | The separate-process host has no ABI for snapshot control, so manual slots and automatic session save/resume require in-process hosting. |
-| **Pause, frame stepping, fast-forward and disc swap need in-process hosting** | On Linux, power off before changing a disc. |
+| **Pause, frame stepping and disc swap need in-process hosting** | Fast-forward also works in a separate process through the core window on Windows. On Linux, power off before changing a disc and use the core's own window for Space fast-forward. |
 | **QEMU state is single-use in-process** | One machine per shell. A later launch falls back to a separate process until XGrid restarts. |
 | **ZArchive file-tree names** | The synthesizer uses XDVDFS rules: Latin-1, up to 42 characters, no separators. Entry-form archives have no such limit. |
 | **No shell netplay UI** | The core may support netplay, but the shell does not expose it. |

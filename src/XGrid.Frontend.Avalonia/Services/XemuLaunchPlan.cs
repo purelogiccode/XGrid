@@ -139,6 +139,8 @@ public static class XemuLaunchPlan
                 : hostInput ? XemuInputSink.CreateName() : string.Empty,
             PresentationFilter = XemuPresentationFilter.Normalize(settings.Filter),
             FpsOverlay = settings.ShowFpsOverlay,
+            FrameRateLimit = settings.Graphics.FrameRateLimit,
+            FrameSkip = settings.Graphics.FrameSkip,
             WorkingDirectory = workingDirectory,
             // The core writes in-process captures; the shell only lists them.
             ScreenshotDirectory = Path.Combine(

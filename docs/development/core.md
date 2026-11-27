@@ -150,6 +150,20 @@ extension names: `.chd` uses `xgridchd`, `.cci` uses `xgridcci`, `.zar` uses
 `xgridzar`, and `.iso`/`.xiso` use `xgridiso`. The tray is cycled so Xbox
 software notices the change; no power cycle is involved.
 
+Presentation functions:
+
+```c
+int  xgrid_core_set_present_filter(int filter);
+void xgrid_core_set_fps_overlay(int enabled);
+int  xgrid_core_set_fps_limit(int fps);
+void xgrid_core_set_frame_skip(int enabled);
+```
+
+`xgrid_core_set_fps_limit` accepts 0 for the historical unlimited pace or a
+1..1000 frames-per-second cap. Frame skipping drops missed presentation
+deadlines instead of presenting a catch-up burst and only applies with a limit.
+The pacing lives in the core's render loop; the guest clock is unchanged.
+
 Screenshot requests are queued on the core's render loop:
 
 ```c
@@ -166,8 +180,14 @@ the fallback when the display sink is off, because then no frame is published.
 
 The speed multiplier scales the guest's `QEMU_CLOCK_VIRTUAL` and the vblank pace
 together, so the vCPU timers, the Xbox TSC and the presented frame rate all run
-at the same faster pace. The value is atomic, so the shell can set 4× while the
-core reads it. The shell returns to 1× on the next toggle, pause or session end.
+at the same faster pace. The scale update is queued on the core's main loop, and
+`system/cpus.c` publishes the scale/base/anchor triple through a seqlock so the
+timer and vCPU readers never see a torn value. The shell returns to 1× on the
+next toggle, pause or session end.
+
+A separate core process has no ABI. It handles the registered `XGrid.SetSpeed`
+window message and applies the same multiplier, so the shell's Space/4× control
+works in both hosting modes on Windows.
 
 One process hosts one machine. Start is accepted once; join releases the thread
 handle after the run loop stops.

@@ -2,7 +2,9 @@
 
 The Settings page is a draft editor. Change values, then click **Save settings**
 (or **Ctrl+S** while the page is open). Emulator settings apply on the next
-power-on; session stop/close choices apply immediately.
+power-on; session stop/close choices apply immediately. The FPS overlay toggle
+applies immediately, and the presentation filter, frame-rate limit and frame-skip
+choice apply live with in-process hosting.
 
 ## System
 
@@ -41,9 +43,10 @@ power-on; session stop/close choices apply immediately.
 
 - **Emulator binary** — optional explicit core path.
 - **Guest memory** — 64 MB retail, 128 MB debug kit.
-- **Core hosting** — **In-process (recommended, Windows)** enables save states,
-  pause/step, fast-forward and disc swap, but hosts one machine per shell;
-  **Separate process** can start a new machine every time and isolates a crash.
+- **Core hosting** - **In-process (recommended, Windows)** enables save states,
+  pause/step and disc swap, but hosts one machine per shell; **Separate process**
+  can start a new machine every time and isolates a crash. Fast-forward works in
+  both modes (ABI or the core window's speed message).
 
 ## Graphics
 
@@ -53,7 +56,11 @@ power-on; session stop/close choices apply immediately.
 - **Texture filtering** — Linear or Nearest.
 - **Window startup size**, **Vertical sync**, **Start fullscreen**,
   **Exclusive fullscreen**.
-- **Aspect ratio** — Auto, Native, 4:3, 16:9.
+- **Frame-rate overlay** - present rate and frame time over the picture.
+- **Frame-rate limit** - Unlimited or 30/60/90/120/144/240 fps. Presentation only;
+  the guest clock is unchanged and fast-forward scales the limit.
+- **Skip missed frames** - drop late presentations when a limit is set.
+- **Aspect ratio** - Auto, Native, 4:3, 16:9.
 - **Fit mode** — Scale, Center, Stretch.
 - **AV pack** — HDTV, Composite, S-Video, SCART, VGA, RFU, None.
 - **Presentation filter** — Nearest, Bilinear, Scanlines, CRT mask; applied by

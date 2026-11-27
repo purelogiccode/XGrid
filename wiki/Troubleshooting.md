@@ -31,8 +31,9 @@ Separate-process mode also writes `<data>/xemu/xemu.log`.
 | Symptom | Fix |
 | --- | --- |
 | Black display | Wait for the core; check Activity; try OpenGL and scale 1. |
+| Colored/stale bottom band after resize | Update the core; the window now reconciles sizes, clears the full target and clamps edge sampling. |
 | No filters | Relaunch the separate process; in-process applies live. |
-| Low FPS | Scale 1, OpenGL, close background work. |
+| Low FPS | Scale 1, OpenGL, close background work; try a 60 fps limit with **Skip missed frames**. |
 | Vulkan missing | Build has no Vulkan; use OpenGL. |
 | Headless no frames | Use the XGrid core; try `--renderer OPENGL`. |
 

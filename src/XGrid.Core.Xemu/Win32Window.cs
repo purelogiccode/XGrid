@@ -34,6 +34,7 @@ internal static partial class Win32Window
     internal const uint WsExClientEdge = 0x00000200;
     internal const uint WsExDlgModalFrame = 0x00000001;
     internal const uint WsExToolWindow = 0x00000080;
+    internal const uint WsExTransparent = 0x00000020;
     internal const uint WsExNoActivate = 0x08000000;
 
     internal const uint SwpNoZOrder = 0x0004;
@@ -55,6 +56,9 @@ internal static partial class Win32Window
 
     [LibraryImport("user32.dll")]
     internal static partial IntPtr GetParent(IntPtr hWnd);
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    internal static partial uint RegisterWindowMessageW(string name);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

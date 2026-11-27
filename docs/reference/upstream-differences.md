@@ -18,7 +18,7 @@ described in the guides.
 | XGrid core | xemu 0.8.139 lineage + XGrid changes in `xemu/`, now evolving separately |
 | Recorded upstream commit | `aa54c34cae1c09410d74c69a44210a9867fe2d16` (`xemu/XEMU_COMMIT`) |
 | XGrid-native code | `xemu/xgrid-core/` |
-| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`–`0019`; 13 files) |
+| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`–`0020`; 14 files) |
 | Ported arcade machine | `xemu/hw/xbox/chihiro/` |
 | Third-party notices | `THIRD_PARTY_NOTICES.md`, `docs/legal/licensing.md` |
 
@@ -30,9 +30,9 @@ comparison, not a claim that every changed line is listed.
 
 | Measure | Count |
 | --- | --- |
-| Existing upstream source/build files changed | 37 |
-| Lines added/removed in those files | about +4,187 / −103 |
-| Patch files in the current record | 13 |
+| Existing upstream source/build files changed | 38 |
+| Lines added/removed in those files | about +4,400 / −120 |
+| Patch files in the current record | 14 |
 | New Sega Chihiro files | 34 |
 | New Direct3D 11 and HLSL files | 24 |
 | Files under `xemu/xgrid-core/` (including vendored libchdr/libCCI) | 82 |
@@ -50,7 +50,7 @@ hooks.
 | **Media** | ISO/XISO and raw block images | ISO/XISO, CHD, CCI and ZArchive drivers with XGD offset detection |
 | **Renderers** | OpenGL, Vulkan, NULL | OpenGL, Vulkan, NULL **plus** Direct3D 11 preview |
 | **Input** | SDL keyboard/gamepad | SDL **plus** the shell's four-port shared section; Chihiro JVS and light guns |
-| **Fast-forward** | Standalone emulation speed only | 1–8× vblank pace and guest virtual-clock scale; the shell uses 4× |
+| **Fast-forward** | Standalone emulation speed only | 1–8× vblank pace and guest virtual-clock scale; the shell uses 4× and can reach both hosting modes |
 | **Save states** | Core snapshot UI | Core snapshots exposed through the shell ABI as four slots and a session state |
 | **Machines** | Xbox | Xbox **plus** Sega Chihiro media board, DIMM, JVS, cards and netboard |
 | **Audio** | QEMU audio backends | Backends **plus** DirectSound device GUIDs and the `-audio-drivers` probe |
@@ -73,6 +73,7 @@ hooks.
 | `0017-core-audio-device.patch` | DirectSound device GUID and audio-driver probe | `qapi/audio.json`, `audio/dsoundaudio.c`, `ui/xemu.c` |
 | `0018-core-chihiro.patch` | Sega Chihiro machine, boards, JVS, cards, guns, force feedback and netboard | `block/meson.build`, `config_spec.yml`, `hw/ide/core.c`, `hw/usb/hcd-ohci.c`, `hw/xbox/*`, `system/vl.c`, `ui/*`, `ui/xui/*` |
 | `0019-block-snapshot-skip-nonsnapshot.patch` | Let the all-device snapshot path skip devices that cannot snapshot (Chihiro DIMM) | `block/snapshot.c` |
+| `0020-ui-frame-pacing-and-clear.patch` | Core presentation frame limit/skip, safe fast-forward clock update, Space handling, and full-target clear/edge clamp for the embedded picture | `hw/xbox/nv2a/pgraph/gl/display.c`, `system/cpus.c`, `ui/xemu.c`, `ui/xui/gl-helpers.cc`, `ui/xui/win32-dxgi-present.cc` |
 
 Some files appear in more than one patch because they carry more than one
 feature. The patch files are the provenance record for edits to existing
@@ -189,13 +190,16 @@ selection. XGrid keeps the picture in the core and adds:
 
 - nearest, bilinear, scanline and CRT presentation filters in the final blit;
 - an ImGui FPS/frame-time overlay drawn by the core;
+- a core-side presentation pacer with an unlimited or fixed frame-rate limit and
+  optional skipping of missed presentation deadlines;
 - a headless `XGDS` sink for frame counting;
 - a core-side screenshot request that writes the PNG without the shell reading
   a frame.
 
-The shell selects the filter/overlay through the ABI (or
-`XGRID_PRESENT_FILTER`/`XGRID_FPS_OVERLAY` for a separate process). No shell
-frame canvas or per-frame Avalonia copy exists.
+The shell selects the filter/overlay/pacing through the ABI (or
+`XGRID_PRESENT_FILTER`/`XGRID_FPS_OVERLAY`/`XGRID_FPS_LIMIT`/`XGRID_FRAME_SKIP`
+for a separate process). No shell frame canvas or per-frame Avalonia copy
+exists.
 
 ### Playback
 
@@ -204,7 +208,11 @@ Upstream's run loop has no shell-facing pause/step/speed ABI. XGrid adds:
 - pause/resume queued on the core's main loop;
 - single-frame step while paused;
 - a 1–8× speed multiplier that scales `QEMU_CLOCK_VIRTUAL` and the vblank pace
-  together, so guest timers, the Xbox TSC and presentation all speed up;
+  together, so guest timers, the Xbox TSC and presentation all speed up; the
+  virtual-clock scale uses a seqlock because timer/vCPU threads read it while the
+  shell changes it;
+- a registered `XGrid.SetSpeed` window message so the separate process gets the
+  same live speed control without an ABI;
 - a 50 ms fallback when no display sink is publishing frames.
 
 The shell exposes 4× on `Space` or the toolbar button and restores 1× on the next

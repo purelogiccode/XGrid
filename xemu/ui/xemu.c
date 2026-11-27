@@ -65,6 +65,7 @@
 #include <SDL3/SDL.h>
 
 #ifdef _WIN32
+#include <windows.h>
 #include "xui/win32-dxgi-present.h"
 #endif
 
@@ -118,6 +119,40 @@ static int64_t vblank_interval_current_ns(void)
 {
     return vblank_interval_ns / qatomic_read(&xemu_speed_multiplier);
 }
+
+#ifdef _WIN32
+/*
+ * The shell has no ABI into a separate core process. It powers the same
+ * fast-forward control by posting this registered message to the core window;
+ * a window message needs no shared section and survives reparenting.
+ */
+#define XGRID_SPEED_MESSAGE_NAME L"XGrid.SetSpeed"
+
+static UINT xgrid_speed_message;
+
+static bool xgrid_speed_message_hook(void *userdata, MSG *msg)
+{
+    (void)userdata;
+
+    if (xgrid_speed_message != 0 && msg->message == xgrid_speed_message) {
+        int multiplier = (int)msg->wParam;
+        if (multiplier >= 1 && multiplier <= XEMU_MAX_SPEED_MULTIPLIER) {
+            xemu_set_speed_multiplier(multiplier);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+static void xgrid_speed_message_register(void)
+{
+    xgrid_speed_message = RegisterWindowMessageW(XGRID_SPEED_MESSAGE_NAME);
+    if (xgrid_speed_message != 0) {
+        SDL_SetWindowsMessageHook(xgrid_speed_message_hook, NULL);
+    }
+}
+#endif
 
 struct xemu_console {
     DisplayChangeListener dcl;
@@ -410,6 +445,8 @@ static void process_key(struct xemu_console *scon, SDL_KeyboardEvent *ev)
     qkbd_state_key_event(scon->kbd, qcode, ev->type == SDL_EVENT_KEY_DOWN);
 }
 
+static bool xgrid_speed_key_down;
+
 static void handle_keydown(SDL_Event *ev)
 {
     int win;
@@ -417,6 +454,22 @@ static void handle_keydown(SDL_Event *ev)
     if (scon == NULL) return;
     int gui_key_modifier_pressed = get_mod_state();
     int gui_keysym = 0;
+
+    /*
+     * XGrid: Space is reserved for fast-forward. The shell normally receives
+     * it, but the core's own window also gets it when it has focus (standalone
+     * launches, Linux/macOS and a focusable Chihiro picture). Toggle the same
+     * 1x/4x pace and consume the key so the guest never sees it.
+     */
+    if (!gui_key_modifier_pressed && ev->key.scancode == SDL_SCANCODE_SPACE) {
+        if (!ev->key.repeat) {
+            xemu_set_speed_multiplier(xemu_get_speed_multiplier() > 1
+                                          ? 1
+                                          : 4);
+            xgrid_speed_key_down = true;
+        }
+        return;
+    }
 
     if (!scon->ignore_hotkeys && gui_key_modifier_pressed && !ev->key.repeat) {
         switch (ev->key.scancode) {
@@ -474,6 +527,11 @@ static void handle_keyup(SDL_Event *ev)
 {
     struct xemu_console *scon = get_scon_from_window(ev->key.windowID);
     if (!scon) return;
+
+    if (xgrid_speed_key_down && ev->key.scancode == SDL_SCANCODE_SPACE) {
+        xgrid_speed_key_down = false;
+        return;
+    }
 
     scon->ignore_hotkeys = false;
     process_key(scon, &ev->key);
@@ -864,15 +922,109 @@ static void report_stats(void)
 }
 #endif
 
+/*
+ * XGrid presentation pacing.
+ *
+ * The guest's vblank thread decides when new guest frames exist; this loop
+ * decides how often the core presents the latest one. Without a limit the
+ * historical behavior is kept: every loop iteration presents. With a limit the
+ * loop waits for the next deadline, and frame skipping can drop a missed
+ * backlog so a slow host is not presented a burst of stale frames.
+ *
+ * The limit scales with fast-forward: a 60 fps choice presents up to 240 fps at
+ * 4x so fast-forward still looks like fast-forward instead of a 60 fps slideshow.
+ */
+static int64_t present_next_ns;
+static int64_t present_interval_ns;
+
+static int64_t present_target_interval_ns(int limit)
+{
+    int speed = qatomic_read(&xemu_speed_multiplier);
+    int64_t effective = (int64_t)limit * (speed > 0 ? speed : 1);
+
+    if (effective <= 0) {
+        return 0;
+    }
+    if (effective > 1000) {
+        effective = 1000;
+    }
+
+    return 1000000000LL / effective;
+}
+
+static void present_reconfigure(int64_t interval_ns)
+{
+    if (interval_ns == present_interval_ns) {
+        return;
+    }
+
+    present_interval_ns = interval_ns;
+    present_next_ns = 0;
+}
+
+static int64_t present_delay_ns(int64_t now)
+{
+    if (present_interval_ns <= 0) {
+        return 0;
+    }
+    if (present_next_ns == 0) {
+        present_next_ns = now;
+    }
+
+    return present_next_ns > now ? present_next_ns - now : 0;
+}
+
+static bool present_due(int64_t now)
+{
+    if (present_interval_ns <= 0) {
+        return true;
+    }
+    if (present_next_ns == 0) {
+        present_next_ns = now;
+    }
+    if (now < present_next_ns) {
+        return false;
+    }
+
+    /*
+     * More than one whole interval late means the host missed a frame. With
+     * skipping on, move the deadline to now and drop the backlog; otherwise
+     * leave it in the past so the next iterations catch up immediately.
+     */
+    if (xgrid_present_frame_skip() &&
+        now - present_next_ns >= present_interval_ns) {
+        present_next_ns = now;
+    }
+
+    return true;
+}
+
+static void present_advance(int64_t now)
+{
+    if (present_interval_ns <= 0) {
+        present_next_ns = 0;
+        return;
+    }
+
+    present_next_ns += present_interval_ns;
+
+    if (xgrid_present_frame_skip() && present_next_ns < now) {
+        present_next_ns = now + present_interval_ns;
+    }
+}
+
 /**
  * Renders the main interface. Usually called from the main thread,
  * but may sometimes be called from another thread.
+ *
+ * Returns true when the picture was presented. A concurrent render (the
+ * resize/expose watch) reports false so the pacer still owns the deadline.
  */
-static void gl_render_frame(struct xemu_console *scon)
+static bool gl_render_frame(struct xemu_console *scon)
 {
     static bool rendering;
     if (qatomic_xchg(&rendering, true) || qatomic_read(&qemu_exiting)) {
-        return;
+        return false;
     }
 
     SDL_GL_MakeCurrent(scon->real_window, scon->winctx);
@@ -905,13 +1057,23 @@ static void gl_render_frame(struct xemu_console *scon)
         xemu_main_loop_unlock();
     }
 
+    /*
+     * A clear only covers the scissor rectangle and only writes enabled color
+     * channels. The HUD and guest paths leave both in arbitrary states, and a
+     * native presentation target that is only partly cleared shows whatever
+     * the driver left in it. Reset the full-target state before the clear so
+     * every presented frame starts from a known opaque black surface.
+     */
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
 #ifdef _WIN32
     if (win32_dxgi_present_is_active()) {
         win32_dxgi_present_begin_frame();
     }
 #endif
 
-    glClearColor(0, 0, 0, 0);
+    glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     xemu_snapshots_set_framebuffer_texture(tex, flip_required);
     xemu_hud_set_framebuffer_texture(tex, flip_required);
@@ -970,6 +1132,7 @@ static void gl_render_frame(struct xemu_console *scon)
 #if DEBUG_XEMU_C
     report_stats();
 #endif
+    return true;
 }
 
 static bool event_watch_callback(void *userdata, SDL_Event *event)
@@ -1077,6 +1240,10 @@ static bool display_very_early_init(DisplayOptions *o)
                 SDL_GetError());
         return false;
     }
+
+#ifdef _WIN32
+    xgrid_speed_message_register();
+#endif
 
 #ifdef SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR /* only available since SDL 2.0.8 */
     SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
@@ -1552,7 +1719,26 @@ int xemu_run(int argc, char **argv, bool library_mode)
             qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
         }
         poll_events(scon);
-        gl_render_frame(scon);
+
+        /*
+         * Pace presentation from the core, never from the frontend. The
+         * guest keeps running at its own pace; the limit only decides how
+         * often the latest guest picture is sampled and presented.
+         */
+        int frame_limit = xgrid_present_frame_limit();
+        present_reconfigure(frame_limit > 0
+                                ? present_target_interval_ns(frame_limit)
+                                : 0);
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+        int64_t delay = present_delay_ns(now);
+        if (delay > 0) {
+            SDL_DelayPrecise(delay);
+            now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+        }
+
+        if (present_due(now) && gl_render_frame(scon)) {
+            present_advance(now);
+        }
     }
     qemu_sem_post(&display_shutdown_sem);
     qemu_thread_join(&thread);

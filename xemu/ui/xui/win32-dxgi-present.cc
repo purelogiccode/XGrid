@@ -131,6 +131,7 @@ private:
     ComPtr<ID3D11DeviceContext> m_d3d_context;
     ComPtr<IDXGISwapChain1> m_swap_chain;
     ComPtr<ID3D11Texture2D> m_shared_texture;
+    ComPtr<ID3D11RenderTargetView> m_shared_rtv;
 
     HANDLE m_wgl_device = nullptr;
     HANDLE m_wgl_object = nullptr;
@@ -187,6 +188,7 @@ void Win32DxgiPresenter::ReleaseSharedResources()
         m_interop_fbo = 0;
         m_interop_rbo = 0;
         m_wgl_object = nullptr;
+        m_shared_rtv.Reset();
         m_shared_texture.Reset();
         return;
     }
@@ -217,6 +219,7 @@ void Win32DxgiPresenter::ReleaseSharedResources()
         m_interop_rbo = 0;
     }
 
+    m_shared_rtv.Reset();
     m_shared_texture.Reset();
 }
 
@@ -292,6 +295,22 @@ bool Win32DxgiPresenter::CreateSharedResources(int width, int height)
         ReleaseSharedResources();
         return false;
     }
+
+    res = m_d3d_device->CreateRenderTargetView(m_shared_texture.Get(), nullptr,
+                                               &m_shared_rtv);
+    if (FAILED(res)) {
+        fprintf(stderr,
+                "win32_dxgi_present: Failed to create the shared-texture "
+                "render target view (hr=0x%08lX)\n",
+                (unsigned long)res);
+        ReleaseSharedResources();
+        return false;
+    }
+
+    /* A resize allocates a new texture; initialize the whole surface so a
+     * failed or partial first blit can never present driver garbage. */
+    const float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    m_d3d_context->ClearRenderTargetView(m_shared_rtv.Get(), black);
 
     /* NVIDIA's interop2 sample registers the D3D11 render target as a
      * renderbuffer: newer drivers reject an interop texture as an FBO
@@ -586,6 +605,22 @@ void Win32DxgiPresenter::BeginFrame()
         return;
     }
 
+    /*
+     * The shell reparents and resizes the core window asynchronously. An SDL
+     * resize event can be missed or arrive after the render loop already has
+     * the new client size, which used to leave the FBO and the swap chain at
+     * different sizes and expose an uninitialized band at the bottom of the
+     * picture. Reconcile against SDL's authoritative pixel size every frame.
+     */
+    int window_width = 0;
+    int window_height = 0;
+    if (m_window &&
+        SDL_GetWindowSizeInPixels(m_window, &window_width, &window_height) &&
+        window_width > 0 && window_height > 0 &&
+        (window_width != m_width || window_height != m_height)) {
+        PerformResize(window_width, window_height);
+    }
+
     uint64_t packed_size =
         m_pending_size.exchange(0, std::memory_order_acq_rel);
     if (packed_size) {
@@ -603,6 +638,14 @@ void Win32DxgiPresenter::BeginFrame()
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_render_fbo);
     glViewport(0, 0, m_width, m_height);
+
+    /* Scissor and color-mask state belong to the previous frame's guest/HUD
+     * draw. Clear the entire render target so a partly covered frame cannot
+     * leave stale or uninitialized pixels anywhere in the window. */
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 }
 
 void Win32DxgiPresenter::EndFrame(bool vsync)

@@ -45,6 +45,13 @@ public interface IXemuCoreRuntime : IDisposable
     void Start();
 
     /// <summary>
+    /// Sets the presentation pace (1 is real time, up to 8). Returns false when
+    /// this hosting mode cannot reach the running core's speed control.
+    /// </summary>
+    /// <param name="multiplier">Speed multiplier.</param>
+    bool TrySetSpeed(int multiplier);
+
+    /// <summary>
     /// Selects the core-side presentation filter. Returns false when this
     /// hosting mode cannot change it while the machine runs.
     /// </summary>
@@ -57,6 +64,20 @@ public interface IXemuCoreRuntime : IDisposable
     /// </summary>
     /// <param name="enabled">True to draw the overlay.</param>
     bool TrySetFpsOverlay(bool enabled);
+
+    /// <summary>
+    /// Caps presented frames per second (0 is unlimited). Returns false when
+    /// this hosting mode cannot change the limit while the machine runs.
+    /// </summary>
+    /// <param name="fps">Frame-rate limit.</param>
+    bool TrySetFrameRateLimit(int fps);
+
+    /// <summary>
+    /// Enables or disables dropping missed presentation deadlines. Returns
+    /// false when this hosting mode cannot change it while the machine runs.
+    /// </summary>
+    /// <param name="enabled">True to skip missed frames.</param>
+    bool TrySetFrameSkip(bool enabled);
 
     /// <summary>
     /// Asks the core to write a screenshot of the current picture. Returns
