@@ -1,0 +1,32 @@
+name: xemu upstream report
+
+# Checks the pinned upstream xemu revision and every git-backed Meson wrap.
+# It opens or updates one issue when something newer exists; it never changes
+# the tree. This runs on the LAN Linux runner, not a hosted runner.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: xemu-upstream-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Upstream and subproject report
+    if: github.repository == 'purelogiccode/XGrid'
+    runs-on: [self-hosted, Linux, X64, repofleet-ci]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check upstream xemu and Meson pin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 .github/scripts/xemu_upstream_report.py --publish
