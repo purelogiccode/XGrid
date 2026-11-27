@@ -338,6 +338,27 @@ We also thank the wider xemu community: the testers, compatibility reporters,
 documentation contributors and everyone who kept the project moving before the
 XGrid fork.
 
+### Sega Chihiro lineage
+
+The direct source of XGrid's Chihiro machine is the **xemu Chihiro fork
+(Playtest-v2)** snapshot in `References2/xemu-Playtest-v2`. The
+**XPSemu Chihiro alpha 2** fork was used as a cross-check and for later fixes.
+We thank:
+
+- **[Tovarichtch](https://github.com/Tovarichtch)** for the xemu Chihiro fork
+  (Playtest-v2) that supplied the machine.
+- **Réda Chérif-Touil**, whose copyright is carried by the Chihiro source files.
+- **espes** and **Matt Borgerson**, whose earlier QEMU Chihiro, USB and Xbox
+  code is carried in the same source files.
+- **[tattoohanz](https://github.com/tattoohanz)** for maintaining the XPSemu
+  Chihiro fork used as a cross-check.
+- **[ZiZc3](https://github.com/ZiZc3)** for [XPSemu](https://github.com/ZiZc3/XPSemu),
+  the PS5 port on which that fork is built, and everyone in XPSemu's credits.
+- **The MAME contributors** whose tables and routines are used by the Chihiro
+  devices: Samuele Zannoli, R. Belmont, ElSemi, David Haywood, Angelo Salese,
+  Olivier Galibert and MetalliC. The DES routines come from Olivier Galibert's
+  MAME `naomigd.cpp` (BSD-3-Clause), and the PIC tables come from `naomi.cpp`.
+
 Xemu itself is built on QEMU. We thank **Fabrice Bellard and the entire QEMU
 team**, past and present. The full QEMU contributor history is maintained at
 [github.com/qemu/qemu](https://github.com/qemu/qemu/graphs/contributors).
