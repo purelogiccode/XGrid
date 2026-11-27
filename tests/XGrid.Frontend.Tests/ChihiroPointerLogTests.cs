@@ -27,20 +27,13 @@ public sealed class ChihiroPointerLogTests : IDisposable
 
         IReadOnlyList<ChihiroPointerDevice> devices = ChihiroPointerLog.Read(path);
 
-        Assert.Collection(
-            devices,
-            first =>
-            {
-                Assert.Equal(0, first.Index);
-                Assert.Equal("Microsoft Mouse", first.Name);
-                Assert.Equal("relative", first.Kind);
-            },
-            second =>
-            {
-                Assert.Equal(2, second.Index);
-                Assert.Equal("XGrid Test Light Gun 1", second.Name);
-                Assert.Equal("absolute", second.Kind);
-            });
+        Assert.Equal(2, devices.Count);
+        Assert.Equal(0, devices[0].Index);
+        Assert.Equal("Microsoft Mouse", devices[0].Name);
+        Assert.Equal("relative", devices[0].Kind);
+        Assert.Equal(2, devices[1].Index);
+        Assert.Equal("XGrid Test Light Gun 1", devices[1].Name);
+        Assert.Equal("absolute", devices[1].Kind);
     }
 
     [Fact]

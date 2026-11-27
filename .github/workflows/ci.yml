@@ -73,6 +73,25 @@ jobs:
           --results-directory TestResults
           --blame-hang --blame-hang-timeout 20m
 
+      - name: Install ReportGenerator
+        if: runner.os == 'Linux'
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Coverage summary and gate
+        if: runner.os == 'Linux'
+        run: |
+          reportgenerator "-reports:TestResults/**/coverage.cobertura.xml" "-targetdir:coverage-report" "-reporttypes:TextSummary"
+          {
+            echo "### Code coverage"
+            echo ""
+            echo '```'
+            sed -n '1,16p' coverage-report/Summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          python3 .github/scripts/coverage_gate.py coverage-report/Summary.txt 60 50
+
       - name: Test
         if: runner.os != 'Linux'
         run: >
@@ -83,12 +102,13 @@ jobs:
 
       - name: Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.os }}
           path: TestResults
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # Deterministic build: two clean builds must produce identical assemblies.
@@ -207,11 +227,12 @@ jobs:
 
       - name: Upload SARIF artifact
         if: always() && hashFiles('inspectcode.sarif') != ''
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: inspectcode-sarif
           path: inspectcode.sarif
-          retention-days: 14
+          retention-days: 3
 
       - name: Upload to code scanning
         if: always() && hashFiles('inspectcode.sarif') != ''
@@ -220,62 +241,6 @@ jobs:
         with:
           sarif_file: inspectcode.sarif
           category: inspectcode
-
-  # ---------------------------------------------------------------------------
-  # Merge the per-project Cobertura reports and enforce coverage floors.
-  # ---------------------------------------------------------------------------
-  coverage:
-    name: Coverage report
-    needs: build-test
-    if: needs.build-test.result == 'success'
-    runs-on: [self-hosted, Linux, X64, repofleet-ci]
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "11.0.x"
-
-      - name: Download Linux test results
-        uses: actions/download-artifact@v8
-        with:
-          name: test-results-ubuntu-latest
-          path: coverage-input
-
-      - name: Install ReportGenerator
-        run: |
-          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
-
-      - name: Generate report
-        run: >
-          reportgenerator
-          "-reports:coverage-input/**/coverage.cobertura.xml"
-          "-targetdir:coverage-report"
-          "-reporttypes:Html;HtmlSummary;TextSummary;Cobertura"
-
-      - name: Publish coverage summary
-        if: always() && hashFiles('coverage-report/Summary.txt') != ''
-        run: |
-          {
-            echo "### Code coverage"
-            echo ""
-            echo '```'
-            sed -n '1,16p' coverage-report/Summary.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Enforce coverage floors (60% lines / 50% branches)
-        run: python3 .github/scripts/coverage_gate.py coverage-report/Summary.txt 60 50
-
-      - name: Upload coverage report
-        if: always() && hashFiles('coverage-report/**') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-report
-          path: coverage-report
-          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # NuGet vulnerability audit (official SDK command; no third-party service).
@@ -305,12 +270,13 @@ jobs:
 
       - name: Upload audit report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: package-audit
           path: package-audit.json
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # Packaging is not a CI job: the win-x64 archive carries the emulator core,

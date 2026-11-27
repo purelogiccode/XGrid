@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using XGrid.Core.Xemu;
 using XGrid.Frontend.Avalonia.Services;
 using Xunit;
@@ -17,12 +18,13 @@ public sealed class DiscChangeRunnerTests
     {
         var discs = new FakeDiscs();
         var runner = new DiscChangeRunner(discs, clock: () => 1000);
+        string disc = Path.Combine("games", "disc2.iso");
 
-        Assert.True(runner.TryLoad(@"C:\games\disc2.iso", out string problem));
+        Assert.True(runner.TryLoad(disc, out string problem));
         Assert.Empty(problem);
         Assert.True(runner.IsBusy);
         Assert.Equal(DiscChangeOperation.Load, runner.Operation);
-        Assert.Equal([@"load:C:\games\disc2.iso"], discs.Calls);
+        Assert.Equal(["load:" + disc], discs.Calls);
         Assert.Null(runner.Poll());
 
         discs.Status = XemuDiscStatus.Completed;
@@ -30,7 +32,7 @@ public sealed class DiscChangeRunnerTests
         Assert.NotNull(result);
         Assert.True(result.Succeeded);
         Assert.Equal(DiscChangeOperation.Load, result.Operation);
-        Assert.Equal(@"C:\games\disc2.iso", result.Path);
+        Assert.Equal(disc, result.Path);
         Assert.Equal("Inserted disc2.iso.", result.Message);
         Assert.False(runner.IsBusy);
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using XGrid.Frontend.Avalonia.Models;
 using XGrid.Frontend.Avalonia.ViewModels;
@@ -65,21 +66,23 @@ public sealed class RecentGamesTests
     [Fact]
     public void Normalize_SortsDropsAndFillsTitles()
     {
+        string oldPath = Path.Combine("Games", "Old.iso");
+        string newPath = Path.Combine("Games", "New.iso");
         var settings = new EmulatorSettings
         {
             RecentGames = new List<RecentGame>
             {
-                new RecentGame { Path = @"C:\Games\Old.iso", Title = "Old", LastPlayedUtc = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new RecentGame { Path = oldPath, Title = "Old", LastPlayedUtc = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc) },
                 new RecentGame { Path = " ", Title = "Broken", LastPlayedUtc = new DateTime(2026, 11, 3, 0, 0, 0, DateTimeKind.Utc) },
-                new RecentGame { Path = @"C:\Games\New.iso", Title = " ", LastPlayedUtc = new DateTime(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc) },
-                new RecentGame { Path = @"C:\Games\Old.iso", Title = "Old", LastPlayedUtc = new DateTime(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc) },
+                new RecentGame { Path = newPath, Title = " ", LastPlayedUtc = new DateTime(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc) },
+                new RecentGame { Path = oldPath, Title = "Old", LastPlayedUtc = new DateTime(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc) },
             },
         };
 
         settings.Normalize();
 
         Assert.Equal("New|Old", string.Join("|", settings.RecentGames.ConvertAll<string>(static entry => entry.Title)));
-        Assert.Equal(@"C:\Games\New.iso", settings.RecentGames[0].Path);
+        Assert.Equal(newPath, settings.RecentGames[0].Path);
     }
 
     [Fact]
