@@ -38,7 +38,7 @@
             </StackPanel>
             <TextBlock Classes="body"
                        TextWrapping="Wrap"
-                       Text="A cross-platform original Xbox emulator written in C#/.NET — a clean-room reimplementation of documented hardware behavior." />
+                       Text="An original Xbox emulator built on the native xemu core, with a modern Avalonia desktop shell." />
           </StackPanel>
         </Grid>
       </Border>

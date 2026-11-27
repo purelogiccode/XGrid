@@ -6,8 +6,8 @@ XGrid is an enhanced xemu core with an Avalonia desktop shell. Read the
 
 ## Ground rules
 
-- The product is the **Avalonia shell + native xemu core**. The managed C#
-  emulator is a validation oracle, not the product path.
+- The product is the **Avalonia shell + native xemu core**. The managed
+  validation projects are an oracle, not the product path.
 - XGrid is **GPL-2.0-or-later**. Do not add code that cannot be licensed
   compatibly.
 - Never commit firmware, BIOS images, EEPROMs, HDD images or game data.

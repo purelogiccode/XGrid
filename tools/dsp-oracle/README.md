@@ -1,7 +1,7 @@
 # dsp-oracle - xemu reference differential for the DSP56300 port
 
 Runs the **unmodified xemu 0.8.139 DSP56300 interpreter** (`References2/`,
-read-only) as a standalone oracle and compares it with the managed C# port in
+read-only) as a standalone oracle and compares it with the managed port in
 `src/XGrid.Audio/Dsp/`.  This is a differential, not a golden: the expected
 state is whatever the reference produces.
 

@@ -1,9 +1,9 @@
 # XGrid — agent notes
 
 XGrid is one product: the native **xemu 0.8.139** core in `xemu/` plus the
-**Avalonia** shell in `src/XGrid.Frontend.Avalonia`. The managed C# emulator in
-`src/XGrid.Core`, `src/XGrid.Cpu`, `src/XGrid.Nv2a`, etc. is a **validation
-oracle**, not the product path.
+**Avalonia** shell in `src/XGrid.Frontend.Avalonia`. The managed validation
+projects in `src/XGrid.Core`, `src/XGrid.Cpu`, `src/XGrid.Nv2a`, etc. are a
+**validation oracle**, not the product path.
 
 Read:
 

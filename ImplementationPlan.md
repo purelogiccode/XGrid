@@ -428,7 +428,7 @@ when XGrid needs the fix sooner.
 
 ## 4. Non-goals
 
-- Re-implementing the emulator in managed C# as the product path.
+- Treating the managed validation oracle as the product path.
 - Shipping firmware, BIOS images, EEPROMs, HDD images or game data.
 - Replacing xemu's device emulation with a new implementation.
 

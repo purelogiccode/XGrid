@@ -11,9 +11,9 @@ namespace XGrid.Frontend.Avalonia.Models;
 /// <summary>User-facing emulator configuration, persisted as JSON.</summary>
 /// <remarks>
 /// The shell drives the xemu core; settings that only ever applied to the
-/// managed C# oracle (CPU/JIT switches, NV2A renderer, network backend and the
-/// audio sink) are not part of this model. The oracle keeps its own command
-/// line in <c>XGrid.Cli</c>.
+/// managed validation oracle (CPU/JIT switches, NV2A renderer, network backend
+/// and the audio sink) are not part of this model. The oracle keeps its own
+/// command line in <c>XGrid.Cli</c>.
 /// </remarks>
 public sealed class EmulatorSettings
 {
