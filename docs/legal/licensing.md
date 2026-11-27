@@ -10,7 +10,7 @@ or later** (GPL-2.0-or-later).
 
 ## The emulation core
 
-The core is the vendored **xemu 0.8.139** codebase and its **QEMU 10.2.0** base.
+The core is the vendored **xemu 0.8.139** codebase and its **QEMU 10.2** base.
 Those files keep their original per-file notices:
 
 - GPL-2.0 / GPL-2.0-or-later;
@@ -26,8 +26,9 @@ files are recorded in `xemu/xemu-patches/`.
 | Component | License | Role |
 | --- | --- | --- |
 | xemu / QEMU | GPL-2.0 family, LGPL, MIT per file | Emulation core. |
-| libchdr | BSD-3-Clause | CHD decoding. |
-| libCCI | GPL-2.0-or-later | CCI header/index and LZ4 sector decoding. |
+| libchdr | BSD-3-Clause | CHD decoding (`block/xgridchd.c`). |
+| libCCI | GPL-2.0-or-later | CCI header/index and LZ4 sector decoding (`block/xgridcci.c`). |
+| xemu-Playtest-v2 / XPSemu-Chihiro | GPL-2.0 overall; LGPL-2.0/2.1-or-later and BSD-3-Clause per file | Sega Chihiro machine under `hw/xbox/chihiro/`, the memory-backed block driver and their integration. |
 | LZ4 | BSD-2-Clause | CCI block compression (host library). |
 | Avalonia | MIT | Desktop UI framework. |
 | CommunityToolkit.Mvvm | MIT | MVVM helpers. |
@@ -36,7 +37,7 @@ files are recorded in `xemu/xemu-patches/`.
 | XISOSharp | MIT | XDVDFS reader adapter. |
 | CHDSharp | MIT | Managed CHD reader in the oracle and the Chihiro GD-ROM converter. |
 | chihiro-netboot | MIT | Format reference for the in-tree Chihiro Redump GD-ROM converter. |
-| SDL3, GLib, OpenSSL, libcurl, zstd, and other core DLLs | see notices | Redistributed with the Windows core package; linked from the host on Linux. |
+| SDL3, GLib, OpenSSL, libcurl, zstd and other core DLLs | see notices | Redistributed with the Windows core package; linked from the host on Linux. |
 
 The complete list, including every runtime DLL and ported file, is
 `THIRD_PARTY_NOTICES.md`.
@@ -54,9 +55,9 @@ which is compatible with the same GPL-3.0-or-later combination.
 
 The Linux frontend archive redistributes the standalone `xemu` core and its
 generated `LICENSE.txt`. The core links the host's system libraries rather than
-bundling them, so those libraries are not part of the archive. The core source
-is the tracked `xemu/` tree; the GPL-2.0-or-later terms cover XGrid's additions
-and the xemu/QEMU files keep their per-file notices.
+bundling them, so those libraries are not part of the archive. The core source is
+the tracked `xemu/` tree; the GPL-2.0-or-later terms cover XGrid's additions and
+the xemu/QEMU files keep their per-file notices.
 
 If you redistribute XGrid binaries:
 
@@ -80,10 +81,17 @@ particular purpose. See `COPYING`.
 ## Porting and provenance
 
 Ported code keeps its original copyright and license notice and is recorded in
-`THIRD_PARTY_NOTICES.md`. The workflow is [Porting and provenance](porting-policy.md).
+`THIRD_PARTY_NOTICES.md`. The workflow is
+[Porting and provenance](porting-policy.md).
 
 ## Not legal advice
 
 This page summarizes the project's licensing posture. If you intend to
 redistribute XGrid commercially or under a different license, review the actual
 license texts and, where appropriate, obtain legal advice.
+
+## Related pages
+
+- [Release licensing](release-licensing.md)
+- [Source availability](source-availability.md)
+- [Privacy and data](privacy.md)

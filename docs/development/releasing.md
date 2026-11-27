@@ -13,6 +13,8 @@ Release notes must exist at:
 docs/release-notes/v<version>.md
 ```
 
+The release notes index is [`docs/release-notes/index.md`](../release-notes/index.md).
+
 ## Build the release tree
 
 ```powershell
@@ -81,9 +83,9 @@ The packager refuses a requested `win-x64` or `linux-x64` archive without its
 core. `-SkipCore` is a development escape and produces archives that cannot
 emulate; `package-verify.ps1` accepts that tree only with `-SkipCoreCheck`.
 
-The macOS archives are shell-only: there is no XGrid core build script for
-macOS yet. A flat Mach-O core staged under `cores/osx-x64/` or
-`cores/osx-arm64/` is packaged and verified when supplied.
+The macOS archives are shell-only: there is no XGrid core build script for macOS
+yet. A flat Mach-O core staged under `cores/osx-x64/` or `cores/osx-arm64/` is
+packaged and verified when supplied.
 
 The packager strips Windows and Linux cores when the packaging host matches
 their platform. A cross-staged or macOS core is packaged as supplied; strip it
@@ -126,9 +128,11 @@ dist/
   package-manifest.json
 ```
 
-The manual `release.yml` workflow publishes shell archives, an SBOM and build
-provenance. The local `scripts/package.ps1` tree is the release artifact because
-it is the path that bundles and verifies the per-platform cores.
+The manual `release.yml` workflow verifies the tree on Windows and Linux,
+publishes self-contained binaries for every platform, generates an SBOM,
+attests build provenance and creates the GitHub release. The local
+`scripts/package.ps1` tree is the release artifact because it is the path that
+bundles and verifies the per-platform cores.
 
 ## Licensing checklist
 
@@ -146,4 +150,11 @@ See [Release licensing](../legal/release-licensing.md) and
 ## Signing
 
 The archives are **not code-signed or notarized**. Document the SmartScreen and
-Gatekeeper consequences in the release notes; users verify checksums.
+Gatekeeper consequences in the release notes; users verify checksums. See
+[Installation](../getting-started/installation.md#first-launch-warnings).
+
+## Related pages
+
+- [Building from source](building.md)
+- [Quality gates](quality-gates.md)
+- [Release notes index](../release-notes/index.md)

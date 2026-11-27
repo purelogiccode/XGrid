@@ -1,51 +1,36 @@
-# Donations
+# Supporting XGrid
 
-XGrid is **donationware**. Every feature is available without paying, and a
-donation never unlocks extra functionality.
-
-## The banner
-
-A banner under the toolbar stays visible until the donation service confirms a
-completed donation for your email. It has no close button: it disappears only
-after a donation is recognized.
-
-| Button | Action |
-| --- | --- |
-| **Donate** | Opens the XGrid donation page. |
-| **I already donated** | Asks for the email used on the site and checks it. |
-
-A confirmed donation hides the banner and is stored in `settings.json`. If the
-service is unavailable or finds no donation, the banner stays and you can retry
-later. The banner is hidden while the shell is fullscreen so it does not cover
-gameplay.
+XGrid is **donationware**: every feature works without paying. The optional
+banner is the only difference and disappears after a confirmed donation.
 
 ## How to donate
 
-1. Open <https://www.purelogiccode.com/donate> with the **Donate** button.
-2. Choose **XGrid** as the application.
-3. Donate with the email address the app should recognize.
-4. Return to XGrid, press **I already donated**, and enter the same email.
-5. The banner disappears after the service confirms the donation.
+1. Open <https://www.purelogiccode.com/donate> or click **Donate**.
+2. Choose **XGrid** and donate with the email you want the app to recognize.
+3. In XGrid, click **I already donated** and enter the same email.
+4. The banner is removed when the service confirms the donation.
 
-If the donation checks report that XGrid is not available yet, the deployed
-catalog is missing the `xgrid` product. Contact **contact@purelogiccode.com**.
+The donation is linked to the email, not the machine. Reinstalling or copying
+`settings.json` keeps the confirmed state.
+
+## What is stored
+
+- The email and `HasDonated` flag are stored in `settings.json`.
+- The email is sent only to the donation verification endpoint.
+- It is never logged or included in bug reports.
+- Deleting `settings.json` clears the state; entering the email again restores it.
 
 ## Privacy
 
-- The donation email is stored locally in `settings.json`.
-- It is sent only to the donation verification API, only when checking.
-- It is never logged and never included in bug reports.
-- Deleting `settings.json` clears the saved email and the confirmed flag.
-
-The full contract is in the
-[donation API reference](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/donation-api.md).
-See also [Privacy and data](https://github.com/purelogiccode/XGrid/blob/master/docs/legal/privacy.md).
+The check sends the email and the `xgrid` application slug. It does not send
+firmware paths, game titles, logs or machine identifiers.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-| --- | --- |
-| No donation found right after donating | Stripe webhooks can lag; wait a minute and retry. |
-| "Donation checks are not available for XGrid yet" | The deployed catalog is missing the `xgrid` product. |
-| Service temporarily unavailable or unreachable | The site or network is down; retry later. |
-| Banner returns after saving settings | Fixed in the current build; the Settings page preserves the donation state. |
+- "No donation found" right after donating: payment webhooks can take a minute.
+- Service unavailable: retry later; the banner stays.
+- Mistyped email: press **I already donated** and enter the correct address.
+- Checks not available for XGrid: the website catalog may not list `xgrid`.
+
+Full guide: [Supporting XGrid](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/donations.md)
+and [Donation API](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/donation-api.md).

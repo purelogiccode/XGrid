@@ -1,193 +1,128 @@
-# XGrid
+# XGrid documentation
 
-**XGrid is an in-tree fork of [xemu](https://xemu.app) 0.8.139 with a modern
-Avalonia desktop shell.** The emulator is the maintained xemu core, built from the
-`xemu/` tree in this repository. XGrid adds the application around it: library,
-settings, per-title overrides, display and input plumbing, save states,
-diagnostics, packaging and the documentation you are reading.
+**XGrid is an enhanced xemu 0.8.139 core with a modern Avalonia desktop shell.**
+The emulator is the maintained xemu/QEMU core tracked in `xemu/`. XGrid adds the
+application around it: a game library, tabbed settings, per-title overrides,
+real-time compressed media, save states, display and input plumbing,
+diagnostics and packaging.
 
 > XGrid is not affiliated with Microsoft or the xemu project. It ships no
-> firmware, BIOS images, EEPROMs or game data. You must supply your own legally
-> obtained files.
+> firmware, BIOS images, EEPROMs, hard-disk images or game data. You must supply
+> your own legally obtained files.
 
-## At a glance
+## New to XGrid?
 
-| Area | What XGrid provides |
+Start with the five-minute setup, then read the page for whatever you want to
+change next.
+
+1. **Install** — [Quick start](getting-started/quick-start.md) or
+   [Installation](getting-started/installation.md).
+2. **Configure firmware** — [First boot](getting-started/first-boot.md).
+3. **Add games** — [Game library](guides/library.md).
+4. **Play** — [Playing games](guides/playing-games.md).
+5. **Tune it** — [Settings](guides/settings.md), [Display](guides/display.md),
+   [Input](guides/input.md) and [Audio](guides/audio.md).
+
+## What XGrid provides
+
+| Area | Details |
 | --- | --- |
-| **Core** | xemu 0.8.139 / QEMU 10.2.0 TCG i386, NV2A OpenGL/Vulkan/NULL renderers, MCPX, APU/ACI, IDE/ATAPI, USB/OHCI, SMBus and the full Xbox boot chain |
-| **Arcade** | Sega Chihiro machine with media board, DIMM, JVS, drive boards and card readers; boots netboot `.bin` images |
-| **Shell** | Avalonia 12 desktop application with Home, Library, Settings, Activity and About pages |
-| **Hosting** | In-process core (`xgrid_core.dll`) on Windows; separate process on Linux and as a fallback |
-| **Media** | ISO/XISO (optimized or full Redump), compressed CHD, CCI, ZArchive (entry form or file tree) and raw/qcow2 HDD images |
-| **Display** | Core-owned picture with nearest, bilinear, scanline and CRT filters; embedded core window; resolution scale, aspect and fit controls |
-| **Input** | Player-1 keyboard and XInput mapping, dead zones, trigger threshold, Y inversion and stick swap |
-| **Quality of life** | Four save-state slots, automatic session save/resume, powered-off screen, multiple library roots, favorites, play time, per-title overrides, 4x fast-forward, local and online cover art, core-owned console screenshots, activity log, tooltips on every control, accent themes, optional donation banner |
-| **Performance** | Core-drawn FPS overlay with present rate and frame time; headless `--benchmark` runs with JSON reports |
-| **Diagnostics** | Serilog rolling logs, warning/error bug reports, startup usage statistics and a GitHub update check |
-| **Automation** | Command-line settings overrides and headless runs with a JSON report for scripts and benchmarks |
-| **Platform** | Windows x64 with full shell integration; Linux x64 with a bundled standalone core; macOS shell with an external core |
+| **Core** | xemu 0.8.139 / QEMU 10.2 TCG i386, NV2A OpenGL/Vulkan/Direct3D 11 preview/NULL, MCPX, APU/DSP, ACI, IDE/ATAPI, USB/OHCI, SMBus |
+| **Shell** | Avalonia 12.2 application with Home, Library, Settings, Activity and About pages |
+| **Hosting** | In-process `xgrid_core.dll` on Windows; separate process on Linux and as the Windows fallback |
+| **Media** | ISO/XISO, CHD, CCI, ZArchive (entry form or file tree), Chihiro netboot `.bin`, raw/qcow2 HDD |
+| **Display** | Core-owned picture, nearest/bilinear/scanline/CRT filters, resolution scale, aspect/fit, fullscreen, FPS overlay |
+| **Input** | Keyboard and XInput mapping for players 1–4, dead zones, trigger threshold, stick options |
+| **Session** | Four save-state slots, automatic session save/resume, powered-off screen, stay-open mode |
+| **Library** | Recursive folder scan, search, filters, sorts, favorites, play time, local and online cover art |
+| **Diagnostics** | Serilog rolling logs, searchable Activity page, bug reports, usage statistics, update check |
+| **Automation** | Session overrides and headless runs with JSON reports |
 
-## Why a native core?
+## Highlights
 
-The emulator uses the proven native xemu/QEMU implementation because that is the
-right tool for performance and hardware fidelity. XGrid invests in the shell, the
-media drivers and a small, well-defined set of core additions.
+### A desktop application, not a bare emulator window
 
-The result is deliberately boring in the best way:
+The Library scans your folders without hashing or opening every image. Cards show
+covers, format, size, title ID and play time. Search, filters, sorts, favorites
+and per-title overrides are all in the shell. The console picture itself is still
+rendered by the core.
 
-- the CPU, GPU, audio and devices are the mature xemu implementation;
-- XGrid owns the user experience, media drivers, snapshot bridge and packaging;
-- an in-tree patch record makes upstream updates a rebase, not a rewrite.
+### Media without an extraction step
 
-Read [Architecture](reference/architecture.md) for the full picture.
+- **ISO/XISO** — optimized XISOs and full Redump images boot directly.
+- **CHD** — compressed discs are decoded on demand by `xgridchd`.
+- **CCI** — single and split sets are decoded on demand by `xgridcci`.
+- **ZArchive** — entry-form archives expose their ISO; file-tree archives are
+  synthesized into an XDVDFS volume at open time.
 
-## Feature highlights
+Read [Media formats](guides/media.md).
 
-### A real desktop shell
+### A picture the core owns
 
-- **Home** — power, stop, the live display, current disc and renderer status.
-- **Library** - recursive scanning of ISO, CHD, CCI, ZAR and XBE files across several folders, search, filters, sorts, favorites, play time, local and online cover art and launch.
-- **Settings** - System, Graphics, Audio, Input, Titles, Library and Appearance tabs.
-- **Playback** - pause, single-frame step, 4x fast-forward and fullscreen with a
-  pause-then-close Escape sequence.
-- **Activity** — a searchable, copyable session log.
-- **About** — build, runtime and project links.
+The emulator renders and presents every frame with its own swapchain. On Windows
+the core window is embedded in the Home page; the shell never copies, filters or
+redraws the picture. Presentation filters, the FPS overlay and screenshots are
+core features selected by the shell.
 
-### Media without extraction
+Read [Display and filters](guides/display.md) and
+[Architecture](reference/architecture.md).
 
-- **CHD** discs are decoded on demand by the `xgridchd` block driver.
-- **CCI** discs are decoded on demand by `xgridcci`; single files and split
-  `.1.cci` / `.2.cci` sets are read directly.
-- **ZArchive** discs are decoded on demand by `xgridzar`; an entry-form archive
-  exposes its `.iso` entry, and a file-tree archive is synthesized into an
-  XDVDFS volume at open time.
-- **ISO/XISO** is handled directly by the core block layer. The `xgridiso`
-  driver detects the XGD game-partition offset in a full Redump image and maps
-  it to LBA 0; an optimized XISO needs no shift.
-- **XBE** files are listed for inspection but must be wrapped in a disc image to boot.
+### Save states and a session that resumes
 
-### Audio without guesswork
+Four QEMU/xemu slots are stored inside the machine's storage. An optional
+automatic `xgrid-session` snapshot can be written on power-off and restored from
+the Power button. Both need in-process hosting.
 
-- The settings page lists the audio backends the core actually compiled, read
-  from its `-audio-drivers` report.
-- Windows DirectSound devices are enumerated and selectable; PulseAudio,
-  PipeWire, ALSA, OSS, sndio and JACK accept their own device or server names.
-- **Null (no output)** discards host audio and is selected automatically by
-  headless runs.
-- A missing DirectSound device falls back to the system default instead of
-  stopping the core.
+Read [Save states](guides/save-states.md).
 
 ### Sega Chihiro in the same shell
 
-- The ported Chihiro machine boots netboot `.bin` images with its own BIOS,
-  media-board flash and baseboard EEPROMs.
-- **Settings → System → Sega Chihiro** selects the firmware folder; a `.bin`
-  in the Library selects the machine for that launch.
-- Chihiro launches use 128 MB and skip the Xbox hard disk. Xbox discs and
-  Chihiro images coexist in the same library, labelled **ISO/CHD/CCI/ZAR** and
-  **BIN**.
-- Homebrew `XBOXOG - Chihiro` Xbox ISOs, Redump cue/bin GD-ROM sets and MAME
-  `.chd` files convert to netboot `.bin` in Settings (the GD-ROM paths need the
-  game's MAME key ZIP). See [Sega Chihiro](guides/chihiro.md).
+The ported Chihiro machine boots netboot `.bin` images with its own firmware,
+media board, DIMM, JVS, card readers, force feedback and linked cabinets. Xbox
+discs and Chihiro images can share one library.
 
-### Save states that belong to the machine
+Read [Sega Chihiro](guides/chihiro.md).
 
-XGrid does not invent a snapshot format. It exposes xemu/QEMU snapshots as four
-named slots (`xgrid-slot-1` … `xgrid-slot-4`), saved inside the hard-disk image.
-F6 saves, F7 loads, and the core performs the work on its own main loop.
+## Platform support
 
-### Power and session lifecycle
-
-- **Powered-off screen** - a console-off panel with the XGrid logo and a power
-  button instead of a blank picture area.
-- **Stay-open mode** - the shell stays open after the console powers off by
-  default; turn it off to close XGrid after a normal shutdown.
-- **Power on when XGrid starts** - boot the configured disc or dashboard as soon
-  as the window opens.
-- **Automatic session save/resume** - optionally write `xgrid-session` before
-  power off or window close, then restore it from the Power button. It is
-  separate from the four manual slots and needs in-process hosting.
-
-### Pause and frame step
-
-**P** pauses a running console where it stands and resumes it; the last frame
-stays on screen with a **Paused** badge. **F10** advances exactly one frame while
-paused. Both need in-process core hosting, like save states.
-
-### Disc swap without a restart
-
-While the console runs, **Ctrl+O**, the toolbar **Open** button, or a Library row
-inserts the chosen disc; **Ctrl+E** ejects and leaves the tray empty. The core
-changes the block medium on its own loop, so the guest sees a tray cycle rather
-than a reboot. In-process hosting only, like save states.
-
-### Display and input
-
-The core owns the picture: its window is embedded in the console page and paints
-with its own swapchain, so the shell never copies, filters or redraws a frame.
-The presentation filter and the FPS overlay are core features selected from the
-shell. On Windows the same session publishes one 32-byte pad record per Xbox port,
-so the keyboard and XInput mapping for players 1–4 is XGrid's, not the core's.
-
-### Scriptable runs
-
-`--headless` boots the core without a window and still renders off-screen. A
-wall-clock or frame limit, the console summary and an optional JSON report make it
-usable from a CI job or a benchmark script. The same command line can override
-the renderer, scale, filtering, RAM, firmware and disc for one session without
-touching the saved settings. See [Headless and CLI](guides/headless.md).
-
-### Diagnostics you can act on
-
-Serilog keeps a rolling log in the per-user data folder. Every warning or error
-also carries the environment and exception details to the bug-report service,
-and a startup check offers the GitHub release page when a newer build exists.
-See [Logging and diagnostics](guides/diagnostics.md).
-
-### Donationware, without feature locks
-
-XGrid is free to use. The optional banner under the toolbar links to the
-PureLogicCode donation page and disappears when the service confirms a completed
-donation for your email. Donating is never required for a feature. See
-[Supporting XGrid](guides/donations.md) and [Privacy and data](legal/privacy.md).
-
-## Quick start
-
-1. **Download** the release archive for your platform. The Windows and Linux
-   x64 frontend archives include the emulator under `core/xemu/`.
-2. **Extract** it anywhere. The applications are portable and self-contained.
-3. **Start** `XGrid.Frontend.Avalonia`.
-4. The first-run wizard asks for the BIOS, EEPROM, hard-disk image and an optional
-   game folder. Everything can also be set later in **Settings → System** and
-   **Settings → Library**.
-5. Pick a title in **Library**, or press **Power on** to reach the dashboard.
-
-Full details: [Installation](getting-started/installation.md) and
-[First boot](getting-started/first-boot.md).
-
-## Documentation map
-
-| Section | Start here |
+| Platform | Status |
 | --- | --- |
-| Getting started | [Requirements](getting-started/requirements.md) · [Installation](getting-started/installation.md) · [First boot](getting-started/first-boot.md) |
-| Using XGrid | [Library](guides/library.md) · [Settings](guides/settings.md) · [Display](guides/display.md) · [Input](guides/input.md) · [Audio](guides/audio.md) · [Headless and CLI](guides/headless.md) · [Logging and diagnostics](guides/diagnostics.md) · [Supporting XGrid](guides/donations.md) · [Accessibility](guides/accessibility.md) · [Save states](guides/save-states.md) · [Media](guides/media.md) |
-| Reference | [Architecture](reference/architecture.md) · [Configuration](reference/configuration.md) · [Shortcuts](reference/shortcuts.md) · [Compatibility](reference/compatibility.md) · [Service endpoints](reference/service-endpoints.md) · [Donation API](reference/donation-api.md) · [Troubleshooting](reference/troubleshooting.md) · [FAQ](reference/faq.md) · [Glossary](reference/glossary.md) |
-| Development | [Building](development/building.md) · [Layout](development/repository-layout.md) · [Core](development/core.md) · [Quality gates](development/quality-gates.md) · [Testing](development/testing.md) · [Inspection](development/inspection.md) · [Releasing](development/releasing.md) · [Release notes](release-notes/v0.1.0.md) · [Contributing](development/contributing.md) |
-| Legal | [Licensing](legal/licensing.md) · [Privacy](legal/privacy.md) · [Porting](legal/porting-policy.md) · [Release licensing](legal/release-licensing.md) · [Source availability](legal/source-availability.md) |
+| **Windows 10/11 x64** | Full shell integration: in-process core, embedded picture, save states, pause/step, fast-forward, live disc swap and shell-mapped pads |
+| **Linux x64** | Frontend archive bundles the standalone core. The core presents and reads input in its own SDL window; shell save states, pause/step and disc swap are unavailable |
+| **macOS** | Shell only. Point **Settings → System → Emulator binary** at an xemu 0.8.139 build |
 
 ## Project status
 
-XGrid is **alpha software**. The core is mature, but the shell, media drivers and
-compatibility work are still evolving. Treat the [Compatibility](reference/compatibility.md)
-page as the supported surface, not a promise that every Xbox disc will boot.
+XGrid is **alpha software**. The emulator core is mature; the shell, media
+drivers and compatibility work are still evolving. Treat
+[Compatibility](reference/compatibility.md) as the supported surface, not a
+promise that every Xbox disc will boot.
+
+Known limitations:
+
+- Save states, pause/step, fast-forward and live disc swap need in-process
+  hosting.
+- The shell does not expose netplay.
+- CHD and CCI are read-only. Keep the HDD image writable if you use save states.
+- Chihiro audio and network titles have upstream limitations.
+- macOS archives contain the shell only.
+
+## Documentation map
+
+| Section | Pages |
+| --- | --- |
+| **Getting started** | [Quick start](getting-started/quick-start.md) · [Requirements](getting-started/requirements.md) · [Installation](getting-started/installation.md) · [First boot](getting-started/first-boot.md) |
+| **Using XGrid** | [Library](guides/library.md) · [Playing games](guides/playing-games.md) · [Settings](guides/settings.md) · [Display](guides/display.md) · [Input](guides/input.md) · [Audio](guides/audio.md) · [Save states](guides/save-states.md) · [Media](guides/media.md) |
+| **Advanced use** | [Sega Chihiro](guides/chihiro.md) · [Chihiro controls](guides/chihiro-controls.md) · [Command line and headless](guides/headless.md) · [Logs and diagnostics](guides/diagnostics.md) · [Accessibility](guides/accessibility.md) · [Supporting XGrid](guides/donations.md) |
+| **Reference** | [Architecture](reference/architecture.md) · [Upstream differences](reference/upstream-differences.md) · [Configuration](reference/configuration.md) · [Shortcuts](reference/shortcuts.md) · [Compatibility](reference/compatibility.md) · [Troubleshooting](reference/troubleshooting.md) · [FAQ](reference/faq.md) · [Glossary](reference/glossary.md) · [Service endpoints](reference/service-endpoints.md) · [Donation API](reference/donation-api.md) |
+| **Development** | [Building](development/building.md) · [Repository layout](development/repository-layout.md) · [Native core](development/core.md) · [Maintaining the xemu tree](development/xemu-upstream.md) · [Quality gates](development/quality-gates.md) · [Testing](development/testing.md) · [Inspection](development/inspection.md) · [Covers](development/covers.md) · [Platform embedding](development/platform-embedding.md) · [Releasing](development/releasing.md) · [Contributing](development/contributing.md) |
+| **Legal** | [Licensing](legal/licensing.md) · [Privacy](legal/privacy.md) · [Porting](legal/porting-policy.md) · [Release licensing](legal/release-licensing.md) · [Source availability](legal/source-availability.md) |
+| **Project** | [Release notes](release-notes/index.md) · [Security policy](https://github.com/purelogiccode/XGrid/blob/master/SECURITY.md) · [Issues](https://github.com/purelogiccode/XGrid/issues) · [Wiki](https://github.com/purelogiccode/XGrid/tree/master/wiki) |
 
 ## License
 
-XGrid's own source is **GPL-2.0-or-later**. The vendored xemu tree keeps its
-original GPL-2.0, LGPL and MIT notices. Every third-party component and ported
-module is recorded in `THIRD_PARTY_NOTICES.md`. See [Licensing](legal/licensing.md).
+XGrid's own source is **GPL-2.0-or-later**. The vendored xemu/QEMU tree keeps
+its original GPL, LGPL and MIT notices. Every third-party component and ported
+module is recorded in [`THIRD_PARTY_NOTICES.md`](https://github.com/purelogiccode/XGrid/blob/master/THIRD_PARTY_NOTICES.md).
 
-## Wiki
-
-A shorter, GitHub-wiki-ready set of pages lives in [`wiki/`](https://github.com/purelogiccode/XGrid/tree/master/wiki).
-The full reference remains in this documentation.
+See [Licensing](legal/licensing.md).

@@ -1,82 +1,64 @@
 # Display and filters
 
-The core owns the picture. It renders and presents with its own swapchain; the
-Avalonia shell owns the window, layout and controls only.
+The core owns the picture. It renders, filters and presents with its own
+swapchain; the shell never copies, filters or redraws a frame.
 
-## Windows: embedded core window
+## Presentation
 
-- The core creates its own window; XGrid embeds it, in-process or separate.
-- The core paints straight into that child surface. There is no per-frame copy,
-  upload or shell redraw.
-- The embedded child does not take activation, so the shell pad input stays live.
-- This is the fastest path.
+- **Windows:** the core's window is reparented into the Home page, in-process or
+  separate process. The core paints directly into the child surface.
+- **Linux/macOS:** the core opens its own SDL window. Native in-window embedding
+  is Windows-only for now.
+- **Headless:** the core renders off-screen into a shared-memory display sink for
+  frame counting. See [Headless](Headless).
 
-## Linux and macOS
-
-Native in-window embedding is Windows-only for now. The core opens its own SDL
-window outside the Home page; use that window for the picture, filters and input.
-Headless runs use the POSIX frame sink instead. See
-[Headless and CLI](Headless).
-
-## Filters
+## Presentation filters
 
 | Filter | Effect |
 | --- | --- |
-| Nearest | Sharp pixels. |
-| Bilinear | Smooth upscale. |
-| Scanlines | Every other row darkened. |
-| CRT mask | Scanlines plus an RGB phosphor triad. |
+| Nearest | Crisp pixels, cheapest. |
+| Bilinear | Softer edges. |
+| Scanlines | Every-other-row light reduction. |
+| CRT mask | Scanlines plus an R/G/B phosphor triad. |
 
-Filters are implemented in the core's final blit shader; the shell only selects
-one. `XGRID_FILTER`/`--filter` sets the launch choice. In-process hosting can
-change it live through the core ABI.
+The filter is applied by the core at source resolution before scaling. It is
+separate from the core's **Texture filtering** setting.
 
-## Core graphics settings
+## Rendering settings
 
-- Renderer: Direct3D 11 (Windows builds, preview), OpenGL, Vulkan (if compiled) or Null.
-- Internal resolution scale 1–8.
-- Texture filtering: linear or nearest.
-- Aspect ratio: auto, native, 4:3, 16:9.
-- Fit: scale, center, stretch.
-- AV pack.
-- Vertical sync.
+- **Renderer** — OpenGL, Vulkan (if compiled), Direct3D 11 (Windows preview) or
+  Null.
+- **Internal resolution scale** — 1–6 or 8×.
+- **Texture filtering** — linear or nearest.
+- **Aspect ratio** — auto, native, 4:3, 16:9.
+- **Fit mode** — scale, center, stretch.
+- **AV pack** — reported video output.
+- **Vertical sync**, **Start fullscreen**, **Exclusive fullscreen**.
 
-## Fullscreen and screenshots
+A renderer the core was not built with is hidden; a saved choice falls back to
+OpenGL.
 
-- **F11** toggles fullscreen; the toolbar's **Fullscreen** button enters it.
-  The shell chrome is hidden and the console picture fills the screen.
-- In fullscreen, **Esc** pauses a running game on the first press. Press **Esc**
-  again to close XGrid. With no game running, Esc returns to the windowed shell.
-- **F8** saves the console picture as a PNG in `<data>/screenshots/`. With
-  in-process hosting the core writes the capture; with separate-process hosting
-  the shell captures the whole window instead.
-- The Library no longer embeds a screenshot strip. Use **View → Open
-  screenshots folder** to browse the PNGs.
+## Fullscreen
 
-## Pause and frame step
+**F11** toggles fullscreen. **Esc** pauses a running game; the next **Esc** closes
+XGrid. With no game running, **Esc** leaves fullscreen.
 
-- **P** pauses on the next frame and keeps the last picture.
-- **F10** advances exactly one frame.
+## Screenshots and FPS overlay
 
-Both need in-process core hosting, like save states. While paused, the status
-bar reads **Paused**.
+**F8** saves a PNG to `<data>/screenshots/`. With in-process hosting the core
+captures its own picture; otherwise the shell captures the whole window.
 
-Press **Space** while a game runs, or click **4x** in the toolbar, to toggle
-**4x fast-forward**; do it again to return to normal speed. The status bar reads
-**Running 4x** while it is on. The core runs the guest clock four times faster,
-so timers and the picture speed up together.
+**View → FPS Overlay** draws present rate and average frame time. In-process
+hosting applies it live; a separate process applies it on the next launch.
 
-## Frame-rate overlay
+## Performance
 
-Turn on **View → FPS Overlay** to draw the core's present rate and average frame
-time over the picture. The core draws the overlay; the shell never touches a
-frame. In-process hosting applies the toggle live; a separate process applies it
-on the next launch.
+- Lower **Internal resolution scale** first.
+- Prefer **OpenGL** unless another backend is stable for your titles.
+- Leave **Vertical sync** off unless you see tearing.
+- Keep filters and the overlay in the core.
 
-## If the picture is black
+If the picture is black, check **Activity**, confirm the core is running, and try
+OpenGL at scale 1.
 
-1. Check **Activity**.
-2. Wait a few seconds for the core to start.
-3. On Linux or macOS, look for the core's own window.
-4. Try OpenGL and scale 1.
-5. See [Troubleshooting](Troubleshooting).
+Full guide: [Display and filters](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/display.md).

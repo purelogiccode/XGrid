@@ -37,3 +37,6 @@ When something is newer it opens or updates one issue titled
 4. Update `xemu/XEMU_VERSION` and `xemu/XEMU_COMMIT` to the new upstream base.
 5. Update any `.wrap` `revision=` values you deliberately adopt.
 6. Run the native core build and the managed tests before committing.
+
+See [Upstream differences](../reference/upstream-differences.md) for the current
+source-level delta from the pristine 0.8.139 tree.

@@ -1,8 +1,8 @@
 # Configuration
 
 XGrid keeps its own settings, generates a fresh core configuration for every
-launch, and stores save states inside the HDD image. Nothing in the application
-folder is modified at runtime.
+launch, and stores save states inside the machine's storage. Nothing in the
+application folder is modified at runtime.
 
 ## Data folder
 
@@ -18,14 +18,15 @@ Override it with:
 XGRID_FRONTEND_DATA_DIR=/path/to/folder
 ```
 
-Useful for portable installs and automated tests.
+or with `--data-dir <path>` for one session. This is useful for portable installs
+and automated tests.
 
 ## Command line
 
 Switches are case-insensitive and accept either `--name value` or
-`--name=value`. A recognized switch with a bad value stops the run with exit
-code `2`; an unrecognized argument is passed through unchanged for Avalonia and
-the platform.
+`--name=value`. A recognized switch with a bad value stops the run with exit code
+`2`; an unrecognized argument is passed through unchanged for Avalonia and the
+platform.
 
 | Argument | Meaning |
 | --- | --- |
@@ -47,10 +48,10 @@ the platform.
 | `--ram <64\|128>` | Guest RAM in megabytes. |
 | `--audio <backend>` | `auto`, `dsound`, `pa`, `alsa`, `jack`, `pipewire`, `oss`, `sndio`, `sdl`, `coreaudio`, `none` or `wav`. |
 | `--audio-device <id>` | Backend-specific output device. DirectSound uses a device GUID; the other backends use their device/server name. |
-| `--headless` | Run without the shell window; see [Headless runs](../guides/headless.md). |
+| `--headless` | Run without the shell window; see [Command line and headless](../guides/headless.md). |
 | `--benchmark` | Headless benchmark run; 600 frames when no other limit is set. |
-| `--seconds <n>` | Headless wall-clock limit (60 when no frame limit is set). |
-| `--frames <n>` | Stop a headless run after `n` published frames. |
+| `--seconds <n>` | Headless wall-clock limit (60 when no frame limit is set; 1–86400). |
+| `--frames <n>` | Stop a headless run after `n` published frames (1–100,000,000). |
 | `--summary <path>` | Write the headless JSON report to this path. |
 | `-h`, `--help`, `-?` | Print the command-line reference. |
 | `--version` | Print the application version. |
@@ -70,19 +71,20 @@ never written into `settings.json`, and they win over per-title overrides.
 
 `--headless` boots the core without the Avalonia window and without presenting a
 picture. The core still renders off-screen. Headless runs use the null audio sink
-unless `--audio` explicitly selects another backend. `--seconds`, `--frames`,
-`--summary` and `--benchmark` select headless mode on their own. Without
-`--seconds` or `--frames`, a normal headless run stops after 60 seconds and a
-benchmark run stops after 600 frames. A frame limit without a time limit runs
-until that many frames, so combine both when the guest might never reach the
-limit. Ctrl+C also stops it cleanly.
+unless `--audio` explicitly selects another backend.
+
+`--seconds`, `--frames`, `--summary` and `--benchmark` select headless mode on
+their own. Without `--seconds` or `--frames`, a normal headless run stops after
+60 seconds and a benchmark run stops after 600 frames. A frame limit without a
+time limit runs until that many frames, so combine both when the guest might
+never reach the limit. `Ctrl+C` also stops it cleanly.
 
 ```text
 XGrid.Frontend.Avalonia.exe --headless --seconds 30 --disc "D:\Games\Halo.iso"
 ```
 
 The console output and JSON report are documented in
-[Headless runs](../guides/headless.md). Exit codes are:
+[Command line and headless](../guides/headless.md). Exit codes are:
 
 | Code | Meaning |
 | --- | --- |
@@ -96,6 +98,7 @@ The console output and JSON report are documented in
 ```text
 <data>/
   settings.json          shell configuration
+  settings.json.bak      previous file after a corrupt load
   screenshots/           F8 captures
   covers/                local game cover art
   covers-cache/          online catalog and downloaded covers (safe to delete)
@@ -104,6 +107,7 @@ The console output and JSON report are documented in
     xemu.log             core log (separate-process mode)
     audio.wav            WAV capture, when selected
     d3d11-shader-cache/  compiled HLSL blobs (safe to delete)
+    chihiro_snapshots.qcow2  Chihiro snapshot store, when used
 ```
 
 A headless run writes its report only where `--summary` points; no file is
@@ -120,9 +124,8 @@ The shell writes indented JSON. The main fields are:
 | `EepromPath` | 256-byte EEPROM image. |
 | `HddPath` | Raw or qcow2 HDD image. |
 | `DvdPath` | Default disc image, or a Chihiro netboot `.bin`. |
-| `Chihiro` | Chihiro switch and firmware folder (`Enabled`, `FirmwareDirectory`). A `.bin` launch always uses the Chihiro. |
+| `Chihiro` | Chihiro switch, firmware directory, cabinet, pointer, card, JVS and link settings. |
 | `RamMb` | 64 or 128 (a Chihiro launch is forced to 128). |
-| `DisplaySink` | Removed. The core always owns the picture; the frame sink is only used by headless runs. |
 | `ShowFpsOverlay` | The core draws the frame-rate overlay over a running console. |
 | `PowerOnAtStartup` | Power on automatically when the shell opens. |
 | `StayOpenAfterPowerOff` | Keep the shell open on the powered-off screen after a normal shutdown. |
@@ -138,10 +141,10 @@ The shell writes indented JSON. The main fields are:
 | `XemuCorePath` | Explicit core executable, or empty for auto-detect. |
 | `LibraryFolders` | Folders scanned by the Library. |
 | `LibraryGridView` | `true` for tiles, `false` for the detailed list. |
-| `LibraryIconSize` | Tile width in pixels (128-384). |
+| `LibraryIconSize` | Tile width in pixels (128–384). |
 | `LibraryFavorites` | Favorite keys: `title:XXXXXXXX` or image path. |
 | `LibraryPlayState` | Accumulated seconds, last-played UTC time and launch count per key. |
-| `LibraryTitleIds` | Cached XBE title ids keyed by image path, populated on launch. |
+| `LibraryTitleIds` | Cached XBE title IDs keyed by image path, populated on launch. |
 | `Covers` | Local cover folder, online toggle, automatic download, catalog URL, fuzzy matching, annotation stripping and fuzzy threshold. |
 | `RecentGames` | Recently launched titles (path, title and UTC time), newest first, up to 10. |
 | `TitleOverrides` | Per-title overrides keyed by `title:XXXXXXXX` or image path: RAM, renderer, texture filtering and presentation filter. |
@@ -149,18 +152,12 @@ The shell writes indented JSON. The main fields are:
 | `HasDonated` | `true` after the donation service confirms a completed donation; hides the banner. |
 | `DonationLastCheckedUtc` | Last successful or attempted donation check, in UTC. |
 
-Invalid values are repaired on load: RAM is 64 or 128, scale is 1-8, unknown
+Invalid values are repaired on load: RAM is 64 or 128, scale is 1–8, unknown
 renderers fall back to OpenGL, unknown filters fall back to nearest, and empty
 override keys or rows are dropped. Cover options are clamped to the supported
 fuzzy range and the catalog URL is normalized to a `catalog.json` URL. Favorite
-and play-state keys are canonicalized; title-id keys are rebuilt from their
+and play-state keys are canonicalized; title-ID keys are rebuilt from their
 parsed value and path keys are made absolute.
-
-The online cover cache is content-addressed. Every downloaded image is verified
-against its SHA-256 id from the catalog before it is published under
-`<data>/covers-cache/images/`; the cached catalog sidecar stores the source URL,
-ETag and fetch time. Deleting `covers-cache/` only costs a catalog refresh and
-new downloads.
 
 A corrupt settings file is moved to `settings.json.bak` and defaults are used.
 
@@ -171,7 +168,7 @@ complete file, so two launches cannot inherit each other's state.
 
 | Section | Keys |
 | --- | --- |
-| `[general]` | `show_welcome`, `skip_boot_anim` |
+| `[general]` | `show_welcome`, `skip_boot_anim`, `screenshot_dir`, `shader_cache_dir` |
 | `[general.updates]` | `check = false` |
 | `[display]` | `renderer`, `filtering` |
 | `[display.quality]` | `surface_scale` |
@@ -182,26 +179,32 @@ complete file, so two launches cannot inherit each other's state.
 | `[audio.vp]` | `num_workers` |
 | `[sys]` | `default_machine`, `mem_limit`, `avpack` |
 | `[sys.files]` | `bootrom_path`, `flashrom_path`, `eeprom_path`, `hdd_path`, `dvd_path` |
-| `[chihiro.roms]` | Chihiro only: `bios_path`, `mediaboard_path`, `ic10_path`, `ic11_path`, `pc20_path` |
+| `[chihiro.roms]` | Chihiro only: BIOS, media board, board EEPROMs, optional network firmware and `snapshot_store_path` |
+| `[chihiro.card_reader]` | Chihiro only: enable and card-file paths |
+| `[chihiro.jvs]` | Chihiro only: profile and cabinet keys |
+| `[chihiro.jvs_p2]` | Chihiro only: player-2 gun keys |
+| `[chihiro.settings]` | Chihiro only: free play, region, DIMM, board type, force feedback, pointers |
+| `[chihiro.link]` | Chihiro only: linked-cabinet settings |
 
 `mem_limit` is the core's string enum (`'64'` or `'128'`). `default_machine` is
-`'xbox'` or `'chihiro'`; a Chihiro launch also writes the five
-`[chihiro.roms]` paths.
+`'xbox'` or `'chihiro'`; a Chihiro launch also writes the `[chihiro.*]` sections.
 
 ### Core capability manifest
 
-`xgrid-core.json` beside the core reports the compiled renderers:
+`xgrid-core.json` beside the core reports the compiled backends:
 
 ```json
 {
   "core": "xemu",
   "version": "0.8.139",
-  "renderers": ["D3D11", "OPENGL", "NULL"]
+  "renderers": ["D3D11", "OPENGL", "VULKAN", "NULL"],
+  "audioDrivers": ["dsound", "none"]
 }
 ```
 
-The shell uses it to filter renderer choices. A missing or malformed manifest
-means “unknown”; the shell keeps the configured choice and the core may fall back.
+The shell uses it to filter renderer and audio choices. A missing or malformed
+manifest means “unknown”; the shell keeps the configured choice and the core may
+fall back.
 
 ## Environment variables
 
@@ -217,7 +220,7 @@ means “unknown”; the shell keeps the configured choice and the core may fall
 | `XGRID_DISABLE_BUG_REPORTS` | `1` stops forwarding warnings and errors to the bug-report API. |
 | `XGRID_DISABLE_STATISTICS` | `1` stops the startup usage hit. |
 | `XGRID_DISABLE_UPDATE_CHECK` | `1` stops the GitHub release check. |
-| `XGRID_GITHUB_TOKEN` | Token used by the release check for a private repository. |
+| `XGRID_GITHUB_TOKEN` | Optional token for a higher GitHub API rate limit. |
 | `XGRID_BUGREPORT_API_KEY` | Override the bug-report API key. |
 | `XGRID_STATS_API_KEY` | Override the statistics API key. |
 | `XGRID_DONATION_ENDPOINT` | Override the donation verification endpoint. |
@@ -233,10 +236,11 @@ xgrid-slot-1
 xgrid-slot-2
 xgrid-slot-3
 xgrid-slot-4
+xgrid-session     automatic session snapshot
 ```
 
-They are QEMU/xemu snapshots, not files in the data folder. See
-[Save states](../guides/save-states.md).
+They are QEMU/xemu snapshots, not files in the data folder. A Chihiro launch uses
+`chihiro_snapshots.qcow2` instead. See [Save states](../guides/save-states.md).
 
 ## Screenshots
 
@@ -258,11 +262,12 @@ Shell captures get `-1`, `-2`, and so on when two land in the same second.
 
 ## Core working directory
 
-The shell creates `<data>/xemu/` and uses it as the core's current directory.
-That is where `xemu.toml`, `xemu.log` and `audio.wav` live.
+The shell creates `<data>/xemu/` and uses it as the core's current directory. That
+is where `xemu.toml`, `xemu.log` and `audio.wav` live.
 
 ## Related pages
 
 - [Architecture](architecture.md)
 - [Settings](../guides/settings.md)
 - [Troubleshooting](troubleshooting.md)
+- [Command line and headless](../guides/headless.md)

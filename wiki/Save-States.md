@@ -1,57 +1,53 @@
 # Save states
 
-XGrid exposes **xemu/QEMU snapshots** as four named slots.
+XGrid exposes xemu/QEMU snapshots as four named slots. There is no private XGrid
+snapshot format. Xbox snapshots live in the HDD image; Chihiro snapshots live in
+`chihiro_snapshots.qcow2`.
 
 ## Requirements
 
-- **In-process core hosting on Windows** (**Settings → System → Core hosting**).
-  Separate process, including the Linux core, disables save states.
+- **In-process core hosting on Windows.** Save states need the in-process ABI.
 - A running console.
-- A writable HDD image.
+- A writable HDD image (or Chihiro snapshot store).
+
+Separate-process hosting, including Linux, disables the shell save-state
+controls.
 
 ## Slots
 
-| Slot | Snapshot name |
+| Slot | Name |
 | --- | --- |
 | 1 | `xgrid-slot-1` |
 | 2 | `xgrid-slot-2` |
 | 3 | `xgrid-slot-3` |
 | 4 | `xgrid-slot-4` |
 
-## How to use
-
-- **Emulation → Save State / Load State / Delete State**
-- **F6** saves to the selected slot.
-- **F7** loads the selected slot.
-- Home page **Save state** / **Load state** buttons.
-
-The request is queued; the core executes it on its main loop and the shell polls
-for completion. One request runs at a time.
+**F6** saves to the selected slot, **F7** loads it. The Emulation menu and Home
+page buttons do the same. Requests run one at a time on the core's main loop.
 
 ## Automatic session state
 
-Enable **Settings → System → Session → Save state before power off** to write an
-automatic `xgrid-session` snapshot when you power off, press Stop, or close the
-window. **Resume the saved session** restores it when the Power button starts the
-dashboard.
+Enable **Save state before power off** to write `xgrid-session` on Power off,
+Stop or window close. Enable **Resume the saved session** to restore it when the
+Power button starts the dashboard.
 
-- Separate from slots 1-4; overwritten on each save.
-- Needs in-process hosting and a writable HDD image.
 - Launching a game from the Library starts it fresh.
-- The console finishes its early boot first; the dashboard or game may appear for
-  about 12 seconds before the saved state is restored.
-- A missing or unreadable snapshot leaves the normal boot running; read the
-  reason in **Activity**.
-
-## What is captured
-
-The VM state: CPU, RAM, devices and a frame thumbnail. States are stored inside
-the HDD image, so they survive replacing the application folder. Expect tens of
-megabytes per slot.
+- The console finishes early boot first, so the dashboard may appear for about
+  12 seconds before the snapshot restores.
+- A missing or unreadable snapshot falls back to a normal boot.
 
 ## Caveats
 
-- Load with the same HDD and disc configuration.
-- A failed load is reported; the core resumes the guest.
-- States are not portable between core versions or emulator implementations.
-- Deleting a slot cannot be undone.
+- Load with the same HDD image (or netboot `.bin`) and core version that wrote
+  the state.
+- Snapshots are not portable between different emulator implementations or core
+  versions.
+- **Delete State** removes a slot permanently.
+- Chihiro save states are rejected while a cabinet link is active.
+
+## If save states are disabled
+
+Switch **Settings → System → Core hosting** to **In-process (recommended)** and
+power-cycle. `xgrid_core.dll` must be present beside the core.
+
+Full guide: [Save states](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/save-states.md).

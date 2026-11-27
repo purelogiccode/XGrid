@@ -1,136 +1,61 @@
 # Game library
 
-The Library scans folders recursively and launches disc images. It never copies
-or modifies your files.
+The Library scans configured folders and launches disc images. It never copies or
+modifies your files.
 
 ## Add folders
 
-Use **View → Add library folder…**, the empty-state **Add folder** button, or
-**Settings → Library → Add folder**.
+Use **View → Add library folder…**, **Add folder** in the empty state, or
+**Settings → Library → Add folder**. Scans are recursive, skip inaccessible
+folders and reparse points, read metadata only, and stop at **4,096 entries** per
+scan.
 
-A scan:
+## Recognized files
 
-- follows subdirectories;
-- skips inaccessible folders and reparse points;
-- stops at 4,096 entries;
-- de-duplicates paths;
-- reads only file metadata.
+| Extension | Launch | Notes |
+| --- | --- | --- |
+| `.iso`, `.xiso` | Yes | Optimized XISO or full Redump. |
+| `.chd` | Yes | Real-time decode. |
+| `.cci` | Yes | Single or split set; list shows the first part once. |
+| `.zar` | Yes | Entry form or file-tree form. |
+| `.bin` | Chihiro | Sega Chihiro netboot image. |
+| `.xbe` | No | Inspection only; wrap it in an image. |
 
-## Toolbar
+## Search, filters and sorts
 
-- **Search games…** filters by title, path, format, title id, region, year,
-  publisher or description.
-- **All games / Favorites / Played / Unplayed** filters the collection.
-- **Title / Recently played / Most played / Release year / Publisher** sorts.
-- **Icon size** changes the tile width from 128 to 384 pixels.
-- **Tiles** and **List** switch layouts.
+- Search by title, path, format, title ID, region, year, publisher, developer,
+  genre or description.
+- Filter: **All games**, **Favorites**, **Played**, **Unplayed**.
+- Sort: **Title**, **Recently played**, **Most played**, **Release year**,
+  **Publisher**.
+- Switch **Tiles** / **List** and resize tiles from 128 to 384 px.
 
-Select a game and **double-click** it (or press **Enter**) to boot it. A single
-click only selects. The tile/list choice is saved in `settings.json`.
+Double-click a card, or select and press **Enter**, to launch. A single click
+only selects it.
 
 ## Favorites and play time
 
-- Click the star on a card or row to favorite a game.
-- XGrid records accumulated play time, launch count and last-played time when a
-  game starts and when the console stops.
-- **Recently played**, **Most played**, **Played** and **Unplayed** use this
-  state.
-- State follows the XBE title id once XGrid has seen the game launch; otherwise
-  it uses the image path. The resolved id is cached so later scans stay fast.
+Click the star to favorite a game. XGrid records accumulated play time, launch
+count and last-played time. State is keyed by XBE title ID when known, otherwise
+by image path; the first launch resolves the ID and migrates the entry.
 
-The old recent strip is gone; use the **Recently played** sort.
+## Covers
 
-## Supported files
+Local covers live in `<data>/covers/` by default. XGrid matches a title-ID file
+(`4D530002.png`), exact name, annotation-stripped name, token forms, fuzzy
+Jaro-Winkler (default 0.85) and subtitle aliases. PNG, JPEG, WebP and BMP work.
 
-| Extension | Listed | Launchable |
-| --- | --- | --- |
-| `.iso` | Yes | Yes |
-| `.chd` | Yes | Yes |
-| `.cci` | Yes | Yes (single part or split set) |
-| `.zar` | Yes | Yes (entry form or file tree) |
-| `.bin` | Yes | Chihiro netboot image |
+The optional online catalog is content-addressed WebP on Cloudflare R2. It
+downloads only matched covers, verifies each SHA-256, and keeps local covers
+working offline. Configure it under **Settings → Library → Cover art**.
 
-Split CCI sets are listed once under the base name.
-| `.xbe` | Yes | No (inspection only) |
+## Launching and disc swap
 
-`.iso` covers both optimized XISOs and full Redump images; the core finds the
-XGD game partition and maps it to LBA 0. `.chd` and entry-form `.zar` images get
-the same treatment.
+If the console is stopped, launching a title powers it on with that disc. If it
+is running, XGrid inserts the disc into the running machine (in-process hosting
+only). **Ctrl+E** ejects; **F5** powers off.
 
-## Cover art
+Per-title overrides live under **Settings → Titles** and are keyed by title ID
+when readable, otherwise by image path.
 
-Covers live in a folder you choose, never beside the disc. The default is:
-
-```text
-<data>/covers/
-```
-
-Matching order:
-
-1. A file named after the title ID, e.g. `4D530002.png`.
-2. An exact base name.
-3. An annotation-stripped exact name (`(USA)`, `(Europe)`, `(En,Fr,De)`, `[!]`
-   and `Rev 1` are ignored).
-4. Token-order and compound-word forms.
-5. A catalog title-id or exact-title match.
-6. Local fuzzy Jaro-Winkler matching (default threshold 0.85).
-7. Catalog fuzzy matching.
-8. Subtitle aliases.
-
-Sequel numbers are protected: `Halo` does not match `Halo 2`. Region and year
-break ties. PNG, JPEG, WebP and BMP are supported. A missing image falls back to
-the disc placeholder.
-
-### Online covers
-
-The optional R2 catalog uses the same content-addressed layout as 5DO:
-
-```text
-https://assets.purelogiccode.com/xgrid/v1/catalog.json
-```
-
-This is the live default endpoint. The 2026-11-26 pack contains 1,632
-deduplicated covers. If the catalog is unavailable, local covers keep working;
-a self-hosted or `file://` catalog works instead.
-
-XGrid caches the catalog and images under `<data>/covers-cache/`, revalidates
-with `If-None-Match`, verifies every image by SHA-256, and downloads only covers
-matched to games in your library. Local covers keep working offline.
-
-Configure it under **Settings → Library → Cover art**: local folder, online
-toggle, automatic downloads, catalog URL, fuzzy matching, annotation stripping
-and threshold. **Refresh** fetches the catalog now; **Clear cache** deletes the
-cache.
-
-## Titles and overrides
-
-- Loose XBE files show their certificate title.
-- Disc images use the file name as the display title, with annotation groups
-  removed for the card.
-- When readable, the XBE title ID (`Title XXXXXXXX`) keys per-title overrides.
-- Otherwise the image path keys the override.
-- An override can set guest memory, the renderer, texture filtering and the
-  presentation filter; unset values inherit the global configuration.
-
-## Launch
-
-Double-click a tile or press **Enter** on the selection. XGrid applies the
-global settings plus any matching per-title override.
-
-While the console runs, choosing a different game inserts that disc instead of
-power-cycling. **Ctrl+E** ejects. Both need in-process core hosting.
-
-## Missing games
-
-1. Check the extension.
-2. Confirm the folder exists and is in the list.
-3. Press **Rescan** or use **View → Rescan library**.
-4. Read **Activity** for scan errors.
-
-For boot failures, see [Media formats](Media-Formats) and
-[Troubleshooting](Troubleshooting).
-
-## Screenshots
-
-**F8** saves the console picture. Open the folder with **View → Open screenshots
-folder**; the Library no longer embeds a screenshot strip.
+Full guide: [Game library](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/library.md).

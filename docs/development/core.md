@@ -1,7 +1,9 @@
-# The XGrid core
+# The native core
 
 The core is the tracked xemu 0.8.139 tree in `xemu/`. XGrid does not maintain a
 separate fork repository; the tree and its patch record travel with the shell.
+For a file-level comparison with pristine xemu, see
+[Upstream differences](../reference/upstream-differences.md).
 
 ## Tree structure
 
@@ -9,8 +11,8 @@ separate fork repository; the tree and its patch record travel with the shell.
 xemu/
   <upstream xemu 0.8.139 and its QEMU base>
   xgrid-core/          XGrid-owned native code
-  hw/xbox/chihiro/     Ported Sega Chihiro machine and cabinet devices
-  block/blkmemory.c    Memory-backed block driver for the Chihiro DIMM
+  hw/xbox/chihiro/     ported Sega Chihiro machine and cabinet devices
+  block/blkmemory.c    memory-backed block driver for the Chihiro DIMM
   xemu-patches/        patch record for upstream edits
   XGrid.Xemu.Tree.csproj
   dist/                build output (git-ignored)
@@ -27,29 +29,28 @@ xemu/
 | `block/xgridzar.c` | ZArchive block driver; decodes zstd blocks, exposes an entry-form `.iso`, and synthesizes XDVDFS for file-tree archives. |
 | `display/xgrid-display.c` | Presentation filter/overlay selection plus the headless frame sink (Windows named section or POSIX shared memory). |
 | `input/xgrid-input.c` | Input sink; reads one pad record per Xbox port. |
-| `abi/xgrid-core.c` | In-process host ABI and save-state request bridge. |
+| `abi/xgrid-core.c` | In-process host ABI, playback and save-state request bridge. |
 | `thirdparty/libchdr/` | Vendored libchdr 0.3.0 (BSD-3-Clause). |
-| `thirdparty/libcci/` | Vendored libCCI 0.1 (GPL-2.0-or-later), built against the host LZ4. |
+| `thirdparty/libcci/` | Vendored libCCI (GPL-2.0-or-later), built against the host LZ4. |
 | `meson.build` | Wires the additions into the xemu build. |
 
 ### `xemu-patches/`
 
-Edits to upstream files are kept as patches. The current patch record includes
-the in-process host changes (the Windows `sigsetjmp`/`siglongjmp` shim, the
-QEMU thread stack size and the xemu run entry point), the shell-pad binding in
-`ui/xemu-input.c` that gives players 2-4 a controller to feed, the core-side
-presentation filter/overlay in `ui/xui/gl-helpers.cc` and `ui/xui/main.cc`
-(`0010-ui-presentation-filter-overlay.patch`), the exit-time GL guard in the
-Windows DXGI presenter (`0011-ui-dxgi-exit-cleanup.patch`), the WGL interop
-attachment fix that keeps native flip presentation active on NVIDIA drivers
-(`0015-ui-dxgi-interop-presentation.patch`), the guest-clock part of
-fast-forward (`0012-ui-fast-forward-clock.patch`), the disc-driver selection in
-`system/vl.c` (`0016-core-disc-formats.patch`), the DirectSound device option
-plus the `-audio-drivers` probe (`0017-core-audio-device.patch`), and the Sega
-Chihiro machine and its Xbox integration (`0018-core-chihiro.patch`).
+`xemu/xemu-patches/` is the provenance record for upstream edits. It includes
+the in-process host changes (the Windows `sigsetjmp`/`siglongjmp` shim, the QEMU
+thread stack size and the xemu run entry point), the shell-pad binding in
+`ui/xemu-input.c` that gives players 1–4 a controller to feed, the core-side
+presentation filter/overlay, the exit-time GL guard in the Windows DXGI
+presenter, the WGL interop attachment fix, the guest-clock part of fast-forward,
+the disc-driver selection in `system/vl.c`, the DirectSound device option plus
+the `-audio-drivers` probe, and the Sega Chihiro machine and its Xbox
+integration.
 
-A new xemu release is handled by rebasing the patch set and the `xgrid-core/`
-additions, not by re-porting the emulator.
+XGrid-native additions live in `xemu/xgrid-core/`; new changes are ordinary
+commits in this repository. A new xemu release is handled by rebasing the
+recorded changes and the `xgrid-core/` additions, not by re-porting the
+emulator. See [Maintaining the xemu tree](xemu-upstream.md) for the dependency
+locks, the upstream revision markers and the weekly report.
 
 ## Renderers
 
@@ -58,18 +59,19 @@ The NV2A has four renderer backends:
 | Backend | Path | Host |
 | --- | --- | --- |
 | OpenGL | `hw/xbox/nv2a/pgraph/gl/`, shaders in `pgraph/glsl/` | All |
-| Vulkan | `hw/xbox/nv2a/pgraph/vk/`, shaders in `pgraph/glsl/` | All with Vulkan |
+| Vulkan | `hw/xbox/nv2a/pgraph/vk/`, shaders in `pgraph/glsl/` | Builds with Vulkan |
 | Direct3D 11 | `hw/xbox/nv2a/pgraph/d3d11/`, shaders in `pgraph/hlsl/` (preview) | Windows |
 | NULL | `hw/xbox/nv2a/pgraph/null/` | All |
 
-Each backend registers a `PGRAPHRenderer`; PGRAPH owns the state extraction
-and calls the selected backend's operations. The Direct3D 11 backend is built
-when `xgrid_d3d11` is enabled (default on Windows), and only then is `D3D11`
-listed in `xgrid-core.json`. It has its own device/context, surface and zeta
-caches, HLSL vertex/pixel shader translation, a CPU vertex decoder, pipeline
-state objects, occlusion-query reporting and a texture cache; presentation is a
-D3D11 readback into the core GL display texture. The staged plan, current phase
-and known limitations are in `ImplementDirectX.md` at the repository root.
+Each backend registers a `PGRAPHRenderer`; PGRAPH owns state extraction and
+calls the selected backend's operations. The Direct3D 11 backend is built when
+`xgrid_d3d11` is enabled and the Windows toolchain provides `d3d11` and
+`d3dcompiler`; only then is `D3D11` listed in `xgrid-core.json`. It has its own
+device/context, surface and zeta caches, HLSL vertex/pixel shader translation, a
+CPU vertex decoder, pipeline state objects, occlusion-query reporting and a
+texture cache; presentation is a D3D11 readback into the core GL display
+texture. The staged plan and known limitations are in `ImplementDirectX.md` at
+the repository root.
 
 ## Shell cover art
 
@@ -93,8 +95,8 @@ catalog is `https://assets.purelogiccode.com/xgrid/v1/catalog.json`; it is
 configurable and may be a `file://` catalog for offline use.
 
 `scripts/package-covers.ps1` builds the local pack with ffmpeg and
-`scripts/publish-covers.ps1` mirrors it to R2 with rclone. The schema, matching
-rules and publish commands are in [Cover catalog packaging](covers.md).
+`scripts/publish-covers.ps1` mirrors it to R2 with rclone. See
+[Cover catalog packaging](covers.md).
 
 ## In-process ABI
 
@@ -144,9 +146,9 @@ const char *xgrid_core_disc_error(void);
 ```
 
 A disc load opens the medium through the block layer with the format the file
-extension names: `.chd` uses `xgridchd`, `.zar` uses `xgridzar`, everything else
-is raw. The tray is cycled so Xbox software notices the change; no power cycle
-is involved.
+extension names: `.chd` uses `xgridchd`, `.cci` uses `xgridcci`, `.zar` uses
+`xgridzar`, and `.iso`/`.xiso` use `xgridiso`. The tray is cycled so Xbox
+software notices the change; no power cycle is involved.
 
 Screenshot requests are queued on the core's render loop:
 
@@ -164,19 +166,11 @@ the fallback when the display sink is off, because then no frame is published.
 
 The speed multiplier scales the guest's `QEMU_CLOCK_VIRTUAL` and the vblank pace
 together, so the vCPU timers, the Xbox TSC and the presented frame rate all run
-at the same faster pace. The value is atomic, so the shell can set 4x while the
-core reads it. The shell toggles 4x with Space or the **4x** toolbar button and
-returns to 1x on the next press, pause or session end.
+at the same faster pace. The value is atomic, so the shell can set 4× while the
+core reads it. The shell returns to 1× on the next toggle, pause or session end.
 
 One process hosts one machine. Start is accepted once; join releases the thread
 handle after the run loop stops.
-
-### Headless
-
-The display sink is also the headless renderer: the core hides its SDL window,
-keeps the OpenGL context and publishes every presented frame. A headless shell
-run reads only the 32-byte header, so counting frames does not copy pixels. On
-Unix the transport is a POSIX shared-memory object; the core unlinks it at exit.
 
 ### Why a DLL?
 
@@ -203,8 +197,8 @@ pwsh -File scripts/build-native-xemu.ps1
 ```
 
 Output: `xemu/dist/xemu.exe`, `xemu/dist/xgrid_core.dll`,
-`xemu/dist/xgrid-core.json` and the runtime DLLs. The manifest lists the
-compiled renderers and audio drivers; the shell offers only those backends.
+`xemu/dist/xgrid-core.json` and the runtime DLLs. The manifest lists the compiled
+renderers and audio drivers; the shell offers only those backends.
 
 Linux:
 
@@ -214,10 +208,7 @@ bash scripts/build-native-xemu.sh
 
 Output: `xemu/dist/xemu`, `xemu/dist/xgrid-core.json` and
 `xemu/dist/LICENSE.txt`. This is the standalone core; the in-process
-`xgrid_core` library and its save-state ABI are Windows-only. The release
-packager bundles this output in the `linux-x64` frontend archive; stage a
-different host's build with `-CoreRoot` when one machine packages several RIDs
-(see [Releasing](releasing.md)).
+`xgrid_core` library and its save-state ABI are Windows-only.
 
 ### Rebase baseline
 
@@ -248,13 +239,12 @@ pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\007-entry.zar 
 pwsh -File scripts/chd-boot-check.ps1 -Disc data\test-samples\zar\hello.zar -Shot wt-data\zar-tree-boot.png
 ```
 
-`RESULT: PASS` means the core stayed alive and presented a non-blank frame. Run
-them after a core rebase that touches the block layer. A full Redump ISO must
-show the game, not the dashboard's video tray; the `xgridiso` driver maps the
-XGD game partition to LBA 0. The file-tree check exercises the XDVDFS
-synthesizer; entry-form archives expose the disc as one `.iso` entry. For CCI,
-check both a single file and the first part of a split set; `qemu-img compare`
-can validate the decoded stream against the source ISO.
+`RESULT: PASS` means the core stayed alive and presented a non-blank frame. A
+full Redump ISO must show the game, not the dashboard's video tray; the
+`xgridiso` driver maps the XGD game partition to LBA 0. The file-tree check
+exercises the XDVDFS synthesizer. For CCI, check both a single file and the first
+part of a split set; `qemu-img compare` can validate the decoded stream against
+the source ISO.
 
 ## Adding an enhancement
 
@@ -269,6 +259,7 @@ can validate the decoded stream against the source ISO.
 
 ## Licensing
 
-XGrid's additions are GPL-2.0-or-later. libchdr is BSD-3-Clause. The vendored
-xemu/QEMU files keep their original notices. See
-[Licensing](../legal/licensing.md) and [Porting policy](../legal/porting-policy.md).
+XGrid's additions are GPL-2.0-or-later. libchdr is BSD-3-Clause; libCCI is
+GPL-2.0-or-later. The vendored xemu/QEMU files keep their original notices. See
+[Licensing](../legal/licensing.md) and
+[Porting and provenance](../legal/porting-policy.md).

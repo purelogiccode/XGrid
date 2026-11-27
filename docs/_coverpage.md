@@ -4,10 +4,9 @@
 
 > Xbox emulation, refined.
 
-A maintained **xemu** core with a modern **Avalonia** desktop shell, real-time
-CHD/ZAR media, save states, per-title settings and a first-class input and
-display path.
+An enhanced **xemu 0.8.139** core with a modern **Avalonia** desktop shell,
+real-time compressed media, save states and per-title settings.
 
-[Get started](getting-started/installation.md)
-[Explore the docs](#/index)
+[Quick start](#/getting-started/quick-start)
+[Documentation](#/index)
 [GitHub](https://github.com/purelogiccode/XGrid)

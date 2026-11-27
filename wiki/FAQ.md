@@ -1,127 +1,98 @@
 # FAQ
 
-### What is XGrid?
+## What is XGrid?
 
-An enhanced **xemu 0.8.139** core with a modern **Avalonia** desktop shell.
+An enhanced **xemu 0.8.139** core with a modern **Avalonia desktop shell**. It
+is not an independent emulator.
 
-### Is it a fork of xemu?
+## Does it include BIOS files or games?
 
-A maintained in-tree fork of xemu 0.8.139: xemu is tracked in `xemu/`, XGrid
-additions live in `xemu/xgrid-core/`, and upstream edits are recorded in
-`xemu/xemu-patches/`.
+No. Supply your own legally obtained firmware, HDD image and game images.
 
-### Is the emulator written in C#?
+## Which platforms work?
 
-No. The **shell** is C#/Avalonia; the emulator is the native xemu/QEMU core. A
-managed C# emulator is kept as a validation oracle.
+Windows 10/11 x64 has full integration. Linux x64 ships the standalone core in
+its own window. macOS ships the shell only and needs an external xemu 0.8.139
+build.
 
-### Why is the emulator native?
+## Does it need .NET?
 
-The native xemu/QEMU core gives mature device emulation and the performance the
-product needs. The shell is C#; the emulator is not. A managed C# emulator exists
-as a validation oracle, not as the product path.
+No for release archives; they are self-contained. Yes for source builds (.NET 11
+SDK).
 
-### Does it include BIOS or games?
+## Which renderer should I use?
 
-No. Supply your own legally obtained firmware and discs.
+**OpenGL** is the safe default. Vulkan and Direct3D 11 are offered only when the
+core was built with them; Direct3D 11 is a Windows preview. Null is headless.
 
-### Which platforms work?
+## Which media formats work?
 
-Windows x64 has the full shell integration. The Linux x64 archive bundles the
-standalone core, which runs in its own window; save states, pause/step and disc
-swap need the Windows in-process path. The macOS archives contain the shell only
-and need an external xemu 0.8.139 build.
+ISO/XISO (optimized or Redump), CHD, CCI (single or split), ZArchive (entry or
+file tree), Chihiro `.bin`, and raw/qcow2 HDD. Loose XBE is inspection only.
 
-### Do I need .NET?
+## Do file-tree ZAR archives work?
 
-No for release archives. Yes for building from source (.NET 11 SDK).
+Yes. The core synthesizes an XDVDFS volume in memory. Names must be Latin-1, up
+to 42 characters, without separators.
 
-### Which renderer?
+## Can I play Chihiro games?
 
-OpenGL by default. Direct3D 11 on Windows builds that report it. Vulkan only if
-the core build includes it. Null is headless.
+Yes, with netboot `.bin` images and the Chihiro firmware. Convert Xbox-format
+Chihiro ISOs or GD-ROMs in Settings or with the CLI. Direct GD-ROM boot is not
+supported.
 
-### Why is Vulkan missing?
+## Can I use a split CCI set?
 
-The build lacks Vulkan dependencies; `xgrid-core.json` reports the compiled
-renderers and the shell hides unsupported options.
+Yes. Open the first part (`game.1.cci`); the core discovers the rest.
 
-### What media works?
+## Does XGrid stay open after power off?
 
-ISO/XISO (optimized or full Redump), CHD, CCI, ZAR (entry form or file tree),
-raw/qcow2 HDD. XBE is inspection only. Full Redump ISOs are mapped to the game
-partition automatically.
+Yes by default. Turn off **Keep XGrid open after power off** to close after a
+normal shutdown. A faulted core stays open.
 
-### Can XGrid play Sega Chihiro games?
+## Can it resume where I left off?
 
-Yes, with netboot `.bin` images and the Chihiro firmware. Put
-`chihiro_xbox_bios.bin`, `fpr21042_m29w160et.bin`, `ic10_g24lc64.bin`,
-`ic11_24lc024.bin` and `pc20_g24lc64.bin` in one folder, select it under
-**Settings -> System -> Sega Chihiro**, and launch a `.bin` from the Library.
-The `XBOXOG - Chihiro` style ISOs convert in Settings (or with
-`XGrid.Cli chihiro-netboot`); Redump cue/bin sets and MAME `.chd` files convert
-in Settings (or with `XGrid.Cli chihiro-redump`) using the game's MAME key ZIP.
-`.cue` GD-ROM sets do not boot directly. See [Sega Chihiro](Chihiro).
+Yes with in-process hosting. Enable **Save state before power off** and **Resume
+the saved session**. Launching a game from the Library starts fresh.
 
-### Why does my ZAR fail?
+## Do save states work in the separate process?
 
-The archive may be corrupt or contain a name XDVDFS cannot store (Latin-1, up to
-42 characters, no separators). Both entry-form and file-tree archives are
-supported; read the core message in **Activity**.
+No. They need the in-process ABI on Windows.
 
-### Does XGrid stay open when the console powers off?
+## Where are save states stored?
 
-Yes, by default. **Settings → System → Session → Keep XGrid open after power
-off** leaves the shell on the powered-off screen. Turn it off to close XGrid
-after a normal shutdown; a core fault stays open so the error is visible.
+Inside the HDD image (`xgrid-slot-1` … `xgrid-slot-4`, `xgrid-session`). Chihiro
+uses `chihiro_snapshots.qcow2`.
 
-### Can XGrid resume where I left off?
+## Where is `settings.json`?
 
-Yes, with in-process hosting. Enable **Save state before power off** and
-**Resume the saved session** under **Settings → System → Session**. XGrid writes
-`xgrid-session` and restores it when the Power button starts the dashboard.
-Launching a game from the Library starts it fresh. The console boots for about
-12 seconds before the saved state is restored.
+Windows: `%APPDATA%\XGrid\settings.json`. Linux: `~/.config/XGrid/settings.json`.
+macOS: `~/Library/Application Support/XGrid/settings.json`. Override with
+`XGRID_FRONTEND_DATA_DIR` or `--data-dir`.
 
-### How do I choose the audio device?
+## Can I use my own xemu.toml?
 
-Open **Settings → Audio**. The backend list comes from the core's compiled
-drivers. DirectSound lists the host playback devices; use **Refresh** after
-plugging one in. PulseAudio, PipeWire, ALSA, OSS, sndio and JACK accept an
-optional device or server name. **Null (no output)** discards audio and is used
-automatically by headless runs.
+No. XGrid generates a complete file for every launch. Configure through the
+shell.
 
-### Do save states work in separate process?
+## Can I swap discs while running?
 
-No. Use in-process hosting.
+Yes with in-process hosting. `Ctrl+O` opens/swaps, `Ctrl+E` ejects. With a
+separate process, power off first.
 
-### Where are save states?
+## Does it support multiple controllers or netplay?
 
-Inside the HDD image, named `xgrid-slot-1` … `xgrid-slot-4`.
+Up to four XInput players are supported on Windows, with keyboard on player 1.
+There is no shell netplay UI.
 
-### Where is settings.json?
+## How do I update?
 
-`%APPDATA%\XGrid\` (Windows), `~/Library/Application Support/XGrid/` (macOS), or
-the platform application-data folder (Linux). Override with
-`XGRID_FRONTEND_DATA_DIR`.
+Keep your data folder, replace the application folder, and start it. Save states
+live in the HDD image and survive.
 
-### Can I use my own xemu.toml?
+## Is XGrid affiliated with Microsoft or xemu?
 
-No. XGrid generates a complete configuration for each launch.
+No. It is an independent project. xemu and QEMU are credited in
+`THIRD_PARTY_NOTICES.md`.
 
-### Does it support netplay or more controllers?
-
-The shell exposes one player-1 pad and no netplay UI.
-
-### Can I swap discs while running?
-
-No. Power off before launching another disc.
-
-### How do I update?
-
-Keep the data folder, replace the application folder, start the new release.
-
-### Where do I report bugs?
-
-Use the [issue tracker](https://github.com/purelogiccode/XGrid/issues). For
-vulnerabilities, follow `SECURITY.md`.
+Full FAQ: [FAQ](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/faq.md).

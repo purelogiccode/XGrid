@@ -1,10 +1,12 @@
-# Headless runs and the command line
+# Command line and headless runs
 
 Headless mode runs the console without the XGrid window. The core still boots
 and renders off-screen: the display sink publishes frames into a shared section
 and XGrid counts them, so a run can be part of a script, a benchmark or a
-regression job without presenting a picture. The same command line can override
-settings for one session without changing `settings.json`.
+regression job without presenting a picture.
+
+The same command line can override settings for one session without changing
+`settings.json`.
 
 ## Quick start
 
@@ -20,11 +22,13 @@ Stop after 1,800 published frames instead of a wall-clock limit:
 XGrid.Frontend.Avalonia.exe --headless --frames 1800 --disc "D:\Games\Halo.iso"
 ```
 
+On Linux and macOS, use the executable name without `.exe`.
+
 ## Benchmark runs
 
 `--benchmark` is a headless run with a fixed frame budget so repeated runs are
 comparable. With no limit it stops after 600 presented frames; `--frames` or
-`--seconds` still take precedence.
+`--seconds` still takes precedence.
 
 ```text
 XGrid.Frontend.Avalonia.exe --benchmark --disc "D:\Games\Halo.iso" --summary bench.json
@@ -37,8 +41,10 @@ Both are measured between the first and last frame, so boot time does not dilute
 the result.
 
 A frame limit has no default time cap; add `--seconds` as well when the guest
-might never reach the frame count. With neither limit, the run stops after 60
-seconds.
+might never reach the frame count. With neither limit, a normal headless run
+stops after 60 seconds.
+
+## Isolated run
 
 Run against explicit firmware and a scratch hard disk, using an isolated data
 folder:
@@ -56,8 +62,7 @@ XGrid.Frontend.Avalonia.exe --headless --seconds 20 ^
 ```
 
 The command line applies to the one process. It never rewrites the saved
-settings, so a normal launch afterwards uses the configured values again. On
-Linux and macOS, use the executable name without `.exe`.
+settings, so a normal launch afterwards uses the configured values again.
 
 If `--disc` is omitted, a configured default disc is used. With no disc at all,
 the core boots the dashboard from the hard-disk image.
@@ -115,14 +120,6 @@ larger share of its wall time in the boot path.
 The folder is created when it does not exist. A summary write failure is
 reported and turns the process exit code into `1`.
 
-## Diagnostics
-
-A headless run writes the same Serilog rolling log as the shell and sends one
-best-effort usage hit at launch. Warnings and errors still reach the bug-report
-queue. The console report and the JSON summary are the stable machine-readable
-output; the log file has the exception and core details. See
-[Logging and diagnostics](diagnostics.md).
-
 ## Exit codes
 
 | Code | Meaning |
@@ -138,8 +135,8 @@ visual output.
 
 ## Session overrides
 
-The full list is in [Configuration](../reference/configuration.md). The switches
-are case-insensitive and accept both `--name value` and `--name=value`.
+The full list is in [Configuration](../reference/configuration.md). Switches are
+case-insensitive and accept both `--name value` and `--name=value`.
 
 | Area | Switches |
 | --- | --- |
@@ -154,6 +151,27 @@ when `--headless` is omitted. A positional image path also works when it ends in
 `.bin` path boots the Sega Chihiro with the firmware configured in
 **Settings → System → Sega Chihiro**. Use `--` to stop parsing and pass the rest
 to Avalonia unchanged.
+
+## CI recipe
+
+A minimal Windows job can use a self-contained frontend plus a prepared data
+folder:
+
+```powershell
+$env:XGRID_DISABLE_STATISTICS = '1'
+$env:XGRID_DISABLE_UPDATE_CHECK = '1'
+XGrid.Frontend.Avalonia.exe --headless --seconds 15 `
+  --data-dir C:\ci\xgrid-data `
+  --disc C:\ci\games\smoke.iso `
+  --summary C:\ci\artifacts\smoke.json
+
+if ($LASTEXITCODE -ne 0) { throw "XGrid smoke run failed: $LASTEXITCODE" }
+```
+
+Keep firmware and game images out of the repository; stage them as CI secrets
+or pre-provisioned runner assets. See
+[Quality gates](../development/quality-gates.md) for the repository's own
+`headless-check.ps1` gate.
 
 ## Host notes
 
@@ -179,3 +197,4 @@ to Avalonia unchanged.
 - [Configuration](../reference/configuration.md) — every switch and file.
 - [Display and filters](display.md) — presentation and renderer settings.
 - [Architecture](../reference/architecture.md) — the display sink and hosting.
+- [Logs and diagnostics](diagnostics.md) — the rolling log and opt-outs.

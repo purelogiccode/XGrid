@@ -30,7 +30,7 @@ important shortcuts are:
 | `F11` | Toggle fullscreen |
 | `Esc` | Pause a running game, then close the shell on the next press in fullscreen |
 | `Ctrl+O` / `Ctrl+E` | Open or swap a disc / eject |
-| `Space` | Toggle 4x fast-forward while running |
+| `Space` | Toggle 4× fast-forward while running |
 
 Text boxes and other typing targets keep their normal editing keys; the pad
 handler ignores input while a text control has focus.
@@ -38,25 +38,25 @@ handler ignores input while a text control has focus.
 ## Focus and navigation
 
 - `Tab` / `Shift+Tab` move through the current page in visual order.
-- `Enter` or `Space` activate the focused button; `Esc` closes dialogs.
+- `Enter` activates the focused button; `Space` also activates it when a game is
+  not running (while running, Space is fast-forward). `Esc` closes dialogs.
 - Menus are reachable with `Alt` and the arrow keys.
 - The first-run wizard, donation dialog and update prompt are modal, so focus
   stays inside them until they are closed.
-- Destructive actions (delete state, eject, stop) ask for confirmation or state
-  the consequence in the status line.
+- Destructive actions (delete state, eject, stop) state their consequence before
+  or after the action.
 
 ## Visual design
 
-- Six accent palettes (Blue, Emerald, Aqua, Violet, Amber, Crimson) are chosen
-  in **Settings - Appearance**.
+- Six accent palettes (Blue, Emerald, Aqua, Violet, Amber, Crimson) are chosen in
+  **Settings → Appearance**.
 - The default dark theme keeps body text above the usual contrast target; the
   accent is used for emphasis, not for long text.
 - The log dock and Activity page use a monospace font so timestamps and levels
   line up.
-- The display can be scaled with the surface-scale and window-size controls;
-  the shell layout itself follows the desktop scale factor.
-- Tooltips remain readable in fullscreen because the shell chrome is hidden, not
-  the tooltip layer.
+- The display can be scaled with the resolution-scale and window-size controls;
+  the shell layout follows the desktop scale factor.
+- Fullscreen hides the shell chrome, not the console picture or the core's HUD.
 
 ## Screen readers
 
@@ -67,7 +67,8 @@ log list exposes each line as text.
 
 If a control is announced without a useful name, report it with the window, the
 control label and the platform screen reader. Accessibility reports use the same
-diagnostics channel as other bugs; see [Logging and diagnostics](diagnostics.md).
+diagnostics channel as other bugs; see
+[Logs and diagnostics](diagnostics.md).
 
 ## Known limitations
 
@@ -78,6 +79,8 @@ diagnostics channel as other bugs; see [Logging and diagnostics](diagnostics.md)
   not resize with large text settings.
 - High-contrast platform themes are not separately tested; the dark theme is the
   supported baseline.
+- The Chihiro gun games use the host cursor as an aiming device; keyboard-only
+  aim is available for player 2, while player 1's gun is pointer-based.
 
 ## Reporting a problem
 

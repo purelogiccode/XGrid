@@ -9,9 +9,9 @@ infrastructure.
 
 The banner appears under the toolbar until the donation service confirms a
 completed donation for the email you used on
-[purelogiccode.com](https://www.purelogiccode.com/donate). It has no close
-button on purpose: it is removed by a confirmed donation, and it is hidden
-temporarily while the shell is fullscreen.
+[purelogiccode.com](https://www.purelogiccode.com/donate). It has no close button
+on purpose: it is removed by a confirmed donation, and it is hidden temporarily
+while the shell is fullscreen.
 
 | Action | What happens |
 | --- | --- |
@@ -54,21 +54,23 @@ another machine also works.
 The check is a single HTTPS `POST` to
 `https://www.purelogiccode.com/api/donations/verify` with the email and the
 `xgrid` application slug. It does not send firmware paths, game titles, logs or
-machine identifiers. See [Privacy and data](../legal/privacy.md) and the
-[donation API reference](../reference/donation-api.md).
+machine identifiers.
 
 The endpoint and API key can be overridden for local testing with
 `XGRID_DONATION_ENDPOINT`, `XGRID_DONATION_PAGE` and
 `XGRID_DONATION_API_KEY`.
+
+See [Privacy and data](../legal/privacy.md) and the
+[donation API reference](../reference/donation-api.md).
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
 | The check says donation checks are not available for XGrid yet | The deployed website catalog no longer lists the `xgrid` product. Contact the site operator. |
-| "No donation was found" right after donating | Stripe webhooks can take a moment. Wait a minute and try again. |
+| "No donation was found" right after donating | Payment webhooks can take a moment. Wait a minute and try again. |
 | The check says the service is temporarily unavailable or unreachable | The site or network is down. The banner stays and retrying is safe. |
-| The banner returned after saving settings | Fixed: the Settings page now preserves the donation state. Update to the current build. |
+| The banner returned after saving settings | Fixed in the current build; update if you are on an older alpha build. |
 | The banner returned after deleting settings | Expected. Enter the donation email again. |
 | The email was mistyped | Press **I already donated** and enter the correct address. A failed check does not lock the address. |
 

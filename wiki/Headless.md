@@ -12,14 +12,13 @@ Boot a disc for 30 seconds:
 XGrid.Frontend.Avalonia.exe --headless --seconds 30 --disc "D:\Games\Halo.iso"
 ```
 
-Stop after 1,800 frames and write the JSON report (add `--seconds` for a time
-cap):
+Stop after 1,800 frames and write the JSON report:
 
 ```text
 XGrid.Frontend.Avalonia.exe --headless --frames 1800 --summary run.json --disc "D:\Games\Halo.iso"
 ```
 
-Benchmark with a fixed frame budget (600 frames by default) and a report:
+Benchmark with a fixed frame budget (600 frames by default):
 
 ```text
 XGrid.Frontend.Avalonia.exe --benchmark --summary bench.json --disc "D:\Games\Halo.iso"
@@ -38,9 +37,8 @@ XGrid.Frontend.Avalonia.exe --headless --seconds 20 ^
   --disc D:\Games\Halo.iso
 ```
 
-The normal shell accepts the same overrides without `--headless`. A positional
-`.iso`, `.xiso`, `.chd`, `.cci`, `.zar` or Chihiro `.bin` path is a `--disc`
-shortcut and powers on. A `.bin` uses the Chihiro firmware configured in
+A positional `.iso`, `.xiso`, `.chd`, `.cci`, `.zar` or Chihiro `.bin` path is a
+`--disc` shortcut and powers on. A `.bin` uses the firmware configured in
 **Settings → System → Sega Chihiro**.
 
 ## Common switches
@@ -54,15 +52,17 @@ shortcut and powers on. A `.bin` uses the Chihiro firmware configured in
 | `--renderer <OPENGL\|VULKAN\|D3D11\|NULL>` | Core renderer. |
 | `--scale <1-8>` | Internal surface scale. |
 | `--filtering <linear\|nearest>` | Core texture filtering. |
-| `--filter <nearest\|bilinear\|scanline\|crt>` | Presentation filter, applied by the core. |
+| `--filter <nearest\|bilinear\|scanline\|crt>` | Presentation filter. |
 | `--aspect`, `--fit`, `--ram`, `--audio`, `--audio-device` | Display, memory and audio overrides. |
-| `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` | Headless and benchmark controls. |
+| `--headless`, `--benchmark`, `--seconds`, `--frames`, `--summary` | Headless controls. |
 | `-h`, `--help`, `--version` | Reference and version. |
 
-Use `--` to stop parsing and pass the rest to Avalonia. Command-line overrides
-are not saved to `settings.json`; they apply to the current session only.
-`--seconds`, `--frames` and `--summary` imply `--headless`, and so does
-`--benchmark`.
+Use `--` to stop parsing and pass the rest to Avalonia. Overrides are not saved to
+`settings.json`. `--seconds`, `--frames`, `--summary` and `--benchmark` imply
+`--headless`.
+
+Without a limit, a headless run stops after 60 seconds and a benchmark stops
+after 600 frames. A frame limit with no time cap runs until that many frames.
 
 ## Output and exit codes
 
@@ -79,14 +79,9 @@ xgrid: frames=1800 seconds=30.04 firstFrame=1.20 fps=60.02 frameTime=16.66ms sto
 | `2` | Invalid switches, firmware or media. |
 | `3` | No frames were published. |
 
-Audio defaults to the `none` (null) sink in a headless run; pass `--audio` and
-`--audio-device` for an explicit backend or device. The hard disk is written
-at shutdown, so benchmark jobs should use a copy of the image. Off-screen
-rendering still needs a working OpenGL context; on a Linux server without a
-display, run it under Xvfb.
+Audio defaults to the `none` (null) sink. The hard disk is written at shutdown,
+so benchmark jobs should use a copy. Off-screen rendering still needs a working
+OpenGL context; on a Linux server without a display, run under Xvfb.
 
-The run also writes the Serilog rolling log and sends one best-effort usage hit.
-See [Logging and diagnostics](Diagnostics).
-
-Full details: [Headless runs](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/headless.md)
+Full guide: [Command line and headless](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/headless.md)
 and [Configuration](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/configuration.md).

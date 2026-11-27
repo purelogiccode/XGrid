@@ -30,8 +30,8 @@ jb inspectcode XGrid.sln `
 ```
 
 `--swea` enables solution-wide analysis. It finds cross-project dead code but is
-much slower and can trip over file watchers on large trees; use it for a
-periodic audit, not every inner loop.
+much slower and can trip over file watchers on large trees; use it for a periodic
+audit, not every inner loop.
 
 Useful variants:
 
@@ -93,3 +93,9 @@ dotnet format XGrid.sln --no-restore --verify-no-changes
 
 Record the result in the change description. A clean inspection is not a
 substitute for tests, and tests are not a substitute for a clean inspection.
+
+## Related pages
+
+- [Quality gates](quality-gates.md)
+- [Testing](testing.md)
+- [Contributing](contributing.md)

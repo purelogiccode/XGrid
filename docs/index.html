@@ -21,16 +21,20 @@
 
   <script>
     window.$docsify = {
-      name: 'XGrid',
+      name: 'XGrid Docs',
       repo: 'https://github.com/purelogiccode/XGrid',
       logo: 'assets/xgrid-mark.svg',
       homepage: 'index.md',
       coverpage: true,
       loadSidebar: true,
       subMaxLevel: 3,
+      auto2top: true,
+      relativePath: true,
+      notFoundPage: '404.md',
       search: {
         placeholder: 'Search the documentation…',
-        noData: 'No results.'
+        noData: 'No results.',
+        depth: 3
       },
       copyCode: {
         buttonText: 'Copy',
@@ -42,8 +46,10 @@
         nextText: 'Next',
         crossChapter: true
       },
-      notFoundPage: '404.md',
-      relativePath: true
+      editLink: {
+        pattern: 'https://github.com/purelogiccode/XGrid/edit/master/docs/:path',
+        text: 'Edit this page on GitHub'
+      }
     };
   </script>
 

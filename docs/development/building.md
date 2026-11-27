@@ -7,7 +7,7 @@ XGrid has two build products:
 
 The release build combines them. The core builds on Windows with MSYS2 and
 natively on Linux; the shell builds on Windows, Linux and macOS. macOS core
-builds are not yet supported by XGrid's scripts.
+builds are not supported by XGrid's scripts.
 
 ## Prerequisites
 
@@ -33,8 +33,8 @@ tree may still let meson fetch its own subprojects on the first build.
 ### Core (Linux)
 
 - A C/C++ toolchain, `make`, `ninja`, `pkg-config`, CMake and Python 3.
-- meson 1.5 or newer. Distribution packages are often older (Ubuntu 22.04
-  ships 0.61), so use a virtual environment when in doubt.
+- meson 1.5 or newer. Distribution packages are often older (Ubuntu 22.04 ships
+  0.61), so use a virtual environment when in doubt.
 - Python modules: PyYAML, plus `tomli` on Python older than 3.11.
 - Development headers: GLib, zlib, zstd, lz4, libepoxy, libusb, libpcap,
   libsamplerate, GMP, SDL3 and the X11 libraries.
@@ -52,8 +52,7 @@ sudo apt install build-essential ninja-build pkg-config cmake \
   libsamplerate0-dev libgmp-dev
 ```
 
-The core needs SDL3 3.4.x. Ubuntu 22.04 does not package it, so download and
-unpack the SDL3 source, then build it once:
+The core needs SDL3 3.4.x. Ubuntu 22.04 does not package it, so build it once:
 
 ```bash
 cmake -S SDL3-3.4.20 -B SDL3-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -97,7 +96,8 @@ The script:
 - builds `xgrid_core.dll` from the same objects for in-process hosting;
 - builds `qemu-img`/`qemu-io` for media checks;
 - copies runtime DLLs into `xemu/dist/`;
-- writes `xemu/dist/xgrid-core.json` with the compiled renderers.
+- writes `xemu/dist/xgrid-core.json` with the compiled renderers and audio
+  drivers.
 
 A clean rebuild:
 
@@ -105,20 +105,16 @@ A clean rebuild:
 pwsh -File scripts/build-native-xemu.ps1 -Clean
 ```
 
-Vulkan is built by default:
+The Windows script opts into Vulkan. A bare Meson configure defaults
+`xgrid_vulkan` off; pass `-Dxgrid_vulkan=true` if you build manually. For an
+OpenGL-only core, pass `-NoVulkan` (smaller binary and faster build). The first
+Vulkan build fetches the `glslang`, `volk` and `SPIRV-Reflect` subprojects and
+takes longer.
 
-```powershell
-pwsh -File scripts/build-native-xemu.ps1
-```
-
-For an OpenGL-only core, pass `-NoVulkan` (smaller binary and faster build).
-The first Vulkan build fetches the `glslang`, `volk` and `SPIRV-Reflect`
-subprojects and takes longer. Windows builds also compile the Direct3D 11
-renderer; `-Dxgrid_d3d11=false` disables it. `xemu/dist/xgrid-core.json` reports
-what the core can start, and the Settings page offers only those renderers.
-The Direct3D 11 backend compiles HLSL at runtime through `d3dcompiler_47.dll`,
-a Windows system component present on supported versions; the release does not
-bundle a private copy.
+Windows builds also compile the Direct3D 11 renderer when the toolchain provides
+`d3d11` and `d3dcompiler`; the manifest reports whether it did. The D3D11 backend
+compiles HLSL at runtime through `d3dcompiler_47.dll`, a Windows system
+component. The release does not bundle a private copy.
 
 The build is also wired into the solution anchor:
 
@@ -136,8 +132,10 @@ bash scripts/build-native-xemu.sh
 
 The script checks the toolchain, runs xemu's `build.sh` with the XGrid media
 drivers, builds `qemu-img`/`qemu-io` for the media checks, and writes the
-renderer manifest beside the core. Use `-j N` to set the job count and
-`--clean` for a clean rebuild.
+renderer/audio manifest beside the core. Use `-j N` to set the job count and
+`--clean` for a clean rebuild. The script leaves `xgrid_vulkan` off; add
+`-Dxgrid_vulkan=true` to the underlying Meson configure when the Vulkan
+dependencies are installed.
 
 The Linux build is the standalone core. The in-process `xgrid_core` library,
 four save-state slots and embedded display remain Windows-only; on Linux the
@@ -183,6 +181,9 @@ dotnet run --project src/XGrid.Frontend.Avalonia
 4. `xemu/dist/` found by walking up from the application or current directory;
 5. `data/xemu/` found the same way (development layout).
 
+Firmware left empty in Settings resolves beside the found core, then in
+`data/xemu/`.
+
 ## Development firmware
 
 For local development, put firmware and a scratch HDD in `data/xemu/`:
@@ -206,7 +207,7 @@ dotnet format XGrid.sln --no-restore --verify-no-changes
 ```
 
 The test suite is self-contained and needs no firmware or game media. See
-[Quality gates](quality-gates.md).
+[Quality gates](quality-gates.md) and [Testing](testing.md).
 
 ## Package a release
 
@@ -219,23 +220,22 @@ The Windows and Linux frontend archives must contain `core/xemu/`; build the
 core on its own host or stage per-RID builds with `-CoreRoot`, or pass
 `-SkipCore` for a development-only archive. See [Releasing](releasing.md).
 
-## Linux and macOS
+## Linux and macOS notes
 
 - The Avalonia shell builds normally with the .NET SDK on both platforms.
 - On Linux, build the core with `bash scripts/build-native-xemu.sh`. The shell
   finds `xemu/dist/xemu` automatically, or point it there with
-  `XGRID_XEMU_CORE` or the **Emulator binary** setting.
-- The `linux-x64` release frontend archive carries the Linux core under
-  `core/xemu/`. The shell runs it as a separate process with its own window.
-- The in-process core, host frame/pad sinks, save states and embedded display
-  are Windows-only for the normal shell UI. On Linux the core handles
-  presentation and input through SDL; the shell still owns the library, settings
-  and diagnostics. Headless runs are the exception: they use the POSIX display
-  sink on Linux and macOS.
+  `XGRID_XEMU_CORE` or **Emulator binary**.
+- The `linux-x64` release archive carries the Linux core under `core/xemu/`. The
+  shell runs it as a separate process with its own window.
+- The in-process core, host sinks, save states and embedded display are
+  Windows-only for the normal shell UI. On Linux the core handles presentation
+  and input through SDL; the shell still owns the library, settings and
+  diagnostics. Headless runs use the POSIX display sink on Linux and macOS.
 - macOS has no XGrid core build script. The macOS archives contain the shell
-  only; point the shell at an upstream xemu 0.8.139 build with the **Emulator
-  binary** setting. For a local core with the XGrid additions, build the
-  tracked tree with Homebrew dependencies:
+  only; point the shell at an upstream xemu 0.8.139 build with **Emulator
+  binary**. For a local core with the XGrid additions, build the tracked tree
+  with Homebrew dependencies:
 
   ```bash
   brew install meson ninja pkg-config glib pixman zstd lz4 libepoxy libusb \
@@ -265,6 +265,13 @@ core on its own host or stage per-RID builds with `-CoreRoot`, or pass
 | `Dependency "samplerate" not found` | Install `libsamplerate0-dev`. |
 | `Dependency "gmp" not found` | Install `libgmp-dev`. |
 | `ModuleNotFoundError: No module named 'yaml'` | Install PyYAML into the Python that runs meson. |
-| Vulkan not listed after build | The core was built with `-NoVulkan`, or the Vulkan subprojects could not be fetched. | Run `pwsh -File scripts/build-native-xemu.ps1` without `-NoVulkan`; otherwise the core still builds with OpenGL. |
+| Vulkan not listed after build | The core was built with `-NoVulkan`, or the Vulkan subprojects could not be fetched. Re-run without it; OpenGL still builds. |
 | `xgrid_core.dll` missing | Build the `xgrid_core` target; check `wt-data/xemu-build.log`. |
 | Shell cannot find the core | Set **Emulator binary** or `XGRID_XEMU_CORE`. |
+
+## Related pages
+
+- [Repository layout](repository-layout.md)
+- [The native core](core.md)
+- [Quality gates](quality-gates.md)
+- [Releasing](releasing.md)

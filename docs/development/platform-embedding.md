@@ -40,19 +40,19 @@ platform. This is a supported mode, not a fallback to the Avalonia canvas.
    an X11 child window created on Avalonia's native parent handle.
 2. Implement `XemuWindowEmbedder` for X11 using `XReparentWindow`, resize and
    map/unmap calls through `libX11`.
-3. Keep the input sink and the `WS_EX_NOACTIVATE` equivalent (X11 focus
-   handling) so the shell keeps keyboard focus.
+3. Keep the input sink and the `WS_EX_NOACTIVATE` equivalent (X11 focus handling)
+   so the shell keeps keyboard focus.
 
 ### Linux Wayland
 
 A foreign `wl_surface` cannot be reparented into another client. One of these is
 required:
 
-- **Subsurface**: the core creates its SDL window with a Wayland subsurface role
+- **Subsurface** — the core creates its SDL window with a Wayland subsurface role
   under the shell's `wl_surface`. This needs the shell to pass its `wl_display`
   and `wl_surface` (or a file descriptor) to the core and needs SDL3 support for
   the subsurface role.
-- **Texture bridge**: the core exports DMA-BUF frames and the shell composites
+- **Texture bridge** — the core exports DMA-BUF frames and the shell composites
   them with a native draw operation. Avalonia has no public DMA-BUF surface API,
   so this means a custom platform integration.
 
@@ -75,3 +75,8 @@ Each backend must pass the same acceptance checks:
 - Resize, fullscreen and page navigation do not destroy the core surface.
 - Filters and the FPS overlay are visible and selectable from the shell.
 - Screenshots include the native picture on that platform.
+
+## Related pages
+
+- [Architecture](../reference/architecture.md) — picture ownership and hosting.
+- [Display and filters](../guides/display.md) — current user-facing behavior.

@@ -1,4 +1,4 @@
-# Input
+# Controllers and input
 
 XGrid exposes up to four Xbox controllers, one per port. The keyboard always
 drives **player 1**; an XInput controller can drive any player.
@@ -26,10 +26,11 @@ drives **player 1**; an XInput controller can drive any player.
 | Right trigger | `C` |
 
 Keyboard presses are overlaid on the controller report; digital buttons combine.
-The shell only publishes input while the console is running and the window is
-active.
+The shell publishes input only while the console is running and the window is
+active; an inactive window publishes neutral records so it cannot drive a game
+from the background.
 
-**Space** is reserved: press it to toggle 4x fast-forward while a game runs. It
+**Space** is reserved: press it to toggle 4× fast-forward while a game runs. It
 is never stored as a pad binding, even if an older settings file listed it.
 
 ## Remapping
@@ -76,29 +77,35 @@ These are shell shortcuts, not gamepad bindings:
 | Key | Action |
 | --- | --- |
 | `F5` | Power on / off |
-| `F6` | Quick save to the selected slot |
-| `F7` | Quick load from the selected slot |
-| `F8` | Save a screenshot |
+| `P` | Pause / resume |
 | `F10` | Step one frame while paused |
+| `F6` / `F7` | Quick save / quick load |
+| `F8` | Save a screenshot |
 | `F11` | Toggle fullscreen |
-| `Space` | Toggle 4x fast-forward |
+| `Space` | Toggle 4× fast-forward |
 | `Esc` | Fullscreen: pause a game, then close XGrid on the next press |
-| `P` | Pause or resume the console |
 | `Ctrl+O` | Open a disc image (swaps the disc while running) |
 | `Ctrl+E` | Eject the inserted disc |
 | `Ctrl+S` | Save settings (Settings page) |
 
 Pause, frame step and fast-forward need in-process core hosting, like save
-states: the shell calls the core's ABI to stop the machine, to run exactly one
-frame, or to scale the vblank pace.
+states.
 
-See [Shortcuts](../reference/shortcuts.md) for the full list.
+See [Keyboard shortcuts](../reference/shortcuts.md) for the full list.
+
+## Sega Chihiro controls
+
+The Chihiro cabinet has its own keyboard, mouse, gamepad and light-gun map,
+including the Gundam cockpit and player 2 in gun games. See
+[Chihiro controls](chihiro-controls.md).
 
 ## Troubleshooting
 
-- **Controller not detected** — connect it before starting XGrid, check Windows
-  Game Controllers, and watch the Activity log.
-- **Wrong button** — remap the action or reset defaults.
-- **Stick drifts** — raise the dead zone.
-- **No input in game** — confirm the console is running, the shell window is
-  focused, and you are on Windows (the mapped-pad sink is Windows-only).
+| Problem | Check |
+| --- | --- |
+| **Controller not detected** | Connect it before starting XGrid, check Windows Game Controllers, and watch the Activity log. |
+| **Wrong button** | Remap the action or reset defaults. |
+| **Stick drifts** | Raise the dead zone. |
+| **No input in game** | Confirm the console is running, the shell window is focused, and you are on Windows (the mapped-pad sink is Windows-only). |
+| **Keyboard goes to the game field** | Click the console picture; the shell ignores pad input while a text control has focus. |
+| **Player 2–4 does nothing** | Assign an XInput slot to that port in **Settings → Input → Players** and confirm the controller is connected. |

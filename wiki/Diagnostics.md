@@ -1,52 +1,61 @@
-# Logging, diagnostics and updates
+# Logging and diagnostics
 
-XGrid uses **Serilog** for all diagnostic logging. The shell, the CLI and the
-library code write to one rolling log; warnings and errors can be submitted to
-the centralized bug-report service.
+XGrid routes diagnostics through **Serilog**. The shell, CLI and library code
+write to one rolling log; warnings and errors can be forwarded to the bug-report
+service. The **Activity** page shows the same events in the app.
 
-Every control in the shell has a tooltip. Hover a button, menu item, path box,
-slider or toggle to see what it does.
+## Activity
+
+**Activity** records the launch plan, renderer, scale, RAM, disc, audio backend,
+core start/stop and failures. Search or copy the relevant lines into a bug
+report. The log dock shows the newest lines while you play.
 
 ## Log files
 
-Logs are written to the per-user local application-data folder, under
-`XGrid/logs`, one file per day. The last 14 days are kept. On Windows this is
-`%LOCALAPPDATA%\XGrid\logs`.
-
-| Variable | Effect |
+| Platform | Default folder |
 | --- | --- |
-| `XGRID_LOG_DIRECTORY` | Write logs somewhere else. |
-| `XGRID_LOG_LEVEL` | `Verbose`, `Debug`, `Information`, `Warning`, `Error` or `Fatal`. |
-| `XGRID_FRONTEND_TRACE=1` | Enables debug-level frontend diagnostics. |
+| Windows | `%LOCALAPPDATA%\XGrid\logs` |
+| Linux | `~/.local/share/XGrid/logs` |
+| macOS | the .NET local application-data folder under `XGrid/logs` |
 
-The **Activity** page shows the same events in the window.
+Files are `xgrid-YYYYMMDD.log`; 14 days are kept. Override with
+`XGRID_LOG_DIRECTORY` or set `XGRID_LOG_LEVEL` to `Verbose`, `Debug`,
+`Information`, `Warning`, `Error` or `Fatal`. `XGRID_FRONTEND_TRACE=1` enables
+debug-level frontend/native diagnostics.
 
-## Bug reports
+In separate-process mode the core writes `<data>/xemu/xemu.log`.
 
-Warnings and errors are queued to the centralized bug-report API on a background
-worker, at most ten per minute. Reports contain:
+## Bug reports and statistics
 
-- environment details: date, application name and version, OS version,
-  architecture, bitness, Windows/Linux/macOS version, processor count, base
-  directory and temp path;
-- the error message;
-- the exception type, message, source and stack trace.
+Warnings and errors are queued to the bug-report service on a background worker
+(ten per minute maximum). A report contains the environment, application
+version, message and exception details. It does not contain game data, firmware,
+save states or screenshots.
 
-Set `XGRID_DISABLE_BUG_REPORTS=1` to stop forwarding. Logging continues.
+One usage hit is sent at launch with the application ID and version only.
 
-## Usage statistics
+Opt out:
 
-At launch XGrid sends one hit to the ApplicationStats service with the
-application id `xgrid` and the running version. The call is best-effort and
-never delays startup. Set `XGRID_DISABLE_STATISTICS=1` to opt out.
+```text
+XGRID_DISABLE_BUG_REPORTS=1
+XGRID_DISABLE_STATISTICS=1
+XGRID_DISABLE_UPDATE_CHECK=1
+```
 
 ## Update check
 
-After the main window opens, XGrid asks GitHub for the latest release. If a
-newer tag exists, a dialog offers to open the release page. The check is
-best-effort and can be disabled with `XGRID_DISABLE_UPDATE_CHECK=1`.
+After the window opens, XGrid asks GitHub for the latest release (or tag). If a
+newer version exists, it offers to open the release page. The repository is
+public, so no token is required; `XGRID_GITHUB_TOKEN` is optional and only raises
+the API rate limit.
 
-The GitHub repository must be public, or `XGRID_GITHUB_TOKEN` must contain a
-token that can read it. Without either, the check is skipped silently.
+## Reporting a bug
 
-See the full guide: [Logging, diagnostics and updates](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/diagnostics.md).
+Include the version, platform, renderer, hosting mode, the Activity lines and
+the matching log excerpt. Use the
+[issue tracker](https://github.com/purelogiccode/XGrid/issues). For
+vulnerabilities, use private reporting per
+[SECURITY.md](https://github.com/purelogiccode/XGrid/blob/master/SECURITY.md).
+
+Full guide: [Logs and diagnostics](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/diagnostics.md)
+and [Privacy and data](Privacy).

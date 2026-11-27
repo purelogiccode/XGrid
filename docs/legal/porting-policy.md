@@ -13,6 +13,7 @@ XGrid's own code is GPL-2.0-or-later, so code may be ported from:
 - xqemu;
 - envytools;
 - nv2a-trace;
+- xemu-Playtest-v2 and XPSemu-Chihiro for the Chihiro port;
 - other GPL-2.0-compatible sources.
 
 **GPL-3.0 code** (for example xbased) may be ported only when the build-scoped
@@ -63,3 +64,9 @@ result with the release. Without that audit, GPL-3.0 code stays reference-only.
 
 The `References2/` tree, when present, is a development-only oracle. It is not
 part of the build and is never redistributed. Do not modify it.
+
+## Related pages
+
+- [Licensing](licensing.md)
+- [Release licensing](release-licensing.md)
+- [The native core](../development/core.md)

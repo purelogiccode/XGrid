@@ -6,12 +6,12 @@ emulation itself is part of the core.
 
 ## Host audio backends
 
-The settings list is read from the core's own `-audio-drivers` report, so a
-backend the binary did not compile is never offered.
+The settings list is read from the core's own audio driver report, so a backend
+the binary did not compile is never offered.
 
 | Backend | Platform | Behavior |
 | --- | --- | --- |
-| **Auto** | all | Let the core use its first compiled backend. |
+| **Auto (recommended)** | all | Let the core use its first compiled backend. |
 | **DirectSound** | Windows | Use DirectSound explicitly. |
 | **Core Audio** | macOS | Use Core Audio explicitly. |
 | **PulseAudio** | Linux/BSD | Use PulseAudio. |
@@ -20,7 +20,7 @@ backend the binary did not compile is never offered.
 | **PipeWire** | Linux | Use PipeWire. |
 | **OSS** | Linux/BSD | Use OSS. |
 | **sndio** | Linux/BSD | Use sndio. |
-| **SDL** | all builds that compile it | Use SDL audio. |
+| **SDL** | builds that compile it | Use SDL audio. |
 | **Null (no output)** | all | Discard host audio. The guest still runs. |
 | **WAV capture** | all | Write the mixed output to `audio.wav` in the core working directory. |
 
@@ -69,8 +69,8 @@ If audio is silent, first confirm **Guest DSP** is on.
 <data>/xemu/audio.wav
 ```
 
-with `<data>` being the per-user data folder. The file is created when the core
-starts with the WAV backend.
+The file is created when the core starts with the WAV backend. The core uses
+`<data>/xemu/` as its working directory.
 
 ## Troubleshooting
 
@@ -83,6 +83,7 @@ starts with the WAV backend.
 | Backend refused at launch | The core build did not compile that backend. Pick one from the Settings list; it is read from the core's report. |
 | WAV file is empty | The guest produced no audio yet, or the DSP did not run. Check the Activity log and the core log. |
 | Audio after loading a state | A save state restores the audio device state; wait a moment for the core to run. |
+| Chihiro game is silent | Known upstream xemu Chihiro limitation; the Xbox audio path is unaffected. |
 
 The core's own log (`<data>/xemu/xemu.log` in separate-process mode) contains
-audio backend errors.
+audio backend errors. See [Logs and diagnostics](diagnostics.md).

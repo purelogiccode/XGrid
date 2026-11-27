@@ -1,7 +1,7 @@
 # Release licensing
 
-An XGrid release is a GPL binary distribution. The package must carry the
-license set and the corresponding source must be available.
+An XGrid release is a GPL binary distribution. The package must carry the license
+set and the corresponding source must be available.
 
 ## What every archive carries
 
@@ -30,7 +30,7 @@ GPL-3.0-or-later where included.
 The `linux-x64` frontend archive also redistributes:
 
 - `xemu` — the standalone core;
-- `xgrid-core.json` — the renderer capability manifest;
+- `xgrid-core.json` — the renderer/audio capability manifest;
 - `LICENSE.txt` — the core's generated component license summary.
 
 The core links the host's system libraries (SDL3, GLib, libepoxy, zstd, LZ4 and
@@ -91,3 +91,9 @@ If a release adds or removes a redistributed component:
 ## Not legal advice
 
 Review the actual license texts before distributing a modified build.
+
+## Related pages
+
+- [Licensing](licensing.md)
+- [Source availability](source-availability.md)
+- [Releasing](../development/releasing.md)

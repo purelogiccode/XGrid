@@ -1,51 +1,48 @@
 # Testing
 
-The test suite is part of the release gate. Tests are split by assembly so a
-focused change can run quickly.
+The suite is part of the release gate. It is split by assembly so focused changes
+run quickly.
 
-## Run everything
+## Main projects
+
+| Project | Covers |
+| --- | --- |
+| `XGrid.Diagnostics.Tests` | Logging, bug reports, statistics, update and donation clients. |
+| `XGrid.Frontend.Tests` | Settings, launch args, input, library, covers, filters, screenshots, save-state and playback runners. |
+| `XGrid.Core.Tests` | Core capabilities, launch settings, TOML writer, paths, display sink and hosting contract. |
+| Managed oracle projects | CPU, memory, bus, storage, audio, NV2A, OpenGL, XBE, FATX/XDVDFS. |
+| `XGrid.Integration.Tests` | Boot, discs, EEPROM, snapshots and network integration. |
+
+## Commands
 
 ```powershell
 dotnet restore XGrid.sln
 dotnet build XGrid.sln -c Release --no-restore --nologo
 dotnet test XGrid.sln -c Release --no-build --nologo
-dotnet format XGrid.sln --no-restore --verify-no-changes
-```
 
-## Run one area
-
-```powershell
+# One project
 dotnet test tests/XGrid.Frontend.Tests/XGrid.Frontend.Tests.csproj -c Release --nologo
-dotnet test tests/XGrid.Diagnostics.Tests/XGrid.Diagnostics.Tests.csproj -c Release --nologo
 
+# One test
 dotnet test tests/XGrid.Frontend.Tests/XGrid.Frontend.Tests.csproj `
-  -c Release --filter "FullyQualifiedName~SettingsStoreTests"
+  -c Release --filter "FullyQualifiedName~KeyboardKeysTests"
 ```
 
-## Projects
+## Conventions
 
-| Project | Covers |
-| --- | --- |
-| `XGrid.Diagnostics.Tests` | Logs, bug reports, statistics, updates, donation client. |
-| `XGrid.Frontend.Tests` | Settings, CLI, input, library, filters, screenshots, runners. |
-| `XGrid.Core.Tests` | Launch settings, TOML, paths, display sink, hosting. |
-| `XGrid.Cpu.Tests` | Decoder, interpreter, JIT, paging, interrupts, oracle. |
-| `XGrid.Memory.Tests` | Address space, snapshots, dirty watch. |
-| `XGrid.Bus.Tests` | PCI, PIC, PIT, SMBus, USB, audio bus, network. |
-| `XGrid.Storage.Tests` | ATA/ATAPI, IDE, DMA, disc and disk images. |
-| `XGrid.Audio.Tests` | APU, DSP, sinks, snapshots. |
-| `XGrid.Nv2a.Tests` / `XGrid.GpuGl.Tests` | GPU command processing and OpenGL. |
-| `XGrid.Xbe.Tests` / `XGrid.XboxFs.Tests` | XBE and FATX/XDVDFS readers. |
-| `XGrid.Integration.Tests` | Machine boot and media integration. |
+- Tests must not need firmware, a disc, a GPU, an audio device or a live service.
+- Use a unique temp folder per test and dispose it.
+- Inject `HttpClient` handlers instead of touching the network.
+- Use `CultureInfo.InvariantCulture` for formatting.
+- Avoid fixed sleeps; use a semaphore or completion source.
+- Do not change process environment variables in parallel tests.
 
-## Rules for new tests
+Coverage is a review aid. CI enforces 60% line / 50% branch on Linux.
 
-- Use a unique temporary folder and clean it up.
-- Never call a live service; inject an `HttpClient` handler.
-- Avoid fixed sleeps; wait on a signal with a timeout.
-- Do not change process-wide environment variables in parallel tests.
-- Add a regression test for every bug fix.
+## Static analysis
 
-Full guide:
-[Testing](https://github.com/purelogiccode/XGrid/blob/master/docs/development/testing.md)
+`dotnet format --verify-no-changes` and `jb inspectcode` are part of the gate.
+See [Quality gates](https://github.com/purelogiccode/XGrid/blob/master/docs/development/quality-gates.md)
 and [Code inspection](https://github.com/purelogiccode/XGrid/blob/master/docs/development/inspection.md).
+
+Full guide: [Testing](https://github.com/purelogiccode/XGrid/blob/master/docs/development/testing.md).

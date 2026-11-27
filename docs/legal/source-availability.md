@@ -57,3 +57,9 @@ Each release tag is the source offer: it contains the source the archives were
 built from. If a downstream redistributor ships XGrid binaries, that
 redistributor is responsible for providing the corresponding source and the
 notices, or a written offer valid under the GPL.
+
+## Related pages
+
+- [Licensing](licensing.md)
+- [Release licensing](release-licensing.md)
+- [Building from source](../development/building.md)

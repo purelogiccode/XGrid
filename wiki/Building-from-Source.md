@@ -1,96 +1,91 @@
 # Building from source
 
-## Shell
+XGrid has two products: the **Avalonia shell** (.NET) and the **native xemu
+core** (C, meson/ninja).
 
-Prerequisites: .NET 11 SDK, PowerShell 7, Git.
+## Prerequisites
+
+- [.NET 11 SDK](https://dotnet.microsoft.com/download)
+- PowerShell 7 (`pwsh`)
+- Git
+- **Windows core:** MSYS2 MINGW64 with GCC, meson, ninja, CMake, Python,
+  pkg-config, GLib, pixman, zlib, zstd, lz4, SDL3 and libepoxy.
+- **Linux core:** GCC/Clang, ninja, meson 1.5+, Python 3 with PyYAML, and the
+  GLib/zlib/zstd/lz4/libepoxy/libusb/libpcap/libsamplerate/GMP/SDL3/X11
+  development packages. SDL3 3.4.x is required.
+
+## Build the shell
 
 ```powershell
 dotnet restore XGrid.sln
 dotnet build XGrid.sln -c Release --no-restore --nologo
-dotnet test XGrid.sln -c Release --nologo --no-build
-dotnet format XGrid.sln --no-restore --verify-no-changes
-dotnet run --project src/XGrid.Frontend.Avalonia
 ```
 
-## Native core (Windows)
+Warnings are errors; nullable is enabled; implicit usings are disabled.
 
-Prerequisites: MSYS2 MINGW64 at `C:\msys64` with GCC, meson, ninja, CMake,
-Python, pkg-config, GLib, pixman, zlib and zstd.
+## Build the core
+
+Windows:
 
 ```powershell
 pwsh -File scripts/build-native-xemu.ps1
 ```
 
-Output:
-
-```text
-xemu/dist/
-  xemu.exe
-  xgrid_core.dll
-  xgrid-core.json
-  <runtime DLLs>
-```
-
-The solution anchor can run the same build:
-
-```powershell
-dotnet build XGrid.sln -c Release -p:BuildXemuCore=true
-```
-
-## Native core (Linux)
-
-Prerequisites: GCC, make, ninja, pkg-config, meson 1.5+, Python with PyYAML,
-GLib, zlib, zstd, libepoxy, libusb, libpcap, libsamplerate, GMP and SDL3
-development packages. The tested Ubuntu package list and SDL3 build commands are
-in the [full guide](https://github.com/purelogiccode/XGrid/blob/master/docs/development/building.md).
+Linux:
 
 ```bash
 bash scripts/build-native-xemu.sh
 ```
 
-Output:
+Outputs:
 
 ```text
-xemu/dist/
-  xemu
-  xgrid-core.json
-  LICENSE.txt
+# Windows
+xemu/dist/xemu.exe
+xemu/dist/xgrid_core.dll
+xemu/dist/xgrid-core.json
+<runtime DLLs>
+
+# Linux
+xemu/dist/xemu
+xemu/dist/xgrid-core.json
+xemu/dist/LICENSE.txt
 ```
 
-The shell finds `xemu/dist/` automatically. The in-process core, save states and
-embedded display are Windows-only; on Linux the shell launches the core as a
-separate process with its own window.
+Vulkan is built by default on Windows; pass `-NoVulkan` for an OpenGL-only core.
+Use `-Clean` for a clean rebuild.
 
-## Firmware for development
-
-Put scratch firmware in `data/xemu/`:
-
-```text
-Complex_4627.bin
-mcpx_1.0.bin
-eeprom.bin
-xbox_hdd.qcow2
-```
-
-`data/` is git-ignored. Never commit firmware or game data.
-
-## Packaging
+## Run
 
 ```powershell
+dotnet run --project src/XGrid.Frontend.Avalonia
+```
+
+The shell finds the core in this order: explicit **Emulator binary**,
+`XGRID_XEMU_CORE`, `core/xemu/`, `xemu/dist/` walking up, then `data/xemu/`.
+
+## Development firmware
+
+Put firmware and a scratch HDD in `data/xemu/` (git-ignored):
+
+```text
+data/xemu/
+  Complex_4627.bin
+  mcpx_1.0.bin
+  eeprom.bin
+  xbox_hdd.qcow2
+```
+
+## Tests and packages
+
+```powershell
+dotnet test XGrid.sln -c Release --nologo --no-build
+dotnet format XGrid.sln --no-restore --verify-no-changes
 pwsh -File scripts/package.ps1
 pwsh -File scripts/package-verify.ps1
 ```
 
-The win-x64 and linux-x64 frontend archives bundle `core/xemu/`; the macOS
-archives are shell-only. To package several RIDs from one host, stage each core
-output in `cores/<rid>/` and pass `-CoreRoot cores`.
-
-## Linux and macOS
-
-The Linux core can be built from source with `scripts/build-native-xemu.sh`, and
-the linux-x64 release archive carries it under `core/xemu/`. The core runs in its
-own window; shell save states, pause/step and disc swap remain Windows-only.
-macOS has no XGrid core build script; point `XGRID_XEMU_CORE` or the **Emulator
-binary** setting at an upstream xemu 0.8.139 build for your platform.
+The tests need no firmware or game media. See [Testing](Testing) and
+[Quality gates](https://github.com/purelogiccode/XGrid/blob/master/docs/development/quality-gates.md).
 
 Full guide: [Building from source](https://github.com/purelogiccode/XGrid/blob/master/docs/development/building.md).

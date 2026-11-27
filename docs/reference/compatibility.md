@@ -1,8 +1,11 @@
 # Compatibility
 
 XGrid is alpha software. Its emulator is **xemu 0.8.139**, so game compatibility
-broadly tracks that core, while XGrid adds real-time CHD/ZAR media and a new
-shell. This page describes the supported surface, not a guarantee for every disc.
+broadly tracks that core, while XGrid adds real-time compressed media and a new
+shell. The file-level core delta is in
+[Upstream differences](upstream-differences.md). This page describes the
+supported surface, not a guarantee for every disc.
+
 For core-level status, xemu's own compatibility database is a useful starting
 point, but XGrid's patches and media drivers can change the result.
 
@@ -18,14 +21,15 @@ point, but XGrid's patches and media drivers can change the result.
 | 64 MB and 128 MB guest RAM | Supported |
 | OpenGL renderer | Supported |
 | Vulkan renderer | Only when the core build includes it |
+| Direct3D 11 renderer | Windows preview, only when the native backend is compiled |
 | NULL/headless renderer | Supported, no picture |
 | Keyboard input | Supported |
 | XInput controllers, players 1–4 | Supported on Windows |
 | Live host audio and WAV capture | Supported through the core |
 | Audio backend and device selection | Supported; the list comes from the core and DirectSound devices are enumerated |
 | Null audio sink for headless runs | Supported (automatic) |
-| Sega Chihiro netboot `.bin` images | Supported with the Chihiro machine; Chihiro firmware and a FATX netboot image are required |
-| Chihiro cabinet controls | Supported with the default keyboard map and a basic gamepad map |
+| Sega Chihiro netboot `.bin` images | Supported with the Chihiro machine; firmware and a FATX netboot image are required |
+| Chihiro cabinet controls, cards and force feedback | Supported; see [Chihiro controls](../guides/chihiro-controls.md) |
 | Four save-state slots | Supported with in-process hosting |
 | Automatic session save/resume | Supported with in-process hosting; one `xgrid-session` snapshot |
 | Powered-off screen and stay-open mode | Supported |
@@ -43,16 +47,16 @@ point, but XGrid's patches and media drivers can change the result.
 
 | Limitation | Detail |
 | --- | --- |
-| **Windows is the integrated emulation host** | In-process hosting, the shell frame/pad sinks, save states, pause/step, disc swap and window embedding are Windows-only. The `linux-x64` archive bundles the standalone core, which presents and reads input through its own window; headless runs use the shared-memory sink there too. macOS archives contain the shell only. |
-| **ZArchive file-tree names** | The synthesizer uses XDVDFS rules: Latin-1, up to 42 characters, no separators. Entry-form archives have no such limit. |
+| **Windows is the integrated emulation host** | In-process hosting, embedded picture, save states, pause/step, fast-forward, live disc swap and shell-mapped pads are Windows-only. The `linux-x64` archive bundles the standalone core, which presents and reads input through its own window; headless runs use the shared-memory sink there too. macOS archives contain the shell only. |
 | **Save states are in-process only** | The separate-process host has no ABI for snapshot control, so manual slots and automatic session save/resume require in-process hosting. |
-| **Pause, frame stepping and disc swap need in-process hosting** | On Linux, power off before changing a disc. |
+| **Pause, frame stepping, fast-forward and disc swap need in-process hosting** | On Linux, power off before changing a disc. |
+| **QEMU state is single-use in-process** | One machine per shell. A later launch falls back to a separate process until XGrid restarts. |
+| **ZArchive file-tree names** | The synthesizer uses XDVDFS rules: Latin-1, up to 42 characters, no separators. Entry-form archives have no such limit. |
 | **No shell netplay UI** | The core may support netplay, but the shell does not expose it. |
-| **Chihiro GD-ROMs need conversion** | The ported machine boots FATX netboot `.bin` images. Xbox-format `XBOXOG - Chihiro` ISOs convert in Settings or with `XGrid.Cli chihiro-netboot`; Redump cue/bin sets and MAME `.chd` files convert in Settings or with `XGrid.Cli chihiro-redump` and the game's MAME key ZIP. Direct GD-ROM emulation is not available. |
-| **Chihiro network titles need the network firmware** | Put `ver1305.bin` in the firmware folder. MJ2, MJ3, MJ3 Evolution and OutRun 2 SP check its version; the MJ titles then wait for their cabinet network, which the shell does not expose yet. |
-| **Chihiro audio is incomplete** | Upstream xemu's Chihiro audio emulation can produce silence or missing effects. The WAV capture and the Xbox audio path work; the Chihiro APU stream is a known upstream limitation. |
-| **Chihiro wheels, light guns and force feedback** | The core supports them in its wider fork. The shell maps the first gamepad, aims player 1's gun with the host pointer and player 2's with the second gamepad's right stick or the arrow keys, reads separate light guns or mice on Windows (Raw Input), Linux (evdev) and macOS (IOHID) with per-player device pinning, uses both card readers with configurable card files, links two to four cabinets over TCP, edits the common/driving/gun/player-2/Gundam keys, and drives a force-feedback wheel from the drive boards (gamepad rumble when no wheel is found). |
-| **Direct3D 11 renderer is a preview** | The native Direct3D 11 NV2A backend renders the boot chain, menus and gameplay draws through HLSL shaders, a surface/zeta cache, occlusion queries and a texture cache. Remaining differences are the CPU presentation readback (no D3D11↔GL interop yet), line smoothing and some texture/filter edge cases; `ImplementDirectX.md` tracks them. Windows builds report `D3D11` only when the backend is compiled. OpenGL remains the safe default. |
+| **Chihiro GD-ROMs need conversion** | The ported machine boots FATX netboot `.bin` images. Xbox-format `XBOXOG - Chihiro` ISOs convert in Settings or with `XGrid.Cli chihiro-netboot`; Redump cue/bin sets and MAME `.chd` files convert with the game's MAME key ZIP. Direct GD-ROM emulation is not available. |
+| **Chihiro network titles need the network firmware** | Put `ver1305.bin` in the firmware folder. MJ2, MJ3, MJ3 Evolution and OutRun 2 SP check its version; the MJ titles then wait for their cabinet network. |
+| **Chihiro audio is incomplete** | Upstream xemu's Chihiro audio emulation can produce silence or missing effects. The WAV capture and the Xbox audio path work. |
+| **Direct3D 11 is a preview** | The Windows backend renders through HLSL shaders and a D3D11 readback into the core's display texture. Some presentation and texture edge cases remain; OpenGL is the safe default. |
 | **No firmware or games** | Everything copyrighted must come from the user. |
 | **Alpha shell** | UI and settings may change between releases. |
 
@@ -62,16 +66,16 @@ point, but XGrid's patches and media drivers can change the result.
 - A build without Vulkan hides Vulkan in Settings and coerces a saved Vulkan
   choice to OpenGL.
 - Direct3D 11 is Windows-only and is listed only when the native backend is
-  compiled. `ImplementDirectX.md` records the current phase. A saved `D3D11`
-  choice on another build is coerced to OpenGL.
+  compiled. A saved `D3D11` choice on another build is coerced to OpenGL.
 - The NULL renderer runs the machine with no picture; use it for diagnostics.
 
 ## Media notes
 
-- A loose `.xbe` is not bootable. Wrap it in an ISO or CHD.
-- CHD and ZAR are read on demand; no extraction step is required.
+- A loose `.xbe` is not bootable. Wrap it in an ISO, CHD, CCI or ZAR.
+- CHD, CCI and ZAR are read on demand; no extraction step is required.
 - Keep the HDD image writable if you use save states. Chihiro launches create
   `chihiro_snapshots.qcow2` for their snapshots instead.
+- A split CCI set must be opened from its first part.
 
 ## Compatibility expectations
 
@@ -82,6 +86,7 @@ Use the following as a starting point:
 3. Check the Activity log for the first failure, not the last.
 4. If a title fails in the core, it is likely an emulation issue shared with
    xemu 0.8.139 rather than a shell issue.
+5. Test the same image in upstream xemu 0.8.139 before reporting a core bug.
 
 For practical checks, see [Troubleshooting](troubleshooting.md). For the media
 drivers, see [Media formats](../guides/media.md).

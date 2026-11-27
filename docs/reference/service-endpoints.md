@@ -1,21 +1,23 @@
 # Service endpoints
 
 XGrid uses a small set of HTTPS services. Every call is best-effort: a failure
-never prevents the emulator from starting or a game from running. This page is
-the quick reference; the detailed contracts are linked below.
+never prevents the emulator from starting or a game from running.
 
 ## Endpoints
 
 | Purpose | Method and URL | Authentication | Opt-out |
 | --- | --- | --- | --- |
-| Usage statistics | `POST https://www.purelogiccode.com/ApplicationStats/stats` | `Authorization: Bearer <stats key>` | `XGRID_DISABLE_STATISTICS=1` |
-| Bug reports | `POST https://www.purelogiccode.com/bugreport/api/send-bug-report` | `X-API-KEY: <bug-report key>` | `XGRID_DISABLE_BUG_REPORTS=1` |
-| Donation verification | `POST https://www.purelogiccode.com/api/donations/verify` | `X-API-KEY: <desktop key>` | Do not check a donation |
+| Usage statistics | `POST https://www.purelogiccode.com/ApplicationStats/stats` | Statistics API key | `XGRID_DISABLE_STATISTICS=1` |
+| Bug reports | `POST https://www.purelogiccode.com/bugreport/api/send-bug-report` | Bug-report API key | `XGRID_DISABLE_BUG_REPORTS=1` |
+| Donation verification | `POST https://www.purelogiccode.com/api/donations/verify` | Donation API key | Do not check a donation |
 | Donation page | `GET https://www.purelogiccode.com/donate?app=xgrid&email=...` | Anonymous | Do not press **Donate** |
-| Update check | `GET https://api.github.com/repos/purelogiccode/XGrid/releases/latest` | Optional `XGRID_GITHUB_TOKEN` | `XGRID_DISABLE_UPDATE_CHECK=1` |
-| Tag fallback | `GET https://api.github.com/repos/purelogiccode/XGrid/tags` | Optional token | Same as update check |
+| Update check | `GET https://api.github.com/repos/purelogiccode/XGrid/releases/latest` | Optional token for rate limits | `XGRID_DISABLE_UPDATE_CHECK=1` |
+| Tag fallback | `GET https://api.github.com/repos/purelogiccode/XGrid/tags` | Optional token for rate limits | Same as update check |
 | Cover catalog | `GET https://assets.purelogiccode.com/xgrid/v1/catalog.json` | Anonymous | Settings → Library → Cover art |
 | Cover images | `GET https://assets.purelogiccode.com/xgrid/v1/images/<sha256>.webp` | Anonymous | Settings → Library → Cover art |
+
+The repository is public. The update check works without a token; a token only
+raises GitHub's API rate limit.
 
 ## Request summaries
 
@@ -28,7 +30,7 @@ the quick reference; the detailed contracts are linked below.
 }
 ```
 
-More: [Logging and diagnostics](../guides/diagnostics.md).
+More: [Logs and diagnostics](../guides/diagnostics.md).
 
 ### Bug report
 
@@ -42,7 +44,7 @@ More: [Logging and diagnostics](../guides/diagnostics.md).
 }
 ```
 
-More: [Logging and diagnostics](../guides/diagnostics.md) and
+More: [Logs and diagnostics](../guides/diagnostics.md) and
 [Privacy and data](../legal/privacy.md).
 
 ### Donation verification
@@ -61,8 +63,7 @@ More: [Donation API](donation-api.md).
 `catalog.json` is a static JSON index. Images are immutable, content-addressed
 WebP files named by the SHA-256 of their bytes. Matching runs locally; only the
 catalog and matched images are requested. The default endpoint is configurable
-under **Settings → Library → Cover art**. More:
-[Game library](../guides/library.md#online-covers).
+under **Settings → Library → Cover art**.
 
 ## Timeouts and failure behavior
 
@@ -87,7 +88,7 @@ service limit of ten reports per minute.
 | `XGRID_DISABLE_UPDATE_CHECK` | Set to `1` or `true` to skip GitHub. |
 | `XGRID_BUGREPORT_API_KEY` | Alternate bug-report key. |
 | `XGRID_STATS_API_KEY` | Alternate statistics key. |
-| `XGRID_GITHUB_TOKEN` | Token for a private repository or higher rate limit. |
+| `XGRID_GITHUB_TOKEN` | Optional token for a higher GitHub rate limit. |
 | `XGRID_DONATION_ENDPOINT` | Alternate donation verification URL. |
 | `XGRID_DONATION_PAGE` | Alternate donation page. |
 | `XGRID_DONATION_API_KEY` | Alternate donation key. |

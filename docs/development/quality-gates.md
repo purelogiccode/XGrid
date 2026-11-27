@@ -22,8 +22,8 @@ dotnet format XGrid.sln --no-restore --verify-no-changes
   `Debug.WriteLine`, and caught exceptions are logged before they are handled.
 - Every interactive control in the Avalonia views has a tooltip.
 
-See [Testing](testing.md) for the suite layout and [Code inspection](inspection.md)
-for the InspectCode workflow.
+See [Testing](testing.md) for the suite layout and
+[Code inspection](inspection.md) for the InspectCode workflow.
 
 The convenience scripts wrap the same commands:
 
@@ -39,20 +39,21 @@ pwsh -File scripts/format.ps1
 manual dispatch:
 
 - Release build with warnings as errors.
-- Full test suite on Windows and Linux self-hosted runners; Linux collects
-  coverage.
-- Deterministic build check.
+- Full test suite on Linux and Windows. Linux collects coverage and enforces a
+  60% line / 50% branch floor.
+- Deterministic build check: two clean builds must produce identical assemblies.
 - `dotnet format --verify-no-changes`.
-- InspectCode ratchet and coverage floors.
-- Dependency vulnerability audit.
+- InspectCode gate on warnings, uploaded to code scanning.
+- NuGet vulnerability audit, including transitive packages.
 
 Other workflows:
 
 | Workflow | Trigger | Purpose |
 | --- | --- | --- |
 | `codeql.yml` | manual | CodeQL analysis. |
-| `dependency-review.yml` | manual | Dependency review. |
+| `dependency-review.yml` | manual | Dependency review on pull requests. |
 | `release.yml` | manual | Release publish/attestation pipeline. |
+| `xemu-upstream-report.yml` | weekly, manual | Opens or updates one issue when upstream xemu or a Meson dependency lock is behind. |
 
 The release tree is produced locally with `scripts/package.ps1` and verified by
 `scripts/package-verify.ps1`.
@@ -66,7 +67,7 @@ pwsh -File scripts/build-native-xemu.ps1
 ```
 
 On Linux, `bash scripts/build-native-xemu.sh` builds the same tree and writes the
-renderer manifest.
+renderer/audio manifest.
 
 The shell tests cover launch planning, generated configuration, display/input
 sinks, save-state orchestration, filters, settings, the library and the
@@ -83,12 +84,16 @@ pwsh -File scripts/headless-check.ps1 -Seconds 20 -Disc 'D:\Games\Halo.iso'
 The script renders off-screen, writes a JSON report and fails when no frames were
 published.
 
+The core rebase baseline and disc boot checks are in
+[The native core](core.md#build-and-validation).
+
 ## Documentation gate
 
 - Every documentation page must render as Markdown.
 - Internal links must resolve within `docs/`.
 - Code samples must be copy-pasteable and use the current command names.
 - Do not link to removed historical pages.
+- Keep `wiki/` in sync when user-visible behavior changes.
 
 ## Packaging gate
 
@@ -99,7 +104,7 @@ pwsh -File scripts/package-verify.ps1
 
 `package-verify.ps1` checks license completeness, archive contents, the bundled
 Windows and Linux cores, Unix execute bits, SHA-256 sums, the package manifest
-and the CLI version.
+and the CLI version. See [Releasing](releasing.md).
 
 ## Pull requests
 

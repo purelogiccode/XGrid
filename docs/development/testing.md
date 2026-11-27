@@ -1,7 +1,7 @@
 # Testing XGrid
 
-The test suite is part of the product gate. It is split by assembly so a
-focused change can run quickly, while the full solution run remains the release
+The test suite is part of the product gate. It is split by assembly so a focused
+change can run quickly, while the full solution run remains the release
 condition.
 
 ## Test projects
@@ -9,7 +9,7 @@ condition.
 | Project | Covers |
 | --- | --- |
 | `XGrid.Diagnostics.Tests` | Serilog report text, environment snapshot, version comparison, diagnostics HTTP clients, bug-report queue and donation verification. |
-| `XGrid.Frontend.Tests` | Settings persistence, launch arguments, input mapping, library scanning, cover matching and caching, library filters/sorts, frame filters, pacing, screenshots, save-state/playback runners, updates and presentation models. |
+| `XGrid.Frontend.Tests` | Settings persistence, launch arguments, input mapping, library scanning, cover matching and caching, filters/sorts, frame filters, pacing, screenshots, save-state/playback runners, updates and presentation models. |
 | `XGrid.Core.Tests` | Core capabilities, launch settings, TOML writer, paths, display sink and the core hosting contract. |
 | `XGrid.Cpu.Tests` | Decoder, interpreter and JIT execution, paging, interrupts, FPU/SSE and the CPU oracle corpus. |
 | `XGrid.Memory.Tests` | Address space, physical memory, endianness, snapshots and dirty-watch behavior. |
@@ -48,8 +48,8 @@ dotnet test tests/XGrid.Frontend.Tests/XGrid.Frontend.Tests.csproj `
   -c Release --filter "FullyQualifiedName~KeyboardKeysTests.TryParse_RejectsMissingOrUnknownNames"
 ```
 
-`dotnet test XGrid.sln` builds the test projects if `--no-build` is omitted.
-Use `--no-build` for repeated local runs after a successful build.
+`dotnet test XGrid.sln` builds the test projects if `--no-build` is omitted. Use
+`--no-build` for repeated local runs after a successful build.
 
 ## Coverage
 
@@ -60,22 +60,22 @@ dotnet test tests/XGrid.Frontend.Tests/XGrid.Frontend.Tests.csproj `
   -c Release --collect:"XPlat Code Coverage" --results-directory artifacts/coverage
 ```
 
-Coverage is a review aid, not a target. A high line count with no assertions or
-no failure branches is not useful. Prefer tests that pin a contract or a bug
-that was actually observed.
+CI enforces a 60% line / 50% branch floor on the Linux leg. Coverage is a review
+aid, not a target: a high line count with no assertions or no failure branches is
+not useful. Prefer tests that pin a contract or a bug that was actually observed.
 
 ## Deterministic tests
 
-The suite runs on Windows, Linux and macOS CI. Keep tests independent of the
-host:
+CI runs the suite on Windows and Linux. Keep tests independent of the host so a
+macOS contributor build behaves the same way:
 
 - use `Path.GetTempPath()` and a unique folder per test;
 - dispose temporary folders in `Dispose` and tolerate a leftover file;
 - do not depend on a real firmware image, disc, GPU, audio device or network;
 - inject `HttpClient` handlers instead of calling a live service;
 - set culture-sensitive formatting explicitly with `CultureInfo.InvariantCulture`;
-- avoid fixed sleeps; use a `SemaphoreSlim`, `TaskCompletionSource` or a
-  bounded wait when a background worker must be observed;
+- avoid fixed sleeps; use a `SemaphoreSlim`, `TaskCompletionSource` or a bounded
+  wait when a background worker must be observed;
 - do not modify process-wide environment variables in parallel tests.
 
 The native core tests may need a built `xemu/dist/xemu` binary. They are skipped
@@ -100,3 +100,9 @@ smoke and headless scripts, not by unit tests.
 The solution also runs `dotnet format --verify-no-changes` and
 `jb inspectcode`. See [Code inspection](inspection.md) and
 [Quality gates](quality-gates.md).
+
+## Related pages
+
+- [Quality gates](quality-gates.md)
+- [Code inspection](inspection.md)
+- [Building from source](building.md)

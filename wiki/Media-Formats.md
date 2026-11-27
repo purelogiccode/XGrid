@@ -1,81 +1,67 @@
 # Media formats
 
+XGrid reads discs on demand. Nothing is extracted or converted before launch.
+
 ## Disc images
 
-| Format | Support | Notes |
-| --- | --- | --- |
-| ISO / XISO | Yes | Optimized XISO or full Redump; `xgridiso` maps the detected game partition to LBA 0. |
-| CHD | Yes | Compressed; decoded on demand by `xgridchd`, with the same partition-offset detection. |
-| CCI (`.cci`) | Yes | Cerbios/Repackinator LZ4 image; single or split, decoded on demand by `xgridcci`. |
-| ZArchive (`.zar`) | Entry form or file tree | An `.iso` entry is served directly; a file tree is synthesized into XDVDFS. |
-| Chihiro netboot (`.bin`) | Yes | Raw FATX DIMM image for the Sega Chihiro; not an Xbox disc. |
-| XBE | Inspect only | Not bootable on its own. |
+### ISO / XISO
 
-A full Redump image keeps a video partition in front of the game area. It is
-played as-is: the core finds the XDVDFS descriptor at the XGD1/XGD2/XGD3 offset
-and exposes the game volume at LBA 0. Nothing is converted or extracted.
+XDVDFS image with 2,048-byte sectors. Optimized XISOs start at the game
+partition; full Redump images are detected by `xgridiso` and the game partition
+is mapped to LBA 0.
+
+### CHD
+
+Compressed MAME CHD. `xgridchd` decodes hunks on demand. Both optimized and full
+Redump CHDs work. Read-only.
 
 ### CCI
 
-CCI stores each 2,048-byte sector raw or as one LZ4 block with a random-access
-index. `xgridcci` reads it directly and applies the same game-partition mapping
-as ISO and CHD.
+Cerbios/Repackinator compressed image. `xgridcci` decodes raw or LZ4 sectors on
+demand. Single files and split `.1.cci` / `.2.cci` sets work; open the first
+part. Read-only.
 
-- Single-part `game.cci` and split `game.1.cci`, `game.2.cci`, … sets work.
-- Open the first part of a split set; the core discovers the rest.
-- The library lists a split set once under its base name.
+### ZArchive (`.zar`)
 
-### ZArchive
+`xgridzar` decodes zstd blocks on demand.
 
-The `xgridzar` driver decodes zstd blocks on demand and supports both shapes:
+- **Entry form** exposes the `.iso` entry as the DVD.
+- **File tree** synthesizes an XDVDFS volume in memory. Names are Latin-1, up to
+  42 characters, no path separators.
 
-- **Entry form** — the largest `.iso` entry is the guest DVD. The entry may be
-  an optimized XISO or a full Redump image.
-- **File tree** — the game files are synthesized into an XDVDFS volume at open
-  time (descriptor, directory tables, sector-aligned files), so a directory
-  pack boots without extraction.
+### Chihiro `.bin`
 
-Names in a file tree use the XDVDFS rules: Latin-1, up to 42 characters,
-without separators.
+A raw FATX netboot image for the Sega Chihiro, not an Xbox disc. Convert an
+`XBOXOG - Chihiro` ISO or a GD-ROM first. See [Chihiro](Chihiro).
 
-Build an entry-form archive:
+### XBE
 
-```powershell
-ZArchiveSharp --iso game.iso game.zar
-```
+A loose Xbox executable. It is listed for inspection but is not bootable; wrap it
+in a disc image.
 
-The packer detects a full Redump image and packs the game partition rather than
-the video partition.
+## HDD and firmware
 
-## Changing discs
+- HDD: raw or qcow2. Holds the dashboard and Xbox save states.
+- BIOS: 256 KB or 512 KB, required.
+- MCPX ROM: 512 bytes.
+- EEPROM: 256 bytes.
 
-- **Ctrl+O**, the toolbar **Open** button, or clicking a Library row while the
-  console runs swaps the disc; no power cycle.
-- **Ctrl+E** ejects and leaves the tray empty.
-- ISO/XISO (optimized or Redump), CHD, CCI and ZArchive images can be swapped in.
-- Needs in-process core hosting, like save states.
+## Disc swap
 
-## HDD
+While the console runs, `Ctrl+O`, the toolbar **Open** button or another Library
+game inserts a new disc. `Ctrl+E` ejects. Both need in-process hosting.
 
-- Raw or qcow2.
-- Boots the dashboard when no disc is inserted.
-- Stores save states.
-- Back it up before experimenting.
+## Format matrix
 
-## Firmware
+| Format | Library | Launch | Notes |
+| --- | --- | --- | --- |
+| `.iso` optimized | Yes | Yes | Game partition at sector 0. |
+| `.iso` full Redump | Yes | Yes | XGD offset detected. |
+| `.xiso` | Yes | Yes | Treated like ISO. |
+| `.chd` | Yes | Yes | Real-time decode. |
+| `.cci` | Yes | Yes | Single or split set. |
+| `.zar` | Yes | Yes | Entry form or file tree. |
+| `.bin` | Yes | Chihiro | Netboot image. |
+| `.xbe` | Yes | No | Inspection only. |
 
-| File | Size | Required |
-| --- | --- | --- |
-| BIOS / flash ROM | 256 KB or 512 KB | Yes |
-| MCPX boot ROM | 512 bytes | Yes for the retail boot chain |
-| EEPROM | 256 bytes | Yes for a normal setup |
-
-XGrid ships none of these.
-
-## Tips
-
-- Use ISO for the first boot of a title; optimized and full Redump images both
-  work.
-- Use CHD or CCI to save space with no extraction step.
-- Use ZAR with either archive shape; entry form avoids the XDVDFS name rules.
-- Keep the HDD on fast local storage.
+Full guide: [Media formats](https://github.com/purelogiccode/XGrid/blob/master/docs/guides/media.md).

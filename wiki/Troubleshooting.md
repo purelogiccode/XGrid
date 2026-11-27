@@ -1,18 +1,28 @@
 # Troubleshooting
 
 Start with **Activity**. It records the launch plan, renderer, disc, audio backend
-and failures. The same events are in the Serilog rolling log under
-`XGrid/logs` in the per-user local application-data folder; see
-[Logging and diagnostics](Diagnostics).
+and failures. The full exception is in the rolling log under `XGrid/logs` in the
+per-user local application-data folder.
+
+## First checks
+
+1. Is a BIOS configured and found?
+2. Are the MCPX, EEPROM and HDD images present?
+3. Is the core under `core/xemu/` or at the configured path?
+4. On Linux/macOS, is the core's own window visible?
+5. What is the first error in Activity?
+
+Use **File → Open Config Folder** to reach `settings.json` and `xemu.toml`.
+Separate-process mode also writes `<data>/xemu/xemu.log`.
 
 ## Power-on
 
 | Message | Fix |
 | --- | --- |
-| “Choose a BIOS image first.” | Set **Settings → System → BIOS image**. |
-| “The emulator binary was not found.” | Set the core path, `XGRID_XEMU_CORE`, or build `xemu/dist`. |
-| “The in-process core library is not available…” | Build `xgrid_core.dll` or accept the separate process. |
-| The core opens its own window | Linux/macOS hosting; native in-window embedding is Windows-only. |
+| "Choose a BIOS image first." | Set **Settings → System → BIOS image**. |
+| "The emulator binary was not found." | Set **Emulator binary**, `XGRID_XEMU_CORE`, or build `xemu/dist`. |
+| "The in-process core library is not available…" | Build `xgrid_core.dll` or use the separate process deliberately. |
+| The core opens its own window | Linux/macOS hosting; embedding is Windows-only. |
 | Save-state entries disabled | Switch to in-process hosting on Windows. |
 | A core crash closes the whole app | Switch **Core hosting** to **Separate process**. |
 
@@ -20,11 +30,11 @@ and failures. The same events are in the Serilog rolling log under
 
 | Symptom | Fix |
 | --- | --- |
-| Black display | Wait for the core to start; check Activity; try OpenGL and scale 1. |
-| No filters | A separate process has not relaunched since the setting changed. Relaunch; in-process hosting applies filters live. |
-| Second game window | Update XGrid; both hosting modes embed the core window now. |
-| Low FPS | Scale 1, OpenGL, close background work; keep filters/overlay in the core. |
+| Black display | Wait for the core; check Activity; try OpenGL and scale 1. |
+| No filters | Relaunch the separate process; in-process applies live. |
+| Low FPS | Scale 1, OpenGL, close background work. |
 | Vulkan missing | Build has no Vulkan; use OpenGL. |
+| Headless no frames | Use the XGrid core; try `--renderer OPENGL`. |
 
 ## Input
 
@@ -34,38 +44,52 @@ and failures. The same events are in the Serilog rolling log under
 | Controller not found | Connect before start; check Windows Game Controllers. |
 | Wrong button | Remap in Settings → Input. |
 | Drift | Raise the dead zone. |
-| No input on Linux or macOS | The mapped-pad sink is Windows-only. | Use the core's own SDL input in its window. |
+| Player 2–4 does nothing | Assign an XInput slot to that port. |
+| No input on Linux/macOS | Use the core's SDL input in its window. |
 
 ## Audio
 
 | Symptom | Fix |
 | --- | --- |
-| No sound | Backend not None; Guest DSP on; check output device. |
+| No sound | Backend not Null; Guest DSP on; output device works. |
 | Crackling | Lower scale; close background work; try another backend. |
-| Empty WAV | Guest produced no audio or DSP off. |
+| Empty WAV | Guest produced no audio or DSP is off. |
 
 ## Media
 
 | Symptom | Fix |
 | --- | --- |
-| `.zar` refused | Check **Activity**: the archive may be corrupt or contain a name XDVDFS cannot store. Both entry-form and file-tree archives are supported. |
-| `.cci` refused | Open the first part of a split set (`game.1.cci`); a later part cannot be stitched without part 1. |
-| Full Redump ISO shows the dashboard | The game partition was not detected; check that the image is complete and not truncated. |
-| `.xbe` won’t launch | Wrap it in ISO/CHD. |
-| Game not listed | Check extension, folder and 4,096-entry cap. |
+| `.zar` refused | Corrupt archive or a name XDVDFS cannot store; check Activity. |
+| `.cci` refused | Open the first part of a split set. |
+| Full Redump shows the video partition | The game partition was not detected; check the image. |
+| `.xbe` won't launch | Wrap it in ISO/CHD/CCI/ZAR. |
+| Game not listed | Check extension, folder and the 4,096-entry cap. |
 
 ## Save states
 
 | Symptom | Fix |
 | --- | --- |
-| “Needs the in-process emulator core.” | Switch hosting mode. |
+| "Needs the in-process emulator core." | Switch hosting mode. |
 | Save fails | Check HDD permissions and free space. |
 | Load frozen | Check Activity; power-cycle and try another slot. |
+| Resume did not run | Start from Power, not the Library; check Activity. |
+
+## Chihiro
+
+See [Chihiro](Chihiro) for firmware and conversion errors, and
+[Chihiro controls](Chihiro-Controls) for input, guns and cards.
 
 ## Reset
 
 Close XGrid, back up and rename `<data>/settings.json`, restart. Do not delete the
 HDD image; it holds the dashboard and save states.
 
-For more, see the
-[full troubleshooting page](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/troubleshooting.md).
+## Report a bug
+
+Include the version, platform, renderer, hosting mode, Activity lines and the
+matching log excerpt. Use the
+[issue tracker](https://github.com/purelogiccode/XGrid/issues). For
+vulnerabilities, follow
+[SECURITY.md](https://github.com/purelogiccode/XGrid/blob/master/SECURITY.md).
+
+Full page: [Troubleshooting](https://github.com/purelogiccode/XGrid/blob/master/docs/reference/troubleshooting.md).

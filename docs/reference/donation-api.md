@@ -89,6 +89,12 @@ is never presented as "you did not donate".
 These exist for local integration testing. Production builds use the compiled
 defaults.
 
+## Privacy
+
+The endpoint receives the email and the application slug only. It does not
+receive firmware paths, game titles, logs or machine identifiers. See
+[Privacy and data](../legal/privacy.md) and [Supporting XGrid](../guides/donations.md).
+
 ## Testing
 
 `DonationVerificationClient.VerifyAsync` has an internal overload accepting a

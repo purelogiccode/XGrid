@@ -6,7 +6,7 @@ XGrid welcomes focused fixes and features. Read this page and
 ## Before you start
 
 - The product is the **Avalonia shell + native xemu core**.
-- The managed C# emulator is a validation oracle, not the product path.
+- The managed validation projects are an oracle, not the product path.
 - XGrid is GPL-2.0-or-later. Do not add code you cannot license compatibly.
 - Never commit firmware, BIOS images, EEPROMs, HDD images or game data.
 
@@ -67,13 +67,18 @@ See [Building from source](building.md).
 - Update `THIRD_PARTY_NOTICES.md` and the legal pages.
 - Rebuild the core and run the shell tests.
 
+See [The native core](core.md) and
+[Porting and provenance](../legal/porting-policy.md).
+
 ## Documentation changes
 
-- Put user-facing pages under `docs/` and keep the sidebar in `docs/_sidebar.md`
-  up to date.
-- Use relative links inside `docs/`.
+- User-facing pages live under `docs/`; the sidebar is `docs/_sidebar.md`.
+- Use relative links inside `docs/`. Test them before opening a pull request.
 - Keep `wiki/` pages in sync when a user-visible behavior changes.
-- Do not reintroduce historical session logs or internal wave notes.
+- Do not reintroduce historical session logs, wave notes or internal task
+  narratives.
+- Put a new user-visible feature in the guide that describes the task, not only
+  in the reference table.
 
 ## Media and references
 
@@ -83,11 +88,12 @@ See [Building from source](building.md).
 
 ## Security
 
-Do not file public issues for vulnerabilities. Follow `SECURITY.md`.
+Do not file public issues for vulnerabilities. Follow
+[`SECURITY.md`](https://github.com/purelogiccode/XGrid/blob/master/SECURITY.md).
 
 ## Questions
 
-Open a discussion or an issue with:
+Open an issue with:
 
 - what you expected;
 - what happened;

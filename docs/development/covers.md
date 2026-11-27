@@ -9,8 +9,8 @@ SHA256SUMS.txt
 report.json
 ```
 
-`catalog.json` is schema version 1, `imagesBase` is `images/`, and every image
-id is the SHA-256 of the encoded WebP bytes. The shell verifies each downloaded
+`catalog.json` is schema version 1, `imagesBase` is `images/`, and every image id
+is the SHA-256 of the encoded WebP bytes. The shell verifies each downloaded
 image against its id before caching it.
 
 ## Requirements
@@ -19,7 +19,7 @@ image against its id before caching it.
 - `ffmpeg` on `PATH` (libwebp encoder)
 - `rclone`, with an R2 remote named `r2`
 
-The packager runs on Windows; the source collection is read only.
+The packager runs on Windows; the source collection is read-only.
 
 ## Build
 
@@ -49,13 +49,12 @@ The packager:
 5. keeps every source file stem as an alias;
 6. writes `catalog.json`, `images/`, `SHA256SUMS.txt` and `report.json`.
 
-A nonzero exit means at least one source image failed; inspect
-`report.json` before publishing. `catalog.json` is not written for a partial
-pack.
+A nonzero exit means at least one source image failed; inspect `report.json`
+before publishing. `catalog.json` is not written for a partial pack.
 
 `gameIds` are empty in this pass. The client still matches by exact and fuzzy
 title/alias, which covers the Redump-style names. A later packager pass can add
-XBE title ids for the exact game-id lookup.
+XBE title IDs for the exact game-id lookup.
 
 ## Publish
 
@@ -78,16 +77,16 @@ r2:simplelauncher-thumbnails/xgrid/v1
 ```
 
 Override it with `-Remote`. The script uploads `images/` with
-`Cache-Control: public, max-age=31536000, immutable`, and the catalog/checksum/
-report with a five-minute cache. The public catalog is:
+`Cache-Control: public, max-age=31536000, immutable`, and the
+catalog/checksum/report with a five-minute cache. The public catalog is:
 
 ```text
 https://assets.purelogiccode.com/xgrid/v1/catalog.json
 ```
 
 Old images must stay available: clients with a stale catalog keep requesting
-their hashed names. The packager already keeps old output images unless
-`-Clean` is used; do not delete objects from R2 when publishing a new pack.
+their hashed names. The packager already keeps old output images unless `-Clean`
+is used; do not delete objects from R2 when publishing a new pack.
 
 ## Verify
 
@@ -96,8 +95,14 @@ rclone ls r2:simplelauncher-thumbnails/xgrid/v1
 ```
 
 Or open the public catalog URL and check the `packVersion`, `covers` and
-`imagesBase` fields. In XGrid, Settings → Library → Cover art → **Refresh**,
-then rescan the library.
+`imagesBase` fields. In XGrid, **Settings → Library → Cover art → Refresh**, then
+rescan the library.
 
-For the 2026-11-26 pack, 2,288 source images deduplicated to 1,632 covers and
-68.2 MB of WebP. A library of 945 games downloaded 880 matches from the catalog.
+The current published pack contains over 1,600 deduplicated covers and about
+68 MB of WebP. A library of roughly 1,000 games resolves most of its covers from
+the catalog when the titles follow Redump naming.
+
+## Related pages
+
+- [Game library](../guides/library.md) — matching order and local covers.
+- [Privacy and data](../legal/privacy.md) — what the catalog host receives.
