@@ -1,21 +1,17 @@
 name: CodeQL
 
-# Manual only: code scanning on a private repository requires GitHub Advanced
-# Security, which this organization does not have. The main CI runs on the
-# self-hosted runners.
+# Public repository: code scanning is free. Analyze the managed shell on every
+# push/PR and run a weekly deep scan. The C core is covered by the native core
+# build, not by CodeQL's C/C++ autobuild.
 on:
-  # Manual only: no push, pull_request or schedule triggers.
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Weekly deep scan (Mondays, 04:42 UTC) alongside the nightly CI matrix.
+    - cron: "42 4 * * 1"
   workflow_dispatch:
-
-# --- Enable this block if GitHub Advanced Security becomes available ---
-# on:
-#   push:
-#     branches: [master]
-#   pull_request:
-#     branches: [master]
-#   schedule:
-#     # Weekly deep scan (Mondays, 04:42 UTC) alongside the nightly CI matrix.
-#     - cron: "42 4 * * 1"
 
 permissions:
   actions: read
@@ -56,7 +52,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          queries: security-and-quality
+          queries: security-extended
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3

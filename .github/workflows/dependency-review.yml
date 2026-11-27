@@ -1,16 +1,10 @@
 name: Dependency review
 
-# Manual only: dependency review requires GitHub Advanced Security on a private
-# repository and only makes sense on pull_request events. The main CI runs on
-# the self-hosted runners.
+# Public repository: dependency review is free and runs on pull requests.
 on:
-  # Manual only (and not useful manually): no pull_request trigger.
+  pull_request:
+    branches: [master]
   workflow_dispatch:
-
-# --- Enable this block if GitHub Advanced Security becomes available ---
-# on:
-#   pull_request:
-#     branches: [master]
 
 permissions:
   contents: read

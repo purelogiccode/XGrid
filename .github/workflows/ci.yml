@@ -110,6 +110,21 @@ jobs:
           retention-days: 3
 
   # ---------------------------------------------------------------------------
+  # Native core: compile the product emulator from the vendored xemu tree.
+  # Linux has the full toolchain and SDL3 on the LAN runner; the Windows core
+  # is still built locally by scripts/build-native-xemu.ps1 for packaging.
+  # ---------------------------------------------------------------------------
+  native-core:
+    name: Native core (Linux)
+    runs-on: [self-hosted, Linux, X64, repofleet-ci]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build xemu core
+        run: bash scripts/build-native-xemu.sh -j"$(nproc)"
+
+  # ---------------------------------------------------------------------------
   # Deterministic build: two clean builds must produce identical assemblies.
   # ---------------------------------------------------------------------------
   determinism:
@@ -179,8 +194,10 @@ jobs:
         run: dotnet format XGrid.sln --no-restore --verify-no-changes --verbosity minimal
 
   # ---------------------------------------------------------------------------
-  # InspectCode (ReSharper command-line) at WARNING severity, uploaded to the
-  # Security tab as SARIF.
+  # InspectCode (ReSharper command-line) at WARNING severity. The gate and
+  # baseline are authoritative; style warnings are not security findings, so
+  # this job keeps the report as an artifact instead of publishing SARIF to the
+  # code-scanning page.
   # ---------------------------------------------------------------------------
   inspectcode:
     name: InspectCode (warnings)
@@ -188,7 +205,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      security-events: write
     steps:
       - uses: actions/checkout@v7
 
@@ -224,7 +240,7 @@ jobs:
       - name: Gate on findings
         run: python3 .github/scripts/inspectcode_gate.py inspectcode.sarif
 
-      - name: Upload SARIF artifact
+      - name: Upload InspectCode report
         if: always() && hashFiles('inspectcode.sarif') != ''
         continue-on-error: true
         uses: actions/upload-artifact@v7
@@ -232,14 +248,6 @@ jobs:
           name: inspectcode-sarif
           path: inspectcode.sarif
           retention-days: 3
-
-      - name: Upload to code scanning
-        if: always() && hashFiles('inspectcode.sarif') != ''
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: inspectcode.sarif
-          category: inspectcode
 
   # ---------------------------------------------------------------------------
   # NuGet vulnerability audit (official SDK command; no third-party service).
