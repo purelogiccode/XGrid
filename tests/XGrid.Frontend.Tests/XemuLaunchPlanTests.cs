@@ -182,6 +182,8 @@ public sealed class XemuLaunchPlanTests : IDisposable
         settings.Chihiro.WheelAutocenter = false;
         settings.Chihiro.WheelAutocenterStrength = 80;
         settings.Chihiro.PointerDevices = true;
+        settings.Chihiro.PointerP1 = "XGrid Test Light Gun 1";
+        settings.Chihiro.PointerP2 = "XGrid Test Light Gun 2";
         string image = Path.Combine(_root, "media", "game.bin");
 
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
@@ -198,6 +200,8 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.False(launch.ChihiroWheelAutocenter);
         Assert.Equal(80, launch.ChihiroWheelAutocenterStrength);
         Assert.True(launch.ChihiroPointerDevices);
+        Assert.Equal("XGrid Test Light Gun 1", launch.ChihiroPointerP1);
+        Assert.Equal("XGrid Test Light Gun 2", launch.ChihiroPointerP2);
         Assert.Empty(launch.Validate());
     }
 

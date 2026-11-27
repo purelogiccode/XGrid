@@ -363,6 +363,40 @@
                                   OnContent="" OffContent="" VerticalAlignment="Center"
                                   ToolTip.Tip="Read each light gun or mouse separately" />
                   </Grid>
+
+                  <StackPanel Spacing="6" IsEnabled="{Binding ChihiroPointerDevices}">
+                    <Grid ColumnDefinitions="170,*,Auto" ColumnSpacing="8">
+                      <TextBlock Text="Player 1 pointer" Classes="caption" VerticalAlignment="Center" />
+                      <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                                ItemsSource="{Binding ChihiroPointerOptions}"
+                                SelectedItem="{Binding SelectedChihiroPointerP1, Mode=TwoWay}"
+                                ToolTip.Tip="{Binding SelectedChihiroPointerP1.Label}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                    </Grid>
+                    <Grid ColumnDefinitions="170,*,Auto" ColumnSpacing="8">
+                      <TextBlock Text="Player 2 pointer" Classes="caption" VerticalAlignment="Center" />
+                      <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                                ItemsSource="{Binding ChihiroPointerOptions}"
+                                SelectedItem="{Binding SelectedChihiroPointerP2, Mode=TwoWay}"
+                                ToolTip.Tip="{Binding SelectedChihiroPointerP2.Label}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <Button Grid.Column="2" Classes="ghost"
+                              Command="{Binding RefreshChihiroPointersCommand}"
+                              Content="Refresh"
+                              ToolTip.Tip="Re-read the pointer names from the last core launch" />
+                    </Grid>
+                    <TextBlock Text="Launch a Chihiro gun game once with Separate gun pointers on, then Refresh. Automatic prefers absolute guns, then mice." Classes="hint" TextWrapping="Wrap" />
+                  </StackPanel>
                 </StackPanel>
 
                 <Border Classes="divider" />

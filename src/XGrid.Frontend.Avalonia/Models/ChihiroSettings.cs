@@ -104,6 +104,18 @@ public sealed class ChihiroSettings
     /// </summary>
     public bool PointerDevices { get; set; }
 
+    /// <summary>
+    /// Gets or sets the device name pinned to player 1. Empty selects the
+    /// first absolute pointer, then the first relative mouse.
+    /// </summary>
+    public string PointerP1 { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the device name pinned to player 2. Empty selects the next
+    /// pointer after player 1's choice.
+    /// </summary>
+    public string PointerP2 { get; set; } = string.Empty;
+
     /// <summary>The Chihiro flash ROM file name.</summary>
     public const string BiosFileName = "chihiro_xbox_bios.bin";
 
@@ -160,6 +172,8 @@ public sealed class ChihiroSettings
             WheelAutocenter = WheelAutocenter,
             WheelAutocenterStrength = WheelAutocenterStrength,
             PointerDevices = PointerDevices,
+            PointerP1 = PointerP1,
+            PointerP2 = PointerP2,
         };
     }
 
@@ -181,6 +195,8 @@ public sealed class ChihiroSettings
         FfbStrength = Math.Clamp(FfbStrength, 0, 200);
         WheelWeight = Math.Clamp(WheelWeight, 0, 100);
         WheelAutocenterStrength = Math.Clamp(WheelAutocenterStrength, 0, 100);
+        PointerP1 = (PointerP1 ?? string.Empty).Trim();
+        PointerP2 = (PointerP2 ?? string.Empty).Trim();
     }
 }
 

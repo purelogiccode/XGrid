@@ -218,6 +218,8 @@ public static class XemuTomlWriter
             text.Append("wheel_autocenter = ").Append(Bool(settings.ChihiroWheelAutocenter)).Append('\n');
             AppendInt(text, "wheel_autocenter_strength", settings.ChihiroWheelAutocenterStrength);
             text.Append("pointer_devices = ").Append(Bool(settings.ChihiroPointerDevices)).Append('\n');
+            text.Append("pointer_p1 = ").Append(String(settings.ChihiroPointerP1)).Append('\n');
+            text.Append("pointer_p2 = ").Append(String(settings.ChihiroPointerP2)).Append('\n');
 
             if (settings.ChihiroLinkEnabled)
             {

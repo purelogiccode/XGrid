@@ -111,7 +111,10 @@ light guns aim players 1 and 2 in order, with fire, body, change/pedal and
 reload on their buttons. Windows uses Raw Input, Linux evdev and macOS IOHID.
 On Linux the user must be able to read `/dev/input/event*`; on macOS allow
 Input Monitoring if asked. macOS releases currently ship the shell only, so
-use a core built from this tree or point **Emulator binary** at one.
+use a core built from this tree or point **Emulator binary** at one. If the
+automatic order picks the wrong pointer, launch a gun game once and use
+**Refresh** plus the **Player 1 pointer** and **Player 2 pointer** lists to pin
+the guns by name.
 Press **C** (or X) to insert player 1's card and **V** (or X on the second pad)
 for player 2's; Ghost Squad and Maximum Tune create a blank card when none is
 in hand, and the core keeps it for later sessions. The HW210 and CRP-1231 card

@@ -78,7 +78,9 @@ shell. The bindings are not saved to the core configuration.
 The Chihiro JVS input in the same file also reads per-device gun pointers from
 the host: Raw Input on Windows, evdev on Linux and IOHID on macOS. The first two
 absolute devices aim players 1 and 2, and relative mice start at the centre of
-the picture. This is recorded with the Chihiro patch.
+the picture. `chihiro.settings.pointer_p1` and `pointer_p2` can pin a device by
+name; the shell fills those names from the pointer lines in `xemu.log`. This is
+recorded with the Chihiro patch.
 
 ### Save states
 

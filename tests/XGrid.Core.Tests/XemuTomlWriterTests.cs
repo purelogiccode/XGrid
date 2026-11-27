@@ -53,6 +53,8 @@ public sealed class XemuTomlWriterTests
             ChihiroWheelAutocenter = false,
             ChihiroWheelAutocenterStrength = 80,
             ChihiroPointerDevices = true,
+            ChihiroPointerP1 = "XGrid Test Light Gun 1",
+            ChihiroPointerP2 = "XGrid Test Light Gun 2",
         };
 
         string toml = XemuTomlWriter.Build(settings);
@@ -81,6 +83,8 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("wheel_autocenter = false", toml, StringComparison.Ordinal);
         Assert.Contains("wheel_autocenter_strength = 80", toml, StringComparison.Ordinal);
         Assert.Contains("pointer_devices = true", toml, StringComparison.Ordinal);
+        Assert.Contains("pointer_p1 = 'XGrid Test Light Gun 1'", toml, StringComparison.Ordinal);
+        Assert.Contains("pointer_p2 = 'XGrid Test Light Gun 2'", toml, StringComparison.Ordinal);
     }
 
     [Fact]

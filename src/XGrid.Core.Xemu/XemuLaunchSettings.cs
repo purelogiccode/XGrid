@@ -108,6 +108,12 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets a value indicating whether pointer devices aim separately.</summary>
     public bool ChihiroPointerDevices { get; init; }
 
+    /// <summary>Gets the device name pinned to player 1, or empty for automatic.</summary>
+    public string ChihiroPointerP1 { get; init; } = string.Empty;
+
+    /// <summary>Gets the device name pinned to player 2, or empty for automatic.</summary>
+    public string ChihiroPointerP2 { get; init; } = string.Empty;
+
     /// <summary>Gets the Chihiro cabinet key and mouse bindings.</summary>
     public ChihiroJvsSettings ChihiroJvs { get; init; } = new();
 
