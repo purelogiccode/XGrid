@@ -43,9 +43,11 @@ export PATH=$rootPosix/wt-data/bin:/c/ninja:/c/cmake/bin:/mingw64/bin:/usr/bin:`
 cd $rootPosix/xemu
 $cleanStep
 echo "[xemu] configuring and building (full log: $rootPosix/wt-data/xemu-build.log)"
+# QEMU's optional Rust components are not part of XGrid; keep them disabled so
+# a Rust-less build host works and the option list stays stable.
 ./build.sh -j$Jobs --disable-werror --disable-docs --disable-guest-agent \
   --disable-vnc --disable-spice --disable-gtk --disable-sdl-image \
-  --disable-libssh --disable-curses --disable-brlapi -Dzstd=enabled --enable-tools --disable-curl $vulkanOption 2>&1 \
+  --disable-libssh --disable-curses --disable-brlapi --disable-rust -Dzstd=enabled --enable-tools --disable-curl $vulkanOption 2>&1 \
   | tee $rootPosix/wt-data/xemu-build.log \
   | grep --line-buffered -E '^\[[0-9]+/[0-9]+\]|^Configuring|^Building|^Linking|^Compiling|^Generating|^ERROR|^FAILED|error:|no work to do'
 status=`${PIPESTATUS[0]}

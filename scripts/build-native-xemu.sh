@@ -106,10 +106,13 @@ if [ "$clean" -eq 1 ]; then
     rm -rf build dist
 fi
 
+# QEMU's optional Rust components are not part of XGrid. Keep them explicitly
+# disabled so the build does not require rustc; the generated build options are
+# re-read during `make` and would otherwise fail on a Rust-less host.
 ./build.sh -j"$jobs" \
     --disable-werror --disable-docs --disable-guest-agent \
     --disable-vnc --disable-spice --disable-gtk --disable-sdl-image \
-    --disable-libssh --disable-curses --disable-brlapi \
+    --disable-libssh --disable-curses --disable-brlapi --disable-rust \
     -Dzstd=enabled --enable-tools --disable-curl
 
 # The media checks use the QEMU tools from the object tree; they are not part
