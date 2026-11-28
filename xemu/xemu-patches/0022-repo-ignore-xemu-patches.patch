@@ -1,0 +1,24 @@
+diff --git a/xemu/.gitignore b/xemu/.gitignore
+index e1927ae1..bd573ad0 100644
+--- a/xemu/.gitignore
++++ b/xemu/.gitignore
+@@ -18,6 +18,7 @@ GTAGS
+ *.depend_raw
+ *.swp
+ *.patch
++!xemu-patches/*.patch
+ *.gcov
+ 
+ build.log
+@@ -26,3 +27,11 @@ build.log
+ /macos-libs/
+ /macos-pkgs/
+ /xemu.iconset/
++/subprojects/tomlplusplus/.meson-subproject-wrap-hash.txt
++/subprojects/slirp/.meson-subproject-wrap-hash.txt
++/subprojects/nv2a_vsh_cpu/.meson-subproject-wrap-hash.txt
++/subprojects/nlohmann_json/.meson-subproject-wrap-hash.txt
++/subprojects/keycodemapdb/.meson-subproject-wrap-hash.txt
++/subprojects/implot/.meson-subproject-wrap-hash.txt
++/subprojects/imgui/.meson-subproject-wrap-hash.txt
++/subprojects/genconfig/.meson-subproject-wrap-hash.txt

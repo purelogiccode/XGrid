@@ -18,7 +18,7 @@ described in the guides.
 | XGrid core | xemu 0.8.139 lineage + XGrid changes in `xemu/`, now evolving separately |
 | Recorded upstream commit | `aa54c34cae1c09410d74c69a44210a9867fe2d16` (`xemu/XEMU_COMMIT`) |
 | XGrid-native code | `xemu/xgrid-core/` |
-| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`–`0020`; 14 files) |
+| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`–`0022`; 16 files) |
 | Ported arcade machine | `xemu/hw/xbox/chihiro/` |
 | Third-party notices | `THIRD_PARTY_NOTICES.md`, `docs/legal/licensing.md` |
 
@@ -30,9 +30,9 @@ comparison, not a claim that every changed line is listed.
 
 | Measure | Count |
 | --- | --- |
-| Existing upstream source/build files changed | 38 |
+| Existing upstream source/build files changed | 40 |
 | Lines added/removed in those files | about +4,400 / −120 |
-| Patch files in the current record | 14 |
+| Patch files in the current record | 16 |
 | New Sega Chihiro files | 34 |
 | New Direct3D 11 and HLSL files | 24 |
 | Files under `xemu/xgrid-core/` (including vendored libchdr/libCCI) | 82 |
@@ -74,6 +74,8 @@ hooks.
 | `0018-core-chihiro.patch` | Sega Chihiro machine, boards, JVS, cards, guns, force feedback and netboard | `block/meson.build`, `config_spec.yml`, `hw/ide/core.c`, `hw/usb/hcd-ohci.c`, `hw/xbox/*`, `system/vl.c`, `ui/*`, `ui/xui/*` |
 | `0019-block-snapshot-skip-nonsnapshot.patch` | Let the all-device snapshot path skip devices that cannot snapshot (Chihiro DIMM) | `block/snapshot.c` |
 | `0020-ui-frame-pacing-and-clear.patch` | Core presentation frame limit/skip, safe fast-forward clock update, Space handling, and full-target clear/edge clamp for the embedded picture | `hw/xbox/nv2a/pgraph/gl/display.c`, `system/cpus.c`, `ui/xemu.c`, `ui/xui/gl-helpers.cc`, `ui/xui/win32-dxgi-present.cc` |
+| `0021-build-meson-introspect.patch` | Read Meson build options from the configured build directory so a Rust-less host can regenerate them | `Makefile` |
+| `0022-repo-ignore-xemu-patches.patch` | Keep the patch record tracked and ignore generated Meson wrap-hash files | `.gitignore` |
 
 Some files appear in more than one patch because they carry more than one
 feature. The patch files are the provenance record for edits to existing
