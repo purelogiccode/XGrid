@@ -165,6 +165,141 @@ static uint32_t *triangle_indices(unsigned int triangles)
     return g_malloc_n(MAX(triangles * 3, 1), sizeof(uint32_t));
 }
 
+/* Each DRAW_ARRAYS range is an independent primitive; D3D cannot draw quads,
+ * fans or line loops, and flat shading needs the provoking vertex first for
+ * every range. Expand one range into the output index list. */
+static unsigned int append_range_indices(uint32_t *indices,
+                                         unsigned int position,
+                                         unsigned int base,
+                                         unsigned int count,
+                                         bool first_provoking,
+                                         uint32_t primitive_mode,
+                                         uint32_t polygon_mode)
+{
+    switch (primitive_mode) {
+    case PRIM_TYPE_LINE_LOOP:
+        if (count >= 2) {
+            for (unsigned int i = 0; i < count; i++) {
+                indices[position++] = base + i;
+                indices[position++] = base + (i + 1) % count;
+            }
+        }
+        break;
+
+    case PRIM_TYPE_TRIANGLE_STRIP:
+        for (unsigned int t = 0; t + 2 < count; t++) {
+            uint32_t a, b, c;
+            if ((t & 1) == 0) {
+                a = base + t;
+                b = base + t + 1;
+                c = base + t + 2;
+            } else {
+                a = base + t + 1;
+                b = base + t;
+                c = base + t + 2;
+            }
+            if (first_provoking) {
+                indices[position++] = a;
+                indices[position++] = b;
+                indices[position++] = c;
+            } else if ((t & 1) == 0) {
+                indices[position++] = c;
+                indices[position++] = a;
+                indices[position++] = b;
+            } else {
+                indices[position++] = b;
+                indices[position++] = c;
+                indices[position++] = a;
+            }
+        }
+        break;
+
+    case PRIM_TYPE_TRIANGLE_FAN:
+        for (unsigned int t = 0; t + 2 < count; t++) {
+            uint32_t a = base;
+            uint32_t b = base + t + 1;
+            uint32_t c = base + t + 2;
+            if (first_provoking) {
+                indices[position++] = a;
+                indices[position++] = b;
+                indices[position++] = c;
+            } else {
+                indices[position++] = b;
+                indices[position++] = c;
+                indices[position++] = a;
+            }
+        }
+        break;
+
+    case PRIM_TYPE_QUADS:
+        for (unsigned int q = 0; q + 3 < count; q += 4) {
+            uint32_t v0 = base + q + 0;
+            uint32_t v1 = base + q + 1;
+            uint32_t v2 = base + q + 2;
+            uint32_t v3 = base + q + 3;
+            indices[position++] = v3;
+            indices[position++] = v0;
+            indices[position++] = v1;
+            indices[position++] = v3;
+            indices[position++] = v1;
+            indices[position++] = v2;
+        }
+        break;
+
+    case PRIM_TYPE_QUAD_STRIP:
+        for (unsigned int q = 0; q + 3 < count; q += 2) {
+            uint32_t v0 = base + q + 0;
+            uint32_t v1 = base + q + 1;
+            uint32_t v2 = base + q + 2;
+            uint32_t v3 = base + q + 3;
+            indices[position++] = v3;
+            indices[position++] = v0;
+            indices[position++] = v1;
+            indices[position++] = v3;
+            indices[position++] = v1;
+            indices[position++] = v2;
+        }
+        break;
+
+    case PRIM_TYPE_POLYGON:
+        if (polygon_mode == NV_PGRAPH_SETUPRASTER_FRONTFACEMODE_LINE) {
+            if (count >= 2) {
+                for (unsigned int i = 0; i < count; i++) {
+                    indices[position++] = base + i;
+                    indices[position++] = base + (i + 1) % count;
+                }
+            }
+        } else {
+            for (unsigned int t = 0; t + 2 < count; t++) {
+                indices[position++] = base + t + 2;
+                indices[position++] = base;
+                indices[position++] = base + t + 1;
+            }
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    return position;
+}
+
+static bool primitive_needs_range_expansion(uint32_t primitive_mode)
+{
+    switch (primitive_mode) {
+    case PRIM_TYPE_LINE_LOOP:
+    case PRIM_TYPE_TRIANGLE_STRIP:
+    case PRIM_TYPE_TRIANGLE_FAN:
+    case PRIM_TYPE_QUADS:
+    case PRIM_TYPE_QUAD_STRIP:
+    case PRIM_TYPE_POLYGON:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void expand_primitive(PGRAPHState *pg, XGridDrawData *out)
 {
     unsigned int count;
@@ -177,6 +312,43 @@ static void expand_primitive(PGRAPHState *pg, XGridDrawData *out)
     uint32_t polygon_mode =
         GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_SETUPRASTER),
                  NV_PGRAPH_SETUPRASTER_FRONTFACEMODE);
+
+    if (out->use_draw_arrays && pg->draw_arrays_length > 1 &&
+        polygon_mode != NV_PGRAPH_SETUPRASTER_FRONTFACEMODE_POINT &&
+        primitive_needs_range_expansion(pg->primitive_mode)) {
+        unsigned int total = 0;
+        for (unsigned int i = 0; i < pg->draw_arrays_length; i++) {
+            total += pg->draw_arrays_count[i];
+        }
+
+        uint32_t *range_indices =
+            g_malloc_n(MAX(total * 6, 1), sizeof(uint32_t));
+        unsigned int range_index_count = 0;
+        for (unsigned int i = 0; i < pg->draw_arrays_length; i++) {
+            unsigned int base =
+                pg->draw_arrays_start[i] - (unsigned int)out->base_index;
+            range_index_count = append_range_indices(
+                range_indices, range_index_count, base,
+                pg->draw_arrays_count[i], first_provoking, pg->primitive_mode,
+                polygon_mode);
+        }
+
+        g_free(out->indices);
+        out->indices = range_indices;
+        out->index_count = range_index_count;
+        out->indexed = range_index_count > 0;
+        out->topology =
+            (pg->primitive_mode == PRIM_TYPE_LINE_LOOP ||
+             (pg->primitive_mode == PRIM_TYPE_POLYGON &&
+              polygon_mode == NV_PGRAPH_SETUPRASTER_FRONTFACEMODE_LINE))
+                ? D3D11_PRIMITIVE_TOPOLOGY_LINELIST
+                : D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+        if (!sequence_is_output) {
+            g_free(sequence);
+        }
+        return;
+    }
 
     uint32_t *indices = NULL;
     unsigned int index_count = 0;
