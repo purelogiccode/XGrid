@@ -62,6 +62,12 @@ public static class XemuLaunchPlan
             HddPath = chihiro
                 ? string.Empty
                 : Resolve(settings.HddPath, firmwareDirectory, "xbox_hdd.qcow2"),
+            HddFormat = chihiro
+                ? "auto"
+                : HddFormatFor(Resolve(settings.HddPath, firmwareDirectory, "xbox_hdd.qcow2")),
+            SnapshotStorePath = chihiro
+                ? string.Empty
+                : Path.Combine(workingDirectory, "xbox_snapshots.qcow2"),
             DvdPath = dvd,
             ChihiroBiosPath = chihiro
                 ? ResolveChihiro(chihiroDirectory, ChihiroSettings.BiosFileName, firmwareDirectory)
@@ -225,6 +231,23 @@ public static class XemuLaunchPlan
     {
         string path = ResolveChihiro(directory, fileName, firmwareDirectory);
         return File.Exists(path) ? path : string.Empty;
+    }
+
+    private static string HddFormatFor(string path)
+    {
+        if (path.EndsWith(".qcow2", StringComparison.OrdinalIgnoreCase))
+        {
+            return "qcow2";
+        }
+
+        if (path.EndsWith(".raw", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".img", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "raw";
+        }
+
+        return "auto";
     }
 
     private static string Resolve(string configured, string? firmwareDirectory, string fileName)

@@ -376,7 +376,17 @@ sys:
     flashrom_path: string
     eeprom_path: string
     hdd_path: string
+    # Block format for hdd_path: auto probes, raw avoids QEMU's raw-image write
+    # restriction, qcow2 is explicit. The shell picks it from the file name.
+    hdd_format:
+      type: enum
+      values: [auto, raw, qcow2]
+      default: auto
     dvd_path: string
+    # qcow2 store for Xbox VM snapshots when the hard-disk image cannot hold
+    # them (a raw or read-only image). Empty: disabled. A qcow2 HDD keeps its
+    # snapshots inside the image.
+    snapshot_store_path: string
 
 chihiro:
   jvs:

@@ -3840,34 +3840,31 @@ void chihiro_ide_interface_init(void)
 
 /* A qcow2 just for QEMU's internal snapshots. The DIMM state itself is the
  * chihiro-dimm vmstate; this file only has to accept the VM state stream. */
+static const char *chihiro_snapshot_store_file;
+
 static void chihiro_snapshot_store_init(void)
 {
     const char *path = g_config.chihiro.roms.snapshot_store_path;
-    if (!path || !path[0]) {
+    if (path == NULL || path[0] == '\0') {
         return;
     }
 
-    Error *err = NULL;
+    chihiro_snapshot_store_file = path;
     if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
+        Error *err = NULL;
+
         bdrv_img_create(path, "qcow2", NULL, NULL, NULL, 512ULL << 20,
                         0, true, &err);
         if (err != NULL) {
             error_reportf_err(err, "Chihiro: cannot create the snapshot store: ");
-            return;
+            chihiro_snapshot_store_file = NULL;
         }
     }
+}
 
-    QDict *options = qdict_new();
-    qdict_put_str(options, "driver", "qcow2");
-    BlockDriverState *store = bdrv_open(path, NULL, options, BDRV_O_RDWR, &err);
-    if (store == NULL) {
-        error_reportf_err(err, "Chihiro: cannot open the snapshot store: ");
-        return;
-    }
-
-    bdrv_set_monitor_owned(store);
-    printf("Chihiro: snapshots in %s (%s)\n", path, store->drv->format_name);
-    fflush(stdout);
+const char *chihiro_snapshot_store_path(void)
+{
+    return chihiro_snapshot_store_file;
 }
 
 /* memmem is missing from some C libraries (mingw). */

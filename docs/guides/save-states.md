@@ -2,8 +2,9 @@
 
 XGrid exposes **xemu/QEMU snapshots** as four named slots. There is no private
 XGrid snapshot format; the machine's state is written into the core's snapshot
-store using its own snapshot support. An Xbox uses its hard-disk image; a Sega
-Chihiro uses a dedicated qcow2 file.
+store using its own snapshot support. An Xbox uses its qcow2 hard-disk image, or
+`xbox_snapshots.qcow2` when the HDD is raw or read-only; a Sega Chihiro uses a
+dedicated qcow2 file.
 
 ## Requirements
 
@@ -12,7 +13,9 @@ Chihiro uses a dedicated qcow2 file.
   are disabled because the shell has no ABI to call. The Linux core is a
   separate process, so it has no shell save-state controls.
 - A running console.
-- A writable HDD image for Xbox, or the Chihiro snapshot store.
+- A writable HDD image for Xbox. A raw or read-only HDD gets a dedicated
+  `xbox_snapshots.qcow2` store automatically; a qcow2 HDD keeps the snapshots
+  inside the image. Chihiro uses its own snapshot store.
 
 ## Slots
 
@@ -41,8 +44,9 @@ a time; a second request is refused while the first is in flight.
 ## What is captured
 
 A snapshot includes the VM state: CPU, RAM, devices and the frame thumbnail. It
-is stored inside the machine's snapshot store (the HDD image on Xbox, the
-Chihiro qcow2 on Chihiro), so it survives replacing the application folder.
+is stored inside the qcow2 HDD image, in `xbox_snapshots.qcow2` when the Xbox HDD
+is raw or read-only, or in the Chihiro qcow2, so it survives replacing the
+application folder.
 
 State size depends on guest RAM and device state; expect tens of megabytes per
 slot.
@@ -59,7 +63,7 @@ workflow:
 
 The automatic snapshot is separate from slots 1–4 and is overwritten on each
 save. It needs the same requirements as a manual state: in-process hosting on
-Windows and a writable HDD image.
+Windows and a writable snapshot store.
 
 - The snapshot restores into a fresh machine. XGrid lets the console finish its
   early boot first, so the dashboard or game may appear for about 12 seconds
@@ -69,8 +73,17 @@ Windows and a writable HDD image.
   the dashboard path resume the snapshot.
 - If the snapshot is missing or cannot be read, the console continues booting
   normally and the Activity log records why.
-- Use the same store (HDD image or Chihiro qcow2) and core version that wrote the
-  snapshot.
+- Use the same store (HDD image, `xbox_snapshots.qcow2` or the Chihiro qcow2)
+  and core version that wrote the snapshot.
+
+## Xbox snapshot store
+
+A qcow2 HDD holds the snapshots itself. When the configured HDD is raw,
+read-only or absent, the shell points `sys.files.snapshot_store_path` at
+`xbox_snapshots.qcow2` in the XGrid data folder. The core creates that qcow2 on
+the first boot and uses it for the four slots and the session state. Keep the
+store with the HDD image; a snapshot taken against one image does not belong to
+another.
 
 ## Sega Chihiro
 
@@ -86,7 +99,8 @@ enabled.
 ## Loading caveats
 
 - Load into a machine that booted from the same store and disc configuration:
-  the same HDD image on Xbox, or the same netboot `.bin` on Chihiro.
+  the same HDD image and `xbox_snapshots.qcow2` on Xbox, or the same netboot
+  `.bin` on Chihiro.
 - The core restores the machine; the shell does not rewind its own library or
   settings.
 - A failed load is reported in the Activity log. The core resumes the guest if

@@ -3169,6 +3169,17 @@ void qemu_init(int argc, char **argv)
     }
 
     const char *hdd_path = g_config.sys.files.hdd_path;
+    const char *hdd_format = NULL;
+    switch (g_config.sys.files.hdd_format) {
+    case CONFIG_SYS_FILES_HDD_FORMAT_RAW:
+        hdd_format = "raw";
+        break;
+    case CONFIG_SYS_FILES_HDD_FORMAT_QCOW2:
+        hdd_format = "qcow2";
+        break;
+    default:
+        break;
+    }
     if (chihiro_machine) {
         /* Chihiro has no IDE hard disk; hdd_path is the Xbox's. */
     } else if (strlen(hdd_path) > 0) {
@@ -3179,9 +3190,11 @@ void qemu_init(int argc, char **argv)
         } else {
             fake_argv[fake_argc++] = strdup("-drive");
             char *escaped_hdd_path = strdup_double_commas(hdd_path);
-            fake_argv[fake_argc++] = g_strdup_printf("index=0,media=disk,file=%s%s",
+            fake_argv[fake_argc++] = g_strdup_printf("index=0,media=disk,file=%s%s%s%s",
                 escaped_hdd_path,
-                strlen(escaped_hdd_path) > 0 ? ",locked=on" : "");
+                strlen(escaped_hdd_path) > 0 ? ",locked=on" : "",
+                hdd_format != NULL ? ",format=" : "",
+                hdd_format != NULL ? hdd_format : "");
             free(escaped_hdd_path);
         }
     }

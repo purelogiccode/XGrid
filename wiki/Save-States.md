@@ -1,14 +1,16 @@
 # Save states
 
 XGrid exposes xemu/QEMU snapshots as four named slots. There is no private XGrid
-snapshot format. Xbox snapshots live in the HDD image; Chihiro snapshots live in
-`chihiro_snapshots.qcow2`.
+snapshot format. Xbox snapshots live in the qcow2 HDD image, or in
+`xbox_snapshots.qcow2` when the HDD is raw or read-only; Chihiro snapshots live
+in `chihiro_snapshots.qcow2`.
 
 ## Requirements
 
 - **In-process core hosting on Windows.** Save states need the in-process ABI.
 - A running console.
-- A writable HDD image (or Chihiro snapshot store).
+- A writable HDD image. A raw or read-only HDD gets `xbox_snapshots.qcow2`; a
+  Chihiro launch gets its own store.
 
 Separate-process hosting, including Linux, disables the shell save-state
 controls.

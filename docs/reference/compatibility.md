@@ -74,7 +74,8 @@ point, but XGrid's patches and media drivers can change the result.
 
 - A loose `.xbe` is not bootable. Wrap it in an ISO, CHD, CCI or ZAR.
 - CHD, CCI and ZAR are read on demand; no extraction step is required.
-- Keep the HDD image writable if you use save states. Chihiro launches create
+- A qcow2 HDD holds save states inside the image. A raw or read-only HDD gets a
+  dedicated `xbox_snapshots.qcow2` store; Chihiro launches create
   `chihiro_snapshots.qcow2` for their snapshots instead.
 - A split CCI set must be opened from its first part.
 

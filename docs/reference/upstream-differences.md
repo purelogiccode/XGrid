@@ -18,7 +18,7 @@ described in the guides.
 | XGrid core | xemu 0.8.139 lineage + XGrid changes in `xemu/`, now evolving separately |
 | Recorded upstream commit | `aa54c34cae1c09410d74c69a44210a9867fe2d16` (`xemu/XEMU_COMMIT`) |
 | XGrid-native code | `xemu/xgrid-core/` |
-| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`-`0023`; 17 files) |
+| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`-`0024`; 18 files) |
 | Ported arcade machine | `xemu/hw/xbox/chihiro/` |
 | Third-party notices | `THIRD_PARTY_NOTICES.md`, `docs/legal/licensing.md` |
 
@@ -77,6 +77,7 @@ hooks.
 | `0021-build-meson-introspect.patch` | Read Meson build options from the configured build directory so a Rust-less host can regenerate them | `Makefile` |
 | `0022-repo-ignore-xemu-patches.patch` | Keep the patch record tracked and ignore generated Meson wrap-hash files | `.gitignore` |
 | `0023-core-dsp56300-hash.patch` | Verify the dsp56300 release archive SHA-256 before unpacking | `subprojects/dsp56300/meson.build` |
+| `0024-core-xbox-snapshot-store.patch` | Use a dedicated qcow2 store when the Xbox HDD cannot hold snapshots; read snapshot metadata from the selected store; make the HDD format explicit | `config_spec.yml`, `hw/xbox/xbox.c`, `hw/xbox/xbox.h`, `hw/xbox/chihiro/chihiro.c`, `hw/xbox/chihiro/chihiro.h`, `system/vl.c`, `ui/xemu-snapshots.c` |
 
 Some files appear in more than one patch because they carry more than one
 feature. The patch files are the provenance record for edits to existing

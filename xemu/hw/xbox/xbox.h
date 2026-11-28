@@ -29,6 +29,9 @@ void xbox_init_common(MachineState *machine,
                       PCIBus **pci_bus_out,
                       ISABus **isa_bus_out);
 
+/* Node name of the dedicated snapshot store, or NULL when the HDD holds them. */
+const char *xbox_snapshot_store_path(void);
+
 #define TYPE_XBOX_MACHINE MACHINE_TYPE_NAME("xbox")
 
 #define XBOX_MACHINE(obj) \

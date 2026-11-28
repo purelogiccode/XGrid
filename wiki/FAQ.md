@@ -61,8 +61,9 @@ No. They need the in-process ABI on Windows.
 
 ## Where are save states stored?
 
-Inside the HDD image (`xgrid-slot-1` … `xgrid-slot-4`, `xgrid-session`). Chihiro
-uses `chihiro_snapshots.qcow2`.
+Inside the qcow2 HDD image (`xgrid-slot-1` … `xgrid-slot-4`, `xgrid-session`),
+or in `xbox_snapshots.qcow2` when the HDD is raw or read-only. Chihiro uses
+`chihiro_snapshots.qcow2`.
 
 ## Where is `settings.json`?
 
@@ -88,7 +89,7 @@ There is no shell netplay UI.
 ## How do I update?
 
 Keep your data folder, replace the application folder, and start it. Save states
-live in the HDD image and survive.
+live in the HDD image or `xbox_snapshots.qcow2` and survive.
 
 ## Is XGrid affiliated with Microsoft or xemu?
 

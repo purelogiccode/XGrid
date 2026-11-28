@@ -41,7 +41,8 @@ in a disc image.
 
 ## HDD and firmware
 
-- HDD: raw or qcow2. Holds the dashboard and Xbox save states.
+- HDD: raw or qcow2. Holds the dashboard. Xbox save states live in a qcow2 HDD,
+  or in `xbox_snapshots.qcow2` when the HDD is raw or read-only.
 - BIOS: 256 KB or 512 KB, required.
 - MCPX ROM: 512 bytes.
 - EEPROM: 256 bytes.

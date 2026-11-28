@@ -26,7 +26,12 @@ public sealed class XemuTomlWriterTests
         Assert.Contains("flashrom_path = 'C:\\firmware\\Complex_4627.bin'", toml, StringComparison.Ordinal);
         Assert.Contains("eeprom_path = 'C:\\firmware\\eeprom.bin'", toml, StringComparison.Ordinal);
         Assert.Contains("hdd_path = 'C:\\media\\xbox_hdd.qcow2'", toml, StringComparison.Ordinal);
+        Assert.Contains("hdd_format = 'qcow2'", toml, StringComparison.Ordinal);
         Assert.Contains("dvd_path = 'C:\\media\\game.iso'", toml, StringComparison.Ordinal);
+        Assert.Contains(
+            "snapshot_store_path = 'C:\\shell\\xemu\\xbox_snapshots.qcow2'",
+            toml,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -42,6 +47,8 @@ public sealed class XemuTomlWriterTests
             ChihiroPc20Path = "C:\\firmware\\pc20_g24lc64.bin",
             ChihiroNetFirmwarePath = "C:\\firmware\\ver1305.bin",
             ChihiroSnapshotStorePath = "C:\\data\\xemu\\chihiro_snapshots.qcow2",
+            SnapshotStorePath = string.Empty,
+            HddFormat = "auto",
             ChihiroFreePlay = true,
             ChihiroRegion = "jp",
             ChihiroDimmSize = "512",
@@ -495,6 +502,8 @@ public sealed class XemuTomlWriterTests
             FlashRomPath = "C:\\firmware\\Complex_4627.bin",
             EepromPath = "C:\\firmware\\eeprom.bin",
             HddPath = "C:\\media\\xbox_hdd.qcow2",
+            HddFormat = "qcow2",
+            SnapshotStorePath = "C:\\shell\\xemu\\xbox_snapshots.qcow2",
             DvdPath = "C:\\media\\game.iso",
             RamMb = ramMb,
             WorkingDirectory = "C:\\shell\\xemu",

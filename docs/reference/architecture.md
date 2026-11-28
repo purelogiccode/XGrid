@@ -170,8 +170,10 @@ modes on Windows. Elsewhere the core uses SDL input instead.
 
 ## Save states
 
-A save state is xemu's own QEMU snapshot of the hard-disk image. The shell queues
-a request through the in-process ABI:
+A save state is xemu's own QEMU snapshot of the machine: RAM, devices and the
+block state. It is stored in the qcow2 HDD image, in a dedicated qcow2 store
+when the HDD is raw or read-only, or in the Chihiro snapshot store. The shell
+queues a request through the in-process ABI:
 
 ```text
 xgrid_core_snapshot_save/load/delete/refresh

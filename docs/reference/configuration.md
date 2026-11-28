@@ -107,6 +107,7 @@ The console output and JSON report are documented in
     xemu.log             core log (separate-process mode)
     audio.wav            WAV capture, when selected
     d3d11-shader-cache/  compiled HLSL blobs (safe to delete)
+    xbox_snapshots.qcow2  Xbox snapshot store, when the HDD is raw/read-only
     chihiro_snapshots.qcow2  Chihiro snapshot store, when used
 ```
 
@@ -178,8 +179,8 @@ complete file, so two launches cannot inherit each other's state.
 | `[audio]` | `use_dsp`, `use_dsp_jit`, `hrtf`, `volume_limit` |
 | `[audio.vp]` | `num_workers` |
 | `[sys]` | `default_machine`, `mem_limit`, `avpack` |
-| `[sys.files]` | `bootrom_path`, `flashrom_path`, `eeprom_path`, `hdd_path`, `dvd_path` |
-| `[chihiro.roms]` | Chihiro only: BIOS, media board, board EEPROMs, optional network firmware and `snapshot_store_path` |
+| `[sys.files]` | `bootrom_path`, `flashrom_path`, `eeprom_path`, `hdd_path`, `hdd_format`, `dvd_path`, `snapshot_store_path` |
+| `[chihiro.roms]` | Chihiro only: BIOS, media board, board EEPROMs, optional network firmware and the Chihiro `snapshot_store_path` |
 | `[chihiro.card_reader]` | Chihiro only: enable and card-file paths |
 | `[chihiro.jvs]` | Chihiro only: profile and cabinet keys |
 | `[chihiro.jvs_p2]` | Chihiro only: player-2 gun keys |
@@ -238,7 +239,8 @@ fall back.
 
 ## Save states
 
-Snapshots are stored inside the HDD image with these names:
+Snapshots are stored inside the qcow2 HDD image, or in `xbox_snapshots.qcow2`
+when the HDD is raw or read-only, with these names:
 
 ```text
 xgrid-slot-1
@@ -248,8 +250,9 @@ xgrid-slot-4
 xgrid-session     automatic session snapshot
 ```
 
-They are QEMU/xemu snapshots, not files in the data folder. A Chihiro launch uses
-`chihiro_snapshots.qcow2` instead. See [Save states](../guides/save-states.md).
+They are QEMU/xemu snapshots, not files in the data folder (the store is a file
+when the HDD cannot hold them). A Chihiro launch uses `chihiro_snapshots.qcow2`
+instead. See [Save states](../guides/save-states.md).
 
 ## Screenshots
 

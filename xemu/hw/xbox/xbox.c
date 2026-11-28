@@ -37,6 +37,12 @@
 #include "kvm/kvm_i386.h"
 #include "hw/dma/i8257.h"
 
+#include "system/block-backend.h"
+#include "system/blockdev.h"
+#include "block/block-global-state.h"
+#include "block/block_int-global-state.h"
+#include "qobject/qdict.h"
+
 #include "hw/sysbus.h"
 #include "system/arch_init.h"
 #include "system/memory.h"
@@ -203,6 +209,43 @@ static void xbox_memory_init(PCMachineState *pcms,
     pc_system_flash_cleanup_unused(pcms);
 }
 
+/* The shell sets a dedicated store for a raw or absent Xbox HDD. A qcow2 HDD
+ * keeps its snapshots inside the image. The file is created here, during
+ * machine init; the snapshot requests only open and close it. */
+static const char *xbox_snapshot_store_file;
+
+static void xbox_snapshot_store_init(void)
+{
+    const char *path = g_config.sys.files.snapshot_store_path;
+    const char *hdd = g_config.sys.files.hdd_path;
+
+    if (path == NULL || path[0] == '\0') {
+        return;
+    }
+
+    if (g_config.sys.files.hdd_format != CONFIG_SYS_FILES_HDD_FORMAT_RAW &&
+        hdd != NULL && hdd[0] != '\0') {
+        return;
+    }
+
+    xbox_snapshot_store_file = path;
+    if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
+        Error *err = NULL;
+
+        bdrv_img_create(path, "qcow2", NULL, NULL, NULL, 512ULL << 20,
+                        0, true, &err);
+        if (err != NULL) {
+            error_reportf_err(err, "Xbox: cannot create the snapshot store: ");
+            xbox_snapshot_store_file = NULL;
+        }
+    }
+}
+
+const char *xbox_snapshot_store_path(void)
+{
+    return xbox_snapshot_store_file;
+}
+
 /* PC hardware initialisation */
 static void xbox_init(MachineState *machine)
 {
@@ -295,6 +338,8 @@ void xbox_init_common(MachineState *machine,
 
     if (XBOX_MACHINE(machine)->chihiro) {
         chihiro_ide_interface_init();
+    } else {
+        xbox_snapshot_store_init();
     }
 
     PCIDevice *dev = pci_create_simple(pci_bus, PCI_DEVFN(9, 0), "piix3-ide");

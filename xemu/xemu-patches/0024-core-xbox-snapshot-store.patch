@@ -1,0 +1,431 @@
+Subject: [PATCH] core: store Xbox snapshots in a dedicated qcow2
+
+QEMU's internal snapshots need a block device that can hold vmstate. A raw
+or read-only Xbox HDD cannot, so saving a state failed with "no block device
+can store vmstate for snapshot". For those images the shell now provides a
+dedicated qcow2 store; it is created at machine init and opened only for a
+save-state request. Snapshot metadata and thumbnails are read from the selected
+store, and the HDD format is explicit so a raw image is not probed.
+
+Applies on top of the XGrid 0.8.139 tree.
+
+diff --git a/xemu/config_spec.yml b/xemu/config_spec.yml
+index 80e7661e..b05aa16d 100644
+--- a/xemu/config_spec.yml
++++ b/xemu/config_spec.yml
+@@ -376,7 +376,17 @@ sys:
+     flashrom_path: string
+     eeprom_path: string
+     hdd_path: string
++    # Block format for hdd_path: auto probes, raw avoids QEMU's raw-image write
++    # restriction, qcow2 is explicit. The shell picks it from the file name.
++    hdd_format:
++      type: enum
++      values: [auto, raw, qcow2]
++      default: auto
+     dvd_path: string
++    # qcow2 store for Xbox VM snapshots when the hard-disk image cannot hold
++    # them (a raw or read-only image). Empty: disabled. A qcow2 HDD keeps its
++    # snapshots inside the image.
++    snapshot_store_path: string
+ 
+ chihiro:
+   jvs:
+diff --git a/xemu/hw/xbox/chihiro/chihiro.c b/xemu/hw/xbox/chihiro/chihiro.c
+index 3d5c0ca6..454a907f 100644
+--- a/xemu/hw/xbox/chihiro/chihiro.c
++++ b/xemu/hw/xbox/chihiro/chihiro.c
+@@ -3840,34 +3840,31 @@ void chihiro_ide_interface_init(void)
+ 
+ /* A qcow2 just for QEMU's internal snapshots. The DIMM state itself is the
+  * chihiro-dimm vmstate; this file only has to accept the VM state stream. */
++static const char *chihiro_snapshot_store_file;
++
+ static void chihiro_snapshot_store_init(void)
+ {
+     const char *path = g_config.chihiro.roms.snapshot_store_path;
+-    if (!path || !path[0]) {
++    if (path == NULL || path[0] == '\0') {
+         return;
+     }
+ 
+-    Error *err = NULL;
++    chihiro_snapshot_store_file = path;
+     if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
++        Error *err = NULL;
++
+         bdrv_img_create(path, "qcow2", NULL, NULL, NULL, 512ULL << 20,
+                         0, true, &err);
+         if (err != NULL) {
+             error_reportf_err(err, "Chihiro: cannot create the snapshot store: ");
+-            return;
++            chihiro_snapshot_store_file = NULL;
+         }
+     }
++}
+ 
+-    QDict *options = qdict_new();
+-    qdict_put_str(options, "driver", "qcow2");
+-    BlockDriverState *store = bdrv_open(path, NULL, options, BDRV_O_RDWR, &err);
+-    if (store == NULL) {
+-        error_reportf_err(err, "Chihiro: cannot open the snapshot store: ");
+-        return;
+-    }
+-
+-    bdrv_set_monitor_owned(store);
+-    printf("Chihiro: snapshots in %s (%s)\n", path, store->drv->format_name);
+-    fflush(stdout);
++const char *chihiro_snapshot_store_path(void)
++{
++    return chihiro_snapshot_store_file;
+ }
+ 
+ /* memmem is missing from some C libraries (mingw). */
+diff --git a/xemu/hw/xbox/chihiro/chihiro.h b/xemu/hw/xbox/chihiro/chihiro.h
+index b6e3a4bc..a0b1c4a1 100644
+--- a/xemu/hw/xbox/chihiro/chihiro.h
++++ b/xemu/hw/xbox/chihiro/chihiro.h
+@@ -39,6 +39,9 @@ void chihiro_usb_set_devices(USBDevice *qc, USBDevice *sc);
+ /* True if the file is the Chihiro BIOS listed by MAME. */
+ bool chihiro_bios_known(const char *path);
+ 
++/* Node name of the dedicated snapshot store, or NULL when none is configured. */
++const char *chihiro_snapshot_store_path(void);
++
+ /* Load the media board flash (SEGABOOT) from file */
+ void chihiro_load_flash_rom(const char *bios_path);
+ bool chihiro_flash_rom_loaded(void);
+diff --git a/xemu/hw/xbox/xbox.c b/xemu/hw/xbox/xbox.c
+index 30aad70e..2208b3b7 100644
+--- a/xemu/hw/xbox/xbox.c
++++ b/xemu/hw/xbox/xbox.c
+@@ -37,6 +37,12 @@
+ #include "kvm/kvm_i386.h"
+ #include "hw/dma/i8257.h"
+ 
++#include "system/block-backend.h"
++#include "system/blockdev.h"
++#include "block/block-global-state.h"
++#include "block/block_int-global-state.h"
++#include "qobject/qdict.h"
++
+ #include "hw/sysbus.h"
+ #include "system/arch_init.h"
+ #include "system/memory.h"
+@@ -203,6 +209,43 @@ static void xbox_memory_init(PCMachineState *pcms,
+     pc_system_flash_cleanup_unused(pcms);
+ }
+ 
++/* The shell sets a dedicated store for a raw or absent Xbox HDD. A qcow2 HDD
++ * keeps its snapshots inside the image. The file is created here, during
++ * machine init; the snapshot requests only open and close it. */
++static const char *xbox_snapshot_store_file;
++
++static void xbox_snapshot_store_init(void)
++{
++    const char *path = g_config.sys.files.snapshot_store_path;
++    const char *hdd = g_config.sys.files.hdd_path;
++
++    if (path == NULL || path[0] == '\0') {
++        return;
++    }
++
++    if (g_config.sys.files.hdd_format != CONFIG_SYS_FILES_HDD_FORMAT_RAW &&
++        hdd != NULL && hdd[0] != '\0') {
++        return;
++    }
++
++    xbox_snapshot_store_file = path;
++    if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
++        Error *err = NULL;
++
++        bdrv_img_create(path, "qcow2", NULL, NULL, NULL, 512ULL << 20,
++                        0, true, &err);
++        if (err != NULL) {
++            error_reportf_err(err, "Xbox: cannot create the snapshot store: ");
++            xbox_snapshot_store_file = NULL;
++        }
++    }
++}
++
++const char *xbox_snapshot_store_path(void)
++{
++    return xbox_snapshot_store_file;
++}
++
+ /* PC hardware initialisation */
+ static void xbox_init(MachineState *machine)
+ {
+@@ -295,6 +338,8 @@ void xbox_init_common(MachineState *machine,
+ 
+     if (XBOX_MACHINE(machine)->chihiro) {
+         chihiro_ide_interface_init();
++    } else {
++        xbox_snapshot_store_init();
+     }
+ 
+     PCIDevice *dev = pci_create_simple(pci_bus, PCI_DEVFN(9, 0), "piix3-ide");
+diff --git a/xemu/hw/xbox/xbox.h b/xemu/hw/xbox/xbox.h
+index 59134de2..8937fea0 100644
+--- a/xemu/hw/xbox/xbox.h
++++ b/xemu/hw/xbox/xbox.h
+@@ -29,6 +29,9 @@ void xbox_init_common(MachineState *machine,
+                       PCIBus **pci_bus_out,
+                       ISABus **isa_bus_out);
+ 
++/* Node name of the dedicated snapshot store, or NULL when the HDD holds them. */
++const char *xbox_snapshot_store_path(void);
++
+ #define TYPE_XBOX_MACHINE MACHINE_TYPE_NAME("xbox")
+ 
+ #define XBOX_MACHINE(obj) \
+diff --git a/xemu/system/vl.c b/xemu/system/vl.c
+index 8d5a18d0..4aad4b9a 100644
+--- a/xemu/system/vl.c
++++ b/xemu/system/vl.c
+@@ -3169,6 +3169,17 @@ void qemu_init(int argc, char **argv)
+     }
+ 
+     const char *hdd_path = g_config.sys.files.hdd_path;
++    const char *hdd_format = NULL;
++    switch (g_config.sys.files.hdd_format) {
++    case CONFIG_SYS_FILES_HDD_FORMAT_RAW:
++        hdd_format = "raw";
++        break;
++    case CONFIG_SYS_FILES_HDD_FORMAT_QCOW2:
++        hdd_format = "qcow2";
++        break;
++    default:
++        break;
++    }
+     if (chihiro_machine) {
+         /* Chihiro has no IDE hard disk; hdd_path is the Xbox's. */
+     } else if (strlen(hdd_path) > 0) {
+@@ -3179,9 +3190,11 @@ void qemu_init(int argc, char **argv)
+         } else {
+             fake_argv[fake_argc++] = strdup("-drive");
+             char *escaped_hdd_path = strdup_double_commas(hdd_path);
+-            fake_argv[fake_argc++] = g_strdup_printf("index=0,media=disk,file=%s%s",
++            fake_argv[fake_argc++] = g_strdup_printf("index=0,media=disk,file=%s%s%s%s",
+                 escaped_hdd_path,
+-                strlen(escaped_hdd_path) > 0 ? ",locked=on" : "");
++                strlen(escaped_hdd_path) > 0 ? ",locked=on" : "",
++                hdd_format != NULL ? ",format=" : "",
++                hdd_format != NULL ? hdd_format : "");
+             free(escaped_hdd_path);
+         }
+     }
+diff --git a/xemu/ui/xemu-snapshots.c b/xemu/ui/xemu-snapshots.c
+index 9d40864e..40a8cb11 100644
+--- a/xemu/ui/xemu-snapshots.c
++++ b/xemu/ui/xemu-snapshots.c
+@@ -26,9 +26,13 @@
+ 
+ #include "block/aio.h"
+ #include "block/block_int.h"
++#include "block/block-global-state.h"
+ #include "block/qapi.h"
+ #include "block/qdict.h"
+ #include "block/block-io.h"
++#include "hw/i386/pc.h"
++#include "hw/xbox/xbox.h"
++#include "hw/xbox/chihiro/chihiro.h"
+ #include "migration/qemu-file.h"
+ #include "migration/snapshot.h"
+ #include "qapi/error.h"
+@@ -43,6 +47,51 @@ static XemuSnapshotData *xemu_snapshots_extra_data = NULL;
+ static int xemu_snapshots_len = 0;
+ static bool xemu_snapshots_dirty = true;
+ 
++/*
++ * A dedicated qcow2 store is opened only for a save-state request, so no
++ * long-lived block node remains at shutdown. Without one, the HDD's internal
++ * snapshots are used.
++ */
++static const char *xemu_snapshot_store_path(void)
++{
++    const char *path = xbox_snapshot_store_path();
++    if (path != NULL) {
++        return path;
++    }
++
++    return chihiro_snapshot_store_path();
++}
++
++static bool xemu_snapshot_store_configured(void)
++{
++    const char *xbox_path = g_config.sys.files.snapshot_store_path;
++    const char *chihiro_path = g_config.chihiro.roms.snapshot_store_path;
++    const char *hdd = g_config.sys.files.hdd_path;
++
++    if (xbox_path != NULL && xbox_path[0] != '\0' &&
++        (g_config.sys.files.hdd_format == CONFIG_SYS_FILES_HDD_FORMAT_RAW ||
++         hdd == NULL || hdd[0] == '\0')) {
++        return true;
++    }
++
++    return chihiro_path != NULL && chihiro_path[0] != '\0';
++}
++
++static BlockDriverState *xemu_snapshot_store_open(const char *path, Error **err)
++{
++    QDict *options = qdict_new();
++    qdict_put_str(options, "driver", "qcow2");
++    qdict_put_str(options, "node-name", "xgrid-snapshot-store");
++    return bdrv_open(path, NULL, options, BDRV_O_RDWR, err);
++}
++
++static strList *xemu_snapshot_store_devices(const char *node)
++{
++    strList *devices = g_new0(strList, 1);
++    devices->value = g_strdup(node);
++    return devices;
++}
++
+ const char **g_snapshot_shortcut_index_key_map[] = {
+     &g_config.general.snapshots.shortcuts.f5,
+     &g_config.general.snapshots.shortcuts.f6,
+@@ -130,15 +179,22 @@ static void xemu_snapshots_load_data(BlockDriverState *bs_ro,
+     g_free(buf);
+ }
+ 
+-static void xemu_snapshots_all_load_data(QEMUSnapshotInfo **info,
++static void xemu_snapshots_all_load_data(BlockDriverState *bs,
++                                         QEMUSnapshotInfo **info,
+                                          XemuSnapshotData **data,
+                                          int snapshots_len, Error **err)
+ {
+     BlockDriverState *bs_ro;
+     QDict *opts = qdict_new();
++    const char *filename = bs->filename;
+ 
+     assert(info && data);
+ 
++    if (filename == NULL || filename[0] == '\0') {
++        error_setg(err, "The snapshot store has no backing file");
++        return;
++    }
++
+     if (*data) {
+         for (int i = 0; i < xemu_snapshots_len; ++i) {
+             g_free((*data)[i].xbe_title_name);
+@@ -154,7 +210,7 @@ static void xemu_snapshots_all_load_data(QEMUSnapshotInfo **info,
+     memset(*data, 0, sizeof(XemuSnapshotData) * snapshots_len);
+ 
+     qdict_put_bool(opts, BDRV_OPT_READ_ONLY, true);
+-    bs_ro = bdrv_open(g_config.sys.files.hdd_path, NULL, opts,
++    bs_ro = bdrv_open(filename, NULL, opts,
+                       BDRV_O_RO_WRITE_SHARE | BDRV_O_AUTO_RDONLY, err);
+     if (!bs_ro) {
+         return;
+@@ -190,15 +246,41 @@ int xemu_snapshots_list(QEMUSnapshotInfo **info, XemuSnapshotData **extra_data,
+     if (xemu_snapshots_metadata)
+         g_free(xemu_snapshots_metadata);
+ 
+-    bs = bdrv_all_find_vmstate_bs(NULL, false, NULL, err);
+-    if (!bs) {
+-        return -1;
++    if (xemu_snapshot_store_path() == NULL &&
++        xemu_snapshot_store_configured()) {
++        /* The core is still bringing the store up; report an empty list. */
++        xemu_snapshots_len = 0;
++        if (info) {
++            *info = NULL;
++        }
++        if (extra_data) {
++            *extra_data = NULL;
++        }
++        return 0;
++    }
++
++    const char *store_path = xemu_snapshot_store_path();
++    BlockDriverState *store = NULL;
++    if (store_path != NULL) {
++        store = xemu_snapshot_store_open(store_path, err);
++        if (store == NULL) {
++            return -1;
++        }
++        bs = store;
++    } else {
++        bs = bdrv_all_find_vmstate_bs(NULL, false, NULL, err);
++        if (!bs) {
++            return -1;
++        }
+     }
+ 
+     snapshots_len = bdrv_snapshot_list(bs, &xemu_snapshots_metadata);
+-    xemu_snapshots_all_load_data(&xemu_snapshots_metadata,
++    xemu_snapshots_all_load_data(bs, &xemu_snapshots_metadata,
+                                  &xemu_snapshots_extra_data, snapshots_len,
+                                  err);
++    if (store != NULL) {
++        bdrv_unref(store);
++    }
+     if (*err) {
+         return -1;
+     }
+@@ -241,20 +323,61 @@ char *xemu_get_currently_loaded_disc_path(void)
+ void xemu_snapshots_load(const char *vm_name, Error **err)
+ {
+     bool vm_running = runstate_is_running();
++    const char *store_path = xemu_snapshot_store_path();
++    bool loaded = false;
++
+     vm_stop(RUN_STATE_RESTORE_VM);
+-    if (load_snapshot(vm_name, NULL, false, NULL, err) && vm_running) {
++    if (store_path != NULL) {
++        BlockDriverState *store = xemu_snapshot_store_open(store_path, err);
++        if (store != NULL) {
++            const char *node = bdrv_get_node_name(store);
++            strList *devices = xemu_snapshot_store_devices(node);
++            loaded = load_snapshot(vm_name, node, true, devices, err);
++            qapi_free_strList(devices);
++            bdrv_unref(store);
++        }
++    } else {
++        loaded = load_snapshot(vm_name, NULL, false, NULL, err);
++    }
++
++    if (loaded && vm_running) {
+         vm_start();
+     }
+ }
+ 
+ void xemu_snapshots_save(const char *vm_name, Error **err)
+ {
+-    save_snapshot(vm_name, true, NULL, false, NULL, err);
++    const char *store_path = xemu_snapshot_store_path();
++    if (store_path != NULL) {
++        BlockDriverState *store = xemu_snapshot_store_open(store_path, err);
++        if (store != NULL) {
++            const char *node = bdrv_get_node_name(store);
++            strList *devices = xemu_snapshot_store_devices(node);
++            save_snapshot(vm_name, true, node, true, devices, err);
++            qapi_free_strList(devices);
++            bdrv_flush(store);
++            bdrv_unref(store);
++        }
++    } else {
++        save_snapshot(vm_name, true, NULL, false, NULL, err);
++    }
+ }
+ 
+ void xemu_snapshots_delete(const char *vm_name, Error **err)
+ {
+-    delete_snapshot(vm_name, false, NULL, err);
++    const char *store_path = xemu_snapshot_store_path();
++    if (store_path != NULL) {
++        BlockDriverState *store = xemu_snapshot_store_open(store_path, err);
++        if (store != NULL) {
++            const char *node = bdrv_get_node_name(store);
++            strList *devices = xemu_snapshot_store_devices(node);
++            delete_snapshot(vm_name, true, devices, err);
++            qapi_free_strList(devices);
++            bdrv_unref(store);
++        }
++    } else {
++        delete_snapshot(vm_name, false, NULL, err);
++    }
+ }
+ 
+ void xemu_snapshots_save_extra_data(QEMUFile *f)

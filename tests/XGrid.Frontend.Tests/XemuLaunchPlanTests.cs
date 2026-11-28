@@ -60,6 +60,22 @@ public sealed class XemuLaunchPlanTests : IDisposable
     }
 
     [Fact]
+    public void Create_DetectsARawHdd()
+    {
+        string raw = Path.Combine(_root, "firmware", "xbox_hdd.raw");
+        File.WriteAllBytes(raw, []);
+        EmulatorSettings settings = Settings(raw);
+
+        XemuLaunchSettings launch = XemuLaunchPlan.Create(
+            settings, null, 640, 480, Path.Combine(_root, "work"));
+
+        Assert.Equal(raw, launch.HddPath);
+        Assert.Equal("raw", launch.HddFormat);
+        Assert.Equal(Path.Combine(_root, "work", "xbox_snapshots.qcow2"), launch.SnapshotStorePath);
+        Assert.Empty(launch.Validate());
+    }
+
+    [Fact]
     public void Create_PrefersTheDiscPassedForThisLaunch()
     {
         XemuLaunchSettings launch = XemuLaunchPlan.Create(
@@ -86,6 +102,8 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.True(launch.IsChihiro);
         Assert.Equal(128, launch.RamMb);
         Assert.Equal(string.Empty, launch.HddPath);
+        Assert.Equal("auto", launch.HddFormat);
+        Assert.Equal(string.Empty, launch.SnapshotStorePath);
         Assert.Equal(string.Empty, launch.InputSinkName);
         Assert.Equal(image, launch.DvdPath);
         Assert.Equal(Path.Combine(_root, "firmware", ChihiroSettings.BiosFileName), launch.ChihiroBiosPath);
@@ -301,6 +319,8 @@ public sealed class XemuLaunchPlanTests : IDisposable
         Assert.Equal(Path.Combine(_root, "firmware", "mcpx_1.0.bin"), launch.BootRomPath);
         Assert.Equal(Path.Combine(_root, "firmware", "eeprom.bin"), launch.EepromPath);
         Assert.Equal(Path.Combine(_root, "firmware", "xbox_hdd.qcow2"), launch.HddPath);
+        Assert.Equal("qcow2", launch.HddFormat);
+        Assert.Equal(Path.Combine(_root, "work", "xbox_snapshots.qcow2"), launch.SnapshotStorePath);
         Assert.Empty(launch.Validate());
     }
 

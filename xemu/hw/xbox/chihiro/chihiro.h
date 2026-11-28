@@ -39,6 +39,9 @@ void chihiro_usb_set_devices(USBDevice *qc, USBDevice *sc);
 /* True if the file is the Chihiro BIOS listed by MAME. */
 bool chihiro_bios_known(const char *path);
 
+/* Node name of the dedicated snapshot store, or NULL when none is configured. */
+const char *chihiro_snapshot_store_path(void);
+
 /* Load the media board flash (SEGABOOT) from file */
 void chihiro_load_flash_rom(const char *bios_path);
 bool chihiro_flash_rom_loaded(void);

@@ -101,7 +101,9 @@ public static class XemuTomlWriter
         AppendPath(text, "flashrom_path", settings.FlashRomPath);
         AppendPath(text, "eeprom_path", settings.EepromPath);
         AppendPath(text, "hdd_path", settings.HddPath);
+        text.Append("hdd_format = '").Append(settings.HddFormat).Append("'\n");
         AppendPath(text, "dvd_path", settings.DvdPath);
+        AppendPath(text, "snapshot_store_path", settings.SnapshotStorePath);
         if (settings.IsChihiro)
         {
             text.Append('\n');

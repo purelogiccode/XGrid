@@ -36,6 +36,15 @@ public sealed record XemuLaunchSettings
     /// <summary>Gets the hard-disk image (raw or qcow2).</summary>
     public string HddPath { get; init; } = string.Empty;
 
+    /// <summary>Gets the hard-disk block format: <c>auto</c>, <c>raw</c> or <c>qcow2</c>.</summary>
+    public string HddFormat { get; init; } = "auto";
+
+    /// <summary>
+    /// Gets the qcow2 store used for Xbox snapshots when the hard-disk image
+    /// cannot hold them (a raw or read-only image).
+    /// </summary>
+    public string SnapshotStorePath { get; init; } = string.Empty;
+
     /// <summary>Gets the disc image inserted at power-on (ISO/XISO or CHD).</summary>
     public string DvdPath { get; init; } = string.Empty;
 
@@ -381,6 +390,10 @@ public sealed record XemuLaunchSettings
             RequireFile(errors, "flash ROM", FlashRomPath);
             RequireFile(errors, "EEPROM image", EepromPath);
             RequireFile(errors, "hard-disk image", HddPath);
+            if (HddFormat is not ("auto" or "raw" or "qcow2"))
+            {
+                errors.Add($"Unknown hard-disk format '{HddFormat}'.");
+            }
 
             if (!string.IsNullOrWhiteSpace(DvdPath) && !System.IO.File.Exists(DvdPath))
             {

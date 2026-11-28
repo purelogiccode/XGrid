@@ -7,6 +7,12 @@
 #
 #   pwsh -File scripts/save-state-check.ps1
 #   pwsh -File scripts/save-state-check.ps1 -Iso 'H:\Tests\XBOXReady\...' -Keep
+#   pwsh -File scripts/save-state-check.ps1 -RawHdd
+#   pwsh -File scripts/save-state-check.ps1 -Hdd D:\Bench\hdd.raw -RawHdd
+#
+# -RawHdd uses a raw HDD (converting the development image unless -Hdd is
+# supplied) and checks the dedicated xbox_snapshots.qcow2 store instead of the
+# HDD image.
 #
 # Requires: a built core (scripts/build-native-xemu.ps1) and a Release build of
 # the frontend (dotnet build src/XGrid.Frontend.Avalonia -c Release).
@@ -18,6 +24,8 @@ param(
     [int]$OperationTimeoutSeconds = 120,
     [int]$SettleSeconds = 20,
     [string]$DisplayCrop = '0.18,0.18,0.82,0.88',
+    [string]$Hdd = '',
+    [switch]$RawHdd,
     [switch]$Keep
 )
 
@@ -63,14 +71,37 @@ if (Test-Path $work) {
 New-Item -ItemType Directory -Force $work, (Join-Path $work 'data') | Out-Null
 
 # A private copy: the snapshot is written into this image, so the repository's
-# development HDD stays untouched.
-$hdd = Join-Path $work 'hdd.qcow2'
-Write-Output "copying the hard disk image to $hdd ..."
-Copy-Item (Join-Path $firmware 'xbox_hdd.qcow2') $hdd
+# development HDD stays untouched. -Hdd uses the supplied image instead.
+if (-not [string]::IsNullOrWhiteSpace($Hdd)) {
+    if (-not (Test-Path $Hdd)) {
+        throw "Missing hard disk image $Hdd"
+    }
+
+    $hdd = (Resolve-Path $Hdd).Path
+}
+else {
+    $hdd = Join-Path $work $(if ($RawHdd) { 'hdd.raw' } else { 'hdd.qcow2' })
+    if ($RawHdd) {
+        Write-Output "converting the hard disk image to $hdd ..."
+        & $qemuImg dd -f qcow2 -O raw if=(Join-Path $firmware 'xbox_hdd.qcow2') of=$hdd bs=1M
+        if ($LASTEXITCODE -ne 0) { throw 'qemu-img dd failed' }
+    }
+    else {
+        Write-Output "copying the hard disk image to $hdd ..."
+        Copy-Item (Join-Path $firmware 'xbox_hdd.qcow2') $hdd
+    }
+}
 
 $stderrPath = Join-Path $work 'shell-stderr.txt'
 $stdoutPath = Join-Path $work 'shell-stdout.txt'
+$logDirectory = Join-Path $work 'logs'
 $dataDir = Join-Path $work 'data'
+$snapshotStore = if ($RawHdd) {
+    Join-Path $dataDir 'xemu/xbox_snapshots.qcow2'
+}
+else {
+    $hdd
+}
 $screenshots = Join-Path $dataDir 'screenshots'
 $frameDiff = Join-Path $PSScriptRoot 'frame-diff.py'
 
@@ -104,9 +135,17 @@ function Send-Key([IntPtr]$handle, [int]$virtualKey, [int]$holdMilliseconds = 60
 function Wait-Trace([string]$pattern, [int]$timeoutSeconds) {
     $deadline = (Get-Date).AddSeconds($timeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        if (Test-Path $stderrPath) {
-            if ((Get-Content $stderrPath -Raw) -match [regex]::Escape($pattern)) {
-                return $true
+        $sources = @($stderrPath)
+        if (Test-Path $logDirectory) {
+            $sources += @(Get-ChildItem $logDirectory -Filter 'xgrid-*.log' |
+                ForEach-Object { $_.FullName })
+        }
+
+        foreach ($source in $sources) {
+            if (Test-Path $source) {
+                if ((Get-Content $source -Raw) -match [regex]::Escape($pattern)) {
+                    return $true
+                }
             }
         }
 
@@ -117,7 +156,7 @@ function Wait-Trace([string]$pattern, [int]$timeoutSeconds) {
 }
 
 function Get-SnapshotList {
-    return (& $qemuImg snapshot -l $hdd 2>&1 | Out-String)
+    return (& $qemuImg snapshot -l $snapshotStore 2>&1 | Out-String)
 }
 
 function Measure-Frame([string]$path) {
@@ -179,6 +218,7 @@ $process = $null
 try {
     $env:XGRID_FRONTEND_DATA_DIR = $dataDir
     $env:XGRID_FRONTEND_TRACE = '1'
+    $env:XGRID_LOG_DIRECTORY = $logDirectory
     $process = Start-Process -FilePath $frontend `
         -ArgumentList '--autostart' `
         -WorkingDirectory (Split-Path -Parent $frontend) `
@@ -186,9 +226,9 @@ try {
         -RedirectStandardOutput $stdoutPath `
         -PassThru
 
-    Write-Output "shell pid $($process.Id); waiting for the first core frame ..."
-    if (-not (Wait-Trace 'core frame' $FirstFrameTimeoutSeconds)) {
-        throw "the core never published a frame (see $stderrPath)"
+    Write-Output "shell pid $($process.Id); waiting for the core to start ..."
+    if (-not (Wait-Trace 'xgrid-core: machine ready' $FirstFrameTimeoutSeconds)) {
+        throw "the core never started (see $stderrPath)"
     }
 
     $handle = [IntPtr]::Zero
@@ -278,7 +318,7 @@ try {
     $listing = Get-SnapshotList
     Write-Output $listing
     if ($listing -notmatch 'xgrid-slot-1') {
-        throw "the hard disk image carries no 'xgrid-slot-1' snapshot"
+        throw "the snapshot store carries no 'xgrid-slot-1' snapshot: $snapshotStore"
     }
 
     $restoredDelta = Compare-Frame $saved $afterLoad
@@ -311,6 +351,7 @@ finally {
 
     Remove-Item Env:\XGRID_FRONTEND_DATA_DIR -ErrorAction SilentlyContinue
     Remove-Item Env:\XGRID_FRONTEND_TRACE -ErrorAction SilentlyContinue
+    Remove-Item Env:\XGRID_LOG_DIRECTORY -ErrorAction SilentlyContinue
 
     if (-not $Keep -and (Test-Path $work)) {
         Remove-Item -Recurse -Force $work

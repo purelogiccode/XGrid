@@ -26,9 +26,13 @@
 
 #include "block/aio.h"
 #include "block/block_int.h"
+#include "block/block-global-state.h"
 #include "block/qapi.h"
 #include "block/qdict.h"
 #include "block/block-io.h"
+#include "hw/i386/pc.h"
+#include "hw/xbox/xbox.h"
+#include "hw/xbox/chihiro/chihiro.h"
 #include "migration/qemu-file.h"
 #include "migration/snapshot.h"
 #include "qapi/error.h"
@@ -42,6 +46,51 @@ static QEMUSnapshotInfo *xemu_snapshots_metadata = NULL;
 static XemuSnapshotData *xemu_snapshots_extra_data = NULL;
 static int xemu_snapshots_len = 0;
 static bool xemu_snapshots_dirty = true;
+
+/*
+ * A dedicated qcow2 store is opened only for a save-state request, so no
+ * long-lived block node remains at shutdown. Without one, the HDD's internal
+ * snapshots are used.
+ */
+static const char *xemu_snapshot_store_path(void)
+{
+    const char *path = xbox_snapshot_store_path();
+    if (path != NULL) {
+        return path;
+    }
+
+    return chihiro_snapshot_store_path();
+}
+
+static bool xemu_snapshot_store_configured(void)
+{
+    const char *xbox_path = g_config.sys.files.snapshot_store_path;
+    const char *chihiro_path = g_config.chihiro.roms.snapshot_store_path;
+    const char *hdd = g_config.sys.files.hdd_path;
+
+    if (xbox_path != NULL && xbox_path[0] != '\0' &&
+        (g_config.sys.files.hdd_format == CONFIG_SYS_FILES_HDD_FORMAT_RAW ||
+         hdd == NULL || hdd[0] == '\0')) {
+        return true;
+    }
+
+    return chihiro_path != NULL && chihiro_path[0] != '\0';
+}
+
+static BlockDriverState *xemu_snapshot_store_open(const char *path, Error **err)
+{
+    QDict *options = qdict_new();
+    qdict_put_str(options, "driver", "qcow2");
+    qdict_put_str(options, "node-name", "xgrid-snapshot-store");
+    return bdrv_open(path, NULL, options, BDRV_O_RDWR, err);
+}
+
+static strList *xemu_snapshot_store_devices(const char *node)
+{
+    strList *devices = g_new0(strList, 1);
+    devices->value = g_strdup(node);
+    return devices;
+}
 
 const char **g_snapshot_shortcut_index_key_map[] = {
     &g_config.general.snapshots.shortcuts.f5,
@@ -130,14 +179,21 @@ static void xemu_snapshots_load_data(BlockDriverState *bs_ro,
     g_free(buf);
 }
 
-static void xemu_snapshots_all_load_data(QEMUSnapshotInfo **info,
+static void xemu_snapshots_all_load_data(BlockDriverState *bs,
+                                         QEMUSnapshotInfo **info,
                                          XemuSnapshotData **data,
                                          int snapshots_len, Error **err)
 {
     BlockDriverState *bs_ro;
     QDict *opts = qdict_new();
+    const char *filename = bs->filename;
 
     assert(info && data);
+
+    if (filename == NULL || filename[0] == '\0') {
+        error_setg(err, "The snapshot store has no backing file");
+        return;
+    }
 
     if (*data) {
         for (int i = 0; i < xemu_snapshots_len; ++i) {
@@ -154,7 +210,7 @@ static void xemu_snapshots_all_load_data(QEMUSnapshotInfo **info,
     memset(*data, 0, sizeof(XemuSnapshotData) * snapshots_len);
 
     qdict_put_bool(opts, BDRV_OPT_READ_ONLY, true);
-    bs_ro = bdrv_open(g_config.sys.files.hdd_path, NULL, opts,
+    bs_ro = bdrv_open(filename, NULL, opts,
                       BDRV_O_RO_WRITE_SHARE | BDRV_O_AUTO_RDONLY, err);
     if (!bs_ro) {
         return;
@@ -190,15 +246,41 @@ int xemu_snapshots_list(QEMUSnapshotInfo **info, XemuSnapshotData **extra_data,
     if (xemu_snapshots_metadata)
         g_free(xemu_snapshots_metadata);
 
-    bs = bdrv_all_find_vmstate_bs(NULL, false, NULL, err);
-    if (!bs) {
-        return -1;
+    if (xemu_snapshot_store_path() == NULL &&
+        xemu_snapshot_store_configured()) {
+        /* The core is still bringing the store up; report an empty list. */
+        xemu_snapshots_len = 0;
+        if (info) {
+            *info = NULL;
+        }
+        if (extra_data) {
+            *extra_data = NULL;
+        }
+        return 0;
+    }
+
+    const char *store_path = xemu_snapshot_store_path();
+    BlockDriverState *store = NULL;
+    if (store_path != NULL) {
+        store = xemu_snapshot_store_open(store_path, err);
+        if (store == NULL) {
+            return -1;
+        }
+        bs = store;
+    } else {
+        bs = bdrv_all_find_vmstate_bs(NULL, false, NULL, err);
+        if (!bs) {
+            return -1;
+        }
     }
 
     snapshots_len = bdrv_snapshot_list(bs, &xemu_snapshots_metadata);
-    xemu_snapshots_all_load_data(&xemu_snapshots_metadata,
+    xemu_snapshots_all_load_data(bs, &xemu_snapshots_metadata,
                                  &xemu_snapshots_extra_data, snapshots_len,
                                  err);
+    if (store != NULL) {
+        bdrv_unref(store);
+    }
     if (*err) {
         return -1;
     }
@@ -241,20 +323,61 @@ char *xemu_get_currently_loaded_disc_path(void)
 void xemu_snapshots_load(const char *vm_name, Error **err)
 {
     bool vm_running = runstate_is_running();
+    const char *store_path = xemu_snapshot_store_path();
+    bool loaded = false;
+
     vm_stop(RUN_STATE_RESTORE_VM);
-    if (load_snapshot(vm_name, NULL, false, NULL, err) && vm_running) {
+    if (store_path != NULL) {
+        BlockDriverState *store = xemu_snapshot_store_open(store_path, err);
+        if (store != NULL) {
+            const char *node = bdrv_get_node_name(store);
+            strList *devices = xemu_snapshot_store_devices(node);
+            loaded = load_snapshot(vm_name, node, true, devices, err);
+            qapi_free_strList(devices);
+            bdrv_unref(store);
+        }
+    } else {
+        loaded = load_snapshot(vm_name, NULL, false, NULL, err);
+    }
+
+    if (loaded && vm_running) {
         vm_start();
     }
 }
 
 void xemu_snapshots_save(const char *vm_name, Error **err)
 {
-    save_snapshot(vm_name, true, NULL, false, NULL, err);
+    const char *store_path = xemu_snapshot_store_path();
+    if (store_path != NULL) {
+        BlockDriverState *store = xemu_snapshot_store_open(store_path, err);
+        if (store != NULL) {
+            const char *node = bdrv_get_node_name(store);
+            strList *devices = xemu_snapshot_store_devices(node);
+            save_snapshot(vm_name, true, node, true, devices, err);
+            qapi_free_strList(devices);
+            bdrv_flush(store);
+            bdrv_unref(store);
+        }
+    } else {
+        save_snapshot(vm_name, true, NULL, false, NULL, err);
+    }
 }
 
 void xemu_snapshots_delete(const char *vm_name, Error **err)
 {
-    delete_snapshot(vm_name, false, NULL, err);
+    const char *store_path = xemu_snapshot_store_path();
+    if (store_path != NULL) {
+        BlockDriverState *store = xemu_snapshot_store_open(store_path, err);
+        if (store != NULL) {
+            const char *node = bdrv_get_node_name(store);
+            strList *devices = xemu_snapshot_store_devices(node);
+            delete_snapshot(vm_name, true, devices, err);
+            qapi_free_strList(devices);
+            bdrv_unref(store);
+        }
+    } else {
+        delete_snapshot(vm_name, false, NULL, err);
+    }
 }
 
 void xemu_snapshots_save_extra_data(QEMUFile *f)
