@@ -28,7 +28,7 @@ important shortcuts are:
 | `F6` / `F7` | Quick save / quick load |
 | `F8` | Save a screenshot |
 | `F11` | Toggle fullscreen |
-| `Esc` | Pause a running game, then close the shell on the next press in fullscreen |
+| `Esc` | Pause and leave fullscreen; stop the game and show the library; close the shell |
 | `Ctrl+O` / `Ctrl+E` | Open or swap a disc / eject |
 | `Space` | Toggle 4× fast-forward while running |
 

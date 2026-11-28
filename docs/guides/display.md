@@ -85,11 +85,13 @@ Windows core reports it.
 - **F11** toggles fullscreen; the toolbar's **Fullscreen** button enters it.
   The shell chrome (menu, toolbar, header, transport strip, log dock and status
   bar) is hidden, and the console picture fills the screen.
-- In fullscreen, **Esc** pauses a running game on the first press. Press **Esc**
-  again to close XGrid.
-- With no game running, **Esc** returns to the windowed shell.
-- A console that cannot pause leaves fullscreen instead, so Esc never strands
-  you.
+- In fullscreen, **Esc** pauses a running game and returns to the windowed
+  shell. The next **Esc** stops the console and shows the library; the next
+  closes XGrid.
+- With no game running, **Esc** leaves fullscreen outside the library and closes
+  XGrid from the library.
+- A console that cannot pause leaves fullscreen on the first press; the next
+  press stops the console and shows the library.
 
 The shell fullscreen mode is separate from the core's **Start fullscreen**
 setting. Use `F11` when you only want to leave fullscreen during play.

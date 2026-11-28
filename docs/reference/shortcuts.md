@@ -12,7 +12,7 @@
 | `F8` | Save a screenshot (core picture in-process, whole window otherwise) |
 | `F11` | Toggle fullscreen |
 | `Space` | Toggle 4× fast-forward while a game is running |
-| `Esc` | Fullscreen: pause a running game, then close XGrid on the next press |
+| `Esc` | Pause and leave fullscreen; stop the game and show the library; close XGrid |
 | `Ctrl+O` | Open a disc image (swaps the disc while running) |
 | `Ctrl+E` | Eject the inserted disc |
 | `Ctrl+S` | Save settings (Settings page only) |
@@ -20,14 +20,15 @@
 `P`, `F10`, `F6`, `F7`, `Space` and live disc swap need in-process core hosting.
 `Space` is ignored while a text field has focus, so it can still type a space.
 
-## Fullscreen Escape sequence
+## Escape sequence
 
-| State | First `Esc` | Second `Esc` |
-| --- | --- | --- |
-| Game running | Pause the game | Close XGrid |
-| Game paused | Close XGrid | — |
-| No game running | Leave fullscreen | — |
-| Console cannot pause | Leave fullscreen | — |
+| Start | First `Esc` | Second `Esc` | Third `Esc` |
+| --- | --- | --- | --- |
+| Game running | Pause and leave fullscreen | Stop the game and show the library | Close XGrid |
+| Game paused | Stop the game and show the library | Close XGrid | - |
+| No game, library visible | Close XGrid | - | - |
+| No game, other page | Leave fullscreen | - | - |
+| Console cannot pause | Leave fullscreen | Stop the game and show the library | Close XGrid |
 
 ## Default player-1 controls
 

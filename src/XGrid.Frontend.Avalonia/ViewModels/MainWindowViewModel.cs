@@ -59,6 +59,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _shuttingDown;
     private bool _closeWhenStopped;
     private bool _stopRequested;
+    private bool _returnToLibraryWhenStopped;
     private bool _sessionSavePending;
     private bool _loadSessionWhenReady;
     private bool _sessionResumeFound;
@@ -575,6 +576,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _shuttingDown = true;
         _closeWhenStopped = false;
         _stopRequested = false;
+        _returnToLibraryWhenStopped = false;
         _sessionSavePending = false;
         _loadSessionWhenReady = false;
         _sessionResumeFound = false;
@@ -1556,6 +1558,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        _returnToLibraryWhenStopped = false;
+
         if (game is not null && !game.IsLaunchable)
         {
             ShowToast("Loose XBE files must be wrapped in an ISO or CHD image.");
@@ -1640,6 +1644,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
             ShowToast("Power-on failed: " + exception.Message);
         }
+    }
+
+    /// <summary>Stops the console and shows the library at the next safe point.</summary>
+    public void StopSessionAndShowLibrary()
+    {
+        if (!IsRunning)
+        {
+            NavigateTo(PageKind.Library);
+            return;
+        }
+
+        _returnToLibraryWhenStopped = true;
+        StopSessionCommand.Execute(null);
+        NavigateTo(PageKind.Library);
     }
 
     /// <summary>Public command: stops the running console.</summary>
@@ -2058,7 +2076,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusDetail = e.Message;
             AddLog(e.Faulted ? LogLevel.Error : LogLevel.Info, e.Message);
 
-            if (_closeWhenStopped)
+            if (_returnToLibraryWhenStopped)
+            {
+                _returnToLibraryWhenStopped = false;
+                NavigateTo(PageKind.Library);
+            }
+            else if (_closeWhenStopped)
             {
                 _closeWhenStopped = false;
                 // Re-enter Closing with the core fully stopped, so SDL can

@@ -83,7 +83,7 @@ These are shell shortcuts, not gamepad bindings:
 | `F8` | Save a screenshot |
 | `F11` | Toggle fullscreen |
 | `Space` | Toggle 4× fast-forward |
-| `Esc` | Fullscreen: pause a game, then close XGrid on the next press |
+| `Esc` | Pause and leave fullscreen; stop the game and show the library; close XGrid |
 | `Ctrl+O` | Open a disc image (swaps the disc while running) |
 | `Ctrl+E` | Eject the inserted disc |
 | `Ctrl+S` | Save settings (Settings page) |

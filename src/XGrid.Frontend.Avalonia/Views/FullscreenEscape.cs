@@ -1,22 +1,28 @@
 namespace XGrid.Frontend.Avalonia.Views;
 
-/// <summary>What Esc does while the shell is fullscreen.</summary>
+/// <summary>What Esc does on the main window.</summary>
 public enum FullscreenEscapeAction
 {
+    /// <summary>Nothing in this state.</summary>
+    None,
+
     /// <summary>No game owns the screen; return to a normal window.</summary>
     LeaveFullscreen,
 
-    /// <summary>A running game is paused; a second press closes the shell.</summary>
-    PauseGame,
+    /// <summary>Pause the running game and return to a normal window.</summary>
+    PauseAndLeaveFullscreen,
 
-    /// <summary>The game is already paused, so close the shell.</summary>
+    /// <summary>Stop the paused game and show the library.</summary>
+    StopAndShowLibrary,
+
+    /// <summary>The game is stopped and the library is showing; close the shell.</summary>
     CloseApplication,
 }
 
 /// <summary>
-/// Pins the fullscreen Esc sequence: the first press pauses a running game and
-/// the second closes XGrid. A console that cannot pause, or no running game,
-/// falls back to leaving fullscreen so Esc never strands the user.
+/// Pins the Esc sequence: the first press pauses a running game and leaves
+/// fullscreen, the second stops it and shows the library, and the third closes
+/// XGrid. A console that cannot pause falls back to leaving fullscreen first.
 /// </summary>
 public static class FullscreenEscape
 {
@@ -24,21 +30,42 @@ public static class FullscreenEscape
     /// <param name="running">True while the core is running.</param>
     /// <param name="paused">True while the shell has the core paused.</param>
     /// <param name="canPause">True when the running core supports pause.</param>
+    /// <param name="fullscreen">True while the shell window is fullscreen.</param>
+    /// <param name="library">True while the library page is showing.</param>
     /// <returns>The action to perform.</returns>
-    public static FullscreenEscapeAction Decide(bool running, bool paused, bool canPause)
+    public static FullscreenEscapeAction Decide(
+        bool running,
+        bool paused,
+        bool canPause,
+        bool fullscreen,
+        bool library)
     {
         if (!running)
         {
-            return FullscreenEscapeAction.LeaveFullscreen;
+            if (library)
+            {
+                return FullscreenEscapeAction.CloseApplication;
+            }
+
+            return fullscreen
+                ? FullscreenEscapeAction.LeaveFullscreen
+                : FullscreenEscapeAction.None;
         }
 
         if (paused)
         {
-            return FullscreenEscapeAction.CloseApplication;
+            return FullscreenEscapeAction.StopAndShowLibrary;
         }
 
-        return canPause
-            ? FullscreenEscapeAction.PauseGame
-            : FullscreenEscapeAction.LeaveFullscreen;
+        if (canPause)
+        {
+            return FullscreenEscapeAction.PauseAndLeaveFullscreen;
+        }
+
+        // A core without pause still gets a way out: leave fullscreen first,
+        // then the next press stops the console.
+        return fullscreen
+            ? FullscreenEscapeAction.LeaveFullscreen
+            : FullscreenEscapeAction.StopAndShowLibrary;
     }
 }

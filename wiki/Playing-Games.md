@@ -40,8 +40,10 @@ not take keyboard focus. Space is reserved for this shortcut.
 
 ## Fullscreen
 
-**F11** toggles fullscreen. **Esc** pauses a running game; a second **Esc** closes
-XGrid. With no game running, **Esc** leaves fullscreen.
+**F11** toggles fullscreen. **Esc** pauses a running game and leaves fullscreen;
+the next **Esc** stops the game and shows the library, and the next closes XGrid.
+With no game running, **Esc** leaves fullscreen outside the library and closes
+XGrid from the library.
 
 ## Overlay
 

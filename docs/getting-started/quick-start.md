@@ -85,7 +85,7 @@ eject, or `F5` to power off.
 | `F11` | Fullscreen |
 | `Space` | Toggle 4× fast-forward |
 | `Ctrl+O` / `Ctrl+E` | Open or swap a disc / eject |
-| `Esc` | Fullscreen: pause, then close on the next press |
+| `Esc` | Pause and leave fullscreen; stop the game; close XGrid |
 
 See [Keyboard shortcuts](../reference/shortcuts.md) and
 [Controllers and input](../guides/input.md).

@@ -4,40 +4,99 @@ using Xunit;
 namespace XGrid.Frontend.Tests;
 
 /// <summary>
-/// Pins the fullscreen Esc sequence: pause a running game on the first press,
-/// close the shell on the second, and never trap a host that cannot pause.
+/// Pins the Esc sequence: pause and leave fullscreen, stop and show the
+/// library, then close the shell.
 /// </summary>
 public sealed class FullscreenEscapeTests
 {
     [Fact]
-    public void NoRunningGame_LeavesFullscreen()
+    public void NoRunningGameInFullscreen_LeavesFullscreen()
     {
         Assert.Equal(
             FullscreenEscapeAction.LeaveFullscreen,
-            FullscreenEscape.Decide(running: false, paused: false, canPause: true));
+            FullscreenEscape.Decide(
+                running: false,
+                paused: false,
+                canPause: true,
+                fullscreen: true,
+                library: false));
     }
 
     [Fact]
-    public void RunningGame_PausesOnTheFirstPress()
-    {
-        Assert.Equal(
-            FullscreenEscapeAction.PauseGame,
-            FullscreenEscape.Decide(running: true, paused: false, canPause: true));
-    }
-
-    [Fact]
-    public void PausedGame_ClosesOnTheSecondPress()
+    public void NoRunningGameInLibrary_ClosesTheShell()
     {
         Assert.Equal(
             FullscreenEscapeAction.CloseApplication,
-            FullscreenEscape.Decide(running: true, paused: true, canPause: true));
+            FullscreenEscape.Decide(
+                running: false,
+                paused: false,
+                canPause: true,
+                fullscreen: false,
+                library: true));
     }
 
     [Fact]
-    public void RunningCoreWithoutPause_LeavesFullscreenInsteadOfClosing()
+    public void NoRunningGameWindowedOutsideTheLibrary_DoesNothing()
+    {
+        Assert.Equal(
+            FullscreenEscapeAction.None,
+            FullscreenEscape.Decide(
+                running: false,
+                paused: false,
+                canPause: true,
+                fullscreen: false,
+                library: false));
+    }
+
+    [Fact]
+    public void RunningGame_PausesAndLeavesFullscreen()
+    {
+        Assert.Equal(
+            FullscreenEscapeAction.PauseAndLeaveFullscreen,
+            FullscreenEscape.Decide(
+                running: true,
+                paused: false,
+                canPause: true,
+                fullscreen: true,
+                library: false));
+    }
+
+    [Fact]
+    public void PausedGame_StopsAndShowsTheLibrary()
+    {
+        Assert.Equal(
+            FullscreenEscapeAction.StopAndShowLibrary,
+            FullscreenEscape.Decide(
+                running: true,
+                paused: true,
+                canPause: true,
+                fullscreen: false,
+                library: false));
+    }
+
+    [Fact]
+    public void RunningCoreWithoutPause_LeavesFullscreenFirst()
     {
         Assert.Equal(
             FullscreenEscapeAction.LeaveFullscreen,
-            FullscreenEscape.Decide(running: true, paused: false, canPause: false));
+            FullscreenEscape.Decide(
+                running: true,
+                paused: false,
+                canPause: false,
+                fullscreen: true,
+                library: false));
+    }
+
+    [Fact]
+    public void RunningCoreWithoutPause_Windowed_StopsAndShowsTheLibrary()
+    {
+        Assert.Equal(
+            FullscreenEscapeAction.StopAndShowLibrary,
+            FullscreenEscape.Decide(
+                running: true,
+                paused: false,
+                canPause: false,
+                fullscreen: false,
+                library: false));
     }
 }

@@ -266,8 +266,8 @@ public partial class MainWindow : Window
                 ToggleFullscreen();
                 e.Handled = true;
                 return;
-            case Key.Escape when WindowState == WindowState.FullScreen:
-                HandleFullscreenEscape();
+            case Key.Escape:
+                HandleEscape();
                 e.Handled = true;
                 return;
             case Key.F5:
@@ -385,11 +385,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Fullscreen Esc: pause a running game first, close the shell on the next
-    /// press. A console that cannot pause, or no running game, leaves
-    /// fullscreen instead so Esc always has a visible effect.
+    /// Esc sequence: pause and leave fullscreen, stop the console and show the
+    /// library, then close the shell. A console that cannot pause leaves
+    /// fullscreen first so Esc always has a visible effect.
     /// </summary>
-    private void HandleFullscreenEscape()
+    private void HandleEscape()
     {
         if (DataContext is not MainWindowViewModel viewModel)
         {
@@ -397,29 +397,54 @@ public partial class MainWindow : Window
             return;
         }
 
-        switch (FullscreenEscape.Decide(viewModel.IsRunning, viewModel.IsPaused, viewModel.HasPlayback))
+        bool fullscreen = WindowState == WindowState.FullScreen;
+        switch (FullscreenEscape.Decide(
+                    viewModel.IsRunning,
+                    viewModel.IsPaused,
+                    viewModel.HasPlayback,
+                    fullscreen,
+                    viewModel.IsLibraryPage))
         {
-            case FullscreenEscapeAction.PauseGame:
+            case FullscreenEscapeAction.PauseAndLeaveFullscreen:
                 viewModel.TogglePauseCommand.Execute(null);
-                if (viewModel.IsPaused)
+                if (fullscreen)
                 {
-                    viewModel.ShowToast("Paused. Press Esc again to close XGrid.");
-                }
-                else
-                {
-                    // The core refused the pause; do not trap the user in a
-                    // fullscreen window with no working path out.
                     ToggleFullscreen();
                 }
 
+                if (viewModel.IsPaused)
+                {
+                    viewModel.ShowToast("Paused. Press Esc again to return to the library.");
+                }
+                else
+                {
+                    viewModel.ShowToast("Pause is not available; use Stop to end the console.");
+                }
+
+                break;
+
+            case FullscreenEscapeAction.StopAndShowLibrary:
+                if (fullscreen)
+                {
+                    ToggleFullscreen();
+                }
+
+                viewModel.StopSessionAndShowLibrary();
                 break;
 
             case FullscreenEscapeAction.CloseApplication:
                 Close();
                 break;
 
+            case FullscreenEscapeAction.LeaveFullscreen:
+                if (fullscreen)
+                {
+                    ToggleFullscreen();
+                }
+
+                break;
+
             default:
-                ToggleFullscreen();
                 break;
         }
     }

@@ -44,8 +44,10 @@ OpenGL.
 
 ## Fullscreen
 
-**F11** toggles fullscreen. **Esc** pauses a running game; the next **Esc** closes
-XGrid. With no game running, **Esc** leaves fullscreen.
+**F11** toggles fullscreen. **Esc** pauses a running game and leaves fullscreen;
+the next **Esc** stops the game and shows the library, and the next closes XGrid.
+With no game running, **Esc** leaves fullscreen outside the library and closes
+XGrid from the library.
 
 ## Screenshots and FPS overlay
 

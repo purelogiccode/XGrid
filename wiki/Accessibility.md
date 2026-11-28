@@ -19,7 +19,7 @@ control to read what it does.
 | `F6` / `F7` | Quick save / load |
 | `F8` | Screenshot |
 | `F11` | Fullscreen |
-| `Esc` | Pause, then close on the next fullscreen press |
+| `Esc` | Pause and leave fullscreen; stop the game and show the library; close XGrid |
 | `Ctrl+O` / `Ctrl+E` | Open/swap disc / eject |
 | `Space` | 4× fast-forward while running |
 
