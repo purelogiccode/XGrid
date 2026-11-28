@@ -216,14 +216,41 @@ static void pgraph_d3d11_process_pending(NV2AState *d)
     }
 }
 
+static void pgraph_d3d11_wait_for_gpu(PGRAPHD3D11State *r)
+{
+    if (!r->context || !r->device) {
+        return;
+    }
+
+    ID3D11DeviceContext_Flush(r->context);
+
+    D3D11_QUERY_DESC desc = {
+        .Query = D3D11_QUERY_EVENT,
+        .MiscFlags = 0,
+    };
+    ID3D11Query *query = NULL;
+    HRESULT hr = ID3D11Device_CreateQuery(r->device, &desc, &query);
+    if (FAILED(hr) || query == NULL) {
+        return;
+    }
+
+    ID3D11DeviceContext_End(r->context, (ID3D11Asynchronous *)query);
+    BOOL done = FALSE;
+    do {
+        hr = ID3D11DeviceContext_GetData(r->context,
+                                         (ID3D11Asynchronous *)query, &done,
+                                         sizeof(done), 0);
+    } while (hr == S_FALSE);
+    ID3D11Query_Release(query);
+}
+
 static void pgraph_d3d11_flip_stall(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
     PGRAPHD3D11State *r = pg->d3d11_renderer_state;
 
-    if (r->context) {
-        ID3D11DeviceContext_Flush(r->context);
-    }
+    /* The guest expects the previous frame to be complete at FLIP_STALL. */
+    pgraph_d3d11_wait_for_gpu(r);
 }
 
 static void pgraph_d3d11_post_load(NV2AState *d)
