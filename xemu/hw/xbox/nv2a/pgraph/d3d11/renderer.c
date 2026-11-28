@@ -155,6 +155,16 @@ static void pgraph_d3d11_flush(NV2AState *d)
     PGRAPHState *pg = &d->pgraph;
     PGRAPHD3D11State *r = pg->d3d11_renderer_state;
 
+    /* A scale change is published through a flush so that no surface or
+     * texture is used at the new factor while its backing texture still has
+     * the old dimensions. */
+    unsigned int scale = MAX(1, g_config.display.quality.surface_scale);
+    if (scale != pg->surface_scale_factor) {
+        pg->surface_scale_factor = scale;
+        pgraph_d3d11_surface_flush(d);
+        pgraph_d3d11_invalidate_textures(pg);
+    }
+
     if (r->context) {
         ID3D11DeviceContext_Flush(r->context);
     }
@@ -267,8 +277,42 @@ static void pgraph_d3d11_pre_shutdown_wait(NV2AState *d)
 static void pgraph_d3d11_set_surface_scale_factor(NV2AState *d,
                                                   unsigned int scale)
 {
+    PGRAPHState *pg = &d->pgraph;
+    PGRAPHD3D11State *r = pg->d3d11_renderer_state;
+
     g_config.display.quality.surface_scale = MAX(1, scale);
-    d->pgraph.surface_scale_factor = MAX(1, scale);
+    if (!r) {
+        return;
+    }
+
+    /* Stop the FIFO, write back the surfaces at the old scale, then let the
+     * flush handler publish the new factor and rebuild the surface cache. */
+    qemu_mutex_lock(&d->pfifo.lock);
+    qatomic_set(&d->pfifo.halt, true);
+    qemu_mutex_unlock(&d->pfifo.lock);
+
+    qemu_mutex_lock(&d->pgraph.lock);
+    qemu_event_reset(&r->dirty_surfaces_download_complete);
+    qatomic_set(&r->download_dirty_surfaces_pending, true);
+    qemu_mutex_unlock(&d->pgraph.lock);
+    qemu_mutex_lock(&d->pfifo.lock);
+    pfifo_kick(d);
+    qemu_mutex_unlock(&d->pfifo.lock);
+    qemu_event_wait(&r->dirty_surfaces_download_complete);
+
+    qemu_mutex_lock(&d->pgraph.lock);
+    qemu_event_reset(&d->pgraph.flush_complete);
+    qatomic_set(&d->pgraph.flush_pending, true);
+    qemu_mutex_unlock(&d->pgraph.lock);
+    qemu_mutex_lock(&d->pfifo.lock);
+    pfifo_kick(d);
+    qemu_mutex_unlock(&d->pfifo.lock);
+    qemu_event_wait(&d->pgraph.flush_complete);
+
+    qemu_mutex_lock(&d->pfifo.lock);
+    qatomic_set(&d->pfifo.halt, false);
+    pfifo_kick(d);
+    qemu_mutex_unlock(&d->pfifo.lock);
 }
 
 static unsigned int pgraph_d3d11_get_surface_scale_factor(NV2AState *d)
