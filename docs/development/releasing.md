@@ -38,6 +38,11 @@ It writes deterministic archives with fixed timestamps, sorted entries, the
 license set, release notes, `VERSION`, per-RID checksums and
 `package-manifest.json`.
 
+For a Windows core, `package-manifest.json` also records every shipped
+`core/xemu/*.dll` name, version resource and SHA-256 under `core.libraries`.
+Verification fails when the archive and that record disagree, so the dependency
+inventory stays visible in the release artifacts.
+
 ### Frontend core
 
 A frontend archive carries the core when a build for that RID is available:

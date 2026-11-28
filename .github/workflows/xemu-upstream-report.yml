@@ -1,8 +1,8 @@
 name: xemu upstream report
 
-# Checks the reviewed upstream xemu revision and every git-backed Meson wrap.
-# It opens or updates one issue when something newer exists; it never changes
-# the tree. This runs on the LAN Linux runner, not a hosted runner.
+# Checks the native dependency manifest and the reviewed upstream xemu
+# revision. It opens or updates one issue when something newer exists; it
+# never changes the tree. This runs on the LAN Linux runner, not a hosted runner.
 on:
   schedule:
     - cron: "0 6 * * 1"
@@ -24,6 +24,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      - name: Check the native dependency manifest
+        run: python3 .github/scripts/xemu_upstream_report.py --check
 
       - name: Check upstream xemu and Meson pin
         env:

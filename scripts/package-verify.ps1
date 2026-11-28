@@ -336,6 +336,28 @@ try {
                         if ($coreLibraries.Count -lt 5) {
                             Fail "$file ships $($coreLibraries.Count) files under core/xemu; the core needs its runtime DLLs"
                         }
+                        $recordedLibraries = @()
+                        if ($manifest -and $manifest.core -and
+                            $manifest.core.PSObject.Properties.Name -contains 'libraries') {
+                            $recordedLibraries = @($manifest.core.libraries | Where-Object { $_.rid -eq $rid })
+                        }
+                        if ($recordedLibraries.Count -eq 0) {
+                            Fail "$file ships core libraries but package-manifest.json has no core.libraries rows for $rid"
+                        }
+                        else {
+                            $actualNames = @($coreLibraries | ForEach-Object { ($_ -split '/')[-1] } | Sort-Object)
+                            $recordedNames = @($recordedLibraries | ForEach-Object { [string]$_.name } | Sort-Object)
+                            foreach ($name in $actualNames) {
+                                if ($recordedNames -notcontains $name) {
+                                    Fail "$file ships core/xemu/$name but package-manifest.json does not record it"
+                                }
+                            }
+                            foreach ($name in $recordedNames) {
+                                if ($actualNames -notcontains $name) {
+                                    Fail "package-manifest.json records core/xemu/$name but $file does not ship it"
+                                }
+                            }
+                        }
                         foreach ($entry in 'core/xemu/xemu.exe', 'core/xemu/xgrid_core.dll') {
                             if ($archive.Head.ContainsKey($entry)) {
                                 $magic = -join ($archive.Head[$entry] | ForEach-Object { $_.ToString('x2') })

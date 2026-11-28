@@ -10,6 +10,11 @@ SPDX identifier and the original copyright notice at the top of the file.
 `References2/` is a development-only reference tree.  It is not part of the
 XGrid build and is not redistributed with XGrid.
 
+The version and provenance inventory for the native tree is
+`xemu/dependencies.json`; the Windows build-host package set is
+`xemu/msys2-packages.lock`.  Keep this file and those records in sync when a
+dependency or its license changes.
+
 ## Reference projects
 
 | Project | Version / snapshot | Upstream | License | Use in XGrid |

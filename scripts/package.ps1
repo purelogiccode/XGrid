@@ -287,7 +287,32 @@ try {
         Write-Host ("  core {0} -> core/xemu/{1} ({2:N1} MB)" -f $coreVersion, $Rid, ($bytes / 1MB))
     }
 
+    function Get-CoreLibraryRecord([string]$Directory) {
+        # The manifest must name every DLL the Windows archive carries; the
+        # version resource and hash make an old host package visible later.
+        $rows = foreach ($file in Get-ChildItem $Directory -File -Filter '*.dll' | Sort-Object Name) {
+            $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($file.FullName)
+            $version = if (-not [string]::IsNullOrWhiteSpace($info.FileVersion)) {
+                $info.FileVersion.Trim()
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($info.ProductVersion)) {
+                $info.ProductVersion.Trim()
+            }
+            else {
+                ''
+            }
+            [pscustomobject]@{
+                name = $file.Name
+                version = $version
+                sha256 = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        }
+
+        return @($rows)
+    }
+
     $coreSources = @{}
+    $coreLibraryRecords = @{}
     if (-not $SkipCore) {
         $requiredCoreRids = @($Rids | Where-Object {
                 $_ -eq 'win-x64' -or $_ -eq 'linux-x64'
@@ -354,6 +379,9 @@ try {
             $executables.Add($exeName)
             if ($coreSources.ContainsKey($rid) -and $app.Name -eq 'frontend') {
                 Copy-XemuCore -Source $coreSources[$rid] -Destination $publishDirectory -Rid $rid
+                if ($isWindowsRid) {
+                    $coreLibraryRecords[$rid] = Get-CoreLibraryRecord (Join-Path $publishDirectory 'core/xemu')
+                }
                 $executables.Add("core/xemu/$(Get-CoreExecutable $rid)")
             }
 
@@ -389,12 +417,24 @@ try {
                 else { '' }
                 path = 'core/xemu'
                 rids = $coreRids
+                libraries = @(
+                    foreach ($libraryRid in @($coreLibraryRecords.Keys | Sort-Object)) {
+                        foreach ($library in @($coreLibraryRecords[$libraryRid])) {
+                            [ordered]@{
+                                rid = $libraryRid
+                                name = $library.name
+                                version = $library.version
+                                sha256 = $library.sha256
+                            }
+                        }
+                    }
+                )
             }
         }
         else { $null }
         archives = @($archives)
     }
-    $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $outputPath 'package-manifest.json') -Encoding utf8NoBOM
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $outputPath 'package-manifest.json') -Encoding utf8NoBOM
 
     $combined = @($archives | Sort-Object { $_.file } -CaseSensitive | ForEach-Object { "$($_.sha256)  $($_.file)" })
     $combined | Set-Content -Path (Join-Path $outputPath 'SHA256SUMS.txt') -Encoding utf8NoBOM

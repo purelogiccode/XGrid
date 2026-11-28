@@ -49,8 +49,9 @@ integration.
 XGrid-native additions live in `xemu/xgrid-core/`; new changes are ordinary
 commits in this repository. Upstream xemu is a reference and a source of
 selective fixes, not a release-for-release merge obligation. See
-[Core lineage and upstream](xemu-upstream.md) for the dependency locks, the
-upstream revision markers and the weekly report.
+[Core lineage and upstream](xemu-upstream.md) for the upstream revision markers
+and the weekly report, and [Native dependencies](dependencies.md) for the
+dependency manifest, the Windows host lock and the update policy.
 
 ## Renderers
 

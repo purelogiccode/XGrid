@@ -23,19 +23,25 @@ retained for provenance.
   XGrid, are not stored in this repository, and are not unpushed work. Meson
   downloads them while configuring the build.
 - Keeping the dependency locks makes builds reproducible. Do not delete them
-  unless the dependency is replaced by a vendored, tracked copy.
+  unless the dependency is replaced by a vendored, tracked copy. Every lock has
+  an entry in `xemu/dependencies.json`.
 
 ## Weekly report
 
 `.github/workflows/xemu-upstream-report.yml` runs every Monday on the Linux
-runner and can be dispatched manually. It compares:
+runner and can be dispatched manually. It checks the dependency manifest first
+and then compares:
 
 - the reviewed upstream xemu revision with the latest upstream release;
-- every git-backed `.wrap` dependency lock with its upstream repository.
+- every component in `xemu/dependencies.json` according to its tracking policy;
+- the Windows build-host package lock.
 
 When something is newer it opens or updates one issue titled
-`[xemu-updates] ...`. The report is notification-only; it never edits the tree
-and does not imply an obligation to adopt an upstream change.
+`[xemu-updates] ...`; it closes the issue when everything is current and every
+query succeeded. The report is notification-only; it never edits the tree and
+does not imply an obligation to adopt an upstream change. See
+[Native dependencies](dependencies.md) for the manifest, the host lock and the
+check commands.
 
 ## Using upstream as a reference
 

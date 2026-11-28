@@ -139,6 +139,21 @@ The shell owns the process streams. `xgrid_core_start` does not redirect
 stdout/stderr: a loaded library shares them with the host, so a redirect would
 capture the shell's own output too.
 
+## Dependency inventory
+
+`xemu/dependencies.json` records the version, upstream and license of every
+native component, including the vendored libchdr/libCCI trees and their nested
+codecs. `xemu/msys2-packages.lock` records the Windows build-host package set.
+`scripts/package.ps1` copies each shipped DLL's name, version and SHA-256 into
+`package-manifest.json`. Verify the records with:
+
+```powershell
+python .github/scripts/xemu_upstream_report.py --check
+pwsh -File scripts/msys2-lock.ps1
+```
+
+See [Native dependencies](../../docs/development/dependencies.md) for the policy.
+
 ## Build
 
 ```powershell

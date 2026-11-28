@@ -121,6 +121,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Check the native dependency manifest
+        run: python3 .github/scripts/xemu_upstream_report.py --check
+
       - name: Build xemu core
         run: bash scripts/build-native-xemu.sh -j"$(nproc)"
 

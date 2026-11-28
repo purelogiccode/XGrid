@@ -190,7 +190,10 @@ $owned = @(
 $patched = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($patch in Get-ChildItem $patchDirectory -Filter '*.patch') {
     foreach ($line in Get-Content $patch.FullName) {
-        if ($line -match '^diff --git a/xemu/(.+?) b/') {
+        # Older records use paths relative to the tracked xemu tree
+        # (a/ui/xemu.c); newer records use paths relative to the XGrid
+        # repository (a/xemu/ui/xemu.c). Both name a file under xemu/.
+        if ($line -match '^diff --git a/(?:xemu/)?(.+?) b/') {
             [void]$patched.Add($Matches[1])
         }
     }

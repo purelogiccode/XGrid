@@ -56,7 +56,7 @@ Other workflows:
 | `codeql.yml` | push, pull request, weekly, manual | CodeQL C# security analysis (`security-extended`). |
 | `dependency-review.yml` | pull request, manual | Dependency review on pull requests. |
 | `release.yml` | manual | Release publish/attestation pipeline. |
-| `xemu-upstream-report.yml` | weekly, manual | Opens or updates one issue when upstream xemu or a Meson dependency lock is behind. |
+| `xemu-upstream-report.yml` | weekly, manual | Opens or updates one issue when upstream xemu, a release-tagged dependency or the dependency manifest is behind. |
 
 ## Security settings
 
@@ -78,6 +78,17 @@ The release tree is produced locally with `scripts/package.ps1` and verified by
 
 Before adopting an upstream release, run the selective-port audit and follow
 the [upstream update runbook](xemu-upgrade.md).
+
+The native dependency records are checked before the native build:
+
+```powershell
+python .github/scripts/xemu_upstream_report.py --check
+pwsh -File scripts/msys2-lock.ps1          # Windows build host
+```
+
+The first command is offline and verifies the manifest against the tree. The
+second compares the installed MSYS2 packages with `xemu/msys2-packages.lock`.
+See [Native dependencies](dependencies.md).
 
 The native core is built locally, and the `native-core` CI job rebuilds it on
 Linux from the tracked tree:

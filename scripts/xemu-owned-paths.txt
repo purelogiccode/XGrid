@@ -19,3 +19,5 @@ XGrid.Xemu.Tree.csproj
 XEMU_VERSION
 XEMU_COMMIT
 XEMU_REVIEWED_COMMIT
+dependencies.json
+msys2-packages.lock

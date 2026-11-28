@@ -30,6 +30,11 @@ builds are not supported by XGrid's scripts.
 The core vendors libchdr and libCCI and uses system zlib/zstd/lz4. A clean QEMU
 tree may still let meson fetch its own subprojects on the first build.
 
+The Windows runtime package set is recorded in `xemu/msys2-packages.lock`.
+After updating MSYS2, verify it with `pwsh -File scripts/msys2-lock.ps1`; refresh
+the lock with `-Write` only after reviewing the package changes. See
+[Native dependencies](dependencies.md).
+
 ### Core (Linux)
 
 - A C/C++ toolchain, `make`, `ninja`, `pkg-config`, CMake and Python 3.

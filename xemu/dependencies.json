@@ -1,0 +1,298 @@
+{
+  "schemaVersion": 1,
+  "description": "Native dependency inventory for the XGrid core. Versions and pins here are the tracked source of truth; THIRD_PARTY_NOTICES.md remains the canonical license record and xemu/msys2-packages.lock records the Windows build-host packages.",
+  "tracking": {
+    "tags": "Compare the latest upstream release tag with version.",
+    "commits": "Compare the latest upstream commit with pin.",
+    "none": "Follows the xemu/QEMU lineage or has no release tags; record the version for inventory only."
+  },
+  "host": {
+    "lockFile": "xemu/msys2-packages.lock",
+    "platform": "MSYS2 MINGW64 (Windows core build)",
+    "notes": "The Windows core links the host SDL3, zlib, zstd, LZ4, GLib, OpenSSL and related DLLs, so the release binaries follow this package set rather than the Meson fallback pins."
+  },
+  "components": [
+    {
+      "id": "berkeley-softfloat-3",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "b64af41c3276f97f0e181920400ee056b9c88037",
+      "upstream": "https://gitlab.com/qemu-project/berkeley-softfloat-3",
+      "license": "BSD-3-Clause",
+      "location": "xemu/subprojects/berkeley-softfloat-3.wrap",
+      "notes": "QEMU project pin; test builds only."
+    },
+    {
+      "id": "berkeley-testfloat-3",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "e7af9751d9f9fd3b47911f51a5cfd08af256a9ab",
+      "upstream": "https://gitlab.com/qemu-project/berkeley-testfloat-3",
+      "license": "BSD-3-Clause",
+      "location": "xemu/subprojects/berkeley-testfloat-3.wrap",
+      "notes": "QEMU project pin; test builds only."
+    },
+    {
+      "id": "curl",
+      "kind": "wrap-file",
+      "track": "tags",
+      "version": "8.12.1",
+      "sourceHash": "0341f1ed97a26c811abaebd37d62b833956792b7607ea3f15d001613c76de202",
+      "upstream": "https://github.com/curl/curl",
+      "license": "curl",
+      "location": "xemu/subprojects/curl.wrap",
+      "notes": "Meson fallback only; the Windows core is configured with --disable-curl and ships the host libcurl."
+    },
+    {
+      "id": "dsp56300",
+      "kind": "downloaded",
+      "track": "tags",
+      "version": "0.1.3",
+      "upstream": "https://github.com/xemu-project/dsp56300",
+      "license": "MIT",
+      "location": "xemu/subprojects/dsp56300/meson.build",
+      "notes": "Downloaded at configure time by the custom meson.build; the archive has no hash pin yet."
+    },
+    {
+      "id": "dtc",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "b6910bec11614980a21e46fbccc35934b671bd81",
+      "upstream": "https://gitlab.com/qemu-project/dtc",
+      "license": "GPL-2.0-or-later",
+      "location": "xemu/subprojects/dtc.wrap",
+      "notes": "QEMU project pin."
+    },
+    {
+      "id": "genconfig",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "42f85f9a2457e61d7e32542c07723565a284fcd6",
+      "upstream": "https://github.com/mborgerson/genconfig",
+      "license": "MIT",
+      "location": "xemu/subprojects/genconfig.wrap",
+      "notes": "xemu build helper."
+    },
+    {
+      "id": "glslang",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "e1b562a8bed273a02f30b59b66a5d499793cede5",
+      "upstream": "https://github.com/KhronosGroup/glslang",
+      "license": "BSD-3-Clause",
+      "location": "xemu/subprojects/glslang.wrap",
+      "notes": "Vulkan shader compilation."
+    },
+    {
+      "id": "imgui",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "b911105fca3ca1b025706dd168e5798070f143a1",
+      "upstream": "https://github.com/xemu-project/imgui",
+      "license": "MIT",
+      "location": "xemu/subprojects/imgui.wrap",
+      "notes": "xemu fork; follows the core's HUD needs."
+    },
+    {
+      "id": "implot",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "8553562dbb2025fd520f4bed57b094767b96c670",
+      "upstream": "https://github.com/xemu-project/implot",
+      "license": "MIT",
+      "location": "xemu/subprojects/implot.wrap",
+      "notes": "xemu fork; follows the core's HUD needs."
+    },
+    {
+      "id": "keycodemapdb",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "f5772a62ec52591ff6870b7e8ef32482371f22c6",
+      "upstream": "https://gitlab.com/qemu-project/keycodemapdb",
+      "license": "GPL-2.0-or-later",
+      "location": "xemu/subprojects/keycodemapdb.wrap",
+      "notes": "QEMU project pin; generated keycode tables."
+    },
+    {
+      "id": "libblkio",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "f84cc963a444e4cb34813b2dcfc5bf8526947dc0",
+      "upstream": "https://gitlab.com/libblkio/libblkio",
+      "license": "Apache-2.0 OR MIT",
+      "location": "xemu/subprojects/libblkio.wrap",
+      "notes": "Block I/O fallback, not used by the Xbox machine."
+    },
+    {
+      "id": "libvfio-user",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "0b28d205572c80b568a1003db2c8f37ca333e4d7",
+      "upstream": "https://gitlab.com/qemu-project/libvfio-user",
+      "license": "BSD-3-Clause",
+      "location": "xemu/subprojects/libvfio-user.wrap",
+      "notes": "QEMU project pin, not used by the Xbox machine."
+    },
+    {
+      "id": "nlohmann_json",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "55f93686c01528224f448c19128836e7df245f72",
+      "upstream": "https://github.com/nlohmann/json",
+      "license": "MIT",
+      "location": "xemu/subprojects/nlohmann_json.wrap",
+      "notes": "Header-only fallback."
+    },
+    {
+      "id": "nv2a_vsh_cpu",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "89315e8eff62605d2a96fe14429ebeac1dacaa8c",
+      "upstream": "https://github.com/xemu-project/nv2a_vsh_cpu",
+      "license": "Unlicense",
+      "location": "xemu/subprojects/nv2a_vsh_cpu.wrap",
+      "notes": "xemu fork; host-side NV2A vertex shader execution."
+    },
+    {
+      "id": "sdl3",
+      "kind": "wrap-git",
+      "track": "tags",
+      "version": "3.4.18",
+      "pin": "829a65d769d935c4852f8159e964312c0957260a",
+      "upstream": "https://github.com/libsdl-org/SDL",
+      "license": "Zlib",
+      "location": "xemu/subprojects/sdl3.wrap",
+      "notes": "Meson fallback; the Windows build prefers the MSYS2 SDL3 and ships it."
+    },
+    {
+      "id": "slirp",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "26be815b86e8d49add8c9a8b320239b9594ff03d",
+      "upstream": "https://gitlab.freedesktop.org/slirp/libslirp",
+      "license": "BSD-3-Clause",
+      "location": "xemu/subprojects/slirp.wrap",
+      "notes": "User-mode networking; the Windows build ships the subproject DLL."
+    },
+    {
+      "id": "SPIRV-Reflect",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "f3e261fda74ca81b44d1941931c6b7b5fe236d0e",
+      "upstream": "https://github.com/KhronosGroup/SPIRV-Reflect",
+      "license": "Apache-2.0",
+      "location": "xemu/subprojects/SPIRV-Reflect.wrap",
+      "notes": "Vulkan reflection."
+    },
+    {
+      "id": "tomlplusplus",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "30172438cee64926dc41fdd9c11fb3ba5b2ba9de",
+      "upstream": "https://github.com/marzer/tomlplusplus",
+      "license": "MIT",
+      "location": "xemu/subprojects/tomlplusplus.wrap",
+      "notes": "Configuration parsing fallback."
+    },
+    {
+      "id": "volk",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "3ca312a4f38baa63d8006b6905abbeeb89c8087d",
+      "upstream": "https://github.com/zeux/volk",
+      "license": "MIT",
+      "location": "xemu/subprojects/volk.wrap",
+      "notes": "Vulkan loader."
+    },
+    {
+      "id": "VulkanMemoryAllocator",
+      "kind": "wrap-git",
+      "track": "commits",
+      "pin": "3aa921224c154a0d2c43912bc88e1c42ce1f7607",
+      "upstream": "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator",
+      "license": "MIT",
+      "location": "xemu/subprojects/VulkanMemoryAllocator.wrap",
+      "notes": "Vulkan memory allocation."
+    },
+    {
+      "id": "xxhash",
+      "kind": "wrap-file",
+      "track": "tags",
+      "version": "0.8.3",
+      "sourceHash": "aae608dfe8213dfd05d909a57718ef82f30722c392344583d3f39050c7f29a80",
+      "upstream": "https://github.com/Cyan4973/xxHash",
+      "license": "BSD-2-Clause",
+      "location": "xemu/subprojects/xxhash.wrap",
+      "notes": "Meson fallback for the host xxHash."
+    },
+    {
+      "id": "libchdr",
+      "kind": "vendored",
+      "track": "tags",
+      "version": "0.3.0",
+      "upstream": "https://github.com/rtissera/libchdr",
+      "license": "BSD-3-Clause",
+      "location": "xemu/xgrid-core/thirdparty/libchdr",
+      "notes": "Vendored so the core never fetches it during the build; CHD hunk decoding."
+    },
+    {
+      "id": "libchdr-miniz",
+      "kind": "vendored",
+      "track": "tags",
+      "version": "3.1.1",
+      "upstream": "https://github.com/richgel999/miniz",
+      "license": "MIT",
+      "location": "xemu/xgrid-core/thirdparty/libchdr/deps/miniz-3.1.1",
+      "notes": "Bundled zlib replacement inside libchdr, single-file copy."
+    },
+    {
+      "id": "libchdr-zstd",
+      "kind": "vendored",
+      "track": "tags",
+      "version": "1.5.7",
+      "upstream": "https://github.com/facebook/zstd",
+      "license": "BSD-3-Clause OR GPL-2.0",
+      "location": "xemu/xgrid-core/thirdparty/libchdr/deps/zstd-1.5.7",
+      "notes": "Bundled zstd decoder inside libchdr, single-file copy."
+    },
+    {
+      "id": "libchdr-lzma",
+      "kind": "vendored",
+      "track": "none",
+      "version": "25.01",
+      "upstream": "https://www.7-zip.org/sdk.html",
+      "license": "Public domain",
+      "location": "xemu/xgrid-core/thirdparty/libchdr/deps/lzma-25.01",
+      "notes": "LZMA SDK decoder bundled with libchdr; it has no release tags."
+    },
+    {
+      "id": "libcci",
+      "kind": "vendored",
+      "track": "commits",
+      "version": "0.1",
+      "pin": "1b0087e1c210abcd76094ce7167dc5bd67a31996",
+      "upstream": "https://github.com/Team-Resurgent/libCCI",
+      "license": "GPL-2.0-or-later",
+      "location": "xemu/xgrid-core/thirdparty/libcci",
+      "notes": "Snapshot based on upstream commit 1b0087e; cci_file.c carries XGrid changes for multi-digit split parts, so compare before replacing."
+    },
+    {
+      "id": "libvduse",
+      "kind": "vendored",
+      "track": "none",
+      "upstream": "https://gitlab.com/qemu-project/qemu",
+      "license": "GPL-2.0-or-later",
+      "location": "xemu/subprojects/libvduse",
+      "notes": "Tracked QEMU copy; follows the xemu lineage."
+    },
+    {
+      "id": "libvhost-user",
+      "kind": "vendored",
+      "track": "none",
+      "upstream": "https://gitlab.com/qemu-project/qemu",
+      "license": "GPL-2.0-or-later",
+      "location": "xemu/subprojects/libvhost-user",
+      "notes": "Tracked QEMU copy; follows the xemu lineage."
+    }
+  ]
+}

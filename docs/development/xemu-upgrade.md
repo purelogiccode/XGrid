@@ -169,8 +169,11 @@ rebase is a separate decision:
 - treat the old `xemu-patches` files as historical records of the 0.8.139
   lineage, not as a replay script.
 
-When a `.wrap` dependency is adopted, update its `revision=` line in the same
-change and confirm the build still resolves it without network surprises.
+When a `.wrap` dependency is adopted, update its `revision=` line and the
+matching `xemu/dependencies.json` pin, version and source hash in the same
+change, and confirm the build still resolves it without network surprises. If
+the Windows host packages changed, refresh `xemu/msys2-packages.lock` after
+reviewing the package diff.
 
 ## 7. Build and gates
 
