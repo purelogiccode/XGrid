@@ -257,17 +257,19 @@ through the existing dirty-surface download path.
       exercises the combined and specular paths; the newer XGU shader samples
       cannot boot in this environment.
 - [x] Frame pacing: no per-frame readback stalls beyond the presentation
-      copy; profile draw and upload cost. The benchmark puts the presentation
-      copy at roughly 0.9 ms/frame, and the remaining performance work is the
-      D3D11↔GL interop path tracked as a known limitation rather than a parity
-      defect.
+      copy; profile draw and upload cost. `FLIP_STALL` waits on a D3D11 event
+      query, matching the OpenGL `glFinish` and the Vulkan fence. The
+      benchmark puts the presentation copy at roughly 0.9 ms/frame, and the
+      remaining performance work is the D3D11↔GL interop path tracked as a
+      known limitation rather than a parity defect.
 - [x] Memory: bound surface/texture/shader caches, no leaks on save/load or
       renderer switch. The caches are bounded, a failed D3D11 device is freed
       before the OpenGL fallback, a restore invalidates cached
       surfaces/textures, and a live surface-scale change writes back the old
-      surfaces before rebuilding them at the new scale. A 50,000-frame Halo benchmark settled at about 975 MB
-      working set after 140 s with 8 live surfaces, fewer than 100 cached
-      shader variants and about 150 MB of dedicated GPU memory.
+      surfaces before rebuilding them at the new scale. A 50,000-frame Halo
+      benchmark settled at about 975 MB working set after 140 s with 8 live
+      surfaces, fewer than 100 cached shader variants and about 150 MB of
+      dedicated GPU memory.
 - [x] Renderer-switch fallback: a failed D3D11 device falls back to OpenGL
       with a notification, never a crash. The default renderer order is
       OpenGL → Vulkan → D3D11, so an unavailable D3D11 device lands on OpenGL.
