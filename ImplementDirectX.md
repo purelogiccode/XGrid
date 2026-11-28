@@ -111,7 +111,10 @@ Verified on 2026-11-25: `xemu/dist/xemu.exe` reports
 - [x] Upload/download between VRAM and D3D11 staging textures, including
       linear/swizzled, pitch, surface scale and format cases.
 - [x] VRAM CPU-access callbacks and dirty-range propagation.
-- [x] Clear/clear-rect path with color, depth and stencil.
+- [x] Clear/clear-rect path with color, depth and stencil. Channel-masked
+      and partial-rect clears that `ClearView` cannot express are applied
+      through the surface staging copy; only a full all-channel clear marks a
+      surface as cleared.
 - [x] Readback presentation into the core display texture plus the PVIDEO
       overlay.
 - [x] Save-state/shutdown hooks download dirty surfaces.
@@ -174,10 +177,14 @@ deleting that folder only costs a recompile.
       Triangle lists/strips/fans, quads, quad strips and polygons are expanded
       to indexed triangle lists with a cyclic rotation that puts the NV2A
       provoking vertex first; the first-vertex setting is honored for
-      triangles, strips and fans.
+      triangles, strips and fans. Each `DRAW_ARRAYS` range is expanded
+      independently so disjoint strips, fans, quads and line loops are not
+      joined across ranges.
 - [x] Occlusion queries and the report queue. Implemented with D3D11
-      `OCCLUSION` queries; the Halo boot/menu path does not issue reports, so
-      this still needs a title that polls ZPASS.
+      `OCCLUSION` queries; a report issued between BEGIN/END closes the open
+      query, and report processing waits for the GPU result instead of
+      recording zero. The Halo boot/menu path does not issue reports, so this
+      still needs a title that polls ZPASS.
 - [x] Class 0x09F image blit through the CPU path.
 - [x] PGRAPH register dirty tracking and shader rebinding.
 
@@ -256,8 +263,9 @@ through the existing dirty-surface download path.
       defect.
 - [x] Memory: bound surface/texture/shader caches, no leaks on save/load or
       renderer switch. The caches are bounded, a failed D3D11 device is freed
-      before the OpenGL fallback, and a restore now invalidates cached
-      surfaces/textures. A 50,000-frame Halo benchmark settled at about 975 MB
+      before the OpenGL fallback, a restore invalidates cached
+      surfaces/textures, and a live surface-scale change writes back the old
+      surfaces before rebuilding them at the new scale. A 50,000-frame Halo benchmark settled at about 975 MB
       working set after 140 s with 8 live surfaces, fewer than 100 cached
       shader variants and about 150 MB of dedicated GPU memory.
 - [x] Renderer-switch fallback: a failed D3D11 device falls back to OpenGL
@@ -313,6 +321,19 @@ These are accepted for the first backend and tracked in Phase 6 unless noted:
   path carries guest Z in a `noperspective` varying. Polygon-offset slope
   (`triMZ`) comes from screen-space derivatives rather than the GL geometry
   shader, so edge rounding can differ slightly.
+- Point primitives are one-pixel D3D11 points. The fixed-function vertex
+  shader still computes `oPts`, but D3D11 has no point-size semantic, so
+  point sprites sample the center texel.
+- Bordered cubemaps keep the border texels in the face texture. The GL
+  backend discards the four-texel border for cubemaps because a cubemap
+  sampler cannot address it.
+- Sampler anisotropy is not applied; `MaxAnisotropy` stays at 1.
+- Converted volume textures (paletted, YUV, DXT or `R6G5B5` with a depth
+  greater than one) are rejected instead of using the shared CPU conversion
+  path, which is 2D only.
+- The PVIDEO overlay is a CPU nearest-neighbor copy. It honors the output
+  rectangle and color key but not `NV_PVIDEO_POINT_IN` or the
+  `NV_PVIDEO_DS_DX`/`NV_PVIDEO_DT_DY` scale factors.
 - Windows only. A D3D12 backend, if added, reuses the HLSL generators and
   surface/texture caches.
 
