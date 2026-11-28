@@ -71,9 +71,9 @@ state.
 
 | `track` | Used for | What an update means |
 | --- | --- | --- |
-| `tags` | Release-pinned libraries: SDL3, curl, xxHash, `dsp56300`, libchdr, miniz and zstd. | Adopt a newer release tag deliberately. Do not chase upstream `HEAD`. |
+| `tags` | Release-pinned libraries: SDL3, `dsp56300`, libchdr, miniz and zstd. | Adopt a newer release tag deliberately. Do not chase upstream `HEAD`. |
 | `commits` | xemu forks (`imgui`, `implot`, `nv2a_vsh_cpu`, `genconfig`) and QEMU project pins. | Upstream moved; review the commits before changing the pin. A move is not automatically an update. |
-| `none` | QEMU copies, the LZMA SDK and other components without useful tags. | Recorded for inventory only; they follow the xemu/QEMU lineage. |
+| `none` | QEMU copies, the LZMA SDK, and fallback-only wraps such as curl and xxHash. | Recorded for inventory only; on Windows the shipped library comes from the host lock, and the other entries follow the xemu/QEMU lineage. |
 
 Rules:
 

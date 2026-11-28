@@ -64,6 +64,7 @@ $packages = @(
     'mingw-w64-x86_64-libssh2'
     'mingw-w64-x86_64-libusb'
     'mingw-w64-x86_64-libunistring'
+    'mingw-w64-x86_64-libwinpthread'
     'mingw-w64-x86_64-lz4'
     'mingw-w64-x86_64-meson'
     'mingw-w64-x86_64-nghttp2'
@@ -77,6 +78,7 @@ $packages = @(
     'mingw-w64-x86_64-python'
     'mingw-w64-x86_64-sdl3'
     'mingw-w64-x86_64-winpthreads'
+    'mingw-w64-x86_64-xxhash'
     'mingw-w64-x86_64-zlib'
     'mingw-w64-x86_64-zstd'
 ) | Sort-Object -Unique

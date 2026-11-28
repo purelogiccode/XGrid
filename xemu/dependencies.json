@@ -35,13 +35,13 @@
     {
       "id": "curl",
       "kind": "wrap-file",
-      "track": "tags",
+      "track": "none",
       "version": "8.12.1",
       "sourceHash": "0341f1ed97a26c811abaebd37d62b833956792b7607ea3f15d001613c76de202",
       "upstream": "https://github.com/curl/curl",
       "license": "curl",
       "location": "xemu/subprojects/curl.wrap",
-      "notes": "Meson fallback only; the Windows core is configured with --disable-curl and ships the host libcurl."
+      "notes": "Meson fallback only; the Windows core is configured with --disable-curl and ships the host libcurl, recorded in the host lock."
     },
     {
       "id": "dsp56300",
@@ -217,13 +217,13 @@
     {
       "id": "xxhash",
       "kind": "wrap-file",
-      "track": "tags",
+      "track": "none",
       "version": "0.8.3",
       "sourceHash": "aae608dfe8213dfd05d909a57718ef82f30722c392344583d3f39050c7f29a80",
       "upstream": "https://github.com/Cyan4973/xxHash",
       "license": "BSD-2-Clause",
       "location": "xemu/subprojects/xxhash.wrap",
-      "notes": "Meson fallback for the host xxHash."
+      "notes": "Meson fallback only; the Windows build uses the MSYS2 xxHash recorded in the host lock and ships libxxhash.dll."
     },
     {
       "id": "libchdr",

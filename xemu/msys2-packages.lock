@@ -19,6 +19,7 @@ mingw-w64-x86_64-libsamplerate 0.2.2-1
 mingw-w64-x86_64-libssh2 1.11.1-4
 mingw-w64-x86_64-libunistring 1.4.2-1
 mingw-w64-x86_64-libusb 1.0.28-1
+mingw-w64-x86_64-libwinpthread 14.0.0.r92.g818fa6510-1
 mingw-w64-x86_64-lz4 1.10.0-1
 mingw-w64-x86_64-meson 1.12.1-2
 mingw-w64-x86_64-nghttp2 1.69.0-1
@@ -32,5 +33,6 @@ mingw-w64-x86_64-pkgconf 1~2.5.1-1
 mingw-w64-x86_64-python 3.14.10-4
 mingw-w64-x86_64-sdl3 3.4.10-1
 mingw-w64-x86_64-winpthreads 14.0.0.r92.g818fa6510-1
+mingw-w64-x86_64-xxhash 0.8.4-1
 mingw-w64-x86_64-zlib 1.4-2
 mingw-w64-x86_64-zstd 1.5.7-2
