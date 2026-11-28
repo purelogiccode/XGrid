@@ -129,7 +129,7 @@ Every archive carries `licenses/` beside `COPYING` and `LICENSE`:
 | Text | Covers |
 | --- | --- |
 | `GPL-2.0.txt` | XGrid, the xemu core and its QEMU base, the ported DSP modules, libCCI |
-| `LGPL-2.1.txt` | GLib, gettext, libiconv, LGPL files inside xemu/QEMU |
+| `LGPL-2.1.txt` | GLib, gettext, libiconv, libusb, LGPL files inside xemu/QEMU |
 | `LGPL-3.0.txt` | libidn2, libunistring |
 | `GPL-3.0.txt`, `GCC-exception-3.1.txt` | The GCC runtime DLLs |
 | `Apache-2.0.txt` | OpenSSL |
