@@ -891,9 +891,10 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
     }
 
     if (!upload && surface->draw_dirty) {
-        if (!tcg_enabled()) {
-            surface_download(d, color ? r->color_binding : r->zeta_binding,
-                             true);
+        D3D11SurfaceBinding *binding =
+            color ? r->color_binding : r->zeta_binding;
+        if (!tcg_enabled() && binding) {
+            surface_download(d, binding, true);
         }
         surface->write_enabled_cache = false;
         surface->draw_dirty = false;
@@ -978,6 +979,209 @@ void pgraph_d3d11_surface_update(NV2AState *d, bool upload, bool color_write,
     surface_evict_old(d);
 }
 
+static uint8_t clear_unorm8(float value)
+{
+    if (!(value > 0.0f)) {
+        return 0;
+    }
+    if (value >= 1.0f) {
+        return 255;
+    }
+    return (uint8_t)(value * 255.0f + 0.5f);
+}
+
+static uint16_t clear_unorm_bits(float value, unsigned int bits)
+{
+    const uint32_t max = (1u << bits) - 1;
+
+    if (!(value > 0.0f)) {
+        return 0;
+    }
+    if (value >= 1.0f) {
+        return (uint16_t)max;
+    }
+    return (uint16_t)(value * (float)max + 0.5f);
+}
+
+static void clear_color_pixels(uint8_t *data, size_t row_bytes,
+                               DXGI_FORMAT format, const D3D11_RECT *rect,
+                               unsigned int width, unsigned int height,
+                               const float rgba[4], uint32_t parameter)
+{
+    const bool write_r = parameter & NV097_CLEAR_SURFACE_R;
+    const bool write_g = parameter & NV097_CLEAR_SURFACE_G;
+    const bool write_b = parameter & NV097_CLEAR_SURFACE_B;
+    const bool write_a = parameter & NV097_CLEAR_SURFACE_A;
+
+    const uint8_t r8 = clear_unorm8(rgba[0]);
+    const uint8_t g8 = clear_unorm8(rgba[1]);
+    const uint8_t b8 = clear_unorm8(rgba[2]);
+    const uint8_t a8 = clear_unorm8(rgba[3]);
+    const uint16_t r5 = clear_unorm_bits(rgba[0], 5);
+    const uint16_t g5 = clear_unorm_bits(rgba[1], 5);
+    const uint16_t b5 = clear_unorm_bits(rgba[2], 5);
+    const uint16_t g6 = clear_unorm_bits(rgba[1], 6);
+
+    const LONG left = MAX(rect->left, 0);
+    const LONG top = MAX(rect->top, 0);
+    const LONG right = MIN(rect->right, (LONG)width);
+    const LONG bottom = MIN(rect->bottom, (LONG)height);
+
+    for (LONG y = top; y < bottom; y++) {
+        uint8_t *row = data + (size_t)y * row_bytes;
+
+        for (LONG x = left; x < right; x++) {
+            switch (format) {
+            case DXGI_FORMAT_B8G8R8A8_UNORM: {
+                uint8_t *pixel = row + (size_t)x * 4;
+                if (write_b) pixel[0] = b8;
+                if (write_g) pixel[1] = g8;
+                if (write_r) pixel[2] = r8;
+                if (write_a) pixel[3] = a8;
+                break;
+            }
+            case DXGI_FORMAT_B5G5R5A1_UNORM: {
+                uint16_t *pixel = (uint16_t *)row + x;
+                uint16_t value;
+                memcpy(&value, pixel, sizeof(value));
+                if (write_b) value = (value & ~0x001Fu) | b5;
+                if (write_g) value = (value & ~0x03E0u) | (g5 << 5);
+                if (write_r) value = (value & ~0x7C00u) | (r5 << 10);
+                if (write_a) {
+                    value = (value & ~0x8000u) |
+                            (rgba[3] >= 0.5f ? 0x8000u : 0);
+                }
+                memcpy(pixel, &value, sizeof(value));
+                break;
+            }
+            case DXGI_FORMAT_B5G6R5_UNORM: {
+                uint16_t *pixel = (uint16_t *)row + x;
+                uint16_t value;
+                memcpy(&value, pixel, sizeof(value));
+                if (write_b) value = (value & ~0x001Fu) | b5;
+                if (write_g) value = (value & ~0x07E0u) | (g6 << 5);
+                if (write_r) value = (value & ~0xF800u) | (r5 << 11);
+                memcpy(pixel, &value, sizeof(value));
+                break;
+            }
+            case DXGI_FORMAT_R8_UNORM:
+                if (write_r) row[x] = r8;
+                break;
+            case DXGI_FORMAT_R8G8_UNORM: {
+                uint8_t *pixel = row + (size_t)x * 2;
+                if (write_r) pixel[0] = r8;
+                if (write_g) pixel[1] = g8;
+                break;
+            }
+            default:
+                break;
+            }
+        }
+    }
+}
+
+/*
+ * ClearRenderTargetView and ClearView cannot apply the guest's per-channel
+ * clear mask, and ClearRenderTargetView also ignores the clear rectangle. Use
+ * the staging copy for those cases: read the target, patch the requested
+ * channels in the rectangle, and write it back.
+ */
+static void clear_color_rect(NV2AState *d, D3D11SurfaceBinding *surface,
+                             const D3D11_RECT *rect, const float rgba[4],
+                             uint32_t parameter)
+{
+    PGRAPHState *pg = &d->pgraph;
+    PGRAPHD3D11State *r = pg->d3d11_renderer_state;
+
+    D3D11_TEXTURE2D_DESC desc;
+    ID3D11Texture2D_GetDesc(surface->texture, &desc);
+
+    const LONG left = MAX(rect->left, 0);
+    const LONG top = MAX(rect->top, 0);
+    const LONG right = MIN(rect->right, (LONG)desc.Width);
+    const LONG bottom = MIN(rect->bottom, (LONG)desc.Height);
+    if (left >= right || top >= bottom) {
+        return;
+    }
+
+    const unsigned int bpp = surface->fmt.bytes_per_pixel;
+    const unsigned int width = (unsigned int)(right - left);
+    const unsigned int height = (unsigned int)(bottom - top);
+    const size_t row_bytes = (size_t)width * bpp;
+    const size_t size = row_bytes * height;
+
+    D3D11_BOX box = {
+        .left = left,
+        .top = top,
+        .front = 0,
+        .right = right,
+        .bottom = bottom,
+        .back = 1,
+    };
+    ID3D11DeviceContext_CopySubresourceRegion(
+        r->context, (ID3D11Resource *)surface->staging, 0, left, top, 0,
+        (ID3D11Resource *)surface->texture, 0, &box);
+
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    HRESULT hr = ID3D11DeviceContext_Map(r->context,
+                                         (ID3D11Resource *)surface->staging,
+                                         0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        fprintf(stderr, "nv2a: D3D11 clear readback failed (hr=0x%08lx)\n",
+                (unsigned long)hr);
+        return;
+    }
+
+    uint8_t *data = g_malloc(size);
+    for (unsigned int y = 0; y < height; y++) {
+        memcpy(data + (size_t)y * row_bytes,
+               (const uint8_t *)mapped.pData +
+                   (size_t)(top + y) * mapped.RowPitch + (size_t)left * bpp,
+               row_bytes);
+    }
+    ID3D11DeviceContext_Unmap(r->context,
+                              (ID3D11Resource *)surface->staging, 0);
+
+    const D3D11_RECT local_rect = {
+        .left = 0,
+        .top = 0,
+        .right = (LONG)width,
+        .bottom = (LONG)height,
+    };
+    clear_color_pixels(data, row_bytes, surface->fmt.format, &local_rect, width,
+                       height, rgba, parameter);
+
+    hr = ID3D11DeviceContext_Map(r->context,
+                                 (ID3D11Resource *)surface->staging, 0,
+                                 D3D11_MAP_WRITE, 0, &mapped);
+    if (FAILED(hr)) {
+        fprintf(stderr, "nv2a: D3D11 clear writeback failed (hr=0x%08lx)\n",
+                (unsigned long)hr);
+        g_free(data);
+        return;
+    }
+    for (unsigned int y = 0; y < height; y++) {
+        memcpy((uint8_t *)mapped.pData +
+                   (size_t)(top + y) * mapped.RowPitch + (size_t)left * bpp,
+               data + (size_t)y * row_bytes, row_bytes);
+    }
+    ID3D11DeviceContext_Unmap(r->context,
+                              (ID3D11Resource *)surface->staging, 0);
+    g_free(data);
+
+    ID3D11DeviceContext_CopySubresourceRegion(
+        r->context, (ID3D11Resource *)surface->texture, 0, left, top, 0,
+        (ID3D11Resource *)surface->staging, 0, &box);
+}
+
+static bool clear_rect_covers_texture(const D3D11_RECT *rect,
+                                      unsigned int width,
+                                      unsigned int height)
+{
+    return rect->left <= 0 && rect->top <= 0 && rect->right >= (LONG)width &&
+           rect->bottom >= (LONG)height;
+}
+
 void pgraph_d3d11_clear_surface(NV2AState *d, uint32_t parameter)
 {
     PGRAPHState *pg = &d->pgraph;
@@ -1009,6 +1213,13 @@ void pgraph_d3d11_clear_surface(NV2AState *d, uint32_t parameter)
     unsigned int height = ymax - ymin + 1;
     pgraph_apply_anti_aliasing_factor(pg, &xmin, &ymin);
     pgraph_apply_anti_aliasing_factor(pg, &width, &height);
+
+    /* Only a full clear lets the next linear/swizzle surface reuse skip the
+     * writeback; a partial clear leaves content that must reach VRAM. */
+    const bool full_clear =
+        !xmin && !ymin && width >= pg->surface_binding_dim.width &&
+        height >= pg->surface_binding_dim.height;
+
     pgraph_apply_scaling_factor(pg, &xmin, &ymin);
     pgraph_apply_scaling_factor(pg, &width, &height);
 
@@ -1030,18 +1241,34 @@ void pgraph_d3d11_clear_surface(NV2AState *d, uint32_t parameter)
         .bottom = tex_h - ymin,
     };
 
+    const bool all_color_channels =
+        (parameter & NV097_CLEAR_SURFACE_COLOR) ==
+        (NV097_CLEAR_SURFACE_R | NV097_CLEAR_SURFACE_G |
+         NV097_CLEAR_SURFACE_B | NV097_CLEAR_SURFACE_A);
+
     if (write_color && r->color_binding) {
         float rgba[4];
         pgraph_get_clear_color(pg, rgba);
-        const FLOAT color[4] = { rgba[0], rgba[1], rgba[2], rgba[3] };
-        if (r->context1) {
+
+        bool cleared = false;
+
+        if (all_color_channels && r->context1) {
+            const FLOAT color[4] = { rgba[0], rgba[1], rgba[2], rgba[3] };
             ID3D11DeviceContext1_ClearView(r->context1,
                                            (ID3D11View *)r->color_binding->rtv,
                                            color, &rect, 1);
-        } else {
+            cleared = true;
+        } else if (all_color_channels &&
+                   clear_rect_covers_texture(&rect, tex_w, tex_h)) {
+            const FLOAT color[4] = { rgba[0], rgba[1], rgba[2], rgba[3] };
             ID3D11DeviceContext_ClearRenderTargetView(r->context,
                                                       r->color_binding->rtv,
                                                       color);
+            cleared = true;
+        }
+
+        if (!cleared) {
+            clear_color_rect(d, r->color_binding, &rect, rgba, parameter);
         }
     }
 
@@ -1073,13 +1300,12 @@ void pgraph_d3d11_clear_surface(NV2AState *d, uint32_t parameter)
         r->color_binding->draw_dirty |= write_color &&
                                         pgraph_color_write_enabled(pg);
         r->color_binding->cleared =
-            write_color && target == r->color_binding;
+            write_color && full_clear && all_color_channels;
     }
     if (r->zeta_binding) {
         r->zeta_binding->draw_dirty |= write_zeta &&
                                        pgraph_zeta_write_enabled(pg);
-        r->zeta_binding->cleared =
-            write_zeta && target == r->zeta_binding;
+        r->zeta_binding->cleared = write_zeta && full_clear;
     }
 
     pg->clearing = false;
