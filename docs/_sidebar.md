@@ -39,6 +39,7 @@
   - [Repository layout](development/repository-layout.md)
   - [The native core](development/core.md)
   - [Core lineage and upstream](development/xemu-upstream.md)
+  - [Updating from upstream xemu](development/xemu-upgrade.md)
   - [Quality gates](development/quality-gates.md)
   - [Testing](development/testing.md)
   - [Code inspection](development/inspection.md)

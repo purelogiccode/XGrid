@@ -1,6 +1,6 @@
 name: xemu upstream report
 
-# Checks the pinned upstream xemu revision and every git-backed Meson wrap.
+# Checks the reviewed upstream xemu revision and every git-backed Meson wrap.
 # It opens or updates one issue when something newer exists; it never changes
 # the tree. This runs on the LAN Linux runner, not a hosted runner.
 on:

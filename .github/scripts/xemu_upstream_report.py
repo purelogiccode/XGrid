@@ -2,7 +2,7 @@
 """Report upstream xemu and Meson subproject updates.
 
 The XGrid tree carries xemu as normal tracked source. This script compares the
-recorded upstream commit and every git-backed ``subprojects/*.wrap`` pin with
+reviewed upstream commit and every git-backed ``subprojects/*.wrap`` pin with
 the upstream repositories. It prints a Markdown report and, when ``--publish``
 is passed on GitHub Actions, creates or updates one issue.
 
@@ -136,9 +136,17 @@ def latest_tag(kind: str, repo: str) -> str | None:
 def upstream_report() -> tuple[list[str], bool]:
     version_path = XEMU / "XEMU_VERSION"
     commit_path = XEMU / "XEMU_COMMIT"
+    reviewed_path = XEMU / "XEMU_REVIEWED_COMMIT"
     current_version = version_path.read_text(encoding="utf-8").strip()
     current_commit = commit_path.read_text(encoding="utf-8").strip()
-    lines = [f"Current: **{current_version}** (`{current_commit[:12]}`)"]
+    reviewed_commit = (
+        reviewed_path.read_text(encoding="utf-8").strip()
+        if reviewed_path.exists()
+        else current_commit
+    )
+    lines = [f"Lineage base: **{current_version}** (`{current_commit[:12]}`)"]
+    if reviewed_commit != current_commit:
+        lines.append(f"Reviewed through: `{reviewed_commit[:12]}`")
     updated = False
 
     release = github_get(f"/repos/{UPSTREAM}/releases/latest")
@@ -156,12 +164,12 @@ def upstream_report() -> tuple[list[str], bool]:
     tag_commit = github_get(f"/repos/{UPSTREAM}/commits/{urllib.parse.quote(tag)}")
     latest_commit = tag_commit.get("sha", "") if isinstance(tag_commit, dict) else ""
     lines.append(f"Latest upstream: **{tag}** (`{latest_commit[:12]}`)")
-    if latest_commit and latest_commit != current_commit:
+    if latest_commit and latest_commit != reviewed_commit:
         updated = True
         compare = github_get(
-            f"/repos/{UPSTREAM}/compare/{current_commit}...{latest_commit}")
+            f"/repos/{UPSTREAM}/compare/{reviewed_commit}...{latest_commit}")
         if isinstance(compare, dict):
-            lines.append(f"Commits since current: **{compare.get('total_commits', '?')}**; "
+            lines.append(f"Commits since reviewed: **{compare.get('total_commits', '?')}**; "
                          f"changed files: **{len(compare.get('files', []))}**.")
             commits = compare.get("commits", [])
             for item in commits[-25:]:
@@ -268,9 +276,12 @@ def main() -> int:
         "",
         *wrap_lines,
         "",
-        "Apply upstream changes manually; this report only notifies. "
-        "Update `XEMU_VERSION`, `XEMU_COMMIT` and the relevant `.wrap` revision "
-        "after reviewing the upstream diff.",
+        "Apply upstream changes selectively; this report only notifies. "
+        "After reviewing a release, update `xemu/XEMU_REVIEWED_COMMIT` to the "
+        "reviewed upstream commit. Update `XEMU_VERSION` and `XEMU_COMMIT` only "
+        "for a deliberate full lineage rebase, and refresh the relevant `.wrap` "
+        "revision when its dependency is adopted. See "
+        "`docs/development/xemu-upgrade.md` for the runbook.",
     ]
     body = "\n".join(lines)
     print(body)

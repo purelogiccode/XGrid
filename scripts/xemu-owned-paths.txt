@@ -1,0 +1,21 @@
+# XGrid-owned paths inside the tracked xemu tree.
+#
+# Paths are relative to xemu/. A trailing slash covers the directory and
+# everything below it. The upstream audit script uses this file to mark changed
+# files that a selective port must review, even when the path is not named in a
+# xemu-patches record.
+#
+# Add a new native module here when it is introduced outside xgrid-core.
+xgrid-core/
+xemu-patches/
+hw/xbox/chihiro/
+hw/xbox/nv2a/pgraph/d3d11/
+hw/xbox/nv2a/pgraph/hlsl/
+block/blkmemory.c
+include/block/blkmemory.h
+ui/xemu-run.h
+GNUmakefile
+XGrid.Xemu.Tree.csproj
+XEMU_VERSION
+XEMU_COMMIT
+XEMU_REVIEWED_COMMIT

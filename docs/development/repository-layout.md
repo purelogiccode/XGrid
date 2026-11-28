@@ -25,6 +25,8 @@ xemu/
   hw/xbox/chihiro/            ported Sega Chihiro machine
   block/blkmemory.c           Chihiro DIMM memory-backed block driver
   xemu-patches/               patch record for upstream edits
+  XEMU_VERSION, XEMU_COMMIT   lineage base markers
+  XEMU_REVIEWED_COMMIT        selective-port review watermark
   XGrid.Xemu.Tree.csproj      solution anchor for the native build
   dist/                       native build output (git-ignored)
 tests/                        unit, integration and compatibility tests
@@ -48,6 +50,10 @@ data/                         local firmware/media (git-ignored)
 - `xemu/` — the native core tree.
 - `scripts/build-native-xemu.ps1` — core build (Windows/MSYS2).
 - `scripts/build-native-xemu.sh` — core build (Linux).
+- `scripts/xemu-upstream-audit.ps1` — classify an upstream release against
+  XGrid-owned paths.
+- `scripts/xemu-owned-paths.txt` — native modules and paths the audit must
+  treat as XGrid-owned.
 - `scripts/package.ps1` — release tree.
 - `scripts/package-covers.ps1` — build the cover catalog with ffmpeg.
 - `scripts/publish-covers.ps1` — mirror the cover catalog to R2 with rclone.

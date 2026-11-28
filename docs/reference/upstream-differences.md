@@ -149,7 +149,8 @@ It is a **preview** backend. It is compiled only on Windows and only offered whe
 | --- | --- |
 | `block/blkmemory.c`, `include/block/blkmemory.h` | Memory-region-backed block driver used by the Chihiro DIMM. |
 | `ui/xemu-run.h` | Fast-forward/shutdown entry points for the embedded core. |
-| `XEMU_VERSION`, `XEMU_COMMIT` | Base release and commit markers. |
+| `XEMU_VERSION`, `XEMU_COMMIT` | Lineage base release and commit markers. |
+| `XEMU_REVIEWED_COMMIT` | Latest upstream commit reviewed for a selective port. |
 | `GNUmakefile`, `XGrid.Xemu.Tree.csproj` | Build conveniences for the tracked tree and the solution anchor. |
 | `xemu-patches/*.patch` | Provenance for edits to existing upstream files. |
 
@@ -326,8 +327,8 @@ because they carry more than one feature.
 
 ### Build and dependency changes
 
-- The tracked tree adds `GNUmakefile`, `XEMU_VERSION`, `XEMU_COMMIT` and the
-  solution anchor `XGrid.Xemu.Tree.csproj`.
+- The tracked tree adds `GNUmakefile`, `XEMU_VERSION`, `XEMU_COMMIT`,
+  `XEMU_REVIEWED_COMMIT` and the solution anchor `XGrid.Xemu.Tree.csproj`.
 - Vulkan is gated by `xgrid_vulkan` (default off) instead of always probed. The
   Windows release build script turns it on; a Linux build only gets Vulkan when
   the build passes `-Dxgrid_vulkan=true` and the dependencies are present.

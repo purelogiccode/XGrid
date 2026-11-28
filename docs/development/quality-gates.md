@@ -76,6 +76,9 @@ The release tree is produced locally with `scripts/package.ps1` and verified by
 
 ## Core gates
 
+Before adopting an upstream release, run the selective-port audit and follow
+the [upstream update runbook](xemu-upgrade.md).
+
 The native core is built locally, and the `native-core` CI job rebuilds it on
 Linux from the tracked tree:
 
