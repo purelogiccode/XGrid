@@ -35,6 +35,8 @@ typedef struct D3D11TextureBinding {
     TextureShape shape;
     hwaddr vram_addr;
     size_t length;
+    hwaddr palette_vram_addr;
+    size_t palette_length;
 
     ID3D11Texture2D *texture2d;
     ID3D11Texture3D *texture3d;

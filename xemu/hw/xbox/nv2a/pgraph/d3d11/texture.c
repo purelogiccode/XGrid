@@ -242,6 +242,8 @@ static void texture_binding_release(D3D11TextureBinding *b)
     b->failed = false;
     b->surface_backed = false;
     b->sampler_hash = 0;
+    b->palette_vram_addr = 0;
+    b->palette_length = 0;
 }
 
 static uint8_t *texture_decode_level(const TextureShape *shape,
@@ -637,6 +639,32 @@ void pgraph_d3d11_invalidate_textures(PGRAPHState *pg)
     }
 }
 
+static void texture_mark_overlapping_dirty(NV2AState *d, hwaddr start,
+                                           hwaddr end)
+{
+    PGRAPHState *pg = &d->pgraph;
+    PGRAPHD3D11State *r = pg->d3d11_renderer_state;
+
+    for (int i = 0; i < NV2A_MAX_TEXTURES; i++) {
+        D3D11TextureBinding *binding = &r->textures[i];
+        if (!binding->valid) {
+            continue;
+        }
+
+        bool overlaps = !(binding->vram_addr >= end ||
+                          start >= binding->vram_addr + binding->length);
+        if (!overlaps && binding->palette_length) {
+            overlaps = !(binding->palette_vram_addr >= end ||
+                         start >= binding->palette_vram_addr +
+                                      binding->palette_length);
+        }
+        if (overlaps) {
+            /* Another stage cleared the page dirty bit for this binding. */
+            pg->texture_dirty[i] = true;
+        }
+    }
+}
+
 static bool texture_dirty_range(NV2AState *d, hwaddr addr, size_t length)
 {
     if (length == 0) {
@@ -650,8 +678,13 @@ static bool texture_dirty_range(NV2AState *d, hwaddr addr, size_t length)
     if (start >= end) {
         return false;
     }
-    return memory_region_test_and_clear_dirty(d->vram, start, end - start,
-                                              DIRTY_MEMORY_NV2A_TEX);
+
+    bool dirty = memory_region_test_and_clear_dirty(
+        d->vram, start, end - start, DIRTY_MEMORY_NV2A_TEX);
+    if (dirty) {
+        texture_mark_overlapping_dirty(d, start, end);
+    }
+    return dirty;
 }
 
 static bool texture_format_matches_surface(const TextureShape *shape,
@@ -682,6 +715,11 @@ void pgraph_d3d11_bind_textures(NV2AState *d)
         hwaddr palette_offset =
             pgraph_get_texture_palette_phys_addr_length(pg, i, &palette_length);
         size_t length = pgraph_get_texture_length(pg, &shape);
+        const bool indexed = shape.color_format ==
+                             NV097_SET_TEXTURE_FORMAT_COLOR_SZ_I8_A8R8G8B8;
+        const hwaddr binding_palette_offset =
+            indexed ? palette_offset : 0;
+        const size_t binding_palette_length = indexed ? palette_length : 0;
 
         if (length == 0 || texture_offset >= vram_size ||
             length > vram_size - texture_offset) {
@@ -692,9 +730,9 @@ void pgraph_d3d11_bind_textures(NV2AState *d)
 
         const uint8_t *texture_data = d->vram_ptr + texture_offset;
         const uint8_t *palette_data = NULL;
-        if (shape.color_format ==
-            NV097_SET_TEXTURE_FORMAT_COLOR_SZ_I8_A8R8G8B8) {
-            if (palette_offset >= vram_size || palette_length == 0) {
+        if (indexed) {
+            if (palette_offset >= vram_size || palette_length == 0 ||
+                palette_length > vram_size - palette_offset) {
                 texture_unbind_stage(r, i);
                 texture_binding_release(&r->textures[i]);
                 continue;
@@ -722,6 +760,8 @@ void pgraph_d3d11_bind_textures(NV2AState *d)
                            binding->srv != surface->srv ||
                            binding->vram_addr != texture_offset ||
                            binding->length != length ||
+                           binding->palette_vram_addr != binding_palette_offset ||
+                           binding->palette_length != binding_palette_length ||
                            pg->texture_dirty[i] ||
                            memcmp(&binding->shape, &shape, sizeof(shape)) != 0;
             if (changed) {
@@ -730,6 +770,8 @@ void pgraph_d3d11_bind_textures(NV2AState *d)
                 binding->shape = shape;
                 binding->vram_addr = texture_offset;
                 binding->length = length;
+                binding->palette_vram_addr = binding_palette_offset;
+                binding->palette_length = binding_palette_length;
                 binding->srv = surface->srv;
                 ID3D11ShaderResourceView_AddRef(binding->srv);
                 binding->width = shape.width;
@@ -758,6 +800,8 @@ void pgraph_d3d11_bind_textures(NV2AState *d)
                        binding->surface_backed ||
                        binding->vram_addr != texture_offset ||
                        binding->length != length ||
+                       binding->palette_vram_addr != binding_palette_offset ||
+                       binding->palette_length != binding_palette_length ||
                        memcmp(&binding->shape, &shape, sizeof(shape)) != 0 ||
                        pg->texture_dirty[i];
 
@@ -782,6 +826,8 @@ void pgraph_d3d11_bind_textures(NV2AState *d)
             binding->shape = shape;
             binding->vram_addr = texture_offset;
             binding->length = length;
+            binding->palette_vram_addr = binding_palette_offset;
+            binding->palette_length = binding_palette_length;
 
             bool ok;
             if (shape.dimensionality >= 3) {
