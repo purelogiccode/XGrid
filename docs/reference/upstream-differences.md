@@ -18,7 +18,7 @@ described in the guides.
 | XGrid core | xemu 0.8.139 lineage + XGrid changes in `xemu/`, now evolving separately |
 | Recorded upstream commit | `aa54c34cae1c09410d74c69a44210a9867fe2d16` (`xemu/XEMU_COMMIT`) |
 | XGrid-native code | `xemu/xgrid-core/` |
-| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`–`0022`; 16 files) |
+| Upstream edit record | `xemu/xemu-patches/` (retained patches `0007`-`0023`; 17 files) |
 | Ported arcade machine | `xemu/hw/xbox/chihiro/` |
 | Third-party notices | `THIRD_PARTY_NOTICES.md`, `docs/legal/licensing.md` |
 
@@ -76,6 +76,7 @@ hooks.
 | `0020-ui-frame-pacing-and-clear.patch` | Core presentation frame limit/skip, safe fast-forward clock update, Space handling, and full-target clear/edge clamp for the embedded picture | `hw/xbox/nv2a/pgraph/gl/display.c`, `system/cpus.c`, `ui/xemu.c`, `ui/xui/gl-helpers.cc`, `ui/xui/win32-dxgi-present.cc` |
 | `0021-build-meson-introspect.patch` | Read Meson build options from the configured build directory so a Rust-less host can regenerate them | `Makefile` |
 | `0022-repo-ignore-xemu-patches.patch` | Keep the patch record tracked and ignore generated Meson wrap-hash files | `.gitignore` |
+| `0023-core-dsp56300-hash.patch` | Verify the dsp56300 release archive SHA-256 before unpacking | `subprojects/dsp56300/meson.build` |
 
 Some files appear in more than one patch because they carry more than one
 feature. The patch files are the provenance record for edits to existing
@@ -335,6 +336,8 @@ because they carry more than one feature.
   Windows release build script turns it on; a Linux build only gets Vulkan when
   the build passes `-Dxgrid_vulkan=true` and the dependencies are present.
 - Direct3D 11 is gated by `xgrid_d3d11` (default on, Windows only).
+- The `dsp56300` downloader verifies the release archive SHA-256 for the host
+  target before unpacking it.
 - The Windows DLL keeps SEH unwind data, uses image base `0x150000000` and a
   16 MB stack, because QEMU TCG needs both in a host process.
 - `.gitignore` keeps `xemu-patches/*.patch` tracked and ignores Meson wrap-hash

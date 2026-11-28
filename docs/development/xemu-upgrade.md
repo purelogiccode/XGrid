@@ -175,6 +175,10 @@ change, and confirm the build still resolves it without network surprises. If
 the Windows host packages changed, refresh `xemu/msys2-packages.lock` after
 reviewing the package diff.
 
+`dsp56300` is downloaded by its own `meson.build`, not a wrap. When its version
+moves, update the version and every archive SHA-256 in
+`xemu/subprojects/dsp56300/meson.build` together.
+
 ## 7. Build and gates
 
 ```powershell

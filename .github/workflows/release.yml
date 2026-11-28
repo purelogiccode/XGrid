@@ -94,6 +94,34 @@ jobs:
           upload-artifact: true
           upload-release-assets: false
 
+      - name: Generate native CycloneDX SBOM
+        run: python3 .github/scripts/native_sbom.py --output sbom-native.cdx.json
+
+      - name: Scan the native SBOM
+        # Report-only: C/C++ attribution needs manual triage before it can
+        # block a release. The result is uploaded beside the SBOM.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/osv-scanner" \
+            https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+          "$RUNNER_TEMP/osv-scanner" scan source \
+            --lockfile sbom-native.cdx.json \
+            --format json \
+            --output-file osv-native.json
+
+      - name: Upload native SBOM
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-native
+          path: |
+            sbom-native.cdx.json
+            osv-native.json
+          if-no-files-found: ignore
+          retention-days: 90
+
   # Self-contained CLI + frontend for each release platform.
   publish:
     name: Publish (${{ matrix.rid }})
@@ -188,6 +216,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: sbom-spdx
+          path: dist
+
+      - name: Download native SBOM
+        uses: actions/download-artifact@v8
+        with:
+          name: sbom-native
           path: dist
 
       - name: Generate checksums

@@ -51,7 +51,7 @@
       "upstream": "https://github.com/xemu-project/dsp56300",
       "license": "MIT",
       "location": "xemu/subprojects/dsp56300/meson.build",
-      "notes": "Downloaded at configure time by the custom meson.build; the archive has no hash pin yet."
+      "notes": "Downloaded at configure time by the custom meson.build; the archive SHA-256 is pinned for every supported target."
     },
     {
       "id": "dtc",

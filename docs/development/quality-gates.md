@@ -137,6 +137,10 @@ pwsh -File scripts/package-verify.ps1
 Windows and Linux cores, Unix execute bits, SHA-256 sums, the package manifest
 and the CLI version. See [Releasing](releasing.md).
 
+The release workflow also generates the native CycloneDX SBOM
+(`sbom-native.cdx.json`) and scans it with `osv-scanner`; both files are
+attached to the release.
+
 ## Pull requests
 
 - Keep one logical change per pull request.

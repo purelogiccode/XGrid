@@ -86,6 +86,35 @@ Rules:
   `THIRD_PARTY_NOTICES.md`, `licenses/` and this manifest in the same change.
 - When a package is added to the build host, add it to `scripts/msys2-lock.ps1`
   and refresh the lock.
+- `dsp56300` is downloaded by its own `meson.build`, not a Meson wrap. The file
+  pins the release archive SHA-256 for every supported target; when the version
+  moves, update the version and the whole hash map together.
+
+## SBOM and vulnerability scan
+
+`.github/scripts/native_sbom.py` produces a deterministic CycloneDX 1.5 SBOM
+from the manifest, the Windows host lock and, when given, the package manifest:
+
+```powershell
+python .github/scripts/native_sbom.py --output native-sbom.cdx.json
+
+# Include every shipped DLL's version and SHA-256.
+python .github/scripts/native_sbom.py `
+  --package-manifest dist/package-manifest.json `
+  --output dist/native-sbom.cdx.json
+```
+
+The release workflow generates the source SBOM, runs `osv-scanner` against it
+with a pinned scanner version, and uploads both the SBOM and the scan result
+with the release. The scan is report-only: an OSV finding is attached as
+`osv-native.json` rather than blocking the release, because C/C++ attribution
+still needs manual triage. Run the same command locally with the scanner binary
+for the host platform:
+
+```powershell
+osv-scanner scan source --lockfile native-sbom.cdx.json `
+  --format json --output-file osv-native.json
+```
 
 ## Packaging
 

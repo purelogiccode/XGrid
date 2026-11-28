@@ -8,6 +8,7 @@
 # Add a new native module here when it is introduced outside xgrid-core.
 xgrid-core/
 xemu-patches/
+subprojects/dsp56300/
 hw/xbox/chihiro/
 hw/xbox/nv2a/pgraph/d3d11/
 hw/xbox/nv2a/pgraph/hlsl/

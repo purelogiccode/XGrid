@@ -43,6 +43,10 @@ For a Windows core, `package-manifest.json` also records every shipped
 Verification fails when the archive and that record disagree, so the dependency
 inventory stays visible in the release artifacts.
 
+The release workflow also generates `sbom-native.cdx.json` from the native
+manifest and host lock, runs `osv-scanner` against it, and attaches both files
+to the release. See [Native dependencies](dependencies.md).
+
 ### Frontend core
 
 A frontend archive carries the core when a build for that RID is available:
