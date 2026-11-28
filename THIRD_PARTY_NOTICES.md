@@ -70,6 +70,10 @@ Vendored inside the core additions:
 | libCCI | 0.1.0 | GPL-2.0-or-later (Copyright Team-Resurgent) | CCI header/index and LZ4 sector decoding behind `block/xgridcci.c`; built against the host LZ4. |
 | LZ4 | 1.10.0 (host) | BSD-2-Clause | CCI block decode/encode; linked from the host. |
 
+libchdr's source tree also contains miniz 3.1.1 (MIT) and a single-file zstd
+1.5.7 decoder (BSD-3-Clause). The XGrid build compiles only the LZMA decoder and
+uses the host zlib/zstd; the copies remain in the corresponding source tree.
+
 ## Runtime libraries redistributed with the Windows core package
 
 The `win-x64` frontend archive carries the built core under `core/xemu/`
@@ -87,13 +91,15 @@ separate programs invoked by it.
 | PCRE2 | `libpcre2-8-0.dll` | BSD-3-Clause |
 | libepoxy | `libepoxy-0.dll` | MIT |
 | libsamplerate | `libsamplerate-0.dll` | BSD-2-Clause |
-| OpenSSL | `libcrypto-3-x64.dll`, `libssl-3-x64.dll` | Apache-2.0 |
+| libusb | `libusb-1.0.dll` | LGPL-2.1-or-later |
+| OpenSSL | `libcrypto-4-x64.dll`, `libssl-4-x64.dll` | Apache-2.0 |
 | libcurl | `libcurl-4.dll` | curl license (MIT-like) |
 | libssh2 | `libssh2-1.dll` | BSD-3-Clause |
 | libslirp | `libslirp-0.dll` | BSD-3-Clause |
-| zlib | `zlib1.dll` | Zlib |
+| zlib | `libz-1.dll` | Zlib |
 | Zstandard | `libzstd.dll` | BSD-3-Clause (dual-licensed with GPL-2.0) |
 | LZ4 | `liblz4.dll` | BSD-2-Clause |
+| xxHash | `libxxhash.dll` | BSD-2-Clause |
 | nghttp2 / nghttp3 / ngtcp2 | `libnghttp2-14.dll`, `libnghttp3-9.dll`, `libngtcp2-16.dll`, `libngtcp2_crypto_ossl-0.dll` | MIT |
 | libidn2 | `libidn2-0.dll` | LGPL-3.0-or-later |
 | libunistring | `libunistring-5.dll` | LGPL-3.0-or-later |
@@ -128,7 +134,7 @@ Every archive carries `licenses/` beside `COPYING` and `LICENSE`:
 | `GPL-3.0.txt`, `GCC-exception-3.1.txt` | The GCC runtime DLLs |
 | `Apache-2.0.txt` | OpenSSL |
 | `MIT.txt` | NuGet runtime dependencies, libepoxy, nghttp2/nghttp3/ngtcp2, libpsl, Brotli, winpthreads |
-| `BSD-2-Clause.txt` | libsamplerate, LZ4 |
+| `BSD-2-Clause.txt` | libsamplerate, LZ4, xxHash |
 | `BSD-3-Clause.txt` | libchdr, PCRE2, libssh2, libslirp, Zstandard, winpthreads |
 | `Zlib.txt` | SDL3, zlib |
 | `curl.txt` | libcurl |

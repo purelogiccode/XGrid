@@ -31,6 +31,7 @@ files are recorded in `xemu/xemu-patches/`.
 | libCCI | GPL-2.0-or-later | CCI header/index and LZ4 sector decoding (`block/xgridcci.c`). |
 | xemu-Playtest-v2 / XPSemu-Chihiro | GPL-2.0 overall; LGPL-2.0/2.1-or-later and BSD-3-Clause per file | Sega Chihiro machine under `hw/xbox/chihiro/`, the memory-backed block driver and their integration. |
 | LZ4 | BSD-2-Clause | CCI block compression (host library). |
+| xxHash | BSD-2-Clause | Hash tables in the QEMU utility library; `libxxhash.dll` on Windows. |
 | Avalonia | MIT | Desktop UI framework. |
 | CommunityToolkit.Mvvm | MIT | MVVM helpers. |
 | Serilog and its console/file/debug sinks | Apache-2.0 | Structured diagnostic logging. |
@@ -38,7 +39,7 @@ files are recorded in `xemu/xemu-patches/`.
 | XISOSharp | MIT | XDVDFS reader adapter. |
 | CHDSharp | MIT | Managed CHD reader in the oracle and the Chihiro GD-ROM converter. |
 | chihiro-netboot | MIT | Format reference for the in-tree Chihiro Redump GD-ROM converter. |
-| SDL3, GLib, OpenSSL, libcurl, zstd and other core DLLs | see notices | Redistributed with the Windows core package; linked from the host on Linux. |
+| SDL3, GLib, OpenSSL, libcurl, libusb, zstd and other core DLLs | see notices | Redistributed with the Windows core package; linked from the host on Linux. |
 
 The complete list, including every runtime DLL and ported file, is
 `THIRD_PARTY_NOTICES.md`.
