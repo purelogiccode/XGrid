@@ -112,6 +112,15 @@ void pgraph_d3d11_get_report(NV2AState *d, uint32_t parameter)
     PGRAPHState *pg = &d->pgraph;
     PGRAPHD3D11State *r = pg->d3d11_renderer_state;
 
+    /* A report can be requested between BEGIN/END. Close the open query so
+     * the report only contains finished queries. */
+    if (r->zpass_query_active && r->zpass_query_count) {
+        ID3D11DeviceContext_End(
+            r->context,
+            (ID3D11Asynchronous *)r->zpass_queries[r->zpass_query_count - 1]);
+        r->zpass_query_active = false;
+    }
+
     D3D11QueryReport *report = g_malloc0(sizeof(*report));
     report->parameter = parameter;
     report->query_count = r->zpass_query_count;
@@ -138,9 +147,15 @@ void pgraph_d3d11_process_pending_reports(NV2AState *d)
             uint64_t result = 0;
             for (unsigned int i = 0; i < report->query_count; i++) {
                 UINT64 query_result = 0;
-                HRESULT hr = ID3D11DeviceContext_GetData(
-                    r->context, (ID3D11Asynchronous *)report->queries[i],
-                    &query_result, sizeof(query_result), 0);
+                HRESULT hr;
+                /* The GL/Vulkan backends block for the result. GetData with
+                 * no flags only flushes the context, so retry until the GPU
+                 * has finished the query instead of reporting zero pixels. */
+                do {
+                    hr = ID3D11DeviceContext_GetData(
+                        r->context, (ID3D11Asynchronous *)report->queries[i],
+                        &query_result, sizeof(query_result), 0);
+                } while (hr == S_FALSE);
                 if (SUCCEEDED(hr)) {
                     result += query_result;
                 }
