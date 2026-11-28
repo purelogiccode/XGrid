@@ -1,8 +1,11 @@
 name: Release
 
-# Verify the tree on Windows and Linux, publish self-contained binaries for
-# every platform, generate an SBOM, attest build provenance and create the
-# GitHub release.
+# Verify the tree on Windows and Linux, publish shell-only binaries for every
+# platform, generate an SBOM, attest build provenance and create a DRAFT
+# GitHub release. The release artifact is the local `dist/` tree produced by
+# scripts/package.ps1: it bundles the Windows and Linux cores. Upload that tree
+# over the draft before publishing; do not publish these shell-only archives
+# as-is.
 #
 # Manual only: enable the tag trigger when releases are ready. The jobs run on
 # the organization self-hosted runners; macOS verification is skipped, but the
@@ -122,7 +125,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
 
-  # Self-contained CLI + frontend for each release platform.
+  # Self-contained CLI + frontend for each release platform. These archives do
+  # not carry the core; scripts/package.ps1 is the release artifact path.
   publish:
     name: Publish (${{ matrix.rid }})
     needs: verify
@@ -195,7 +199,7 @@ jobs:
           retention-days: 90
 
   release:
-    name: Create GitHub release
+    name: Create GitHub draft release
     needs: [publish, sbom]
     runs-on: [self-hosted, Linux, X64, repofleet-ci]
     timeout-minutes: 20
@@ -255,6 +259,7 @@ jobs:
             fi
             gh release create "$TAG" dist/* \
               --title "XGrid $TAG" \
+              --draft \
               "${notes[@]}" \
               --verify-tag
           fi

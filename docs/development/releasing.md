@@ -122,11 +122,18 @@ The gate checks:
 - the Windows CLI `--version`;
 - the bundled core for every RID the manifest names, including its runtime
   libraries and license text where the platform needs them;
-- that a Windows or Linux release tree really contains those cores.
+- that a Windows or Linux release tree really contains those cores;
+- that the package manifest version matches the requested version, the tree was
+  not dirty and the recorded commit is the current `HEAD`.
+
+Package the release from the clean commit that will be tagged. If a
+documentation or packaging change lands after the build, repackage rather than
+tagging the stale `dist` tree.
 
 ## Publish
 
-Upload the release tree:
+The release artifact is the local `dist/` tree produced by `scripts/package.ps1`,
+because it is the path that bundles and verifies the per-platform cores.
 
 ```text
 dist/
@@ -137,11 +144,24 @@ dist/
   package-manifest.json
 ```
 
-The manual `release.yml` workflow verifies the tree on Windows and Linux,
-publishes self-contained binaries for every platform, generates an SBOM,
-attests build provenance and creates the GitHub release. The local
-`scripts/package.ps1` tree is the release artifact because it is the path that
-bundles and verifies the per-platform cores.
+When the tree is final:
+
+1. Tag the clean commit (`git tag -a v0.1.0 -m "XGrid 0.1.0"`).
+2. Create a draft release and upload the verified tree:
+
+   ```powershell
+   gh release create v0.1.0 dist/* --draft --title "XGrid 0.1.0" `
+     --notes-file docs/release-notes/v0.1.0.md
+   ```
+
+3. Inspect the assets and checksums, then publish the draft.
+
+The manual `release.yml` workflow verifies the source on Windows and Linux,
+generates the SPDX and native SBOMs, scans the native SBOM and can create a
+**draft** release with the SBOM and attestation assets. Its `publish` job builds
+shell-only archives and does not bundle the Windows or Linux core; never publish
+those archives as-is. Upload the local `dist/*` tree over the draft and add the
+SBOM assets before publishing.
 
 ## Licensing checklist
 

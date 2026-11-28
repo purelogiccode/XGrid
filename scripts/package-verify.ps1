@@ -78,6 +78,33 @@ try {
         if ([string]::IsNullOrWhiteSpace($Version)) { $Version = [string]$manifest.version }
     }
     if ([string]::IsNullOrWhiteSpace($Version)) { Fail 'no expected version (pass -Version)' }
+    if ($manifest) {
+        if ([string]$manifest.version -ne $Version) {
+            Fail "package-manifest.json version '$([string]$manifest.version)' does not match '$Version'"
+        }
+        if ($manifest.dirty) {
+            Fail 'package-manifest.json records a dirty source tree'
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$manifest.commit)) {
+            Fail 'package-manifest.json does not record the source commit'
+        }
+        else {
+            $head = @(& git -C $repo rev-parse HEAD 2>$null)
+            if ($LASTEXITCODE -ne 0 -or $head.Count -eq 0) {
+                Fail 'could not read the current Git commit'
+            }
+            elseif ([string]$manifest.commit -ne $head[0].Trim()) {
+                Fail "package-manifest.json commit '$([string]$manifest.commit)' does not match HEAD '$($head[0].Trim())'"
+            }
+        }
+        $status = @(& git -C $repo status --porcelain 2>$null)
+        if ($LASTEXITCODE -ne 0) {
+            Fail 'could not read the working-tree status'
+        }
+        elseif ($status.Count -gt 0) {
+            Fail 'working tree is dirty; package and verify a clean commit'
+        }
+    }
 
     $expectedCore = if (Test-Path (Join-Path $repo 'xemu/XEMU_VERSION')) {
         (Get-Content (Join-Path $repo 'xemu/XEMU_VERSION') -TotalCount 1).Trim()
